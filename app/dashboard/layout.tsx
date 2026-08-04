@@ -1,130 +1,115 @@
 "use client";
-
 import { useEffect } from "react";
+import { useAuth } from "../context/AuthContext";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 
 const menuItems = [
-  { title: "داشبورد", icon: "📊", href: "/dashboard", color: "from-blue-500 to-cyan-500" },
-  { title: "کاربران", icon: "👥", href: "/dashboard/users", color: "from-violet-500 to-purple-500" },
-  { title: "احراز هویت", icon: "🪪", href: "/dashboard/kyc", color: "from-amber-500 to-orange-500" },
-  { title: "کیف پول‌ها", icon: "👛", href: "/dashboard/wallets", color: "from-emerald-500 to-teal-500" },
-  { title: "برداشت‌ها", icon: "💸", href: "/dashboard/withdrawals", color: "from-rose-500 to-pink-500" },
-  { title: "معاملات", icon: "📈", href: "/dashboard/trades", color: "from-indigo-500 to-blue-500" },
-  { title: "بازارها", icon: "💱", href: "/dashboard/markets", color: "from-cyan-500 to-blue-500" },
-  { title: "تیکت‌ها", icon: "🎫", href: "/dashboard/tickets", color: "from-fuchsia-500 to-pink-500" },
-  { title: "تنظیمات", icon: "⚙️", href: "/dashboard/settings", color: "from-slate-500 to-gray-500" },
+  { path: "/dashboard", label: "داشبورد", icon: "📊", gradient: "from-cyan-500 to-blue-500" },
+  { path: "/dashboard/users", label: "کاربران", icon: "👥", gradient: "from-purple-500 to-pink-500" },
+  { path: "/dashboard/kyc", label: "احراز هویت", icon: "🛡️", gradient: "from-green-500 to-emerald-500" },
+  { path: "/dashboard/wallets", label: "کیف پول", icon: "💳", gradient: "from-yellow-500 to-orange-500" },
+  { path: "/dashboard/withdrawals", label: "برداشت‌ها", icon: "💸", gradient: "from-red-500 to-rose-500" },
+  { path: "/dashboard/trades", label: "معاملات", icon: "📈", gradient: "from-blue-500 to-indigo-500" },
+  { path: "/dashboard/markets", label: "بازارها", icon: "📉", gradient: "from-teal-500 to-green-500" },
+  { path: "/dashboard/tickets", label: "تیکت‌ها", icon: "🎫", gradient: "from-pink-500 to-rose-500" },
+  { path: "/dashboard/settings", label: "تنظیمات", icon: "⚙️", gradient: "from-gray-600 to-gray-800" },
 ];
 
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, user, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
-    if (typeof window !== "undefined" && localStorage.getItem("isAuthenticated") !== "true") {
+    if (!isAuthenticated) {
       router.push("/");
     }
-  }, [router]);
+  }, [isAuthenticated, router]);
 
-  const handleLogout = () => {
-    localStorage.removeItem("isAuthenticated");
-    router.push("/");
-  };
-
-  const activeItem = menuItems.find((item) => item.href === pathname);
+  if (!isAuthenticated) {
+    return null;
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
-      {/* هدر مدرن */}
-      <header className="bg-white/80 backdrop-blur-xl border-b border-white/20 sticky top-0 z-50 shadow-lg shadow-slate-200/50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+    <div className="min-h-screen bg-gray-50">
+      <header className="sticky top-0 z-50 bg-white shadow-md">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            {/* لوگو */}
+            {/* لوگو / نام برنامه */}
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-indigo-600 to-violet-600 rounded-xl flex items-center justify-center text-xl shadow-lg shadow-indigo-500/30">
-                💱
-              </div>
-              <div className="hidden sm:block">
-                <h1 className="font-bold text-lg bg-gradient-to-l from-indigo-600 to-violet-600 bg-clip-text text-transparent">
-                  پنل مدیریت صرافی
-                </h1>
-              </div>
+              <span className="text-xl font-bold bg-gradient-to-r from-cyan-500 to-blue-600 bg-clip-text text-transparent">
+                پنل مدیریت
+              </span>
             </div>
 
-            {/* منوی افقی مدرن */}
-            <nav className="flex items-center gap-1 overflow-x-auto scrollbar-hide">
+            {/* منوی افقی – دسکتاپ */}
+            <nav className="hidden lg:flex items-center gap-1 overflow-x-auto">
               {menuItems.map((item) => {
-                const isActive = pathname === item.href;
+                const isActive = pathname === item.path || (item.path !== "/dashboard" && pathname.startsWith(item.path));
                 return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all duration-300 ${
-                      isActive
-                        ? "bg-gradient-to-r " + item.color + " text-white shadow-lg scale-105"
-                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                    }`}
-                  >
-                    <span className="text-base">{item.icon}</span>
-                    <span className="hidden lg:inline">{item.title}</span>
-                    {isActive && (
-                      <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-white rounded-full"></span>
-                    )}
+                  <Link key={item.path} href={item.path}>
+                    <button
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-300 whitespace-nowrap
+                        ${isActive
+                          ? `bg-gradient-to-r ${item.gradient} text-white shadow-md`
+                          : "text-gray-600 hover:bg-gray-100"
+                        }`}
+                    >
+                      <span>{item.icon}</span>
+                      <span>{item.label}</span>
+                    </button>
                   </Link>
                 );
               })}
             </nav>
 
-            {/* پروفایل و خروج */}
-            <div className="flex items-center gap-2">
-              <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-xl">
-                <div className="w-7 h-7 bg-gradient-to-br from-indigo-500 to-violet-500 rounded-full flex items-center justify-center text-white text-xs font-bold shadow">
-                  م
+            {/* بخش کاربر و خروج */}
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center text-white text-sm font-bold">
+                  {user?.charAt(0).toUpperCase()}
                 </div>
-                <div className="text-right">
-                  <p className="text-xs font-medium text-slate-700">مدیر سیستم</p>
-                  <p className="text-[10px] text-slate-500">آنلاین</p>
-                </div>
+                <span className="text-sm font-medium text-gray-700 hidden sm:block">{user}</span>
               </div>
               <button
-                onClick={handleLogout}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-rose-600 hover:bg-rose-50 transition-all duration-300 text-sm font-medium group"
+                onClick={() => {
+                  logout();
+                  router.push("/");
+                }}
+                className="text-sm px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors"
               >
-                <span className="group-hover:-translate-x-1 transition-transform">🚪</span>
-                <span className="hidden sm:inline">خروج</span>
+                خروج
               </button>
             </div>
+          </div>
+
+          {/* منوی موبایل */}
+          <div className="lg:hidden overflow-x-auto pb-2 flex gap-1 mt-1">
+            {menuItems.map((item) => {
+              const isActive = pathname === item.path || (item.path !== "/dashboard" && pathname.startsWith(item.path));
+              return (
+                <Link key={item.path} href={item.path}>
+                  <button
+                    className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all
+                      ${isActive
+                        ? `bg-gradient-to-r ${item.gradient} text-white shadow`
+                        : "text-gray-600 hover:bg-gray-100"
+                      }`}
+                  >
+                    <span>{item.icon}</span>
+                    <span>{item.label}</span>
+                  </button>
+                </Link>
+              );
+            })}
           </div>
         </div>
       </header>
 
-      {/* نوار زیر هدر - نمایش بخش فعال */}
-      <div className="bg-white/50 backdrop-blur-sm border-b border-slate-200/50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-slate-500">📍 شما در بخش:</span>
-            <span className={`text-sm font-bold bg-gradient-to-r ${activeItem?.color || "from-indigo-500 to-violet-500"} bg-clip-text text-transparent`}>
-              {activeItem?.title || "داشبورد"}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* محتوا */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {children}
       </main>
-
-      {/* فوتر */}
-      <footer className="max-w-7xl mx-auto px-4 sm:px-6 pb-8">
-        <div className="text-center text-sm text-slate-400">
-          <p>© ۱۴۰۴ پنل مدیریت صرافی | طراحی شده با ❤️</p>
-        </div>
-      </footer>
     </div>
   );
 }
