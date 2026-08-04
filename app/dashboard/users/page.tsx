@@ -1,113 +1,86 @@
 "use client";
-
 import { useState } from "react";
 
 const initialUsers = [
-  { id: 1, name: "علی محمدی", email: "ali@example.com", status: "فعال", balance: "۱۲.۵ بیت‌کوین" },
-  { id: 2, name: "سارا احمدی", email: "sara@example.com", status: "فعال", balance: "۲۵۰ میلیون ریال" },
-  { id: 3, name: "رضا کریمی", email: "reza@example.com", status: "مسدود", balance: "۱۲ اتریوم" },
-  { id: 4, name: "مریم حسینی", email: "maryam@example.com", status: "فعال", balance: "۱٬۲۰۰ تتر" },
-  { id: 5, name: "حسین رضایی", email: "hossein@example.com", status: "فعال", balance: "۸۰۰ میلیون ریال" },
+  { id: 1, name: "علی محمدی", email: "ali@example.com", status: "active" },
+  { id: 2, name: "سارا احمدی", email: "sara@example.com", status: "blocked" },
+  { id: 3, name: "محمد رضایی", email: "mohammad@example.com", status: "active" },
+  { id: 4, name: "زهرا حسینی", email: "zahra@example.com", status: "active" },
 ];
-
-const statusStyle: Record<string, string> = {
-  "فعال": "bg-green-100 text-green-700",
-  "مسدود": "bg-red-100 text-red-700",
-};
 
 export default function UsersPage() {
   const [users, setUsers] = useState(initialUsers);
-  const [selectedUser, setSelectedUser] = useState<typeof initialUsers[0] | null>(null);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [showBlockModal, setShowBlockModal] = useState(false);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [newUser, setNewUser] = useState({ name: "", email: "", balance: "" });
+  const [editUser, setEditUser] = useState<any>(null);
+  const [showModal, setShowModal] = useState(false);
 
-  const handleEdit = (user: typeof initialUsers[0]) => {
-    setSelectedUser(user);
-    setShowEditModal(true);
+  const toggleBlock = (id: number) => {
+    setUsers(
+      users.map((u) =>
+        u.id === id ? { ...u, status: u.status === "active" ? "blocked" : "active" } : u
+      )
+    );
   };
 
-  const handleBlock = (user: typeof initialUsers[0]) => {
-    setSelectedUser(user);
-    setShowBlockModal(true);
+  const openEdit = (user: any) => {
+    setEditUser({ ...user });
+    setShowModal(true);
   };
 
-  const confirmBlock = () => {
-    if (selectedUser) {
-      setUsers(users.map(u => 
-        u.id === selectedUser.id 
-          ? { ...u, status: u.status === "فعال" ? "مسدود" : "فعال" }
-          : u
-      ));
-    }
-    setShowBlockModal(false);
-    setSelectedUser(null);
-  };
-
-  const handleAdd = () => {
-    if (newUser.name && newUser.email && newUser.balance) {
-      setUsers([...users, {
-        id: users.length + 1,
-        name: newUser.name,
-        email: newUser.email,
-        status: "فعال",
-        balance: newUser.balance,
-      }]);
-      setNewUser({ name: "", email: "", balance: "" });
-      setShowAddModal(false);
-    }
+  const saveEdit = () => {
+    if (!editUser) return;
+    setUsers(users.map((u) => (u.id === editUser.id ? editUser : u)));
+    setShowModal(false);
+    setEditUser(null);
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">مدیریت کاربران</h1>
-        <button 
-          onClick={() => setShowAddModal(true)}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-xl"
-        >
-          + افزودن کاربر
-        </button>
-      </div>
-
-      <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-200">
+    <div>
+      <h1 className="text-2xl font-bold text-gray-800 mb-6">مدیریت کاربران</h1>
+      <div className="bg-white rounded-xl shadow overflow-x-auto">
+        <table className="min-w-full text-sm">
+          <thead className="bg-gray-50 text-gray-600">
             <tr>
-              <th className="text-right px-6 py-4 text-sm font-medium text-gray-600">شناسه</th>
-              <th className="text-right px-6 py-4 text-sm font-medium text-gray-600">نام</th>
-              <th className="text-right px-6 py-4 text-sm font-medium text-gray-600">ایمیل</th>
-              <th className="text-right px-6 py-4 text-sm font-medium text-gray-600">موجودی</th>
-              <th className="text-right px-6 py-4 text-sm font-medium text-gray-600">وضعیت</th>
-              <th className="text-right px-6 py-4 text-sm font-medium text-gray-600">عملیات</th>
+              <th className="py-3 px-4 text-right">ردیف</th>
+              <th className="py-3 px-4 text-right">نام</th>
+              <th className="py-3 px-4 text-right">ایمیل</th>
+              <th className="py-3 px-4 text-right">وضعیت</th>
+              <th className="py-3 px-4 text-right">عملیات</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200">
+          <tbody className="divide-y divide-gray-100">
             {users.map((user) => (
-              <tr key={user.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 text-sm">{user.id}</td>
-                <td className="px-6 py-4 text-sm font-medium">{user.name}</td>
-                <td className="px-6 py-4 text-sm text-gray-600">{user.email}</td>
-                <td className="px-6 py-4 text-sm">{user.balance}</td>
-                <td className="px-6 py-4">
-                  <span className={`text-xs px-3 py-1 rounded-full ${statusStyle[user.status]}`}>
-                    {user.status}
+              <tr key={user.id} className="hover:bg-gray-50 transition-colors">
+                <td className="py-3 px-4">{user.id}</td>
+                <td className="py-3 px-4">{user.name}</td>
+                <td className="py-3 px-4">{user.email}</td>
+                <td className="py-3 px-4">
+                  <span
+                    className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      user.status === "active"
+                        ? "bg-green-100 text-green-700"
+                        : "bg-red-100 text-red-700"
+                    }`}
+                  >
+                    {user.status === "active" ? "فعال" : "مسدود"}
                   </span>
                 </td>
-                <td className="px-6 py-4">
+                <td className="py-3 px-4">
                   <div className="flex gap-2">
-                    <button 
-                      onClick={() => handleEdit(user)}
-                      className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                    <button
+                      onClick={() => openEdit(user)}
+                      className="px-3 py-1 text-xs bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition"
                     >
                       ویرایش
                     </button>
-                    <button 
-                      onClick={() => handleBlock(user)}
-                      className={`text-sm font-medium ${user.status === "فعال" ? "text-red-600 hover:text-red-800" : "text-green-600 hover:text-green-800"}`}
+                    <button
+                      onClick={() => toggleBlock(user.id)}
+                      className={`px-3 py-1 text-xs rounded-lg transition ${
+                        user.status === "active"
+                          ? "bg-red-50 text-red-600 hover:bg-red-100"
+                          : "bg-green-50 text-green-600 hover:bg-green-100"
+                      }`}
                     >
-                      {user.status === "فعال" ? "مسدود" : "فعال‌سازی"}
+                      {user.status === "active" ? "مسدود کردن" : "رفع مسدودی"}
                     </button>
                   </div>
                 </td>
@@ -117,128 +90,43 @@ export default function UsersPage() {
         </table>
       </div>
 
-      {/* Modal ویرایش */}
-      {showEditModal && selectedUser && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl p-8 max-w-md w-full">
-            <h2 className="text-xl font-bold mb-6">ویرایش کاربر</h2>
+      {/* مودال ویرایش */}
+      {showModal && editUser && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <h2 className="text-lg font-semibold text-gray-800 mb-4">ویرایش کاربر</h2>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium mb-2">نام</label>
+                <label className="block text-sm text-gray-600 mb-1">نام</label>
                 <input
                   type="text"
-                  defaultValue={selectedUser.name}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={editUser.name}
+                  onChange={(e) => setEditUser({ ...editUser, name: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">ایمیل</label>
+                <label className="block text-sm text-gray-600 mb-1">ایمیل</label>
                 <input
                   type="email"
-                  defaultValue={selectedUser.email}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">موجودی</label>
-                <input
-                  type="text"
-                  defaultValue={selectedUser.balance}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={editUser.email}
+                  onChange={(e) => setEditUser({ ...editUser, email: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
                 />
               </div>
             </div>
-            <div className="flex gap-3 mt-6">
+            <div className="flex justify-end gap-2 mt-6">
               <button
-                onClick={() => { setShowEditModal(false); setSelectedUser(null); }}
-                className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 rounded-xl"
+                onClick={() => setShowModal(false)}
+                className="px-4 py-2 text-sm bg-gray-100 rounded-lg hover:bg-gray-200"
               >
                 انصراف
               </button>
               <button
-                onClick={() => { setShowEditModal(false); setSelectedUser(null); }}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-xl"
+                onClick={saveEdit}
+                className="px-4 py-2 text-sm bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-lg hover:shadow-lg"
               >
                 ذخیره
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal مسدود/فعال‌سازی */}
-      {showBlockModal && selectedUser && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl p-8 max-w-md w-full">
-            <h2 className="text-xl font-bold mb-4">تأیید عملیات</h2>
-            <p className="text-gray-600 mb-6">
-              آیا مطمئن هستید که می‌خواهید کاربر <strong>{selectedUser.name}</strong> را {selectedUser.status === "فعال" ? "مسدود" : "فعال"} کنید؟
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => { setShowBlockModal(false); setSelectedUser(null); }}
-                className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 rounded-xl"
-              >
-                انصراف
-              </button>
-              <button
-                onClick={confirmBlock}
-                className={`flex-1 py-2 rounded-xl text-white ${selectedUser.status === "فعال" ? "bg-red-600 hover:bg-red-700" : "bg-green-600 hover:bg-green-700"}`}
-              >
-                تأیید
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal افزودن کاربر */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl p-8 max-w-md w-full">
-            <h2 className="text-xl font-bold mb-6">افزودن کاربر جدید</h2>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">نام</label>
-                <input
-                  type="text"
-                  value={newUser.name}
-                  onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">ایمیل</label>
-                <input
-                  type="email"
-                  value={newUser.email}
-                  onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">موجودی</label>
-                <input
-                  type="text"
-                  value={newUser.balance}
-                  onChange={(e) => setNewUser({ ...newUser, balance: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="مثال: ۱ بیت‌کوین"
-                />
-              </div>
-            </div>
-            <div className="flex gap-3 mt-6">
-              <button
-                onClick={() => { setShowAddModal(false); setNewUser({ name: "", email: "", balance: "" }); }}
-                className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 rounded-xl"
-              >
-                انصراف
-              </button>
-              <button
-                onClick={handleAdd}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-xl"
-              >
-                افزودن
               </button>
             </div>
           </div>
