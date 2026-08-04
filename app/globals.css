@@ -1,59 +1,69 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+"use client";
+import { useState } from "react";
+import { useAuth } from "./context/AuthContext";
+import { useRouter } from "next/navigation";
 
-* {
-  box-sizing: border-box;
-}
+export default function LoginPage() {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const { login } = useAuth();
+  const router = useRouter();
 
-body {
-  font-family: "Vazirmatn", sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    const success = login(username, password);
+    if (success) {
+      router.push("/dashboard");
+    } else {
+      setError("نام کاربری یا رمز عبور اشتباه است");
+    }
+  };
 
-/* اسکرولبار مدرن */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: #f1f5f9;
-  border-radius: 10px;
-}
-
-::-webkit-scrollbar-thumb {
-  background: linear-gradient(to bottom, #6366f1, #8b5cf6);
-  border-radius: 10px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(to bottom, #4f46e5, #7c3aed);
-}
-
-/* مخفی کردن اسکرولبار افقی منو */
-.scrollbar-hide::-webkit-scrollbar {
-  display: none;
-}
-
-.scrollbar-hide {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-
-/* انیمیشن‌ها */
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-main > * {
-  animation: fadeIn 0.5s ease-out;
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-slate-800 to-gray-900 p-4">
+      <div className="w-full max-w-md">
+        <div className="bg-white/10 backdrop-blur-lg rounded-2xl shadow-2xl p-8 border border-white/20">
+          <div className="text-center mb-8">
+            <h1 className="text-4xl font-bold text-white mb-2">صرافی کریپتو</h1>
+            <p className="text-gray-300">پنل مدیریت</p>
+          </div>
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div>
+              <label className="block text-gray-200 mb-2 text-sm">نام کاربری</label>
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="w-full px-4 py-3 rounded-lg bg-white/10 border border-white/20 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                placeholder="admin"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-gray-200 mb-2 text-sm">رمز عبور</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-3 rounded-lg bg-white/10 border border-white/20 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                placeholder="••••••••"
+                required
+              />
+            </div>
+            {error && (
+              <p className="text-red-400 text-sm text-center">{error}</p>
+            )}
+            <button
+              type="submit"
+              className="w-full py-3 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-semibold hover:shadow-lg hover:shadow-cyan-500/30 transition-all duration-300"
+            >
+              ورود به پنل
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
 }
