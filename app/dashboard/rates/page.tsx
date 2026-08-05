@@ -6,6 +6,8 @@ export default function RatesPage() {
   const [rates, setRates] = useState({ usd: "70.5", eur: "76", toman: "0.64" });
   const [updated, setUpdated] = useState("");
   const [saved, setSaved] = useState(false);
+  const [missing, setMissing] = useState<string[]>([]);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     try {
@@ -16,7 +18,26 @@ export default function RatesPage() {
     } catch {}
   }, []);
 
+  const update = (key: string, value: string) => {
+    setRates({ ...rates, [key]: value });
+    setMissing([]);
+    setError("");
+  };
+
+  const fc = (name: string) => `input text-center text-xl font-extrabold text-[#c98f2d] ${missing.includes(name) ? "!border-red-500" : ""}`;
+
   const save = () => {
+    const m: string[] = [];
+    if (!rates.usd.trim() || isNaN(Number(rates.usd))) m.push("نرخ دلار");
+    if (!rates.eur.trim() || isNaN(Number(rates.eur))) m.push("نرخ یورو");
+    if (!rates.toman.trim() || isNaN(Number(rates.toman))) m.push("نرخ تومان");
+    if (m.length > 0) {
+      setMissing(m);
+      setError("لطفاً این نرخ‌ها را درست وارد کنید: " + m.join("، "));
+      return;
+    }
+    setMissing([]);
+    setError("");
     const now = new Date().toLocaleString("fa-IR");
     localStorage.setItem("db_rates", JSON.stringify(rates));
     localStorage.setItem("db_rates_updated", now);
@@ -44,29 +65,24 @@ export default function RatesPage() {
         </div>
       </div>
 
+      {error && (
+        <div className="bg-red-50 text-red-600 text-sm rounded-xl p-3 border border-red-200">{error}</div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         {items.map(item => (
           <div key={item.key} className="card p-6">
             <p className="font-extrabold">{item.title}</p>
             <p className="text-xs text-slate-500 mt-1 mb-4">{item.desc}</p>
+            <label className="block text-sm font-bold mb-2">نرخ به افغانی</label>
             <input
-              className="input text-center text-xl font-extrabold text-[#c98f2d]"
+              className={fc(item.title)}
               value={rates[item.key as keyof typeof rates]}
-              onChange={e => setRates({ ...rates, [item.key]: e.target.value })}
+              onChange={e => update(item.key, e.target.value)}
             />
             <p className="text-xs text-slate-400 mt-3 text-center">افغانی</p>
           </div>
         ))}
-      </div>
-
-      <div className="card p-5">
-        <h3 className="font-extrabold mb-3">راهنمای محاسبه</h3>
-        <ul className="text-sm text-slate-600 space-y-2">
-          <li>• حواله تومان به افغانی: مبلغ تومان تقسیم بر ۱۰۰ ضربدر نرخ تومان</li>
-          <li>• حواله افغانی به تومان: مبلغ افغانی تقسیم بر نرخ تومان ضربدر ۱۰۰۰</li>
-          <li>• حواله دلار: ضربدر نرخ دلار</li>
-          <li>• این نرخ‌ها به صورت خودکار در صفحه حواله‌جات و تبادل ارز استفاده می‌شوند</li>
-        </ul>
       </div>
     </div>
   );
