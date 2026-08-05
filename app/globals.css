@@ -1,69 +1,96 @@
-"use client";
-import { useState } from "react";
-import { useAuth } from "./context/AuthContext";
-import { useRouter } from "next/navigation";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-export default function LoginPage() {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const { login } = useAuth();
-  const router = useRouter();
+body {
+  font-family: "Vazirmatn", "Segoe UI", sans-serif;
+  background-color: #f6f4ee;
+  color: #0b1f2e;
+  -webkit-font-smoothing: antialiased;
+}
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    const success = login(username, password);
-    if (success) {
-      router.push("/dashboard");
-    } else {
-      setError("نام کاربری یا رمز عبور اشتباه است");
-    }
-  };
+.card {
+  background: #ffffff;
+  border: 1px solid rgba(11, 31, 46, 0.08);
+  border-radius: 1.25rem;
+  box-shadow: 0 12px 32px -16px rgba(11, 31, 46, 0.18);
+}
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-slate-800 to-gray-900 p-4">
-      <div className="w-full max-w-md">
-        <div className="bg-white/10 backdrop-blur-lg rounded-2xl shadow-2xl p-8 border border-white/20">
-          <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold text-white mb-2">صرافی کریپتو</h1>
-            <p className="text-gray-300">پنل مدیریت</p>
-          </div>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label className="block text-gray-200 mb-2 text-sm">نام کاربری</label>
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="w-full px-4 py-3 rounded-lg bg-white/10 border border-white/20 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-400"
-                placeholder="admin"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-gray-200 mb-2 text-sm">رمز عبور</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3 rounded-lg bg-white/10 border border-white/20 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-400"
-                placeholder="••••••••"
-                required
-              />
-            </div>
-            {error && (
-              <p className="text-red-400 text-sm text-center">{error}</p>
-            )}
-            <button
-              type="submit"
-              className="w-full py-3 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-semibold hover:shadow-lg hover:shadow-cyan-500/30 transition-all duration-300"
-            >
-              ورود به پنل
-            </button>
-          </form>
-        </div>
-      </div>
-    </div>
-  );
+.input {
+  width: 100%;
+  border: 1px solid #e2e0d8;
+  background: #fff;
+  border-radius: 0.9rem;
+  padding: 0.65rem 1rem;
+  font-size: 0.875rem;
+  transition: all 0.2s;
+}
+
+.input:focus {
+  outline: none;
+  border-color: #d9a441;
+  box-shadow: 0 0 0 3px rgba(217, 164, 65, 0.25);
+}
+
+.btn-gold {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: linear-gradient(135deg, #e8c06a, #d9a441);
+  color: #0b1f2e;
+  font-weight: 800;
+  font-size: 0.875rem;
+  border-radius: 0.9rem;
+  padding: 0.65rem 1.4rem;
+  box-shadow: 0 10px 24px -10px rgba(217, 164, 65, 0.55);
+  transition: all 0.2s;
+  cursor: pointer;
+  border: none;
+}
+
+.btn-gold:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+.btn-gold:active {
+  transform: scale(0.98);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d9c9a0;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  scrollbar-width: none;
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.fade-up {
+  animation: fadeUp 0.5s ease both;
 }
