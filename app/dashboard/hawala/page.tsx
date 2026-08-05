@@ -95,29 +95,64 @@ export default function HawalaPage() {
     <div className="space-y-6">
       <h1 className="text-xl font-extrabold">ثبت حواله جدید</h1>
 
-      <div className="card p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <input className="input" placeholder="نام فرستنده" value={form.sender} onChange={e => setForm({ ...form, sender: e.target.value })} />
-        <input className="input" placeholder="نام گیرنده" value={form.receiver} onChange={e => setForm({ ...form, receiver: e.target.value })} />
-        <input className="input" placeholder="شماره واتساپ گیرنده (989... یا 93...)" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
-        <input className="input" placeholder="مبلغ" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} />
-        <select className="input" value={form.fromCity} onChange={e => setForm({ ...form, fromCity: e.target.value })}>
-          {cities.map(c => <option key={c}>مبدأ: {c}</option>)}
-        </select>
-        <select className="input" value={form.toCity} onChange={e => setForm({ ...form, toCity: e.target.value })}>
-          {cities.map(c => <option key={c}>مقصد: {c}</option>)}
-        </select>
-        <select className="input" value={form.payCur} onChange={e => setForm({ ...form, payCur: e.target.value })}>
-          {currencies.map(c => <option key={c}>پرداخت: {c}</option>)}
-        </select>
-        <select className="input" value={form.getCur} onChange={e => setForm({ ...form, getCur: e.target.value })}>
-          {currencies.map(c => <option key={c}>دریافت: {c}</option>)}
-        </select>
-        <input className="input" placeholder="کارمزد (به افغانی)" value={form.fee} onChange={e => setForm({ ...form, fee: e.target.value })} />
-        <div className="sm:col-span-2 lg:col-span-2 flex items-center justify-between gap-3 bg-[#0b1f2e] rounded-xl px-4 py-2">
-          <span className="text-[#e3b45c] text-sm font-bold">مبلغ قابل دریافت:</span>
-          <span className="text-white font-extrabold">{result.toLocaleString("fa-IR", { maximumFractionDigits: 0 })} {form.getCur}</span>
+      <div className="card p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div>
+          <label className="block text-sm font-bold mb-2">نام فرستنده</label>
+          <input className="input" placeholder="مثال: احمد ولی" value={form.sender} onChange={e => setForm({ ...form, sender: e.target.value })} />
         </div>
-        <button className="btn-gold sm:col-span-2 lg:col-span-1" onClick={add}>ثبت حواله</button>
+        <div>
+          <label className="block text-sm font-bold mb-2">نام گیرنده</label>
+          <input className="input" placeholder="مثال: کریم الله" value={form.receiver} onChange={e => setForm({ ...form, receiver: e.target.value })} />
+        </div>
+        <div>
+          <label className="block text-sm font-bold mb-2">شماره واتساپ گیرنده</label>
+          <input className="input" placeholder="93... یا 989..." value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
+        </div>
+        <div>
+          <label className="block text-sm font-bold mb-2">مبلغ</label>
+          <input className="input" placeholder="مبلغ پرداختی" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} />
+        </div>
+
+        <div>
+          <label className="block text-sm font-bold mb-2">شهر مبدأ</label>
+          <select className="input" value={form.fromCity} onChange={e => setForm({ ...form, fromCity: e.target.value })}>
+            {cities.map(c => <option key={c}>{c}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-bold mb-2">شهر مقصد</label>
+          <select className="input" value={form.toCity} onChange={e => setForm({ ...form, toCity: e.target.value })}>
+            {cities.map(c => <option key={c}>{c}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-bold mb-2">ارز پرداخت</label>
+          <select className="input" value={form.payCur} onChange={e => setForm({ ...form, payCur: e.target.value })}>
+            {currencies.map(c => <option key={c}>{c}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-bold mb-2">ارز دریافت</label>
+          <select className="input" value={form.getCur} onChange={e => setForm({ ...form, getCur: e.target.value })}>
+            {currencies.map(c => <option key={c}>{c}</option>)}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-bold mb-2">کارمزد (افغانی)</label>
+          <input className="input" placeholder="0" value={form.fee} onChange={e => setForm({ ...form, fee: e.target.value })} />
+        </div>
+        <div className="sm:col-span-2 lg:col-span-2">
+          <label className="block text-sm font-bold mb-2 invisible">-</label>
+          <div className="flex items-center justify-between gap-3 bg-[#0b1f2e] rounded-xl px-4 py-2.5">
+            <span className="text-[#e3b45c] text-sm font-bold">مبلغ قابل دریافت:</span>
+            <span className="text-white font-extrabold">{result.toLocaleString("fa-IR", { maximumFractionDigits: 0 })} {form.getCur}</span>
+          </div>
+        </div>
+        <div>
+          <label className="block text-sm font-bold mb-2 invisible">-</label>
+          <button className="btn-gold w-full" onClick={add}>ثبت حواله</button>
+        </div>
       </div>
 
       <h1 className="text-xl font-extrabold pt-4">لیست حواله‌ها</h1>
