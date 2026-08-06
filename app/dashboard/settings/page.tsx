@@ -1,355 +1,411 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { sendTelegram, getLastChatId, getTelegramUsers, type TelegramUser } from "../lib/telegram";
+import { useState, useEffect } from "react";
+import { useStored, Field, ErrorBox } from "../lib/ui";
+import { loadJSON, fa } from "../lib/helpers";
+import { sendTelegram, getLastChatId, getUpdates } from "../lib/telegram";
 
-interface Settings {
-  siteName: string;
-  whatsappPhone: string;
-  telegramToken: string;
-  telegramChat: string;
-  commission: string;
-  username: string;
-  password: string;
+// 🆕 Interface برای کاربران تلگرام
+interface TelegramUser {
+  id: number;
+  firstName: string;
+  lastName?: string;
+  username?: string;
+  lastSeen: string;
 }
 
-const defaults: Settings = {
-  siteName: "صرافی برادران نورزاد",
-  whatsappPhone: "989121234567",
-  telegramToken: "",
-  telegramChat: "",
-  commission: "0.5",
-  username: "admin",
-  password: "admin123",
-};
-
 export default function SettingsPage() {
-  const [s, setS] = useState<Settings>(defaults);
-  const [saved, setSaved] = useState(false);
-  const [tgMsg, setTgMsg] = useState("");
-  const [tgLoading, setTgLoading] = useState(false);
-  const [missing, setMissing] = useState<string[]>([]);
+  // 🆕 بارگذاری تنظیمات
+  const [settings, setSettings] = useStored<any>("db_settings", {
+    siteName: "صرافی برادران نورزاد",
+    address: "هرات، افغانستان",
+    phone: "+93 700 000 000",
+    telegramToken: "",
+    telegramChatId: "",
+    telegramSilent: false,
+    username: "admin",
+    password: "admin123",
+  });
+
+  // 🆕 stateها
+  const [loading, setLoading] = useState(false);
+  const [loadingUsers, setLoadingUsers] = useState(false);
   const [error, setError] = useState("");
-  const [loaded, setLoaded] = useState(false);
-  const mountedRef = useRef(true);
-
-  // 🆕 State برای لیست کاربران ربات
+  const [success, setSuccess] = useState("");
+  const [testResult, setTestResult] = useState("");
   const [telegramUsers, setTelegramUsers] = useState<TelegramUser[]>([]);
-  const [usersLoading, setUsersLoading] = useState(false);
-  const [usersMsg, setUsersMsg] = useState("");
+  const [showUsers, setShowUsers] = useState(false);
 
-  // بارگذاری لیست کاربران از localStorage
+  // 🆕 بارگذاری لیست کاربران تلگرام از localStorage
   useEffect(() => {
     try {
-      const raw = localStorage.getItem("db_telegram_users");
-      if (raw) {
-        setTelegramUsers(JSON.parse(raw));
+      const stored = localStorage.getItem("db_telegram_users");
+      if (stored) {
+        setTelegramUsers(JSON.parse(stored));
       }
     } catch (e) {
       console.error("Load telegram users error:", e);
     }
   }, []);
 
-  // فقط یک بار در mount از localStorage بخوان
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem("db_settings");
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        setS(prev => ({ ...defaults, ...prev, ...parsed }));
-      }
-    } catch (e) {
-      console.error("Settings load error:", e);
-    }
-    setLoaded(true);
-    return () => { mountedRef.current = false; };
-  }, []);
-
-  const update = (patch: Partial<Settings>) => {
-    setS(prev => ({ ...prev, ...patch }));
-    setMissing([]);
+  const set = (patch: any) => {
+    setSettings({ ...settings, ...patch });
     setError("");
-    setTgMsg("");
+    setSuccess("");
   };
 
-  const fc = (name: string) => `input ${missing.includes(name) ? "!border-red-500" : ""}`;
+  // 🆕 ذخیره تنظیمات
+  const saveSettings = () => {
+    try {
+      setSettings(settings);
+      setSuccess("✅ تنظیمات با موفقیت ذخیره شد");
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (e) {
+      setError("❌ خطا در ذخیره تنظیمات");
+    }
+  };
 
-  const save = () => {
-    const m: string[] = [];
-    if (!s.siteName.trim()) m.push("نام صرافی");
-    if (!s.username.trim()) m.push("نام کاربری");
-    if (!s.password.trim()) m.push("رمز عبور");
-    if (m.length) {
-      setMissing(m);
-      setError("لطفاً این فیلدها را پر کنید: " + m.join("، "));
+  // 🆕 تست ارسال پیام به تلگرام
+  const testTelegram = async () => {
+    if (!settings.telegramToken?.trim()) {
+      setError("⚠️ لطفاً ابتدا توکن ربات را وارد کنید");
+      return;
+    }
+    if (!settings.telegramChatId?.trim()) {
+      setError("⚠️ لطفاً chat_id را دریافت کنید");
       return;
     }
 
+    setLoading(true);
+    setTestResult("");
     try {
-      localStorage.setItem("db_settings", JSON.stringify(s));
-      setMissing([]);
-      setError("");
-      setSaved(true);
-      setTimeout(() => { if (mountedRef.current) setSaved(false); }, 2500);
+      const message = `🎉 تست اتصال ربات تلگرام\n\nصرافی: ${settings.siteName || "برادران نورزاد"}\nتاریخ: ${new Date().toLocaleDateString("fa-IR")}\nساعت: ${new Date().toLocaleTimeString("fa-IR")}\n\n✅ اگر این پیام را دریافت کردید، ربات شما به درستی کار می‌کند!`;
+      const ok = await sendTelegram(
+        settings.telegramToken,
+        settings.telegramChatId,
+        message,
+        { silent: settings.telegramSilent === true }
+      );
+      setTestResult(ok ? "✅ پیام تست ارسال شد" : "❌ ارسال ناموفق بود");
     } catch (e) {
-      setError("خطا در ذخیره: " + String(e));
+      setTestResult("❌ خطا: " + String(e));
     }
+    setLoading(false);
   };
 
-  const testTg = async () => {
-    if (!s.telegramToken.trim()) { setTgMsg("❌ اول توکن ربات را وارد و ذخیره کنید"); return; }
-    if (!s.telegramChat.trim()) { setTgMsg("❌ اول chat_id را وارد یا دریافت کنید"); return; }
-
-    setTgLoading(true);
-    setTgMsg("⏳ در حال ارسال...");
-    const text = `✅ <b>تست موفق</b>\n\nربات تلگرام صرافی <b>${s.siteName}</b> با موفقیت وصل شد.\n\nاز این پس رسید معاملات به صورت خودکار برای مشتریان ارسال می‌شود.`;
-    const ok = await sendTelegram(s.telegramToken.trim(), s.telegramChat.trim(), text);
-    setTgMsg(ok ? "✅ پیام تست به ربات ارسال شد" : "❌ ارسال نشد؛ توکن یا chat_id را بررسی کنید");
-    setTgLoading(false);
-  };
-
-  const getChat = async () => {
-    if (!s.telegramToken.trim()) { setTgMsg("❌ اول توکن ربات را وارد کنید"); return; }
-    setTgLoading(true);
-    setTgMsg("⏳ در حال دریافت chat_id...");
-    const id = await getLastChatId(s.telegramToken.trim());
-    if (id) {
-      update({ telegramChat: id });
-      setTgMsg(`✅ chat_id دریافت شد: ${id} — حالا «ذخیره تنظیمات» را بزنید`);
-    } else {
-      setTgMsg("❌ chat_id پیدا نشد. اول در تلگرام به ربات /start بفرستید، سپس دوباره امتحان کنید");
+  // 🆕 دریافت chat_id از getUpdates
+  const fetchChatId = async () => {
+    if (!settings.telegramToken?.trim()) {
+      setError("⚠️ لطفاً ابتدا توکن ربات را وارد کنید");
+      return;
     }
-    setTgLoading(false);
-  };
 
-  // 🆕 تابع به‌روزرسانی لیست کاربران ربات
-  const refreshUsers = async () => {
-    if (!s.telegramToken.trim()) { 
-      setUsersMsg("❌ اول توکن ربات را وارد و ذخیره کنید"); 
-      return; 
-    }
-    
-    setUsersLoading(true);
-    setUsersMsg("⏳ در حال دریافت لیست کاربران...");
-    
-    const users = await getTelegramUsers(s.telegramToken.trim());
-    
-    if (users.length > 0) {
-      setTelegramUsers(users);
-      try {
-        localStorage.setItem("db_telegram_users", JSON.stringify(users));
-        setUsersMsg(`✅ ${users.length} کاربر از ربات دریافت شد`);
-      } catch (e) {
-        setUsersMsg("⚠️ کاربران دریافت شدند ولی ذخیره نشدند");
+    setLoading(true);
+    setError("");
+    try {
+      const chatId = await getLastChatId(settings.telegramToken);
+      if (chatId) {
+        set({ telegramChatId: String(chatId) });
+        setSuccess(`✅ chat_id دریافت شد: ${chatId}`);
+      } else {
+        setError("❌ هیچ پیامی از کاربران یافت نشد. لطفاً به ربات /start بفرستید.");
       }
-    } else {
-      setUsersMsg("❌ کاربری پیدا نشد. مطمئن شوید کاربران به ربات /start فرستاده‌اند");
+    } catch (e) {
+      setError("❌ خطا در دریافت chat_id: " + String(e));
     }
-    
-    setUsersLoading(false);
+    setLoading(false);
+  };
+
+  // 🆕 به‌روزرسانی لیست کاربران ربات
+  const refreshUsers = async () => {
+    if (!settings.telegramToken?.trim()) {
+      setError("⚠️ لطفاً ابتدا توکن ربات را وارد کنید");
+      return;
+    }
+
+    setLoadingUsers(true);
+    setError("");
+    try {
+      const updates = await getUpdates(settings.telegramToken);
+      const usersMap = new Map<number, TelegramUser>();
+
+      // استخراج کاربران unique از updates
+      updates.forEach((update: any) => {
+        if (update.message?.from) {
+          const user = update.message.from;
+          usersMap.set(user.id, {
+            id: user.id,
+            firstName: user.first_name || "",
+            lastName: user.last_name || "",
+            username: user.username || "",
+            lastSeen: update.message.date
+              ? new Date(update.message.date * 1000).toLocaleString("fa-IR")
+              : "",
+          });
+        }
+      });
+
+      const usersList = Array.from(usersMap.values()).sort((a, b) => b.id - a.id);
+      setTelegramUsers(usersList);
+
+      // ذخیره در localStorage برای استفاده در تب مشتری‌ها
+      localStorage.setItem("db_telegram_users", JSON.stringify(usersList));
+
+      setSuccess(`✅ ${usersList.length} کاربر از ربات دریافت شد`);
+      setShowUsers(true);
+    } catch (e) {
+      setError("❌ خطا در دریافت لیست کاربران: " + String(e));
+    }
+    setLoadingUsers(false);
   };
 
   // 🆕 کپی chat_id
   const copyChatId = (id: number) => {
     navigator.clipboard.writeText(String(id));
-    setUsersMsg(`✅ chat_id ${id} کپی شد`);
-    setTimeout(() => setUsersMsg(""), 2000);
+    setSuccess(`✅ chat_id ${id} کپی شد`);
+    setTimeout(() => setSuccess(""), 2000);
   };
-
-  if (!loaded) {
-    return <div className="p-8 text-center">در حال بارگذاری...</div>;
-  }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-extrabold">تنظیمات</h1>
-      <div className="card p-6 max-w-2xl space-y-4">
+      <h1 className="text-xl font-extrabold flex items-center gap-2">
+        🛠️ تنظیمات سیستم
+      </h1>
 
-        <div>
-          <label className="block text-sm font-bold mb-2">نام صرافی</label>
-          <input className={fc("نام صرافی")} value={s.siteName} onChange={e => update({ siteName: e.target.value })} />
-        </div>
-
-        <div>
-          <label className="block text-sm font-bold mb-2">شماره واتساپ (با کد کشور)</label>
-          <input className="input" dir="ltr" value={s.whatsappPhone} onChange={e => update({ whatsappPhone: e.target.value })} placeholder="989123456789" />
-        </div>
-
-        {/* بخش تلگرام */}
-        <div className="rounded-xl border-2 border-sky-200 bg-gradient-to-br from-sky-50 to-blue-50 p-5 space-y-3">
-          <p className="font-extrabold text-sky-800 text-base">📨 تنظیمات ربات تلگرام</p>
-          <p className="text-xs text-slate-600">با اتصال ربات، رسید معاملات خودکار برای مشتری ارسال می‌شود</p>
-
-          <div>
-            <label className="block text-sm font-bold mb-2">توکن ربات (از BotFather)</label>
-            <input
-              className="input font-mono text-xs"
-              dir="ltr"
-              placeholder="123456789:AAH..."
-              value={s.telegramToken}
-              onChange={e => update({ telegramToken: e.target.value })}
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-bold mb-2">chat_id پیش‌فرض (برای تست)</label>
-            <input
-              className="input font-mono text-xs"
-              dir="ltr"
-              placeholder="123456789"
-              value={s.telegramChat}
-              onChange={e => update({ telegramChat: e.target.value })}
-            />
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <button
-              className="px-4 py-2 rounded-lg bg-sky-600 text-white text-sm font-bold hover:bg-sky-700 disabled:opacity-50"
-              onClick={getChat}
-              disabled={tgLoading}
-            >
-              {tgLoading ? "⏳" : "🔍"} دریافت آخرین chat_id
-            </button>
-            <button
-              className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 disabled:opacity-50"
-              onClick={testTg}
-              disabled={tgLoading}
-            >
-              {tgLoading ? "⏳" : "📤"} تست ارسال پیام
-            </button>
-          </div>
-
-          {tgMsg && (
-            <div className={`text-sm font-bold rounded-lg p-3 ${tgMsg.startsWith("✅") ? "bg-emerald-100 text-emerald-700" : tgMsg.startsWith("❌") ? "bg-red-100 text-red-700" : "bg-blue-100 text-blue-700"}`}>
-              {tgMsg}
-            </div>
-          )}
-
-          <div className="bg-white/70 rounded-lg p-3 text-xs text-slate-600 space-y-1">
-            <p className="font-bold text-slate-700 mb-1">📖 راهنما:</p>
-            <p>۱. توکن را از BotFather بگیرید و بالا وارد کنید</p>
-            <p>۲. در تلگرام به ربات خود <b>/start</b> بفرستید</p>
-            <p>۳. دکمه «دریافت chat_id» را بزنید</p>
-            <p>۴. <b>ذخیره تنظیمات</b> را بزنید (مهم!)</p>
-            <p>۵. دکمه «تست ارسال» را بزنید</p>
-          </div>
-        </div>
-
-        {/* 🆕 بخش جدید: لیست کاربران ربات */}
-        <div className="rounded-xl border-2 border-purple-200 bg-gradient-to-br from-purple-50 to-pink-50 p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-extrabold text-purple-800 text-base">👥 لیست کاربران ربات</p>
-              <p className="text-xs text-slate-600">کاربرانی که به ربات شما پیام فرستاده‌اند</p>
-            </div>
-            <button
-              className="px-4 py-2 rounded-lg bg-purple-600 text-white text-sm font-bold hover:bg-purple-700 disabled:opacity-50"
-              onClick={refreshUsers}
-              disabled={usersLoading}
-            >
-              {usersLoading ? "⏳" : "🔄"} به‌روزرسانی لیست
-            </button>
-          </div>
-
-          {usersMsg && (
-            <div className={`text-sm font-bold rounded-lg p-3 ${usersMsg.startsWith("✅") ? "bg-emerald-100 text-emerald-700" : usersMsg.startsWith("❌") ? "bg-red-100 text-red-700" : "bg-blue-100 text-blue-700"}`}>
-              {usersMsg}
-            </div>
-          )}
-
-          {telegramUsers.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-purple-100 text-purple-900">
-                  <tr>
-                    <th className="text-center px-3 py-2 font-bold w-12">شماره</th>
-                    <th className="text-right px-3 py-2 font-bold">نام تلگرام</th>
-                    <th className="text-right px-3 py-2 font-bold">Username</th>
-                    <th className="text-right px-3 py-2 font-bold">chat_id</th>
-                    <th className="text-center px-3 py-2 font-bold w-20">عملیات</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-purple-100">
-                  {telegramUsers.map((user, index) => (
-                    <tr key={user.id} className="hover:bg-purple-50">
-                      <td className="px-3 py-2 text-center font-mono font-bold text-purple-900">
-                        {(index + 1).toLocaleString("en-US")}
-                      </td>
-                      <td className="px-3 py-2 font-bold text-slate-900">
-                        {user.firstName} {user.lastName || ""}
-                      </td>
-                      <td className="px-3 py-2 text-slate-600 font-mono text-xs">
-                        {user.username ? `@${user.username}` : "—"}
-                      </td>
-                      <td className="px-3 py-2 text-slate-600 font-mono text-xs" dir="ltr">
-                        {user.id}
-                      </td>
-                      <td className="px-3 py-2 text-center">
-                        <button
-                          className="px-3 py-1.5 rounded-lg bg-purple-600 text-white text-xs font-bold hover:bg-purple-700"
-                          onClick={() => copyChatId(user.id)}
-                        >
-                          📋 کپی
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="text-center py-8 text-slate-400 text-sm">
-              هنوز کاربری ثبت نشده. دکمه «به‌روزرسانی لیست» را بزنید.
-            </div>
-          )}
-
-          <div className="bg-white/70 rounded-lg p-3 text-xs text-slate-600 space-y-1">
-            <p className="font-bold text-slate-700 mb-1">💡 نکته:</p>
-            <p>• برای دیدن کاربران، باید حداقل یک نفر به ربات شما /start فرستاده باشد</p>
-            <p>• می‌توانید chat_id را کپی کرده و در بخش مشتریان استفاده کنید</p>
-            <p>• در تب مشتریان، می‌توانید مستقیماً از لیست انتخاب کنید</p>
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-bold mb-2">کارمزد معاملات (%)</label>
-          <input className="input" value={s.commission} onChange={e => update({ commission: e.target.value })} />
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-bold mb-2">نام کاربری ورود</label>
-            <input className={fc("نام کاربری")} value={s.username} onChange={e => update({ username: e.target.value })} />
+      {/* ✅ بخش تنظیمات عمومی */}
+      <div className="card p-5 space-y-4">
+        <div className="flex items-center gap-3 pb-3 border-b border-slate-200">
+          <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-orange-500 rounded-xl flex items-center justify-center text-xl">
+            🏢
           </div>
           <div>
-            <label className="block text-sm font-bold mb-2">رمز عبور ورود</label>
-            <input className={fc("رمز عبور")} value={s.password} onChange={e => update({ password: e.target.value })} />
+            <h2 className="text-lg font-bold text-[#0b1f2e]">اطلاعات صرافی</h2>
+            <p className="text-xs text-slate-500">نام و مشخصات کسب‌وکار</p>
           </div>
         </div>
-
-        {error && (
-          <div className="bg-red-50 text-red-600 text-sm rounded-xl p-3 border border-red-200">{error}</div>
-        )}
-
-        <div className="flex items-center gap-3">
-          <button className="btn-gold" onClick={save}>ذخیره تنظیمات</button>
-          {saved && <span className="text-emerald-600 text-sm font-bold">✓ ذخیره شد</span>}
-        </div>
-
-        {/* نمایش وضعیت ذخیره فعلی برای دیباگ */}
-        <details className="text-xs text-slate-500">
-          <summary className="cursor-pointer">🔍 نمایش وضعیت فعلی (برای دیباگ)</summary>
-          <pre className="mt-2 bg-slate-50 p-3 rounded-lg overflow-auto" dir="ltr">
-{JSON.stringify({
-  siteName: s.siteName,
-  hasTelegramToken: Boolean(s.telegramToken),
-  telegramTokenLength: s.telegramToken.length,
-  telegramChat: s.telegramChat,
-  telegramUsersCount: telegramUsers.length,
-}, null, 2)}
-          </pre>
-        </details>
+        <Field
+          label="🏷️ نام صرافی"
+          value={settings.siteName || ""}
+          onChange={v => set({ siteName: v })}
+          placeholder="صرافی برادران نورزاد"
+        />
+        <Field
+          label="📍 آدرس"
+          value={settings.address || ""}
+          onChange={v => set({ address: v })}
+          placeholder="هرات، افغانستان"
+        />
+        <Field
+          label="📱 شماره تماس"
+          value={settings.phone || ""}
+          onChange={v => set({ phone: v })}
+          placeholder="+93 700 000 000"
+        />
       </div>
+
+      {/* 🤖 بخش تنظیمات ربات تلگرام */}
+      <div className="card p-5 space-y-5 border-2 border-sky-200">
+        <div className="flex items-center gap-3 pb-3 border-b border-slate-200">
+          <div className="w-12 h-12 bg-gradient-to-br from-sky-400 to-blue-600 rounded-xl flex items-center justify-center text-2xl">
+            🤖
+          </div>
+          <div>
+            <h2 className="text-lg font-extrabold text-[#0b1f2e]">تنظیمات ربات تلگرام</h2>
+            <p className="text-xs text-slate-500">مدیریت ربات و کاربران متصل</p>
+          </div>
+        </div>
+
+        {/* 🔐 توکن ربات */}
+        <div>
+          <label className="block text-sm font-bold mb-2">
+            🔐 توکن ربات تلگرام
+          </label>
+          <input
+            className="input font-mono text-sm"
+            dir="ltr"
+            value={settings.telegramToken || ""}
+            onChange={e => set({ telegramToken: e.target.value })}
+            placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+          />
+          <p className="text-[11px] text-slate-500 mt-1">
+            💡 از @BotFather در تلگرام دریافت کنید
+          </p>
+        </div>
+
+        {/* 📊 لیست کاربران ربات */}
+        <div className="bg-slate-50 rounded-xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-sm flex items-center gap-2">
+              📊 لیست کاربران ربات
+              <span className="text-xs bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full font-mono">
+                {telegramUsers.length} کاربر
+              </span>
+            </h3>
+            <button
+              onClick={refreshUsers}
+              disabled={loadingUsers}
+              className="px-3 py-1.5 rounded-lg bg-sky-500 text-white text-xs font-bold hover:bg-sky-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
+            >
+              {loadingUsers ? "⏳" : "🔄"} به‌روزرسانی
+            </button>
+          </div>
+
+          {showUsers && telegramUsers.length > 0 && (
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {telegramUsers.map(user => (
+                <div
+                  key={user.id}
+                  className="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-200 hover:border-sky-300 transition-colors"
+                >
+                  <div className="flex-1">
+                    <div className="font-bold text-sm text-[#0b1f2e]">
+                      {user.firstName} {user.lastName || ""}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-0.5">
+                      {user.username ? `@${user.username} • ` : ""}
+                      chat_id: <span className="font-mono font-bold">{user.id}</span>
+                    </div>
+                    {user.lastSeen && (
+                      <div className="text-[10px] text-slate-400 mt-0.5">
+                        آخرین فعالیت: {user.lastSeen}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => copyChatId(user.id)}
+                    className="text-xs px-3 py-1.5 bg-slate-100 rounded-lg hover:bg-slate-200 font-bold whitespace-nowrap"
+                  >
+                    📋 کپی
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {telegramUsers.length === 0 && (
+            <p className="text-xs text-slate-400 text-center py-4">
+              هنوز کاربری به ربات شما پیام نداده است. روی «🔄 به‌روزرسانی» کلیک کنید.
+            </p>
+          )}
+        </div>
+
+        {/* 🔔 تنظیمات صدا */}
+        <div className="bg-slate-50 rounded-xl p-4">
+          <h3 className="font-bold text-sm mb-3 flex items-center gap-2">
+            🔔 تنظیمات اعلان
+          </h3>
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={settings.telegramSilent !== true}
+              onChange={e => set({ telegramSilent: !e.target.checked })}
+              className="w-5 h-5 rounded border-slate-300 text-sky-500 focus:ring-sky-400"
+            />
+            <div>
+              <p className="font-bold text-sm text-[#0b1f2e]">
+                🔊 ارسال پیام با صدا
+              </p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                وقتی فعال باشد، مشتری‌ها صدای نوتیفیکیشن را می‌شنوند
+              </p>
+            </div>
+          </label>
+        </div>
+
+        {/* 📝 chat_id اصلی */}
+        <div>
+          <label className="block text-sm font-bold mb-2">
+            💬 chat_id اصلی (برای تست)
+          </label>
+          <div className="flex gap-2">
+            <input
+              className="input flex-1 font-mono text-sm"
+              dir="ltr"
+              value={settings.telegramChatId || ""}
+              onChange={e => set({ telegramChatId: e.target.value })}
+              placeholder="123456789"
+            />
+            <button
+              onClick={fetchChatId}
+              disabled={loading}
+              className="px-4 py-2 rounded-lg bg-sky-500 text-white text-xs font-bold hover:bg-sky-600 disabled:opacity-50 whitespace-nowrap"
+            >
+              {loading ? "⏳" : "📥"} دریافت خودکار
+            </button>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-1">
+            💡 ابتدا به ربات /start بفرستید، سپس این دکمه را بزنید
+          </p>
+        </div>
+
+        {/* 🧪 دکمه تست */}
+        <button
+          onClick={testTelegram}
+          disabled={loading}
+          className="w-full rounded-xl bg-sky-500 text-white py-2.5 text-sm font-bold hover:bg-sky-600 disabled:opacity-50 flex items-center justify-center gap-2 transition-colors"
+        >
+          {loading ? "⏳ در حال ارسال..." : "🧪 تست ارسال پیام"}
+        </button>
+
+        {testResult && (
+          <div className={`text-sm rounded-lg p-3 text-center font-bold ${
+            testResult.startsWith("✅")
+              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+              : "bg-red-50 text-red-700 border border-red-200"
+          }`}>
+            {testResult}
+          </div>
+        )}
+      </div>
+
+      {/* 🔐 بخش تغییر رمز عبور */}
+      <div className="card p-5 space-y-4">
+        <div className="flex items-center gap-3 pb-3 border-b border-slate-200">
+          <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-pink-500 rounded-xl flex items-center justify-center text-xl">
+            🔐
+          </div>
+          <div>
+            <h2 className="text-lg font-bold text-[#0b1f2e]">امنیت ورود</h2>
+            <p className="text-xs text-slate-500">نام کاربری و رمز عبور</p>
+          </div>
+        </div>
+        <Field
+          label="👤 نام کاربری"
+          value={settings.username || "admin"}
+          onChange={v => set({ username: v })}
+        />
+        <Field
+          label="🔑 رمز عبور"
+          value={settings.password || "admin123"}
+          onChange={v => set({ password: v })}
+        />
+      </div>
+
+      {/* 💾 دکمه ذخیره نهایی */}
+      <div className="card p-4">
+        <button
+          onClick={saveSettings}
+          className="btn-gold w-full flex items-center justify-center gap-2 py-3"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"
+            />
+          </svg>
+          <span className="font-bold">💾 ذخیره همه تنظیمات</span>
+        </button>
+      </div>
+
+      {/* پیام‌های خطا و موفقیت */}
+      <ErrorBox error={error} />
+      {success && (
+        <div className="text-sm rounded-xl p-3 bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold">
+          {success}
+        </div>
+      )}
     </div>
   );
 }
