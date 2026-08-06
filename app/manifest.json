@@ -1,0 +1,66 @@
+{
+  "name": "صرافی برادران نورزاد - هرات",
+  "short_name": "نورزاد",
+  "description": "پنل مدیریت صرافی و حواله‌جات برادران نورزاد هرات افغانستان",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f4ee",
+  "theme_color": "#0b1f2e",
+  "orientation": "any",
+  "lang": "fa",
+  "dir": "rtl",
+  "categories": ["finance", "business"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "ثبت حواله",
+      "short_name": "حواله",
+      "description": "ثبت حواله جدید",
+      "url": "/dashboard?tab=hawala",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "مشتریان",
+      "short_name": "مشتریان",
+      "description": "لیست مشتریان",
+      "url": "/dashboard?tab=users",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "داشبورد",
+      "short_name": "داشبورد",
+      "description": "داشبورد اصلی",
+      "url": "/dashboard",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshot1.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "داشبورد صرافی"
+    },
+    {
+      "src": "/screenshot2.png",
+      "sizes": "720x1280",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "ثبت حواله"
+    }
+  ]
+}
