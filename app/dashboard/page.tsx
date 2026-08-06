@@ -1,14 +1,14 @@
 "use client";
 
 // =================================================================
-// 🎯 IMPORTS
+// 📦 IMPORTS
 // =================================================================
 import { useState, useEffect } from "react";
 import { useStored, Field, SelectField, ErrorBox, Modal, ShareBar } from "./lib/ui";
 import {
   loadRates, loadSiteName, loadJSON, fa, todayFa, nowTime, nextReceiptNo,
-  CURRENCY_META, applyTransfer, applyExchange, buildReceipt, toAFNk, fromAFNk, statusChipClass,
-  checkRequired, requiredMessage, CURRENCIES, CITIES, toAFN, fromAFN,
+  CURRENCY_META, applyTransfer, applyExchange, buildReceipt, toAFNk, fromAFNk,
+  statusChipClass, checkRequired, requiredMessage, CURRENCIES, CITIES, toAFN, fromAFN,
 } from "./lib/helpers";
 import { sendTelegram, getLastChatId, getTelegramUsers, getBotInfo } from "./lib/telegram";
 import type { AccountUser, CurKey, Tx } from "./lib/helpers";
@@ -21,31 +21,99 @@ interface Hawala {
   fromCity: string; toCity: string; payCur: string; getCur: string;
   amount: string; result: string; fee: string; date: string; status: string;
 }
-
-interface Ticket {
-  id: number; user: string; subject: string; date: string;
-  status: string; reply: string;
-}
-
-interface TelegramUser {
-  id: number; firstName: string; lastName?: string;
-  username?: string; lastSeen: string; lastMessage?: string;
-}
-
+interface Ticket { id: number; user: string; subject: string; date: string; status: string; reply: string; }
+interface TelegramUser { id: number; firstName: string; lastName?: string; username?: string; lastSeen: string; }
 const curOptions: CurKey[] = ["AFN", "USD", "IRR"];
+const emptyUserForm = { name: "", phone: "", telegram: "", AFN: "", USD: "", IRR: "" };
+const emptyHawalaForm = { sender: "", receiver: "", phone: "", fromCity: "هرات", toCity: "مشهد", payCur: "افغانی", getCur: "تومان", amount: "", fee: "0" };
+
+// =================================================================
+// 🧩 کامپوننت‌های مشترک (برای کاهش کد تکراری)
+// =================================================================
+
+// جدول با ستون شماره (استفاده در حواله، تبادل، مشتریان)
+function DataTable({ headers, children, emptyText, colSpan }: {
+  headers: string[]; children: React.ReactNode; emptyText: string; colSpan: number;
+}) {
+  return (
+    <div className="card overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="bg-[#0b1f2e] text-[#e3b45c]">
+          <tr>
+            <th className="text-center px-4 py-3 font-bold w-20">شماره</th>
+            {headers.map((h, i) => (
+              <th key={i} className="text-right px-4 py-3 font-bold">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {children}
+          {children === null && (
+            <tr><td colSpan={colSpan} className="text-center py-8 text-slate-400">{emptyText}</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// شماره ردیف با عدد انگلیسی
+function RowNumber({ index }: { index: number }) {
+  return (
+    <td className="px-4 py-3 text-center font-mono font-bold text-[#0b1f2e]">
+      {(index + 1).toLocaleString("en-US")}
+    </td>
+  );
+}
+
+// کارت آمار با گرادیان
+function GradientCard({ title, value, subtitle, color, icon }: {
+  title: string; value: string; subtitle?: string; color: string; icon?: string;
+}) {
+  return (
+    <div className={`rounded-2xl bg-gradient-to-br ${color} p-5 text-white shadow-lg`}>
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-bold opacity-90">{icon} {title}</span>
+      </div>
+      <p className="text-2xl font-extrabold mt-3">{value}</p>
+      {subtitle && <p className="text-[11px] opacity-80 mt-1">{subtitle}</p>}
+    </div>
+  );
+}
+
+// بخش Accordion برای تنظیمات
+function AccordionSection({ icon, title, subtitle, isOpen, onToggle, children, accent }: {
+  icon: string; title: string; subtitle?: string; isOpen: boolean;
+  onToggle: () => void; children: React.ReactNode; accent?: string;
+}) {
+  return (
+    <div className={`card overflow-hidden ${accent || ""}`}>
+      <button onClick={onToggle} className="w-full p-5 flex items-center justify-between hover:bg-slate-50 transition-colors">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-gradient-to-br from-slate-400 to-slate-600 rounded-xl flex items-center justify-center text-xl">{icon}</div>
+          <div className="text-right">
+            <h2 className="text-lg font-bold text-[#0b1f2e]">{title}</h2>
+            {subtitle && <p className="text-xs text-slate-500">{subtitle}</p>}
+          </div>
+        </div>
+        <div className={`text-slate-400 transition-transform ${isOpen ? "rotate-180" : ""}`}>▼</div>
+      </button>
+      {isOpen && <div className="p-5 pt-0 space-y-4 border-t border-slate-100">{children}</div>}
+    </div>
+  );
+}
 
 // =================================================================
 // 📊 TAB 1: DASHBOARD
 // =================================================================
 function DashboardTab() {
-  const [d, setD] = useState({
+  const [d, setD] = useState<any>({
     hawalaCount: 0, hawalaVolume: 0, tradeCount: 0, tradeVolume: 0,
     totalFee: 0, tradeProfit: 0, pending: 0, today: 0,
-    cur: { "افغانی": 0, "دلار": 0, "تومان": 0, "یورو": 0 } as Record<string, number>,
+    cur: { "افغانی": 0, "دلار": 0, "تومان": 0, "یورو": 0 },
     accounts: { AFN: 0, USD: 0, IRR: 0 },
     rates: { usd: "70.5", eur: "76", toman: "0.64" },
-    commission: "0.5",
-    latest: [] as any[],
+    commission: "0.5", latest: [],
   });
 
   useEffect(() => {
@@ -58,9 +126,9 @@ function DashboardTab() {
       if (r) rates = { ...rates, ...JSON.parse(r) };
       let commission = "0.5";
       const s = localStorage.getItem("db_settings");
-      if (s) { const p = JSON.parse(s); if (p && p.commission) commission = p.commission; }
+      if (s) { const p = JSON.parse(s); if (p?.commission) commission = p.commission; }
 
-      const toAFN = (amount: number, cur: string) => {
+      const toAFNLocal = (amount: number, cur: string) => {
         if (cur === "تومان") return (amount / 1000) * Number(rates.toman);
         if (cur === "دلار" || cur === "دالر") return amount * Number(rates.usd);
         if (cur === "یورو") return amount * Number(rates.eur);
@@ -78,7 +146,7 @@ function DashboardTab() {
       const todayStr = new Date().toLocaleDateString("fa-IR");
 
       h.forEach((x: any) => {
-        hawalaVolume += toAFN(Number(x.amount || 0), x.payCur);
+        hawalaVolume += toAFNLocal(Number(x.amount || 0), x.payCur);
         totalFee += Number(x.fee || 0);
         if (curSum[x.payCur] !== undefined) curSum[x.payCur] += Number(x.amount || 0);
         if (curSum[x.getCur] !== undefined) curSum[x.getCur] += Number(x.result || 0);
@@ -94,12 +162,8 @@ function DashboardTab() {
         if (curSum[x.currency] !== undefined) curSum[x.currency] += Number(x.amount || 0);
       });
 
-      setD({
-        hawalaCount: h.length, hawalaVolume, tradeCount: t.length, tradeVolume,
-        totalFee, tradeProfit, pending, today,
-        cur: curSum, accounts: acc, rates, commission, latest: h.slice(0, 4),
-      });
-    } catch {}
+      setD({ hawalaCount: h.length, hawalaVolume, tradeCount: t.length, tradeVolume, totalFee, tradeProfit, pending, today, cur: curSum, accounts: acc, rates, commission, latest: h.slice(0, 4) });
+    } catch { }
   }, []);
 
   const faNum = (n: number) => n.toLocaleString("fa-IR", { maximumFractionDigits: 0 });
@@ -111,21 +175,9 @@ function DashboardTab() {
     { t: "مفاد از تبادل ارز", v: faNum(d.tradeProfit) + " افغانی", sub: "کارمزد " + d.commission + "٪" },
   ];
 
-  const accountCards = [
-    { name: "افغانی", flag: "🇦🇫", code: "AFN", value: d.accounts.AFN, color: "from-emerald-500 to-teal-600" },
-    { name: "دالر", flag: "🇺🇸", code: "USD", value: d.accounts.USD, color: "from-blue-500 to-indigo-600" },
-    { name: "تومان", flag: "🇮🇷", code: "IRR", value: d.accounts.IRR, color: "from-amber-500 to-orange-600" },
-  ];
-
-  const turnover = [
-    { name: "افغانی", symbol: "؋", color: "from-emerald-500 to-teal-600" },
-    { name: "دلار", symbol: "$", color: "from-blue-500 to-indigo-600" },
-    { name: "تومان", symbol: "﷼", color: "from-amber-500 to-orange-600" },
-    { name: "یورو", symbol: "€", color: "from-purple-500 to-fuchsia-600" },
-  ];
-
   return (
     <div className="space-y-8">
+      {/* بنر */}
       <div className="rounded-2xl bg-gradient-to-l from-[#0b1f2e] to-[#16374d] text-white p-6">
         <p className="text-[#e3b45c] text-sm font-bold">صرافی و حواله‌جات برادران نورزاد</p>
         <h2 className="text-xl font-extrabold mt-1">هرات، افغانستان</h2>
@@ -136,22 +188,17 @@ function DashboardTab() {
         </div>
       </div>
 
+      {/* مانده کل */}
       <div>
         <h3 className="font-extrabold mb-4">مانده کل حساب‌های مشتریان</h3>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-          {accountCards.map(c => (
-            <div key={c.code} className={`rounded-2xl bg-gradient-to-br ${c.color} p-5 text-white shadow-lg`}>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-bold opacity-90">{c.flag} {c.name}</span>
-                <span className="text-xs font-bold opacity-70">{c.code}</span>
-              </div>
-              <p className="text-2xl font-extrabold mt-3">{faNum(c.value)}</p>
-              <p className="text-[11px] opacity-80 mt-1">مجموع مانده همه مشتریان</p>
-            </div>
-          ))}
+          <GradientCard title="افغانی" icon="🇦🇫" value={faNum(d.accounts.AFN)} subtitle="مجموع مانده همه مشتریان" color="from-emerald-500 to-teal-600" />
+          <GradientCard title="دالر" icon="🇺🇸" value={faNum(d.accounts.USD)} subtitle="مجموع مانده همه مشتریان" color="from-blue-500 to-indigo-600" />
+          <GradientCard title="تومان" icon="🇮🇷" value={faNum(d.accounts.IRR)} subtitle="مجموع مانده همه مشتریان" color="from-amber-500 to-orange-600" />
         </div>
       </div>
 
+      {/* خلاصه */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         {summary.map(s => (
           <div key={s.t} className="card p-5">
@@ -162,22 +209,18 @@ function DashboardTab() {
         ))}
       </div>
 
+      {/* گردش ارز */}
       <div>
-        <h3 className="font-extrabold mb-4">مجموع گردش به تفکیک ارز (حواله + تبادل)</h3>
+        <h3 className="font-extrabold mb-4">مجموع گردش به تفکیک ارز</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          {turnover.map(c => (
-            <div key={c.name} className={`rounded-2xl bg-gradient-to-br ${c.color} p-5 text-white shadow-lg`}>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-bold opacity-90">{c.name}</span>
-                <span className="text-2xl font-extrabold opacity-80">{c.symbol}</span>
-              </div>
-              <p className="text-2xl font-extrabold mt-3">{faNum(d.cur[c.name] || 0)}</p>
-              <p className="text-[11px] opacity-80 mt-1">مجموع حواله + تبادل</p>
-            </div>
-          ))}
+          <GradientCard title="افغانی" value={faNum(d.cur["افغانی"] || 0)} subtitle="مجموع حواله + تبادل" color="from-emerald-500 to-teal-600" />
+          <GradientCard title="دلار" value={faNum(d.cur["دلار"] || 0)} subtitle="مجموع حواله + تبادل" color="from-blue-500 to-indigo-600" />
+          <GradientCard title="تومان" value={faNum(d.cur["تومان"] || 0)} subtitle="مجموع حواله + تبادل" color="from-amber-500 to-orange-600" />
+          <GradientCard title="یورو" value={faNum(d.cur["یورو"] || 0)} subtitle="مجموع حواله + تبادل" color="from-purple-500 to-fuchsia-600" />
         </div>
       </div>
 
+      {/* وضعیت امروز + آخرین حواله‌ها */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="card p-6">
           <h3 className="font-extrabold mb-6">وضعیت امروز</h3>
@@ -203,7 +246,7 @@ function DashboardTab() {
             <p className="text-sm text-slate-400 text-center py-8">هنوز حواله‌ای ثبت نشده است</p>
           ) : (
             <div className="space-y-3">
-              {d.latest.map(h => (
+              {d.latest.map((h: any) => (
                 <div key={h.id} className="flex items-center justify-between p-3 rounded-xl border border-slate-100">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-[#0b1f2e] text-[#e3b45c] flex items-center justify-center font-bold text-sm">
@@ -234,8 +277,7 @@ function DashboardTab() {
 function HawalaTab() {
   const [list, setList] = useStored<Hawala[]>("db_hawala", []);
   const [rates] = useState(loadRates());
-  const emptyForm = { sender: "", receiver: "", phone: "", fromCity: "هرات", toCity: "مشهد", payCur: "افغانی", getCur: "تومان", amount: "", fee: "0" };
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState(emptyHawalaForm);
   const [missing, setMissing] = useState<string[]>([]);
   const [error, setError] = useState("");
 
@@ -250,7 +292,7 @@ function HawalaTab() {
     ]);
     if (m.length) { setMissing(m); setError(requiredMessage(m)); return; }
     setList([{ id: Date.now(), ...form, result: result.toFixed(0), date: todayFa(), status: "در انتظار" }, ...list]);
-    setForm({ ...emptyForm });
+    setForm({ ...emptyHawalaForm });
   };
 
   const wa = (h: Hawala) => {
@@ -286,46 +328,28 @@ function HawalaTab() {
       </div>
 
       <h1 className="text-xl font-extrabold pt-4">لیست حواله‌ها</h1>
-      <div className="card overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-[#0b1f2e] text-[#e3b45c]">
-            <tr>
-              <th className="text-center px-4 py-3 font-bold w-20">شماره</th>
-              <th className="text-right px-4 py-3 font-bold">فرستنده</th>
-              <th className="text-right px-4 py-3 font-bold">گیرنده</th>
-              <th className="text-right px-4 py-3 font-bold">مسیر</th>
-              <th className="text-right px-4 py-3 font-bold">دریافتی</th>
-              <th className="text-right px-4 py-3 font-bold">وضعیت</th>
-              <th className="text-right px-4 py-3 font-bold">عملیات</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {list.length === 0 && <tr><td colSpan={7} className="text-center py-8 text-slate-400">هنوز حواله‌ای ثبت نشده</td></tr>}
-            {list.map((h, index) => (
-              <tr key={h.id} className="hover:bg-amber-50/40">
-                <td className="px-4 py-3 text-center font-mono font-bold text-[#0b1f2e]">
-                  {(index + 1).toLocaleString("en-US")}
-                </td>
-                <td className="px-4 py-3 font-bold">{h.sender}</td>
-                <td className="px-4 py-3">{h.receiver}</td>
-                <td className="px-4 py-3 text-slate-500 text-xs">{h.fromCity} ← {h.toCity}</td>
-                <td className="px-4 py-3 font-bold text-[#c98f2d]">{fa(Number(h.result))} {h.getCur}</td>
-                <td className="px-4 py-3">
-                  <select className={`text-xs px-2 py-1.5 rounded-full border ${statusChipClass(h.status)}`} value={h.status} onChange={e => setList(list.map(x => x.id === h.id ? { ...x, status: e.target.value } : x))}>
-                    <option>در انتظار</option><option>ارسال شده</option><option>تحویل شده</option>
-                  </select>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex gap-2">
-                    <a href={wa(h)} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold">واتساپ</a>
-                    <button className="px-3 py-1.5 rounded-lg bg-red-50 text-red-600 text-xs font-bold" onClick={() => setList(list.filter(x => x.id !== h.id))}>حذف</button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable headers={["فرستنده", "گیرنده", "مسیر", "دریافتی", "وضعیت", "عملیات"]} emptyText="هنوز حواله‌ای ثبت نشده" colSpan={7}>
+        {list.length === 0 ? null : list.map((h, index) => (
+          <tr key={h.id} className="hover:bg-amber-50/40">
+            <RowNumber index={index} />
+            <td className="px-4 py-3 font-bold">{h.sender}</td>
+            <td className="px-4 py-3">{h.receiver}</td>
+            <td className="px-4 py-3 text-slate-500 text-xs">{h.fromCity} ← {h.toCity}</td>
+            <td className="px-4 py-3 font-bold text-[#c98f2d]">{fa(Number(h.result))} {h.getCur}</td>
+            <td className="px-4 py-3">
+              <select className={`text-xs px-2 py-1.5 rounded-full border ${statusChipClass(h.status)}`} value={h.status} onChange={e => setList(list.map(x => x.id === h.id ? { ...x, status: e.target.value } : x))}>
+                <option>در انتظار</option><option>ارسال شده</option><option>تحویل شده</option>
+              </select>
+            </td>
+            <td className="px-4 py-3">
+              <div className="flex gap-2">
+                <a href={wa(h)} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold">واتساپ</a>
+                <button className="px-3 py-1.5 rounded-lg bg-red-50 text-red-600 text-xs font-bold" onClick={() => setList(list.filter(x => x.id !== h.id))}>حذف</button>
+              </div>
+            </td>
+          </tr>
+        ))}
+      </DataTable>
     </div>
   );
 }
@@ -339,7 +363,6 @@ function TradesTab() {
   ] as any);
   const [trades, setTrades] = useStored<Tx[]>("db_trades", []);
   const [rates] = useState(loadRates());
-
   const [customerId, setCustomerId] = useState("");
   const [mode, setMode] = useState("انتقال");
   const [cur, setCur] = useState<CurKey>("AFN");
@@ -357,236 +380,144 @@ function TradesTab() {
   const user = users.find(u => u.id === Number(customerId)) as any;
   const amt = Number(amount || 0);
   const exchTo = fromAFNk(toAFNk(amt, fromCur, rates), toCur, rates);
-
   const clear = () => { setError(""); setTgStatus(""); };
 
-  const buildInternalReceipt = (data: any) => {
-    const conversion = data.fromCur !== data.toCur ? `\n(تبدیل با نرخ روز)` : "";
-    return `══════════════════════════
-${data.siteName}
-رسید انتقال داخلی
-══════════════════════════
-شماره رسید: #${data.receiptNo}
-تاریخ: ${data.date}
-ساعت: ${data.time}
-
-فرستنده: ${data.sender.name}
-گیرنده: ${data.receiver.name}
-
-──────────────────────
-کسر از حساب فرستنده:
-${fa(data.senderAmount)} ${CURRENCY_META[data.fromCur].label}
-
-افزودن به حساب گیرنده:
-${fa(data.receiverAmount)} ${CURRENCY_META[data.toCur].label}${conversion}
-──────────────────────
-
-مانده جدید فرستنده:
-افغانی: ${fa(data.senderBalancesAfter?.AFN || 0)}
-دالر: ${fa(data.senderBalancesAfter?.USD || 0)}
-تومان: ${fa(data.senderBalancesAfter?.IRR || 0)}
-
-مانده جدید گیرنده:
-افغانی: ${fa(data.receiverBalancesAfter?.AFN || 0)}
-دالر: ${fa(data.receiverBalancesAfter?.USD || 0)}
-تومان: ${fa(data.receiverBalancesAfter?.IRR || 0)}
-══════════════════════════
-صرافی برادران نورزاد - هرات`;
+  // تابع مشترک ارسال تلگرام
+  const sendTg = async (chatId: string, text: string, silent: boolean) => {
+    try {
+      const settings = loadJSON<any>("db_settings", {});
+      const token = (settings.telegramToken || "").trim();
+      if (!token || !chatId) return false;
+      return await sendTelegram(token, chatId, text, { silent });
+    } catch { return false; }
   };
 
   const submit = async () => {
     try {
-      if (mode === "حساب به حساب") {
-        const m: string[] = [];
-        if (!customerId) m.push("فرستنده");
-        if (!internalReceiverId) m.push("گیرنده");
-        if (!amount.trim() || amt <= 0) m.push("مبلغ");
-        if (m.length) { setError("لطفاً این فیلدها را پر کنید: " + m.join("، ")); return; }
-        if (!user) { setError("فرستنده پیدا نشد"); return; }
+      const settings = loadJSON<any>("db_settings", {});
+      const silent = settings.telegramSilent === true;
 
+      // ========== حالت حساب به حساب ==========
+      if (mode === "حساب به حساب") {
+        if (!customerId || !internalReceiverId || !amount.trim() || amt <= 0) {
+          setError("لطفاً فرستنده، گیرنده و مبلغ را وارد کنید"); return;
+        }
+        if (!user) { setError("فرستنده پیدا نشد"); return; }
         const receiverUser = users.find(u => u.id === Number(internalReceiverId)) as any;
         if (!receiverUser) { setError("گیرنده پیدا نشد"); return; }
         if (user.id === receiverUser.id) { setError("فرستنده و گیرنده نمی‌توانند یک نفر باشند"); return; }
         if ((user.balances[fromCur] || 0) < amt) {
-          setError(`موجودی فرستنده کافی نیست. مانده ${CURRENCY_META[fromCur].label}: ${fa(user.balances[fromCur] || 0)}`);
-          return;
+          setError(`موجودی کافی نیست. مانده ${CURRENCY_META[fromCur].label}: ${fa(user.balances[fromCur] || 0)}`); return;
         }
 
         const senderUpdated = applyTransfer(user, fromCur, amt);
         const receiverAmount = fromCur === toCur ? amt : fromAFNk(toAFNk(amt, fromCur, rates), toCur, rates);
-        const receiverUpdated = {
-          ...receiverUser,
-          balances: { ...receiverUser.balances, [toCur]: (receiverUser.balances[toCur] || 0) + receiverAmount },
-        };
+        const receiverUpdated = { ...receiverUser, balances: { ...receiverUser.balances, [toCur]: (receiverUser.balances[toCur] || 0) + receiverAmount } };
 
-        setUsers(users.map(u => {
-          if (u.id === user.id) return senderUpdated;
-          if (u.id === receiverUser.id) return receiverUpdated;
-          return u;
-        }));
+        setUsers(users.map(u => u.id === user.id ? senderUpdated : u.id === receiverUser.id ? receiverUpdated : u));
 
         const receiptNo = nextReceiptNo();
-        const date = todayFa();
-        const time = nowTime();
+        const date = todayFa(), time = nowTime();
         const siteName = loadSiteName() || "برادران نورزاد";
+        const conversion = fromCur !== toCur ? "\n(تبدیل با نرخ روز)" : "";
 
-        const text = buildInternalReceipt({
-          receiptNo, sender: user, receiver: receiverUser, fromCur, toCur,
-          senderAmount: amt, receiverAmount,
-          senderBalancesAfter: senderUpdated.balances || { AFN: 0, USD: 0, IRR: 0 },
-          receiverBalancesAfter: receiverUpdated.balances || { AFN: 0, USD: 0, IRR: 0 },
-          date, time, siteName,
-        });
+        const text = `══════════════════════════
+${siteName} - رسید انتقال داخلی
+══════════════════════════
+شماره: #${receiptNo} | تاریخ: ${date} ${time}
+فرستنده: ${user.name} | گیرنده: ${receiverUser.name}
+
+کسر از فرستنده: ${fa(amt)} ${CURRENCY_META[fromCur].label}
+افزودن به گیرنده: ${fa(receiverAmount)} ${CURRENCY_META[toCur].label}${conversion}
+
+مانده فرستنده: AFN ${fa(senderUpdated.balances?.AFN || 0)} | USD ${fa(senderUpdated.balances?.USD || 0)} | IRR ${fa(senderUpdated.balances?.IRR || 0)}
+مانده گیرنده: AFN ${fa(receiverUpdated.balances?.AFN || 0)} | USD ${fa(receiverUpdated.balances?.USD || 0)} | IRR ${fa(receiverUpdated.balances?.IRR || 0)}`;
 
         const senderTx: Tx = {
-          id: Date.now(), receiptNo: `#${receiptNo}-A`,
-          typeLabel: `انتقال داخلی به ${receiverUser.name}`,
-          customer: user.name, receiver: receiverUser.name,
-          currency: CURRENCY_META[fromCur].label, amount: amt,
-          afnValue: String(toAFNk(amt, fromCur, rates)),
-          status: "موفق", date, time,
-          balancesAfter: senderUpdated.balances || { AFN: 0, USD: 0, IRR: 0 },
-          phone: user.phone || "",
+          id: Date.now(), receiptNo: `#${receiptNo}-A`, typeLabel: `انتقال داخلی به ${receiverUser.name}`,
+          customer: user.name, receiver: receiverUser.name, currency: CURRENCY_META[fromCur].label,
+          amount: amt, afnValue: String(toAFNk(amt, fromCur, rates)), status: "موفق", date, time,
+          balancesAfter: senderUpdated.balances, phone: user.phone || "",
         };
-
         const receiverTx: Tx = {
-          id: Date.now() + 1, receiptNo: `#${receiptNo}-B`,
-          typeLabel: `دریافت داخلی از ${user.name}`,
-          customer: receiverUser.name, receiver: user.name,
-          currency: CURRENCY_META[toCur].label, amount: receiverAmount,
-          afnValue: String(toAFNk(receiverAmount, toCur, rates)),
-          status: "موفق", date, time,
-          balancesAfter: receiverUpdated.balances || { AFN: 0, USD: 0, IRR: 0 },
-          phone: receiverUser.phone || "",
+          id: Date.now() + 1, receiptNo: `#${receiptNo}-B`, typeLabel: `دریافت داخلی از ${user.name}`,
+          customer: receiverUser.name, receiver: user.name, currency: CURRENCY_META[toCur].label,
+          amount: receiverAmount, afnValue: String(toAFNk(receiverAmount, toCur, rates)), status: "موفق", date, time,
+          balancesAfter: receiverUpdated.balances, phone: receiverUser.phone || "",
         };
-
         setTrades([receiverTx, senderTx, ...trades]);
 
         const phone1 = (user.phone || "").replace(/\D/g, "");
-        if (phone1) {
-          try { window.open(`https://wa.me/${phone1}?text=${encodeURIComponent(text)}`, "_blank"); } catch (e) { }
+        if (phone1) try { window.open(`https://wa.me/${phone1}?text=${encodeURIComponent(text)}`, "_blank"); } catch { }
+
+        setSendingTg(true);
+        const results: string[] = [];
+        if ((user.telegram || "").trim()) {
+          const ok = await sendTg(user.telegram, text, silent);
+          results.push(ok ? `✅ ${user.name}` : `⚠️ ${user.name}`);
         }
-
-        try {
-          const settings = loadJSON<any>("db_settings", {});
-          const tgToken = (settings.telegramToken || "").trim();
-          const senderTgId = (user.telegram || "").trim();
-          const receiverTgId = (receiverUser.telegram || "").trim();
-
-          if (tgToken) {
-            setSendingTg(true);
-            const results: string[] = [];
-            if (senderTgId) {
-              const ok = await sendTelegram(tgToken, senderTgId, text, { silent: settings.telegramSilent === true });
-              results.push(ok ? `✅ به ${user.name}` : `⚠️ به ${user.name}`);
-            }
-            if (receiverTgId) {
-              const ok = await sendTelegram(tgToken, receiverTgId, text, { silent: settings.telegramSilent === true });
-              results.push(ok ? `✅ به ${receiverUser.name}` : `⚠️ به ${receiverUser.name}`);
-            }
-            setSendingTg(false);
-            setTgStatus(results.length === 0 ? "ℹ️ هیچ chat_id تلگرامی یافت نشد" : "📨 تلگرام: " + results.join(" | "));
-          } else {
-            setTgStatus("ℹ️ ربات تلگرام فعال نشده");
-          }
-        } catch (e) {
-          setTgStatus("⚠️ خطا در ارسال تلگرام");
+        if ((receiverUser.telegram || "").trim()) {
+          const ok = await sendTg(receiverUser.telegram, text, silent);
+          results.push(ok ? `✅ ${receiverUser.name}` : `⚠️ ${receiverUser.name}`);
         }
+        setSendingTg(false);
+        setTgStatus(results.length ? "📨 تلگرام: " + results.join(" | ") : "ℹ️ chat_id یافت نشد");
 
-        setReceipt(text);
-        setLastTx(senderTx);
-        setAmount("");
-        setInternalReceiverId("");
+        setReceipt(text); setLastTx(senderTx); setAmount(""); setInternalReceiverId("");
         return;
       }
 
-      const m: string[] = [];
-      if (!customerId) m.push("مشتری");
-      if (!receiver.trim()) m.push("گیرنده");
-      if (!amount.trim() || amt <= 0) m.push("مبلغ");
-      if (m.length) { setError("لطفاً این فیلدها را پر کنید: " + m.join("، ")); return; }
+      // ========== حالت انتقال / تبادل ==========
+      if (!customerId || !receiver.trim() || !amount.trim() || amt <= 0) {
+        setError("لطفاً مشتری، گیرنده و مبلغ را وارد کنید"); return;
+      }
       if (!user) { setError("مشتری پیدا نشد"); return; }
 
-      let updated: any;
-      let typeLabel: string;
-      let curKey: CurKey;
-
+      let updated: any, typeLabel: string, curKey: CurKey;
       if (mode === "انتقال") {
-        if ((user.balances[cur] || 0) < amt) {
-          setError(`موجودی کافی نیست. مانده ${CURRENCY_META[cur].label}: ${fa(user.balances[cur] || 0)}`);
-          return;
-        }
+        if ((user.balances[cur] || 0) < amt) { setError(`موجودی کافی نیست. مانده ${CURRENCY_META[cur].label}: ${fa(user.balances[cur] || 0)}`); return; }
         updated = applyTransfer(user, cur, amt);
         typeLabel = "انتقال " + CURRENCY_META[cur].label;
         curKey = cur;
       } else {
-        if ((user.balances[fromCur] || 0) < amt) {
-          setError(`موجودی کافی نیست. مانده ${CURRENCY_META[fromCur].label}: ${fa(user.balances[fromCur] || 0)}`);
-          return;
-        }
+        if ((user.balances[fromCur] || 0) < amt) { setError(`موجودی کافی نیست. مانده ${CURRENCY_META[fromCur].label}: ${fa(user.balances[fromCur] || 0)}`); return; }
         updated = applyExchange(user, fromCur, toCur, amt, exchTo);
         typeLabel = `تبادل ${CURRENCY_META[fromCur].label} به ${CURRENCY_META[toCur].label}`;
         curKey = fromCur;
       }
 
       setUsers(users.map(u => u.id === updated.id ? updated : u));
-
       const receiptNo = nextReceiptNo();
-      const date = todayFa();
-      const time = nowTime();
+      const date = todayFa(), time = nowTime();
       const amountLabel = mode === "انتقال"
         ? `${fa(amt)} ${CURRENCY_META[curKey].code}`
         : `${fa(amt)} ${CURRENCY_META[fromCur].code} → ${fa(exchTo)} ${CURRENCY_META[toCur].code}`;
-
       const siteName = loadSiteName() || "برادران نورزاد";
-      const text = buildReceipt({
-        receiptNo, customer: user.name, typeLabel, amountLabel, receiver,
-        balances: updated.balances || { AFN: 0, USD: 0, IRR: 0 },
-        date, time, siteName,
-      });
+      const text = buildReceipt({ receiptNo, customer: user.name, typeLabel, amountLabel, receiver, balances: updated.balances, date, time, siteName });
 
       const tx: Tx = {
         id: Date.now(), receiptNo, typeLabel, customer: user.name, receiver,
         currency: CURRENCY_META[curKey].label, amount: amt,
-        afnValue: String(toAFNk(amt, curKey, rates)),
-        status: "موفق", date, time,
-        balancesAfter: updated.balances || { AFN: 0, USD: 0, IRR: 0 },
-        phone: user.phone || "",
+        afnValue: String(toAFNk(amt, curKey, rates)), status: "موفق", date, time,
+        balancesAfter: updated.balances, phone: user.phone || "",
       };
       setTrades([tx, ...trades]);
 
       const phone = (user.phone || "").replace(/\D/g, "");
-      if (phone) {
-        try { window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, "_blank"); } catch (e) { }
+      if (phone) try { window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, "_blank"); } catch { }
+
+      setSendingTg(true);
+      const tgId = (user.telegram || "").trim();
+      if (tgId) {
+        const ok = await sendTg(tgId, text, silent);
+        setTgStatus(ok ? "✅ رسید به تلگرام ارسال شد" : "⚠️ ارسال ناموفق بود");
+      } else {
+        setTgStatus("ℹ️ مشتری chat_id تلگرام ندارد");
       }
+      setSendingTg(false);
 
-      try {
-        const settings = loadJSON<any>("db_settings", {});
-        const tgId = (user.telegram || "").trim();
-        const tgToken = (settings.telegramToken || "").trim();
-
-        if (tgToken && tgId) {
-          setSendingTg(true);
-          setTgStatus("📨 در حال ارسال به تلگرام مشتری...");
-          const ok = await sendTelegram(tgToken, tgId, text, { silent: settings.telegramSilent === true });
-          setSendingTg(false);
-          setTgStatus(ok ? "✅ رسید به تلگرام ارسال شد" : "⚠️ ارسال ناموفق بود");
-        } else if (tgToken && !tgId) {
-          setTgStatus("ℹ️ مشتری chat_id تلگرام ندارد");
-        } else {
-          setTgStatus("ℹ️ ربات تلگرام فعال نشده");
-        }
-      } catch (e) {
-        setTgStatus("⚠️ خطا در ارسال تلگرام");
-      }
-
-      setReceipt(text);
-      setLastTx(tx);
-      setAmount("");
-      setReceiver("");
-    } catch (e) {
-      setError("خطای غیرمنتظره: " + String(e));
-    }
+      setReceipt(text); setLastTx(tx); setAmount(""); setReceiver("");
+    } catch (e) { setError("خطای غیرمنتظره: " + String(e)); }
   };
 
   const reopen = (t: Tx) => {
@@ -594,20 +525,16 @@ ${fa(data.receiverAmount)} ${CURRENCY_META[data.toCur].label}${conversion}
       const text = buildReceipt({
         receiptNo: t.receiptNo, customer: t.customer, typeLabel: t.typeLabel,
         amountLabel: `${fa(t.amount)} ${t.currency}`, receiver: t.receiver,
-        balances: t.balancesAfter || { AFN: 0, USD: 0, IRR: 0 },
-        date: t.date, time: t.time, siteName: loadSiteName() || "برادران نورزاد",
+        balances: t.balancesAfter, date: t.date, time: t.time,
+        siteName: loadSiteName() || "برادران نورزاد",
       });
-      setReceipt(text);
-      setLastTx(t);
-    } catch (e) {
-      setError("خطا در نمایش رسید: " + String(e));
-    }
+      setReceipt(text); setLastTx(t);
+    } catch (e) { setError("خطا در نمایش رسید: " + String(e)); }
   };
 
   const internalReceiver = users.find(u => u.id === Number(internalReceiverId)) as any;
   const internalReceiverAmount = user && internalReceiver && amt > 0
-    ? (fromCur === toCur ? amt : fromAFNk(toAFNk(amt, fromCur, rates), toCur, rates))
-    : 0;
+    ? (fromCur === toCur ? amt : fromAFNk(toAFNk(amt, fromCur, rates), toCur, rates)) : 0;
 
   return (
     <div className="space-y-6">
@@ -615,48 +542,33 @@ ${fa(data.receiverAmount)} ${CURRENCY_META[data.toCur].label}${conversion}
 
       <div className="card p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div>
-          <label className="block text-sm font-bold mb-2">
-            {mode === "حساب به حساب" ? "فرستنده" : "مشتری"}
-          </label>
+          <label className="block text-sm font-bold mb-2">{mode === "حساب به حساب" ? "فرستنده" : "مشتری"}</label>
           <select className="input" value={customerId} onChange={e => { setCustomerId(e.target.value); clear(); }}>
             <option value="">انتخاب مشتری</option>
-            {users.map(u => (
-              <option key={u.id} value={u.id}>
-                {u.name} {(u as any).telegram ? "📨" : ""}
-              </option>
-            ))}
+            {users.map(u => <option key={u.id} value={u.id}>{u.name} {(u as any).telegram ? "📨" : ""}</option>)}
           </select>
         </div>
 
-        <SelectField
-          label="نوع معامله" value={mode}
-          onChange={v => {
-            setMode(v); clear();
-            if (v === "حساب به حساب") { setInternalReceiverId(""); setFromCur("AFN"); setToCur("AFN"); }
-          }}
-          options={["انتقال", "تبادل", "حساب به حساب"]}
-        />
+        <SelectField label="نوع معامله" value={mode}
+          onChange={v => { setMode(v); clear(); if (v === "حساب به حساب") { setInternalReceiverId(""); setFromCur("AFN"); setToCur("AFN"); } }}
+          options={["انتقال", "تبادل", "حساب به حساب"]} />
 
         {mode === "حساب به حساب" ? (
           <>
-            <SelectField label="از ارز (فرستنده)" value={fromCur} onChange={v => setFromCur(v as CurKey)} options={curOptions as any} />
+            <SelectField label="از ارز" value={fromCur} onChange={v => setFromCur(v as CurKey)} options={curOptions as any} />
             <div>
               <label className="block text-sm font-bold mb-2">مشتری گیرنده</label>
               <select className="input" value={internalReceiverId} onChange={e => setInternalReceiverId(e.target.value)}>
-                <option value="">انتخاب مشتری گیرنده</option>
-                {users.filter(u => u.id !== user?.id).map(u => (
-                  <option key={u.id} value={u.id}>{u.name} - {u.phone}</option>
-                ))}
+                <option value="">انتخاب گیرنده</option>
+                {users.filter(u => u.id !== user?.id).map(u => <option key={u.id} value={u.id}>{u.name} - {u.phone}</option>)}
               </select>
             </div>
-            <SelectField label="به ارز (گیرنده)" value={toCur} onChange={v => setToCur(v as CurKey)} options={curOptions as any} />
+            <SelectField label="به ارز" value={toCur} onChange={v => setToCur(v as CurKey)} options={curOptions as any} />
             <Field label="مبلغ" value={amount} onChange={v => { setAmount(v); clear(); }} placeholder="مقدار" />
 
             {user && internalReceiver && amt > 0 && (
               <div className="sm:col-span-2 lg:col-span-4 bg-gradient-to-r from-[#0b1f2e] to-[#0f2839] rounded-xl p-4 text-white space-y-2">
-                <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                  <span className="text-[#e3b45c] font-bold">💱 پیش‌نمایش انتقال داخلی</span>
-                </div>
+                <p className="text-[#e3b45c] font-bold text-sm">💱 پیش‌نمایش انتقال داخلی</p>
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div>
                     <p className="text-slate-300">کسر از <b>{user.name}</b>:</p>
@@ -682,7 +594,6 @@ ${fa(data.receiverAmount)} ${CURRENCY_META[data.toCur].label}${conversion}
             )}
             <Field label="گیرنده" value={receiver} onChange={v => { setReceiver(v); clear(); }} placeholder="نام گیرنده" />
             <Field label="مبلغ" value={amount} onChange={v => { setAmount(v); clear(); }} placeholder="مقدار" />
-
             {user && (
               <div className="sm:col-span-2 lg:col-span-4 bg-slate-50 rounded-xl p-3 text-xs text-slate-600 space-y-1">
                 <p>مانده <b>{user.name}</b>: 🇦🇫 {fa(user.balances?.AFN || 0)} | 🇺🇸 {fa(user.balances?.USD || 0)} | 🇮🇷 {fa(user.balances?.IRR || 0)}</p>
@@ -705,39 +616,21 @@ ${fa(data.receiverAmount)} ${CURRENCY_META[data.toCur].label}${conversion}
         </div>
       </div>
 
-      <div className="card overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-[#0b1f2e] text-[#e3b45c]">
-            <tr>
-              <th className="text-center px-4 py-3 font-bold w-20">شماره</th>
-              <th className="text-right px-4 py-3 font-bold">رسید</th>
-              <th className="text-right px-4 py-3 font-bold">مشتری</th>
-              <th className="text-right px-4 py-3 font-bold">نوع</th>
-              <th className="text-right px-4 py-3 font-bold">مبلغ</th>
-              <th className="text-right px-4 py-3 font-bold">وضعیت</th>
-              <th className="text-right px-4 py-3 font-bold">عملیات</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {trades.length === 0 && <tr><td colSpan={7} className="text-center py-8 text-slate-400">هنوز معامله‌ای ثبت نشده</td></tr>}
-            {trades.map((t, index) => (
-              <tr key={t.id} className="hover:bg-amber-50/40">
-                <td className="px-4 py-3 text-center font-mono font-bold text-[#0b1f2e]">
-                  {(index + 1).toLocaleString("en-US")}
-                </td>
-                <td className="px-4 py-3 font-bold text-[#c98f2d]">{t.receiptNo}</td>
-                <td className="px-4 py-3 font-bold">{t.customer}</td>
-                <td className="px-4 py-3">{t.typeLabel}</td>
-                <td className="px-4 py-3">{fa(t.amount)} {t.currency}</td>
-                <td className="px-4 py-3"><span className={`text-xs px-3 py-1 rounded-full border ${statusChipClass(t.status)}`}>{t.status}</span></td>
-                <td className="px-4 py-3">
-                  <button className="px-3 py-1.5 rounded-lg bg-sky-50 text-sky-600 text-xs font-bold" onClick={() => reopen(t)}>مشاهده رسید</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable headers={["رسید", "مشتری", "نوع", "مبلغ", "وضعیت", "عملیات"]} emptyText="هنوز معامله‌ای ثبت نشده" colSpan={7}>
+        {trades.length === 0 ? null : trades.map((t, index) => (
+          <tr key={t.id} className="hover:bg-amber-50/40">
+            <RowNumber index={index} />
+            <td className="px-4 py-3 font-bold text-[#c98f2d]">{t.receiptNo}</td>
+            <td className="px-4 py-3 font-bold">{t.customer}</td>
+            <td className="px-4 py-3">{t.typeLabel}</td>
+            <td className="px-4 py-3">{fa(t.amount)} {t.currency}</td>
+            <td className="px-4 py-3"><span className={`text-xs px-3 py-1 rounded-full border ${statusChipClass(t.status)}`}>{t.status}</span></td>
+            <td className="px-4 py-3">
+              <button className="px-3 py-1.5 rounded-lg bg-sky-50 text-sky-600 text-xs font-bold" onClick={() => reopen(t)}>مشاهده رسید</button>
+            </td>
+          </tr>
+        ))}
+      </DataTable>
 
       {receipt && lastTx && (
         <Modal title={`رسید ${lastTx.receiptNo}`} onClose={() => setReceipt("")}>
@@ -767,16 +660,14 @@ function UsersTab() {
     { id: 1, name: "احمد", phone: "93700000000", telegram: "", balances: { AFN: 300000, USD: 1200, IRR: 85000000 }, status: "فعال" },
   ]);
   const users = raw.map((u: any) => ({
-    id: u.id, name: u.name || "", phone: u.phone || "",
-    telegram: u.telegram || "", status: u.status || "فعال",
+    id: u.id, name: u.name || "", phone: u.phone || "", telegram: u.telegram || "",
+    status: u.status || "فعال",
     balances: u.balances || { AFN: Number(u.balance || 0), USD: 0, IRR: 0 },
   }));
-
   const [search, setSearch] = useState("");
   const [modal, setModal] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
-  const empty = { name: "", phone: "", telegram: "", AFN: "", USD: "", IRR: "" };
-  const [form, setForm] = useState(empty);
+  const [form, setForm] = useState(emptyUserForm);
   const [missing, setMissing] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [shareUser, setShareUser] = useState<any | null>(null);
@@ -801,17 +692,17 @@ function UsersTab() {
     } else {
       setRaw([...raw, { id: Date.now(), name: form.name, phone: form.phone, telegram: form.telegram, balances, status: "فعال" }]);
     }
-    setModal(false); setForm(empty); setEditId(null);
+    setModal(false); setForm(emptyUserForm); setEditId(null);
   };
 
-  const selectedTelegramUser = telegramUsers.find(tu => String(tu.id) === form.telegram);
+  const selectedTgUser = telegramUsers.find(tu => String(tu.id) === form.telegram);
   const filtered = users.filter(u => u.name.includes(search) || u.phone.includes(search));
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-extrabold">مشتریان و حساب‌ها</h1>
-        <button className="btn-gold" onClick={() => { setForm(empty); setEditId(null); setMissing([]); setError(""); setModal(true); }}>+ افزودن مشتری</button>
+        <button className="btn-gold" onClick={() => { setForm(emptyUserForm); setEditId(null); setMissing([]); setError(""); setModal(true); }}>+ افزودن مشتری</button>
       </div>
 
       <div className="max-w-sm">
@@ -819,61 +710,36 @@ function UsersTab() {
         <input className="input" placeholder="نام یا شماره..." value={search} onChange={e => setSearch(e.target.value)} />
       </div>
 
-      <div className="card overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-[#0b1f2e] text-[#e3b45c]">
-            <tr>
-              <th className="text-center px-4 py-3 font-bold w-20">شماره</th>
-              <th className="text-right px-4 py-3 font-bold">نام</th>
-              <th className="text-right px-4 py-3 font-bold">تماس</th>
-              <th className="text-right px-4 py-3 font-bold">🇦🇫 افغانی</th>
-              <th className="text-right px-4 py-3 font-bold">🇺🇸 دالر</th>
-              <th className="text-right px-4 py-3 font-bold">🇮🇷 تومان</th>
-              <th className="text-right px-4 py-3 font-bold">تلگرام</th>
-              <th className="text-right px-4 py-3 font-bold">عملیات</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {filtered.length === 0 ? (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-sm">هیچ مشتری‌ای یافت نشد</td></tr>
-            ) : (
-              filtered.map((u, index) => (
-                <tr key={u.id} className="hover:bg-amber-50/40">
-                  <td className="px-4 py-3 text-center font-mono font-bold text-[#0b1f2e]">
-                    {(index + 1).toLocaleString("en-US")}
-                  </td>
-                  <td className="px-4 py-3 font-bold">{u.name}</td>
-                  <td className="px-4 py-3 text-slate-500 text-xs">{u.phone}</td>
-                  <td className="px-4 py-3">{fa(u.balances.AFN)}</td>
-                  <td className="px-4 py-3">{fa(u.balances.USD)}</td>
-                  <td className="px-4 py-3">{fa(u.balances.IRR)}</td>
-                  <td className="px-4 py-3">
-                    {u.telegram ? (
-                      <span className="text-xs px-2 py-1 rounded-full bg-sky-50 text-sky-700 border border-sky-200">✓ متصل</span>
-                    ) : (
-                      <span className="text-xs text-slate-400">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex gap-2">
-                      <button className="text-xs px-3 py-1.5 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100" onClick={() => setShareUser(u)}>اشتراک</button>
-                      <button className="text-xs px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100" onClick={() => {
-                        setEditId(u.id);
-                        setForm({
-                          name: u.name, phone: u.phone, telegram: u.telegram || "",
-                          AFN: String(u.balances.AFN), USD: String(u.balances.USD), IRR: String(u.balances.IRR)
-                        });
-                        setMissing([]); setError(""); setModal(true);
-                      }}>ویرایش</button>
-                      <button className="text-xs px-3 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100" onClick={() => setRaw(raw.filter(x => x.id !== u.id))}>حذف</button>
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      <DataTable headers={["نام", "تماس", "🇦🇫 افغانی", "🇺🇸 دالر", "🇮🇷 تومان", "تلگرام", "عملیات"]} emptyText="هیچ مشتری‌ای یافت نشد" colSpan={8}>
+        {filtered.length === 0 ? null : filtered.map((u, index) => (
+          <tr key={u.id} className="hover:bg-amber-50/40">
+            <RowNumber index={index} />
+            <td className="px-4 py-3 font-bold">{u.name}</td>
+            <td className="px-4 py-3 text-slate-500 text-xs">{u.phone}</td>
+            <td className="px-4 py-3">{fa(u.balances.AFN)}</td>
+            <td className="px-4 py-3">{fa(u.balances.USD)}</td>
+            <td className="px-4 py-3">{fa(u.balances.IRR)}</td>
+            <td className="px-4 py-3">
+              {u.telegram ? (
+                <span className="text-xs px-2 py-1 rounded-full bg-sky-50 text-sky-700 border border-sky-200">✓ متصل</span>
+              ) : (
+                <span className="text-xs text-slate-400">—</span>
+              )}
+            </td>
+            <td className="px-4 py-3">
+              <div className="flex gap-2">
+                <button className="text-xs px-3 py-1.5 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100" onClick={() => setShareUser(u)}>اشتراک</button>
+                <button className="text-xs px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100" onClick={() => {
+                  setEditId(u.id);
+                  setForm({ name: u.name, phone: u.phone, telegram: u.telegram || "", AFN: String(u.balances.AFN), USD: String(u.balances.USD), IRR: String(u.balances.IRR) });
+                  setMissing([]); setError(""); setModal(true);
+                }}>ویرایش</button>
+                <button className="text-xs px-3 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100" onClick={() => setRaw(raw.filter(x => x.id !== u.id))}>حذف</button>
+              </div>
+            </td>
+          </tr>
+        ))}
+      </DataTable>
 
       {modal && (
         <Modal title={editId ? "ویرایش حساب مشتری" : "مشتری جدید"} onClose={() => setModal(false)}>
@@ -884,26 +750,18 @@ function UsersTab() {
             <div>
               <label className="block text-sm font-bold mb-2">تلگرام (chat_id)</label>
               <div className="flex gap-2">
-                <input
-                  className="input flex-1 font-mono text-sm" dir="ltr"
-                  value={form.telegram} onChange={e => set({ telegram: e.target.value })}
-                  placeholder="chat_id را تایپ کنید یا انتخاب کنید"
-                />
-                <button type="button"
-                  className="px-4 py-2 rounded-lg bg-slate-100 text-slate-600 text-xs font-bold hover:bg-slate-200 whitespace-nowrap border border-slate-200"
-                  onClick={() => setShowTelegramModal(true)}>
-                  📋 انتخاب
-                </button>
+                <input className="input flex-1 font-mono text-sm" dir="ltr" value={form.telegram}
+                  onChange={e => set({ telegram: e.target.value })} placeholder="chat_id را تایپ یا انتخاب کنید" />
+                <button type="button" className="px-4 py-2 rounded-lg bg-slate-100 text-slate-600 text-xs font-bold hover:bg-slate-200 whitespace-nowrap border border-slate-200"
+                  onClick={() => setShowTelegramModal(true)}>📋 انتخاب</button>
               </div>
-              {selectedTelegramUser && (
+              {selectedTgUser && (
                 <div className="mt-2 p-3 bg-sky-50 border border-sky-200 rounded-lg">
                   <p className="text-xs text-sky-700 font-bold">✓ کاربر انتخاب‌شده:</p>
-                  <p className="text-sm text-sky-900 font-bold mt-1">
-                    {selectedTelegramUser.firstName} {selectedTelegramUser.lastName || ""}
-                  </p>
+                  <p className="text-sm text-sky-900 font-bold mt-1">{selectedTgUser.firstName} {selectedTgUser.lastName || ""}</p>
                   <p className="text-xs text-sky-600 mt-0.5">
-                    {selectedTelegramUser.username ? `@${selectedTelegramUser.username} • ` : ""}
-                    chat_id: <span className="font-mono font-bold">{selectedTelegramUser.id}</span>
+                    {selectedTgUser.username ? `@${selectedTgUser.username} • ` : ""}
+                    chat_id: <span className="font-mono font-bold">{selectedTgUser.id}</span>
                   </p>
                 </div>
               )}
@@ -933,17 +791,12 @@ function UsersTab() {
               </div>
             ) : (
               telegramUsers.map(tu => (
-                <button
-                  key={tu.id} type="button"
+                <button key={tu.id} type="button"
                   className={`w-full text-right p-3 rounded-xl border transition-colors ${String(tu.id) === form.telegram ? "bg-sky-100 border-sky-400" : "border-slate-200 hover:bg-sky-50"}`}
-                  onClick={() => { set({ telegram: String(tu.id) }); setShowTelegramModal(false); }}
-                >
-                  <div className="font-bold text-sm text-[#0b1f2e]">
-                    {tu.firstName} {tu.lastName || ""}
-                  </div>
+                  onClick={() => { set({ telegram: String(tu.id) }); setShowTelegramModal(false); }}>
+                  <div className="font-bold text-sm text-[#0b1f2e]">{tu.firstName} {tu.lastName || ""}</div>
                   <div className="text-xs text-slate-500 mt-0.5">
-                    {tu.username ? `@${tu.username} • ` : ""}
-                    chat_id: <span className="font-mono font-bold">{tu.id}</span>
+                    {tu.username ? `@${tu.username} • ` : ""}chat_id: <span className="font-mono font-bold">{tu.id}</span>
                   </div>
                 </button>
               ))
@@ -964,16 +817,14 @@ function UsersTab() {
           </div>
           <ShareBar
             text={`مشتری: ${shareUser.name}\nشماره: ${shareUser.phone}\nافغانی: ${fa(shareUser.balances.AFN)}\nدالر: ${fa(shareUser.balances.USD)}\nتومان: ${fa(shareUser.balances.IRR)}`}
-            phone={shareUser.phone}
-            pdfTitle="صورت حساب مشتری"
+            phone={shareUser.phone} pdfTitle="صورت حساب مشتری"
             pdfRows={[
               { label: "نام", value: shareUser.name },
               { label: "شماره", value: shareUser.phone },
               { label: "افغانی", value: fa(shareUser.balances.AFN) },
               { label: "دالر", value: fa(shareUser.balances.USD) },
               { label: "تومان", value: fa(shareUser.balances.IRR) },
-            ]}
-          />
+            ]} />
           <button className="mt-4 w-full rounded-xl border border-slate-200 py-2 text-sm font-bold" onClick={() => setShareUser(null)}>بستن</button>
         </Modal>
       )}
@@ -1000,12 +851,7 @@ function RatesTab() {
     } catch { }
   }, []);
 
-  const update = (key: string, value: string) => {
-    setRates({ ...rates, [key]: value });
-    setMissing([]); setError("");
-  };
-
-  const fc = (name: string) => `input text-center text-xl font-extrabold text-[#c98f2d] ${missing.includes(name) ? "!border-red-500" : ""}`;
+  const update = (key: string, value: string) => { setRates({ ...rates, [key]: value }); setMissing([]); setError(""); };
 
   const save = () => {
     const m: string[] = [];
@@ -1017,8 +863,7 @@ function RatesTab() {
     const now = new Date().toLocaleString("fa-IR");
     localStorage.setItem("db_rates", JSON.stringify(rates));
     localStorage.setItem("db_rates_updated", now);
-    setUpdated(now);
-    setSaved(true);
+    setUpdated(now); setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
 
@@ -1040,20 +885,15 @@ function RatesTab() {
           {saved && <span className="text-emerald-600 text-sm font-bold">ذخیره شد</span>}
         </div>
       </div>
-
       {error && <div className="bg-red-50 text-red-600 text-sm rounded-xl p-3 border border-red-200">{error}</div>}
-
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         {items.map(item => (
           <div key={item.key} className="card p-6">
             <p className="font-extrabold">{item.title}</p>
             <p className="text-xs text-slate-500 mt-1 mb-4">{item.desc}</p>
             <label className="block text-sm font-bold mb-2">نرخ به افغانی</label>
-            <input
-              className={fc(item.title)}
-              value={rates[item.key as keyof typeof rates]}
-              onChange={e => update(item.key, e.target.value)}
-            />
+            <input className={`input text-center text-xl font-extrabold text-[#c98f2d] ${missing.includes(item.title) ? "!border-red-500" : ""}`}
+              value={rates[item.key as keyof typeof rates]} onChange={e => update(item.key, e.target.value)} />
             <p className="text-xs text-slate-400 mt-3 text-center">افغانی</p>
           </div>
         ))}
@@ -1067,16 +907,9 @@ function RatesTab() {
 // =================================================================
 function SettingsTab() {
   const [settings, setSettings] = useStored<any>("db_settings", {
-    siteName: "صرافی برادران نورزاد",
-    address: "هرات، افغانستان",
-    phone: "+93 700 000 000",
-    telegramToken: "",
-    telegramChatId: "",
-    telegramSilent: false,
-    username: "admin",
-    password: "admin123",
+    siteName: "صرافی برادران نورزاد", address: "هرات، افغانستان", phone: "+93 700 000 000",
+    telegramToken: "", telegramChatId: "", telegramSilent: false, username: "admin", password: "admin123",
   });
-
   const [loading, setLoading] = useState(false);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [error, setError] = useState("");
@@ -1084,9 +917,7 @@ function SettingsTab() {
   const [testResult, setTestResult] = useState("");
   const [telegramUsers, setTelegramUsers] = useState<TelegramUser[]>([]);
   const [botInfo, setBotInfo] = useState<any>(null);
-  const [showTelegramSettings, setShowTelegramSettings] = useState(false);
-  const [showGeneralSettings, setShowGeneralSettings] = useState(true);
-  const [showSecuritySettings, setShowSecuritySettings] = useState(false);
+  const [openSection, setOpenSection] = useState<string>("general");
 
   useEffect(() => {
     try {
@@ -1096,28 +927,17 @@ function SettingsTab() {
   }, []);
 
   useEffect(() => {
-    if (settings.telegramToken) {
-      getBotInfo(settings.telegramToken).then(info => setBotInfo(info));
-    }
+    if (settings.telegramToken) getBotInfo(settings.telegramToken).then(setBotInfo);
   }, [settings.telegramToken]);
 
   const set = (patch: any) => { setSettings({ ...settings, ...patch }); setError(""); setSuccess(""); };
-
-  const saveSettings = () => {
-    try {
-      setSettings(settings);
-      setSuccess("✅ تنظیمات ذخیره شد");
-      setTimeout(() => setSuccess(""), 3000);
-    } catch { setError("❌ خطا در ذخیره"); }
-  };
+  const saveSettings = () => { setSettings(settings); setSuccess("✅ تنظیمات ذخیره شد"); setTimeout(() => setSuccess(""), 3000); };
 
   const testTelegram = async () => {
-    if (!settings.telegramToken?.trim()) { setError("⚠️ توکن را وارد کنید"); return; }
-    if (!settings.telegramChatId?.trim()) { setError("⚠️ chat_id را دریافت کنید"); return; }
+    if (!settings.telegramToken?.trim() || !settings.telegramChatId?.trim()) { setError("⚠️ توکن و chat_id را وارد کنید"); return; }
     setLoading(true);
-    setTestResult("");
     try {
-      const message = `🎉 تست ربات تلگرام\n\nصرافی: ${settings.siteName}\nتاریخ: ${new Date().toLocaleDateString("fa-IR")}`;
+      const message = `🎉 تست ربات تلگرام\nصرافی: ${settings.siteName}\nتاریخ: ${new Date().toLocaleDateString("fa-IR")}`;
       const ok = await sendTelegram(settings.telegramToken, settings.telegramChatId, message, { silent: settings.telegramSilent === true });
       setTestResult(ok ? "✅ پیام تست ارسال شد" : "❌ ارسال ناموفق");
     } catch (e) { setTestResult("❌ خطا: " + String(e)); }
@@ -1126,24 +946,24 @@ function SettingsTab() {
 
   const fetchChatId = async () => {
     if (!settings.telegramToken?.trim()) { setError("⚠️ توکن را وارد کنید"); return; }
-    setLoading(true); setError("");
+    setLoading(true);
     try {
       const chatId = await getLastChatId(settings.telegramToken);
       if (chatId) { set({ telegramChatId: String(chatId) }); setSuccess(`✅ chat_id: ${chatId}`); }
       else setError("❌ پیامی یافت نشد. /start بفرستید");
-    } catch (e) { setError("❌ خطا: " + String(e)); }
+    } catch { setError("❌ خطا"); }
     setLoading(false);
   };
 
   const refreshUsers = async () => {
     if (!settings.telegramToken?.trim()) { setError("⚠️ توکن را وارد کنید"); return; }
-    setLoadingUsers(true); setError("");
+    setLoadingUsers(true);
     try {
       const usersList = await getTelegramUsers(settings.telegramToken);
       setTelegramUsers(usersList);
       localStorage.setItem("db_telegram_users", JSON.stringify(usersList));
       setSuccess(`✅ ${usersList.length} کاربر دریافت شد`);
-    } catch (e) { setError("❌ خطا: " + String(e)); }
+    } catch { setError("❌ خطا"); }
     setLoadingUsers(false);
   };
 
@@ -1153,148 +973,94 @@ function SettingsTab() {
     setTimeout(() => setSuccess(""), 2000);
   };
 
+  const toggle = (s: string) => setOpenSection(openSection === s ? "" : s);
+
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-extrabold flex items-center gap-2">🛠️ تنظیمات سیستم</h1>
 
       {/* اطلاعات عمومی */}
-      <div className="card overflow-hidden">
-        <button onClick={() => setShowGeneralSettings(!showGeneralSettings)} className="w-full p-5 flex items-center justify-between hover:bg-slate-50 transition-colors">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-orange-500 rounded-xl flex items-center justify-center text-xl">🏢</div>
-            <div className="text-right">
-              <h2 className="text-lg font-bold text-[#0b1f2e]">اطلاعات عمومی</h2>
-              <p className="text-xs text-slate-500">نام و مشخصات صرافی</p>
-            </div>
-          </div>
-          <div className={`text-slate-400 transition-transform ${showGeneralSettings ? "rotate-180" : ""}`}>▼</div>
-        </button>
-        {showGeneralSettings && (
-          <div className="p-5 pt-0 space-y-4 border-t border-slate-100">
-            <Field label="🏷️ نام صرافی" value={settings.siteName || ""} onChange={v => set({ siteName: v })} />
-            <Field label="📍 آدرس" value={settings.address || ""} onChange={v => set({ address: v })} />
-            <Field label="📱 شماره تماس" value={settings.phone || ""} onChange={v => set({ phone: v })} />
-          </div>
-        )}
-      </div>
+      <AccordionSection icon="🏢" title="اطلاعات عمومی" subtitle="نام و مشخصات صرافی" isOpen={openSection === "general"} onToggle={() => toggle("general")}>
+        <Field label="🏷️ نام صرافی" value={settings.siteName || ""} onChange={v => set({ siteName: v })} />
+        <Field label="📍 آدرس" value={settings.address || ""} onChange={v => set({ address: v })} />
+        <Field label="📱 شماره تماس" value={settings.phone || ""} onChange={v => set({ phone: v })} />
+      </AccordionSection>
 
       {/* ربات تلگرام */}
-      <div className="card overflow-hidden border-2 border-sky-200">
-        <button onClick={() => setShowTelegramSettings(!showTelegramSettings)} className="w-full p-5 flex items-center justify-between hover:bg-sky-50/50 transition-colors">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-gradient-to-br from-sky-400 to-blue-600 rounded-xl flex items-center justify-center text-2xl">🤖</div>
-            <div className="text-right">
-              <h2 className="text-lg font-extrabold text-[#0b1f2e]">تنظیمات ربات تلگرام</h2>
-              <p className="text-xs text-slate-500">{botInfo ? `@${botInfo.username}` : "مدیریت ربات"}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            {botInfo && <span className="text-xs px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 font-bold">✓ فعال</span>}
-            <div className={`text-slate-400 transition-transform ${showTelegramSettings ? "rotate-180" : ""}`}>▼</div>
-          </div>
-        </button>
+      <AccordionSection icon="🤖" title="تنظیمات ربات تلگرام" subtitle={botInfo ? `@${botInfo.username}` : "مدیریت ربات"} isOpen={openSection === "telegram"} onToggle={() => toggle("telegram")} accent="border-2 border-sky-200">
+        <div>
+          <label className="block text-sm font-bold mb-2">🔐 توکن ربات تلگرام</label>
+          <input className="input font-mono text-sm" dir="ltr" value={settings.telegramToken || ""}
+            onChange={e => set({ telegramToken: e.target.value })} placeholder="123456:ABC-DEF..." />
+        </div>
 
-        {showTelegramSettings && (
-          <div className="p-5 pt-0 space-y-5 border-t border-slate-100">
-            <div>
-              <label className="block text-sm font-bold mb-2">🔐 توکن ربات تلگرام</label>
-              <input className="input font-mono text-sm" dir="ltr"
-                value={settings.telegramToken || ""} onChange={e => set({ telegramToken: e.target.value })}
-                placeholder="123456:ABC-DEF..."
-              />
-            </div>
-
-            <div className="bg-slate-50 rounded-xl p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="font-bold text-sm flex items-center gap-2">
-                  📊 لیست کاربران ربات
-                  <span className="text-xs bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full font-mono">
-                    {telegramUsers.length} کاربر
-                  </span>
-                </h3>
-                <button onClick={refreshUsers} disabled={loadingUsers}
-                  className="px-3 py-1.5 rounded-lg bg-sky-500 text-white text-xs font-bold hover:bg-sky-600 disabled:opacity-50 flex items-center gap-1">
-                  {loadingUsers ? "⏳" : "🔄"} به‌روزرسانی
-                </button>
-              </div>
-
-              {telegramUsers.length > 0 && (
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {telegramUsers.map(user => (
-                    <div key={user.id} className="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-200 hover:border-sky-300">
-                      <div className="flex-1">
-                        <div className="font-bold text-sm text-[#0b1f2e]">{user.firstName} {user.lastName || ""}</div>
-                        <div className="text-xs text-slate-500 mt-0.5">
-                          {user.username ? `@${user.username} • ` : ""}
-                          chat_id: <span className="font-mono font-bold">{user.id}</span>
-                        </div>
-                      </div>
-                      <button onClick={() => copyChatId(user.id)} className="text-xs px-3 py-1.5 bg-slate-100 rounded-lg hover:bg-slate-200 font-bold">
-                        📋 کپی
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="bg-slate-50 rounded-xl p-4">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input type="checkbox" checked={settings.telegramSilent !== true}
-                  onChange={e => set({ telegramSilent: !e.target.checked })} className="w-5 h-5 rounded" />
-                <div>
-                  <p className="font-bold text-sm text-[#0b1f2e]">🔊 ارسال پیام با صدا</p>
-                  <p className="text-xs text-slate-500 mt-0.5">مشتری‌ها صدای نوتیفیکیشن را می‌شنوند</p>
-                </div>
-              </label>
-            </div>
-
-            <div>
-              <label className="block text-sm font-bold mb-2">💬 chat_id اصلی (برای تست)</label>
-              <div className="flex gap-2">
-                <input className="input flex-1 font-mono text-sm" dir="ltr"
-                  value={settings.telegramChatId || ""} onChange={e => set({ telegramChatId: e.target.value })}
-                  placeholder="123456789" />
-                <button onClick={fetchChatId} disabled={loading}
-                  className="px-4 py-2 rounded-lg bg-sky-500 text-white text-xs font-bold hover:bg-sky-600 disabled:opacity-50 whitespace-nowrap">
-                  {loading ? "⏳" : "📥"} دریافت خودکار
-                </button>
-              </div>
-            </div>
-
-            <button onClick={testTelegram} disabled={loading}
-              className="w-full rounded-xl bg-sky-500 text-white py-2.5 text-sm font-bold hover:bg-sky-600 disabled:opacity-50 flex items-center justify-center gap-2">
-              {loading ? "⏳ در حال ارسال..." : "🧪 تست ارسال پیام"}
+        <div className="bg-slate-50 rounded-xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-sm flex items-center gap-2">
+              📊 لیست کاربران ربات
+              <span className="text-xs bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full font-mono">{telegramUsers.length} کاربر</span>
+            </h3>
+            <button onClick={refreshUsers} disabled={loadingUsers}
+              className="px-3 py-1.5 rounded-lg bg-sky-500 text-white text-xs font-bold hover:bg-sky-600 disabled:opacity-50 flex items-center gap-1">
+              {loadingUsers ? "⏳" : "🔄"} به‌روزرسانی
             </button>
+          </div>
+          {telegramUsers.length > 0 && (
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {telegramUsers.map(user => (
+                <div key={user.id} className="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-200 hover:border-sky-300">
+                  <div className="flex-1">
+                    <div className="font-bold text-sm text-[#0b1f2e]">{user.firstName} {user.lastName || ""}</div>
+                    <div className="text-xs text-slate-500 mt-0.5">
+                      {user.username ? `@${user.username} • ` : ""}chat_id: <span className="font-mono font-bold">{user.id}</span>
+                    </div>
+                  </div>
+                  <button onClick={() => copyChatId(user.id)} className="text-xs px-3 py-1.5 bg-slate-100 rounded-lg hover:bg-slate-200 font-bold">📋 کپی</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
-            {testResult && (
-              <div className={`text-sm rounded-lg p-3 text-center font-bold ${testResult.startsWith("✅") ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
-                {testResult}
-              </div>
-            )}
+        <div className="bg-slate-50 rounded-xl p-4">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input type="checkbox" checked={settings.telegramSilent !== true}
+              onChange={e => set({ telegramSilent: !e.target.checked })} className="w-5 h-5 rounded" />
+            <div>
+              <p className="font-bold text-sm text-[#0b1f2e]">🔊 ارسال پیام با صدا</p>
+              <p className="text-xs text-slate-500 mt-0.5">مشتری‌ها صدای نوتیفیکیشن را می‌شنوند</p>
+            </div>
+          </label>
+        </div>
+
+        <div>
+          <label className="block text-sm font-bold mb-2">💬 chat_id اصلی (برای تست)</label>
+          <div className="flex gap-2">
+            <input className="input flex-1 font-mono text-sm" dir="ltr" value={settings.telegramChatId || ""}
+              onChange={e => set({ telegramChatId: e.target.value })} placeholder="123456789" />
+            <button onClick={fetchChatId} disabled={loading}
+              className="px-4 py-2 rounded-lg bg-sky-500 text-white text-xs font-bold hover:bg-sky-600 disabled:opacity-50 whitespace-nowrap">
+              {loading ? "⏳" : "📥"} دریافت خودکار
+            </button>
+          </div>
+        </div>
+
+        <button onClick={testTelegram} disabled={loading}
+          className="w-full rounded-xl bg-sky-500 text-white py-2.5 text-sm font-bold hover:bg-sky-600 disabled:opacity-50 flex items-center justify-center gap-2">
+          {loading ? "⏳ در حال ارسال..." : "🧪 تست ارسال پیام"}
+        </button>
+        {testResult && (
+          <div className={`text-sm rounded-lg p-3 text-center font-bold ${testResult.startsWith("✅") ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
+            {testResult}
           </div>
         )}
-      </div>
+      </AccordionSection>
 
       {/* امنیت */}
-      <div className="card overflow-hidden">
-        <button onClick={() => setShowSecuritySettings(!showSecuritySettings)} className="w-full p-5 flex items-center justify-between hover:bg-slate-50 transition-colors">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-pink-500 rounded-xl flex items-center justify-center text-xl">🔐</div>
-            <div className="text-right">
-              <h2 className="text-lg font-bold text-[#0b1f2e]">امنیت ورود</h2>
-              <p className="text-xs text-slate-500">نام کاربری و رمز عبور</p>
-            </div>
-          </div>
-          <div className={`text-slate-400 transition-transform ${showSecuritySettings ? "rotate-180" : ""}`}>▼</div>
-        </button>
-        {showSecuritySettings && (
-          <div className="p-5 pt-0 space-y-4 border-t border-slate-100">
-            <Field label="👤 نام کاربری" value={settings.username || "admin"} onChange={v => set({ username: v })} />
-            <Field label="🔑 رمز عبور" value={settings.password || "admin123"} onChange={v => set({ password: v })} />
-          </div>
-        )}
-      </div>
+      <AccordionSection icon="🔐" title="امنیت ورود" subtitle="نام کاربری و رمز عبور" isOpen={openSection === "security"} onToggle={() => toggle("security")}>
+        <Field label="👤 نام کاربری" value={settings.username || "admin"} onChange={v => set({ username: v })} />
+        <Field label="🔑 رمز عبور" value={settings.password || "admin123"} onChange={v => set({ password: v })} />
+      </AccordionSection>
 
       <div className="card p-4">
         <button onClick={saveSettings} className="btn-gold w-full flex items-center justify-center gap-2 py-3">
@@ -1303,11 +1069,7 @@ function SettingsTab() {
       </div>
 
       <ErrorBox error={error} />
-      {success && (
-        <div className="text-sm rounded-xl p-3 bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold">
-          {success}
-        </div>
-      )}
+      {success && <div className="text-sm rounded-xl p-3 bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold">{success}</div>}
     </div>
   );
 }
@@ -1324,40 +1086,30 @@ function TicketsTab() {
   useEffect(() => {
     try {
       const s = localStorage.getItem("db_tickets");
-      if (s) {
-        setTickets(JSON.parse(s));
-      } else {
-        setTickets([
-          { id: 1, user: "علی محمدی", subject: "مشکل در برداشت", date: "۱۴۰۳/۰۵/۲۰", status: "باز", reply: "" },
-          { id: 2, user: "سارا احمدی", subject: "تغییر رمز عبور", date: "۱۴۰۳/۰۵/۱۸", status: "بسته", reply: "رمز شما بازنشانی شد." },
-        ]);
-      }
+      if (s) setTickets(JSON.parse(s));
+      else setTickets([
+        { id: 1, user: "علی محمدی", subject: "مشکل در برداشت", date: "۱۴۰۳/۰۵/۲۰", status: "باز", reply: "" },
+        { id: 2, user: "سارا احمدی", subject: "تغییر رمز عبور", date: "۱۴۰۳/۰۵/۱۸", status: "بسته", reply: "رمز شما بازنشانی شد." },
+      ]);
     } catch { }
   }, []);
 
   useEffect(() => {
-    try {
-      localStorage.setItem("db_tickets", JSON.stringify(tickets));
-    } catch { }
+    try { localStorage.setItem("db_tickets", JSON.stringify(tickets)); } catch { }
   }, [tickets]);
 
   const send = () => {
     if (!text.trim()) { setError("لطفاً متن پاسخ را بنویسید"); return; }
     setError("");
     setTickets(tickets.map(t => t.id === replyId ? { ...t, reply: text, status: "بسته" } : t));
-    setReplyId(null);
-    setText("");
+    setReplyId(null); setText("");
   };
 
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-extrabold">تیکت‌های پشتیبانی</h1>
       <div className="space-y-4">
-        {tickets.length === 0 && (
-          <div className="card p-8 text-center text-slate-400">
-            هیچ تیکتی ثبت نشده است
-          </div>
-        )}
+        {tickets.length === 0 && <div className="card p-8 text-center text-slate-400">هیچ تیکتی ثبت نشده است</div>}
         {tickets.map(t => (
           <div key={t.id} className="card p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1370,9 +1122,7 @@ function TicketsTab() {
                 <button className="btn-gold !py-1.5 !px-4 text-xs" onClick={() => { setReplyId(t.id); setText(t.reply); setError(""); }}>پاسخ</button>
               </div>
             </div>
-            {t.reply && (
-              <div className="mt-4 bg-amber-50/60 border border-amber-100 rounded-xl p-4 text-sm">{t.reply}</div>
-            )}
+            {t.reply && <div className="mt-4 bg-amber-50/60 border border-amber-100 rounded-xl p-4 text-sm">{t.reply}</div>}
           </div>
         ))}
       </div>
@@ -1380,12 +1130,8 @@ function TicketsTab() {
       {replyId && (
         <Modal title="پاسخ به تیکت" onClose={() => setReplyId(null)}>
           <label className="block text-sm font-bold mb-2">متن پاسخ</label>
-          <textarea
-            className={`input min-h-[120px] ${error ? "!border-red-500" : ""}`}
-            value={text}
-            onChange={e => { setText(e.target.value); setError(""); }}
-            placeholder="متن پاسخ..."
-          />
+          <textarea className={`input min-h-[120px] ${error ? "!border-red-500" : ""}`} value={text}
+            onChange={e => { setText(e.target.value); setError(""); }} placeholder="متن پاسخ..." />
           {error && <div className="bg-red-50 text-red-600 text-sm rounded-xl p-3 border border-red-200 mt-3">{error}</div>}
           <div className="flex gap-2 mt-4">
             <button className="btn-gold flex-1" onClick={send}>ارسال و بستن تیکت</button>
@@ -1398,7 +1144,7 @@ function TicketsTab() {
 }
 
 // =================================================================
-// 🎯 MAIN COMPONENT - Tab Switching
+// 🎯 MAIN COMPONENT
 // =================================================================
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -1415,25 +1161,18 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* نوار تب‌ها */}
       <div className="card p-2 flex gap-1 overflow-x-auto sticky top-0 z-10 bg-[#f6f4ee]">
         {tabs.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+          <button key={tab.id} onClick={() => setActiveTab(tab.id)}
             className={`px-4 py-2.5 rounded-xl text-sm font-bold whitespace-nowrap transition-all flex items-center gap-2 ${
-              activeTab === tab.id
-                ? "bg-[#0b1f2e] text-[#e3b45c] shadow-md"
-                : "text-slate-600 hover:bg-white"
-            }`}
-          >
+              activeTab === tab.id ? "bg-[#0b1f2e] text-[#e3b45c] shadow-md" : "text-slate-600 hover:bg-white"
+            }`}>
             <span className="text-base">{tab.icon}</span>
             <span>{tab.label}</span>
           </button>
         ))}
       </div>
 
-      {/* محتوای تب فعال */}
       <div>
         {activeTab === "dashboard" && <DashboardTab />}
         {activeTab === "hawala" && <HawalaTab />}
