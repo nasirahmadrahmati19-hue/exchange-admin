@@ -6,7 +6,7 @@ export const CITIES = ["هرات", "کابل", "اسلام‌قلعه", "مشه�
 /* ---------- حساب‌ها ---------- */
 export type CurKey = "AFN" | "USD" | "IRR";
 export interface Balances { AFN: number; USD: number; IRR: number; }
-export interface AccountUser { id: number; name: string; phone: string; balances: Balances; status: string; }
+export interface AccountUser { id: number; name: string; phone: string; telegram?: string; balances: Balances; status: string; }
 export interface Tx {
   id: number; receiptNo: string; typeLabel: string; customer: string; receiver: string;
   currency: string; amount: number; afnValue: string; status: string; date: string; time: string;
