@@ -94,60 +94,113 @@ export function applyExchange(user: AccountUser, fromCur: CurKey, toCur: CurKey,
   return { ...user, balances };
 }
 
-/* ---------- ساخت رسید رسمی ---------- */
+/* ---------- ساخت رسید رسمی جدید ---------- */
 export function buildReceipt(o: {
-  receiptNo: string; customer: string; typeLabel: string; amountLabel: string;
-  receiver: string; balances: Balances; date: string; time: string; siteName: string;
+  receiptNo: string;
+  customer: string;
+  typeLabel: string;
+  amountLabel: string;
+  receiver: string;
+  balances: Balances;
+  balancesBefore?: Balances;
+  deductedAmount?: number;
+  deductedCurrency?: string;
+  commission?: number;
+  serviceFee?: number;
+  exchangeRate?: string;
+  description?: string;
+  date: string;
+  time: string;
+  siteName: string;
 }): string {
   const M = CURRENCY_META;
-  const LINE = "━━━━━━━━━━━━━━━━━━";
+  const LINE = "━━━━━━━━━━━━━━━━━━━━";
   
-  // خواندن اطلاعات پشتیبانی از تنظیمات
   const settings = loadJSON<any>("db_settings", {});
-  const phone = settings.phone || "+93 700 000 000";
-  const address = settings.address || "هرات، افغانستان";
-  const siteName = o.siteName || "صرافی نورزاد";
+  const siteName = o.siteName || settings.siteName || "صرافی برادران نورزاد";
+  const receiptNoClean = o.receiptNo.replace("#", "");
+  
+  // محاسبه مقادیر پیش‌فرض
+  const commission = o.commission || 0;
+  const serviceFee = o.serviceFee || 0;
+  const exchangeRate = o.exchangeRate || "—";
+  const description = o.description || `انتقال ${o.amountLabel} به گیرنده`;
+  
+  // استخراج ارز اصلی از amountLabel
+  const currencyMatch = o.amountLabel.match(/(AFN|USD|IRR|افغانی|دالر|تومان)/);
+  const mainCurrency = currencyMatch ? currencyMatch[1] : "افغانی";
+  const mainCurrencyLabel = mainCurrency === "AFN" ? "افغانی" : mainCurrency === "USD" ? "دالر" : mainCurrency === "IRR" ? "تومان" : mainCurrency;
+  const mainCurrencyFlag = mainCurrency === "AFN" ? M.AFN.flag : mainCurrency === "USD" ? M.USD.flag : M.IRR.flag : "💰";
+  
+  // استخراج مبلغ عددی
+  const amountNum = Number(o.amountLabel.replace(/[^\d]/g, "")) || 0;
+  
+  // محاسبه مبلغ نهایی
+  const finalAmount = amountNum - commission - serviceFee;
 
   return [
+    `🧾 رسید معامله صرافی`,
+    ``,
     `🏦 ${siteName}`,
-    `🧾 رسید رسمی معامله`,
     ``,
     LINE,
-    `🔖 شماره رسید: ${o.receiptNo}`,
-    `📅 تاریخ: ${o.date}`,
-    `🕐 ساعت: ${o.time}`,
-    LINE,
     ``,
-    `👤 اطلاعات مشتری`,
+    `📋 اطلاعات معامله`,
     ``,
+    `شماره رسید: ${receiptNoClean}`,
+    `تاریخ: ${o.date}`,
+    `ساعت: ${o.time}`,
     `نام مشتری: ${o.customer}`,
-    ``,
-    LINE,
-    `💱 جزئیات معامله`,
-    ``,
     `نوع معامله: ${o.typeLabel}`,
-    `مبلغ انتقال: ${o.amountLabel}`,
     `گیرنده: ${o.receiver}`,
-    `وضعیت: 🟢 موفق`,
     ``,
     LINE,
-    `💰 مانده حساب شما پس از معامله`,
     ``,
+    `💰 جزئیات مالی`,
+    ``,
+    `مبلغ اصلی: ${fa(amountNum)} ${mainCurrencyLabel}`,
+    `نرخ معامله: ${exchangeRate}`,
+    `کمیسیون: ${fa(commission)} ${mainCurrencyLabel}`,
+    `هزینه خدمات: ${fa(serviceFee)} ${mainCurrencyLabel}`,
+    `مبلغ نهایی: ${fa(finalAmount > 0 ? finalAmount : amountNum)} ${mainCurrencyLabel}`,
+    `وضعیت: ✅ موفق`,
+    ``,
+    LINE,
+    ``,
+    `📊 مانده حساب`,
+    ``,
+    o.balancesBefore ? `مانده قبل از معامله:` : ``,
+    o.balancesBefore ? `${M.AFN.flag} افغانی: ${fa(o.balancesBefore.AFN)} AFN` : ``,
+    o.balancesBefore ? ` ` : ``,
+    o.deductedAmount ? `مبلغ کسرشده:` : ``,
+    o.deductedAmount ? `${mainCurrencyFlag} ${mainCurrencyLabel}: ${fa(o.deductedAmount)} ${o.deductedCurrency || mainCurrencyLabel}` : ``,
+    o.deductedAmount ? ` ` : ``,
+    `مانده پس از معامله:`,
     `${M.AFN.flag} افغانی: ${fa(o.balances.AFN)} AFN`,
     `${M.USD.flag} دالر: ${fa(o.balances.USD)} USD`,
     `${M.IRR.flag} تومان: ${fa(o.balances.IRR)} IRR`,
     ``,
     LINE,
     ``,
-    `✅ معامله با موفقیت ثبت و نهایی شد.`,
+    `📝 درک / شرح معامله`,
     ``,
-    `از اعتماد شما سپاسگزاریم 🌹`,
+    `شرح: ${description}`,
+    `گیرنده: ${o.receiver}`,
+    `توضیحات اضافی: —`,
     ``,
-    `🏦 ${siteName}`,
-    `📞 پشتیبانی: ${phone}`,
-    `📍 آدرس: ${address}`,
+    LINE,
     ``,
-    `🔐 این رسید به‌صورت خودکار توسط سیستم صادر شده است.`,
+    `🔐 تأیید معامله`,
+    ``,
+    `کد پیگیری: ${receiptNoClean}`,
+    `وضعیت ثبت: ✅ ثبت‌شده و تأییدشده`,
+    ``,
+    `این رسید نشان‌دهنده ثبت موفق معامله در`,
+    `سیستم ${siteName} می‌باشد.`,
+    ``,
+    `🙏 تشکر از اعتماد شما`,
+    ``,
+    `${siteName}`,
   ].join("\n");
 }
 
