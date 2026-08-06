@@ -1,9 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useStored, Field, ErrorBox, Modal, ShareBar } from "../lib/ui";
 import { fa, checkRequired, requiredMessage, statusChipClass } from "../lib/helpers";
 import type { AccountUser } from "../lib/helpers";
+
+// 🆕 Interface برای کاربران تلگرام
+interface TelegramUser {
+  id: number;
+  firstName: string;
+  lastName?: string;
+  username?: string;
+  lastSeen: string;
+}
 
 const empty = { name: "", phone: "", telegram: "", AFN: "", USD: "", IRR: "" };
 
@@ -29,6 +38,19 @@ export default function UsersPage() {
   const [missing, setMissing] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [shareUser, setShareUser] = useState<any | null>(null);
+
+  // 🆕 بارگذاری لیست کاربران تلگرام
+  const [telegramUsers, setTelegramUsers] = useState<TelegramUser[]>([]);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("db_telegram_users");
+      if (raw) {
+        setTelegramUsers(JSON.parse(raw));
+      }
+    } catch (e) {
+      console.error("Load telegram users error:", e);
+    }
+  }, []);
 
   const set = (patch: any) => { setForm({ ...form, ...patch }); setMissing([]); setError(""); };
 
@@ -62,7 +84,6 @@ export default function UsersPage() {
         <table className="w-full text-sm">
           <thead className="bg-[#0b1f2e] text-[#e3b45c]">
             <tr>
-              {/* 🆕 سربرگ "شماره" به جای "#" */}
               <th className="text-center px-4 py-3 font-bold w-20">شماره</th>
               <th className="text-right px-4 py-3 font-bold">نام</th>
               <th className="text-right px-4 py-3 font-bold">تماس</th>
@@ -83,7 +104,6 @@ export default function UsersPage() {
             ) : (
               filtered.map((u, index) => (
                 <tr key={u.id} className="hover:bg-amber-50/40">
-                  {/* 🆕 شماره ردیف با اعداد انگلیسی (1, 2, 3...) */}
                   <td className="px-4 py-3 text-center font-mono font-bold text-[#0b1f2e]">
                     {(index + 1).toLocaleString("en-US")}
                   </td>
@@ -125,10 +145,67 @@ export default function UsersPage() {
           <div className="space-y-3">
             <Field label="نام" name="نام" missing={missing} value={form.name} onChange={v => set({ name: v })} />
             <Field label="شماره تماس (واتساپ)" name="شماره تماس" missing={missing} value={form.phone} onChange={v => set({ phone: v })} placeholder="93700000000" />
-            <Field label="تلگرام (chat_id) — برای ارسال رسید" value={form.telegram} onChange={v => set({ telegram: v })} placeholder="مثال: 123456789" />
-            <p className="text-[11px] text-slate-500 bg-slate-50 rounded-lg p-2">
-              💡 برای دریافت chat_id مشتری: او باید اول به ربات شما /start بفرستد، سپس در تنظیمات «دریافت chat_id» را بزنید.
-            </p>
+            
+            {/* 🆕 تغییر فیلد تلگرام به dropdown */}
+            <div>
+              <label className="block text-sm font-bold mb-2">
+                تلگرام (chat_id) — برای ارسال رسید
+              </label>
+              
+              {telegramUsers.length > 0 ? (
+                <>
+                  <select 
+                    className="input" 
+                    value={form.telegram}
+                    onChange={e => set({ telegram: e.target.value })}
+                  >
+                    <option value="">— انتخاب از لیست کاربران ربات —</option>
+                    {telegramUsers.map(user => (
+                      <option key={user.id} value={user.id}>
+                        {user.firstName} {user.lastName || ""} 
+                        {user.username ? ` (@${user.username})` : ""} 
+                        — {user.id}
+                      </option>
+                    ))}
+                    <option value="custom">✏️ وارد کردن دستی chat_id...</option>
+                  </select>
+                  
+                  {form.telegram === "custom" && (
+                    <input 
+                      className="input mt-2 font-mono text-xs" 
+                      dir="ltr"
+                      placeholder="مثال: 123456789"
+                      value=""
+                      onChange={e => set({ telegram: e.target.value })}
+                    />
+                  )}
+                  
+                  {form.telegram && form.telegram !== "custom" && (
+                    <p className="text-xs text-emerald-600 mt-1 font-bold">
+                      ✓ chat_id انتخاب شد: {form.telegram}
+                    </p>
+                  )}
+                  
+                  <p className="text-[11px] text-slate-500 bg-slate-50 rounded-lg p-2 mt-2">
+                    💡 برای دیدن لیست کاربران، ابتدا در بخش <b>تنظیمات</b> روی «به‌روزرسانی لیست» کلیک کنید
+                  </p>
+                </>
+              ) : (
+                <>
+                  <input 
+                    className="input font-mono text-xs" 
+                    dir="ltr"
+                    placeholder="مثال: 123456789"
+                    value={form.telegram} 
+                    onChange={e => set({ telegram: e.target.value })} 
+                  />
+                  <p className="text-[11px] text-slate-500 bg-slate-50 rounded-lg p-2 mt-2">
+                    💡 برای دریافت chat_id مشتری: او باید اول به ربات شما /start بفرستد، سپس در تنظیمات «دریافت chat_id» را بزنید.
+                  </p>
+                </>
+              )}
+            </div>
+
             <div className="grid grid-cols-3 gap-3 pt-2">
               <Field label="مانده افغانی" value={form.AFN} onChange={v => set({ AFN: v })} placeholder="0" />
               <Field label="مانده دالر" value={form.USD} onChange={v => set({ USD: v })} placeholder="0" />
