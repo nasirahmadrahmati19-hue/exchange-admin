@@ -62,6 +62,8 @@ export default function UsersPage() {
         <table className="w-full text-sm">
           <thead className="bg-[#0b1f2e] text-[#e3b45c]">
             <tr>
+              {/* 🆕 ستون شماره ردیف */}
+              <th className="text-center px-3 py-3 font-bold w-16">#</th>
               <th className="text-right px-4 py-3 font-bold">نام</th>
               <th className="text-right px-4 py-3 font-bold">تماس</th>
               <th className="text-right px-4 py-3 font-bold">🇦🇫 افغانی</th>
@@ -72,36 +74,49 @@ export default function UsersPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filtered.map(u => (
-              <tr key={u.id} className="hover:bg-amber-50/40">
-                <td className="px-4 py-3 font-bold">{u.name}</td>
-                <td className="px-4 py-3 text-slate-500 text-xs">{u.phone}</td>
-                <td className="px-4 py-3">{fa(u.balances.AFN)}</td>
-                <td className="px-4 py-3">{fa(u.balances.USD)}</td>
-                <td className="px-4 py-3">{fa(u.balances.IRR)}</td>
-                <td className="px-4 py-3">
-                  {u.telegram ? (
-                    <span className="text-xs px-2 py-1 rounded-full bg-sky-50 text-sky-700 border border-sky-200">✓ متصل</span>
-                  ) : (
-                    <span className="text-xs text-slate-400">—</span>
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex gap-2">
-                    <button className="text-xs px-3 py-1.5 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100" onClick={() => setShareUser(u)}>اشتراک</button>
-                    <button className="text-xs px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100" onClick={() => {
-                      setEditId(u.id);
-                      setForm({
-                        name: u.name, phone: u.phone, telegram: u.telegram || "",
-                        AFN: String(u.balances.AFN), USD: String(u.balances.USD), IRR: String(u.balances.IRR)
-                      });
-                      setMissing([]); setError(""); setModal(true);
-                    }}>ویرایش</button>
-                    <button className="text-xs px-3 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100" onClick={() => setRaw(raw.filter(x => x.id !== u.id))}>حذف</button>
-                  </div>
+            {filtered.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-sm">
+                  هیچ مشتری‌ای یافت نشد
                 </td>
               </tr>
-            ))}
+            ) : (
+              // 🆕 اضافه کردن index به map
+              filtered.map((u, index) => (
+                <tr key={u.id} className="hover:bg-amber-50/40">
+                  {/* 🆕 نمایش شماره ردیف به صورت فارسی */}
+                  <td className="px-3 py-3 text-center font-mono font-bold text-[#0b1f2e]">
+                    {fa(index + 1)}
+                  </td>
+                  <td className="px-4 py-3 font-bold">{u.name}</td>
+                  <td className="px-4 py-3 text-slate-500 text-xs">{u.phone}</td>
+                  <td className="px-4 py-3">{fa(u.balances.AFN)}</td>
+                  <td className="px-4 py-3">{fa(u.balances.USD)}</td>
+                  <td className="px-4 py-3">{fa(u.balances.IRR)}</td>
+                  <td className="px-4 py-3">
+                    {u.telegram ? (
+                      <span className="text-xs px-2 py-1 rounded-full bg-sky-50 text-sky-700 border border-sky-200">✓ متصل</span>
+                    ) : (
+                      <span className="text-xs text-slate-400">—</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-2">
+                      <button className="text-xs px-3 py-1.5 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100" onClick={() => setShareUser(u)}>اشتراک</button>
+                      <button className="text-xs px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100" onClick={() => {
+                        setEditId(u.id);
+                        setForm({
+                          name: u.name, phone: u.phone, telegram: u.telegram || "",
+                          AFN: String(u.balances.AFN), USD: String(u.balances.USD), IRR: String(u.balances.IRR)
+                        });
+                        setMissing([]); setError(""); setModal(true);
+                      }}>ویرایش</button>
+                      <button className="text-xs px-3 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100" onClick={() => setRaw(raw.filter(x => x.id !== u.id))}>حذف</button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
