@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { useStored, Field, SelectField, ErrorBox, Modal, ShareBar } from "../lib/ui";
 import {
-  loadRates, loadSiteName, fa, todayFa, nowTime, nextReceiptNo,
-  CURRENCY_META, emptyBalances, applyTransfer, applyExchange, buildReceipt, toAFNk, fromAFNk, statusChipClass,
+  loadRates, loadSiteName, loadJSON, fa, todayFa, nowTime, nextReceiptNo,
+  CURRENCY_META, applyTransfer, applyExchange, buildReceipt, toAFNk, fromAFNk, statusChipClass,
 } from "../lib/helpers";
+import { sendTelegram } from "../lib/telegram";
 import type { AccountUser, CurKey, Tx } from "../lib/helpers";
 
 const curOptions: CurKey[] = ["AFN", "USD", "IRR"];
@@ -13,7 +14,7 @@ const curOptions: CurKey[] = ["AFN", "USD", "IRR"];
 export default function TradesPage() {
   const [users, setUsers] = useStored<AccountUser[]>("db_users", [
     { id: 1, name: "احمد", phone: "93700000000", balances: { AFN: 300000, USD: 1200, IRR: 85000000 }, status: "فعال" },
-  ]);
+  ] as any);
   const [trades, setTrades] = useStored<Tx[]>("db_trades", []);
   const [rates] = useState(loadRates());
 
@@ -27,29 +28,36 @@ export default function TradesPage() {
   const [error, setError] = useState("");
   const [receipt, setReceipt] = useState("");
   const [lastTx, setLastTx] = useState<Tx | null>(null);
+  const [sendingTg, setSendingTg] = useState(false);
 
-  const user = users.find(u => u.id === Number(customerId));
+  const user = users.find(u => u.id === Number(customerId)) as any;
   const amt = Number(amount || 0);
   const exchTo = fromAFNk(toAFNk(amt, fromCur, rates), toCur, rates);
 
-  const clear = () => { setError(""); };
+  const clear = () => setError("");
 
-  const submit = () => {
+  const submit = async () => {
     const m: string[] = [];
     if (!customerId) m.push("مشتری");
     if (!receiver.trim()) m.push("گیرنده");
     if (!amount.trim()) m.push("مبلغ");
-    if (m.length) { setError(requiredMessageLocal(m)); return; }
+    if (m.length) { setError("لطفاً این فیلدها را پر کنید: " + m.join("، ")); return; }
     if (!user) { setError("مشتری پیدا نشد"); return; }
 
-    let updated: AccountUser; let typeLabel: string; let curKey: CurKey;
+    let updated: any; let typeLabel: string; let curKey: CurKey;
     if (mode === "انتقال") {
-      if ((user.balances[cur] || 0) < amt) { setError(`موجودی کافی نیست. مانده ${CURRENCY_META[cur].label}: ${fa(user.balances[cur] || 0)}`); return; }
+      if ((user.balances[cur] || 0) < amt) {
+        setError(`موجودی کافی نیست. مانده ${CURRENCY_META[cur].label}: ${fa(user.balances[cur] || 0)}`);
+        return;
+      }
       updated = applyTransfer(user, cur, amt);
       typeLabel = "انتقال " + CURRENCY_META[cur].label;
       curKey = cur;
     } else {
-      if ((user.balances[fromCur] || 0) < amt) { setError(`موجودی کافی نیست. مانده ${CURRENCY_META[fromCur].label}: ${fa(user.balances[fromCur] || 0)}`); return; }
+      if ((user.balances[fromCur] || 0) < amt) {
+        setError(`موجودی کافی نیست. مانده ${CURRENCY_META[fromCur].label}: ${fa(user.balances[fromCur] || 0)}`);
+        return;
+      }
       updated = applyExchange(user, fromCur, toCur, amt, exchTo);
       typeLabel = `تبادل ${CURRENCY_META[fromCur].label} به ${CURRENCY_META[toCur].label}`;
       curKey = fromCur;
@@ -58,27 +66,53 @@ export default function TradesPage() {
     setUsers(users.map(u => u.id === updated.id ? updated : u));
 
     const receiptNo = nextReceiptNo();
-    const date = todayFa(); const time = nowTime();
-    const amountLabel = mode === "انتقال" ? `${fa(amt)} ${CURRENCY_META[curKey].code}` : `${fa(amt)} ${CURRENCY_META[fromCur].code} → ${fa(exchTo)} ${CURRENCY_META[toCur].code}`;
-    const text = buildReceipt({ receiptNo, customer: user.name, typeLabel, amountLabel, receiver, balances: updated.balances, date, time, siteName: loadSiteName() });
+    const date = todayFa();
+    const time = nowTime();
+    const amountLabel = mode === "انتقال"
+      ? `${fa(amt)} ${CURRENCY_META[curKey].code}`
+      : `${fa(amt)} ${CURRENCY_META[fromCur].code} → ${fa(exchTo)} ${CURRENCY_META[toCur].code}`;
+    const text = buildReceipt({
+      receiptNo, customer: user.name, typeLabel, amountLabel, receiver,
+      balances: updated.balances, date, time, siteName: loadSiteName(),
+    });
 
     const tx: Tx = {
       id: Date.now(), receiptNo, typeLabel, customer: user.name, receiver,
-      currency: CURRENCY_META[curKey].label, amount: amt, afnValue: String(toAFNk(amt, curKey, rates)),
+      currency: CURRENCY_META[curKey].label, amount: amt,
+      afnValue: String(toAFNk(amt, curKey, rates)),
       status: "موفق", date, time, balancesAfter: updated.balances, phone: user.phone,
     };
     setTrades([tx, ...trades]);
 
+    // باز کردن واتساپ
     window.open(`https://wa.me/${user.phone.replace(/\D/g, "")}?text=${encodeURIComponent(text)}`, "_blank");
-    setReceipt(text); setLastTx(tx);
-    setAmount(""); setReceiver("");
+
+    // ارسال خودکار به تلگرام مشتری
+    const settings = loadJSON<any>("db_settings", {});
+    const tgId = user.telegram;
+    if (settings.telegramToken && tgId) {
+      setSendingTg(true);
+      const ok = await sendTelegram(settings.telegramToken, tgId, text);
+      setSendingTg(false);
+      if (!ok) {
+        setError("⚠️ معامله ثبت شد ولی ارسال تلگرام ناموفق بود");
+      }
+    }
+
+    setReceipt(text);
+    setLastTx(tx);
+    setAmount("");
+    setReceiver("");
   };
 
-  const requiredMessageLocal = (m: string[]) => "لطفاً این فیلدها را پر کنید: " + m.join("، ");
-
   const reopen = (t: Tx) => {
-    const text = buildReceipt({ receiptNo: t.receiptNo, customer: t.customer, typeLabel: t.typeLabel, amountLabel: `${fa(t.amount)} ${t.currency}`, receiver: t.receiver, balances: t.balancesAfter, date: t.date, time: t.time, siteName: loadSiteName() });
-    setReceipt(text); setLastTx(t);
+    const text = buildReceipt({
+      receiptNo: t.receiptNo, customer: t.customer, typeLabel: t.typeLabel,
+      amountLabel: `${fa(t.amount)} ${t.currency}`, receiver: t.receiver,
+      balances: t.balancesAfter, date: t.date, time: t.time, siteName: loadSiteName(),
+    });
+    setReceipt(text);
+    setLastTx(t);
   };
 
   return (
@@ -90,7 +124,11 @@ export default function TradesPage() {
           <label className="block text-sm font-bold mb-2">مشتری</label>
           <select className="input" value={customerId} onChange={e => { setCustomerId(e.target.value); clear(); }}>
             <option value="">انتخاب مشتری</option>
-            {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+            {users.map(u => (
+              <option key={u.id} value={u.id}>
+                {u.name} {u.telegram ? "📨" : ""}
+              </option>
+            ))}
           </select>
         </div>
         <SelectField label="نوع معامله" value={mode} onChange={v => setMode(v)} options={["انتقال", "تبادل"]} />
@@ -104,14 +142,21 @@ export default function TradesPage() {
         )}
         <Field label="گیرنده" value={receiver} onChange={v => { setReceiver(v); clear(); }} placeholder="نام گیرنده" />
         <Field label="مبلغ" value={amount} onChange={v => { setAmount(v); clear(); }} placeholder="مقدار" />
+
         {user && (
-          <div className="sm:col-span-2 lg:col-span-4 bg-slate-50 rounded-xl p-3 text-xs text-slate-600">
-            مانده {user.name}: 🇦 {fa(user.balances.AFN)} | 🇺🇸 {fa(user.balances.USD)} | 🇮🇷 {fa(user.balances.IRR)}
-            {mode === "تبادل" && amt > 0 && <span className="mr-3 text-[#c98f2d] font-bold">معادل دریافتی: {fa(exchTo)} {CURRENCY_META[toCur].label}</span>}
+          <div className="sm:col-span-2 lg:col-span-4 bg-slate-50 rounded-xl p-3 text-xs text-slate-600 space-y-1">
+            <p>مانده <b>{user.name}</b>: 🇦🇫 {fa(user.balances.AFN)} | 🇺🇸 {fa(user.balances.USD)} | 🇮🇷 {fa(user.balances.IRR)}</p>
+            {user.telegram && <p className="text-sky-600 font-bold">📨 رسید به تلگرام این مشتری ارسال می‌شود</p>}
+            {mode === "تبادل" && amt > 0 && <p className="text-[#c98f2d] font-bold">معادل دریافتی: {fa(exchTo)} {CURRENCY_META[toCur].label}</p>}
           </div>
         )}
+
         <div className="lg:col-span-4"><ErrorBox error={error} /></div>
-        <div className="lg:col-span-4"><button className="btn-gold w-full" onClick={submit}>ثبت معامله ✅</button></div>
+        <div className="lg:col-span-4">
+          <button className="btn-gold w-full" onClick={submit} disabled={sendingTg}>
+            {sendingTg ? "⏳ در حال ارسال تلگرام..." : "ثبت معامله ✅"}
+          </button>
+        </div>
       </div>
 
       <div className="card overflow-x-auto">
@@ -135,7 +180,9 @@ export default function TradesPage() {
                 <td className="px-4 py-3">{t.typeLabel}</td>
                 <td className="px-4 py-3">{fa(t.amount)} {t.currency}</td>
                 <td className="px-4 py-3"><span className={`text-xs px-3 py-1 rounded-full border ${statusChipClass(t.status)}`}>{t.status}</span></td>
-                <td className="px-4 py-3"><button className="px-3 py-1.5 rounded-lg bg-sky-50 text-sky-600 text-xs font-bold" onClick={() => reopen(t)}>مشاهده رسید</button></td>
+                <td className="px-4 py-3">
+                  <button className="px-3 py-1.5 rounded-lg bg-sky-50 text-sky-600 text-xs font-bold" onClick={() => reopen(t)}>مشاهده رسید</button>
+                </td>
               </tr>
             ))}
           </tbody>
