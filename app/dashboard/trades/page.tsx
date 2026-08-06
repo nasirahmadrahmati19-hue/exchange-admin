@@ -30,8 +30,6 @@ export default function TradesPage() {
   const [lastTx, setLastTx] = useState<Tx | null>(null);
   const [sendingTg, setSendingTg] = useState(false);
   const [tgStatus, setTgStatus] = useState("");
-
-  // 🆕 state جدید برای انتقال حساب به حساب
   const [internalReceiverId, setInternalReceiverId] = useState("");
 
   const user = users.find(u => u.id === Number(customerId)) as any;
@@ -40,222 +38,144 @@ export default function TradesPage() {
 
   const clear = () => { setError(""); setTgStatus(""); };
 
-  // 🆕 تابع ساخت رسید انتقال داخلی
-  const buildInternalReceipt = (data: {
-    receiptNo: string;
-    sender: any;
-    receiver: any;
-    fromCur: CurKey;
-    toCur: CurKey;
-    senderAmount: number;
-    receiverAmount: number;
-    senderBalancesAfter: any;
-    receiverBalancesAfter: any;
-    date: string;
-    time: string;
-    siteName: string;
-  }) => {
-    const conversion = data.fromCur !== data.toCur 
-      ? `\n(تبدیل با نرخ روز)` 
-      : "";
-    return `══════════════════════════
-${data.siteName}
-رسید انتقال داخلی
-══════════════════════════
-شماره رسید: #${data.receiptNo}
-تاریخ: ${data.date}
-ساعت: ${data.time}
-
-فرستنده: ${data.sender.name}
-گیرنده: ${data.receiver.name}
-
-──────────────────────
-کسر از حساب فرستنده:
-${fa(data.senderAmount)} ${CURRENCY_META[data.fromCur].label}
-
-افزودن به حساب گیرنده:
-${fa(data.receiverAmount)} ${CURRENCY_META[data.toCur].label}${conversion}
-──────────────────────
-
-مانده جدید فرستنده:
-افغانی: ${fa(data.senderBalancesAfter?.AFN || 0)}
-دالر: ${fa(data.senderBalancesAfter?.USD || 0)}
-تومان: ${fa(data.senderBalancesAfter?.IRR || 0)}
-
-مانده جدید گیرنده:
-افغانی: ${fa(data.receiverBalancesAfter?.AFN || 0)}
-دالر: ${fa(data.receiverBalancesAfter?.USD || 0)}
-تومان: ${fa(data.receiverBalancesAfter?.IRR || 0)}
-══════════════════════════
-صرافی برادران نورزاد - هرات`;
-  };
-
   const submit = async () => {
     try {
-      // ========== حالت انتقال حساب به حساب ==========
+      // ========== حالت حساب به حساب ==========
       if (mode === "حساب به حساب") {
-        const m: string[] = [];
-        if (!customerId) m.push("فرستنده");
-        if (!internalReceiverId) m.push("گیرنده");
-        if (!amount.trim() || amt <= 0) m.push("مبلغ");
-        if (m.length) { setError("لطفاً این فیلدها را پر کنید: " + m.join("، ")); return; }
+        if (!customerId || !internalReceiverId || !amount.trim() || amt <= 0) {
+          setError("لطفاً فرستنده، گیرنده و مبلغ را وارد کنید"); return;
+        }
         if (!user) { setError("فرستنده پیدا نشد"); return; }
-
         const receiverUser = users.find(u => u.id === Number(internalReceiverId)) as any;
         if (!receiverUser) { setError("گیرنده پیدا نشد"); return; }
         if (user.id === receiverUser.id) { setError("فرستنده و گیرنده نمی‌توانند یک نفر باشند"); return; }
-
         if ((user.balances[fromCur] || 0) < amt) {
-          setError(`موجودی فرستنده کافی نیست. مانده ${CURRENCY_META[fromCur].label}: ${fa(user.balances[fromCur] || 0)}`);
-          return;
+          setError(`موجودی کافی نیست. مانده ${CURRENCY_META[fromCur].label}: ${fa(user.balances[fromCur] || 0)}`); return;
         }
 
-        // 1) کسر از فرستنده
+        // ذخیره مانده قبل از معامله
+        const senderBalancesBefore = { ...user.balances };
+        const receiverBalancesBefore = { ...receiverUser.balances };
+
         const senderUpdated = applyTransfer(user, fromCur, amt);
+        const receiverAmount = fromCur === toCur ? amt : fromAFNk(toAFNk(amt, fromCur, rates), toCur, rates);
+        const receiverUpdated = { ...receiverUser, balances: { ...receiverUser.balances, [toCur]: (receiverUser.balances[toCur] || 0) + receiverAmount } };
 
-        // 2) محاسبه مبلغ دریافتی برای گیرنده
-        const receiverAmount = fromCur === toCur 
-          ? amt 
-          : fromAFNk(toAFNk(amt, fromCur, rates), toCur, rates);
+        setUsers(users.map(u => u.id === user.id ? senderUpdated : u.id === receiverUser.id ? receiverUpdated : u));
 
-        // 3) افزودن به حساب گیرنده
-        const receiverUpdated = {
-          ...receiverUser,
-          balances: {
-            ...receiverUser.balances,
-            [toCur]: (receiverUser.balances[toCur] || 0) + receiverAmount,
-          },
-        };
-
-        // 4) به‌روزرسانی هر دو کاربر در state
-        setUsers(users.map(u => {
-          if (u.id === user.id) return senderUpdated;
-          if (u.id === receiverUser.id) return receiverUpdated;
-          return u;
-        }));
-
-        // 5) ساخت شماره رسید و رسید متنی
         const receiptNo = nextReceiptNo();
-        const date = todayFa();
-        const time = nowTime();
+        const date = todayFa(), time = nowTime();
         const siteName = loadSiteName() || "برادران نورزاد";
 
-        const text = buildInternalReceipt({
-          receiptNo,
-          sender: user,
-          receiver: receiverUser,
-          fromCur, toCur,
-          senderAmount: amt,
-          receiverAmount,
-          senderBalancesAfter: senderUpdated.balances || { AFN: 0, USD: 0, IRR: 0 },
-          receiverBalancesAfter: receiverUpdated.balances || { AFN: 0, USD: 0, IRR: 0 },
+        const amountLabel = fromCur === toCur
+          ? `${fa(amt)} ${CURRENCY_META[fromCur].code}`
+          : `${fa(amt)} ${CURRENCY_META[fromCur].code} → ${fa(receiverAmount)} ${CURRENCY_META[toCur].code}`;
+
+        // ساخت رسید برای فرستنده
+        const senderText = buildReceipt({
+          receiptNo, customer: user.name, typeLabel: `انتقال داخلی به ${receiverUser.name}`,
+          amountLabel, receiver: receiverUser.name,
+          balances: senderUpdated.balances || { AFN: 0, USD: 0, IRR: 0 },
+          balancesBefore: senderBalancesBefore,
+          deductedAmount: amt,
+          deductedCurrency: CURRENCY_META[fromCur].label,
+          exchangeRate: fromCur !== toCur ? fa(fromAFNk(toAFNk(1, fromCur, rates), toCur, rates)) : "—",
+          description: `انتقال ${amountLabel} به ${receiverUser.name}`,
           date, time, siteName,
         });
 
-        // 6) ایجاد دو تراکنش (یکی برای فرستنده، یکی برای گیرنده)
+        // ساخت رسید برای گیرنده
+        const receiverText = buildReceipt({
+          receiptNo, customer: receiverUser.name, typeLabel: `دریافت داخلی از ${user.name}`,
+          amountLabel: `${fa(receiverAmount)} ${CURRENCY_META[toCur].code}`, receiver: user.name,
+          balances: receiverUpdated.balances || { AFN: 0, USD: 0, IRR: 0 },
+          balancesBefore: receiverBalancesBefore,
+          deductedAmount: 0,
+          description: `دریافت ${fa(receiverAmount)} ${CURRENCY_META[toCur].label} از ${user.name}`,
+          date, time, siteName,
+        });
+
         const senderTx: Tx = {
-          id: Date.now(),
-          receiptNo: `#${receiptNo}-A`,
+          id: Date.now(), receiptNo: `#${receiptNo.replace("#", "")}-A`,
           typeLabel: `انتقال داخلی به ${receiverUser.name}`,
-          customer: user.name,
-          receiver: receiverUser.name,
-          currency: CURRENCY_META[fromCur].label,
-          amount: amt,
+          customer: user.name, receiver: receiverUser.name,
+          currency: CURRENCY_META[fromCur].label, amount: amt,
           afnValue: String(toAFNk(amt, fromCur, rates)),
-          status: "موفق",
-          date, time,
+          status: "موفق", date, time,
           balancesAfter: senderUpdated.balances || { AFN: 0, USD: 0, IRR: 0 },
           phone: user.phone || "",
         };
 
         const receiverTx: Tx = {
-          id: Date.now() + 1,
-          receiptNo: `#${receiptNo}-B`,
+          id: Date.now() + 1, receiptNo: `#${receiptNo.replace("#", "")}-B`,
           typeLabel: `دریافت داخلی از ${user.name}`,
-          customer: receiverUser.name,
-          receiver: user.name,
-          currency: CURRENCY_META[toCur].label,
-          amount: receiverAmount,
+          customer: receiverUser.name, receiver: user.name,
+          currency: CURRENCY_META[toCur].label, amount: receiverAmount,
           afnValue: String(toAFNk(receiverAmount, toCur, rates)),
-          status: "موفق",
-          date, time,
+          status: "موفق", date, time,
           balancesAfter: receiverUpdated.balances || { AFN: 0, USD: 0, IRR: 0 },
           phone: receiverUser.phone || "",
         };
-
         setTrades([receiverTx, senderTx, ...trades]);
 
-        // 7) باز کردن واتساپ فرستنده
+        // باز کردن واتساپ
         const phone1 = (user.phone || "").replace(/\D/g, "");
-        if (phone1) {
-          try { window.open(`https://wa.me/${phone1}?text=${encodeURIComponent(text)}`, "_blank"); } catch (e) {}
-        }
+        if (phone1) try { window.open(`https://wa.me/${phone1}?text=${encodeURIComponent(senderText)}`, "_blank"); } catch {}
 
-        // 8) ارسال تلگرام به فرستنده و گیرنده
+        // ارسال تلگرام
         try {
           const settings = loadJSON<any>("db_settings", {});
           const tgToken = (settings.telegramToken || "").trim();
-          const senderTgId = (user.telegram || "").trim();
-          const receiverTgId = (receiverUser.telegram || "").trim();
+          const silent = settings.telegramSilent === true;
 
           if (tgToken) {
             setSendingTg(true);
             const results: string[] = [];
-            
+
+            const senderTgId = (user.telegram || "").trim();
             if (senderTgId) {
-              const ok = await sendTelegram(tgToken, senderTgId, text);
-              results.push(ok ? `✅ به ${user.name}` : `⚠️ به ${user.name} (ناموفق)`);
+              const ok = await sendTelegram(tgToken, senderTgId, senderText, { silent });
+              results.push(ok ? `✅ ${user.name}` : `⚠️ ${user.name}`);
             }
+
+            const receiverTgId = (receiverUser.telegram || "").trim();
             if (receiverTgId) {
-              const ok = await sendTelegram(tgToken, receiverTgId, text);
-              results.push(ok ? `✅ به ${receiverUser.name}` : `⚠️ به ${receiverUser.name} (ناموفق)`);
+              const ok = await sendTelegram(tgToken, receiverTgId, receiverText, { silent });
+              results.push(ok ? `✅ ${receiverUser.name}` : `⚠️ ${receiverUser.name}`);
             }
 
             setSendingTg(false);
-            if (results.length === 0) {
-              setTgStatus("ℹ️ هیچ‌کدام از دو طرف chat_id تلگرام ندارند");
-            } else {
-              setTgStatus("📨 تلگرام: " + results.join(" | "));
-            }
+            setTgStatus(results.length > 0 ? "🧾 تلگرام: " + results.join(" | ") : "ℹ️ chat_id یافت نشد");
           } else {
-            setTgStatus("ℹ️ ربات تلگرام در تنظیمات فعال نشده است");
+            setSendingTg(false);
+            setTgStatus("ℹ️ ربات تلگرام فعال نشده");
           }
-        } catch (e) {
-          console.error("Telegram send error:", e);
-          setTgStatus("⚠️ خطا در ارسال تلگرام");
-        }
+        } catch { setSendingTg(false); setTgStatus("⚠️ خطا در ارسال تلگرام"); }
 
-        setReceipt(text);
-        setLastTx(senderTx);
-        setAmount("");
-        setInternalReceiverId("");
+        setReceipt(senderText); setLastTx(senderTx); setAmount(""); setInternalReceiverId("");
         return;
       }
 
-      // ========== حالت‌های قبلی (انتقال و تبادل) ==========
-      const m: string[] = [];
-      if (!customerId) m.push("مشتری");
-      if (!receiver.trim()) m.push("گیرنده");
-      if (!amount.trim() || amt <= 0) m.push("مبلغ");
-      if (m.length) { setError("لطفاً این فیلدها را پر کنید: " + m.join("، ")); return; }
+      // ========== حالت انتقال / تبادل ==========
+      if (!customerId || !receiver.trim() || !amount.trim() || amt <= 0) {
+        setError("لطفاً مشتری، گیرنده و مبلغ را وارد کنید"); return;
+      }
       if (!user) { setError("مشتری پیدا نشد"); return; }
 
-      let updated: any;
-      let typeLabel: string;
-      let curKey: CurKey;
+      // ذخیره مانده قبل از معامله
+      const balancesBefore = { ...user.balances };
 
+      let updated: any, typeLabel: string, curKey: CurKey;
       if (mode === "انتقال") {
         if ((user.balances[cur] || 0) < amt) {
-          setError(`موجودی کافی نیست. مانده ${CURRENCY_META[cur].label}: ${fa(user.balances[cur] || 0)}`);
-          return;
+          setError(`موجودی کافی نیست. مانده ${CURRENCY_META[cur].label}: ${fa(user.balances[cur] || 0)}`); return;
         }
         updated = applyTransfer(user, cur, amt);
         typeLabel = "انتقال " + CURRENCY_META[cur].label;
         curKey = cur;
       } else {
         if ((user.balances[fromCur] || 0) < amt) {
-          setError(`موجودی کافی نیست. مانده ${CURRENCY_META[fromCur].label}: ${fa(user.balances[fromCur] || 0)}`);
-          return;
+          setError(`موجودی کافی نیست. مانده ${CURRENCY_META[fromCur].label}: ${fa(user.balances[fromCur] || 0)}`); return;
         }
         updated = applyExchange(user, fromCur, toCur, amt, exchTo);
         typeLabel = `تبادل ${CURRENCY_META[fromCur].label} به ${CURRENCY_META[toCur].label}`;
@@ -265,16 +185,26 @@ ${fa(data.receiverAmount)} ${CURRENCY_META[data.toCur].label}${conversion}
       setUsers(users.map(u => u.id === updated.id ? updated : u));
 
       const receiptNo = nextReceiptNo();
-      const date = todayFa();
-      const time = nowTime();
+      const date = todayFa(), time = nowTime();
       const amountLabel = mode === "انتقال"
         ? `${fa(amt)} ${CURRENCY_META[curKey].code}`
         : `${fa(amt)} ${CURRENCY_META[fromCur].code} → ${fa(exchTo)} ${CURRENCY_META[toCur].code}`;
 
       const siteName = loadSiteName() || "برادران نورزاد";
+
+      // ساخت رسید با اطلاعات جدید
       const text = buildReceipt({
         receiptNo, customer: user.name, typeLabel, amountLabel, receiver,
         balances: updated.balances || { AFN: 0, USD: 0, IRR: 0 },
+        balancesBefore,
+        deductedAmount: amt,
+        deductedCurrency: mode === "انتقال" ? CURRENCY_META[curKey].label : CURRENCY_META[fromCur].label,
+        exchangeRate: mode === "تبادل" ? fa(fromAFNk(toAFNk(1, fromCur, rates), toCur, rates)) : "—",
+        commission: 0,
+        serviceFee: 0,
+        description: mode === "انتقال" 
+          ? `انتقال ${amountLabel} به ${receiver}`
+          : `تبادل ${fa(amt)} ${CURRENCY_META[fromCur].label} به ${fa(exchTo)} ${CURRENCY_META[toCur].label}`,
         date, time, siteName,
       });
 
@@ -289,43 +219,27 @@ ${fa(data.receiverAmount)} ${CURRENCY_META[data.toCur].label}${conversion}
       setTrades([tx, ...trades]);
 
       const phone = (user.phone || "").replace(/\D/g, "");
-      if (phone) {
-        try { window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, "_blank"); } catch (e) {}
-      }
+      if (phone) try { window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, "_blank"); } catch {}
 
       try {
         const settings = loadJSON<any>("db_settings", {});
         const tgId = (user.telegram || "").trim();
         const tgToken = (settings.telegramToken || "").trim();
+        const silent = settings.telegramSilent === true;
 
         if (tgToken && tgId) {
           setSendingTg(true);
-          setTgStatus("📨 در حال ارسال به تلگرام مشتری...");
-          const ok = await sendTelegram(tgToken, tgId, text);
+          const ok = await sendTelegram(tgToken, tgId, text, { silent });
           setSendingTg(false);
-          if (ok) {
-            setTgStatus("✅ رسید به تلگرام مشتری ارسال شد");
-          } else {
-            setTgStatus("⚠️ معامله ثبت شد ولی ارسال تلگرام ناموفق بود");
-          }
-        } else if (tgToken && !tgId) {
-          setTgStatus("ℹ️ این مشتری chat_id تلگرام ندارد (رسید فقط در واتساپ)");
+          setTgStatus(ok ? "🧾 رسید به تلگرام ارسال شد" : "⚠️ ارسال ناموفق");
         } else {
-          setTgStatus("ℹ️ ربات تلگرام در تنظیمات فعال نشده است");
+          setSendingTg(false);
+          setTgStatus(tgId ? "ℹ️ توکن ربات تنظیم نشده" : "ℹ️ مشتری chat_id ندارد");
         }
-      } catch (e) {
-        console.error("Telegram send error:", e);
-        setTgStatus("⚠️ خطا در ارسال تلگرام");
-      }
+      } catch { setSendingTg(false); setTgStatus("⚠️ خطا در ارسال تلگرام"); }
 
-      setReceipt(text);
-      setLastTx(tx);
-      setAmount("");
-      setReceiver("");
-    } catch (e) {
-      console.error("Submit error:", e);
-      setError("خطای غیرمنتظره: " + String(e));
-    }
+      setReceipt(text); setLastTx(tx); setAmount(""); setReceiver("");
+    } catch (e) { setError("خطای غیرمنتظره: " + String(e)); }
   };
 
   const reopen = (t: Tx) => {
@@ -334,20 +248,16 @@ ${fa(data.receiverAmount)} ${CURRENCY_META[data.toCur].label}${conversion}
         receiptNo: t.receiptNo, customer: t.customer, typeLabel: t.typeLabel,
         amountLabel: `${fa(t.amount)} ${t.currency}`, receiver: t.receiver,
         balances: t.balancesAfter || { AFN: 0, USD: 0, IRR: 0 },
-        date: t.date, time: t.time, siteName: loadSiteName() || "برادران نورزاد",
+        date: t.date, time: t.time,
+        siteName: loadSiteName() || "برادران نورزاد",
       });
-      setReceipt(text);
-      setLastTx(t);
-    } catch (e) {
-      setError("خطا در نمایش رسید: " + String(e));
-    }
+      setReceipt(text); setLastTx(t);
+    } catch (e) { setError("خطا در نمایش رسید: " + String(e)); }
   };
 
-  // 🆕 محاسبه پیش‌نمایش برای انتقال داخلی
   const internalReceiver = users.find(u => u.id === Number(internalReceiverId)) as any;
   const internalReceiverAmount = user && internalReceiver && amt > 0
-    ? (fromCur === toCur ? amt : fromAFNk(toAFNk(amt, fromCur, rates), toCur, rates))
-    : 0;
+    ? (fromCur === toCur ? amt : fromAFNk(toAFNk(amt, fromCur, rates), toCur, rates)) : 0;
 
   return (
     <div className="space-y-6">
@@ -355,114 +265,43 @@ ${fa(data.receiverAmount)} ${CURRENCY_META[data.toCur].label}${conversion}
 
       <div className="card p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div>
-          <label className="block text-sm font-bold mb-2">
-            {mode === "حساب به حساب" ? "فرستنده" : "مشتری"}
-          </label>
+          <label className="block text-sm font-bold mb-2">{mode === "حساب به حساب" ? "فرستنده" : "مشتری"}</label>
           <select className="input" value={customerId} onChange={e => { setCustomerId(e.target.value); clear(); }}>
             <option value="">انتخاب مشتری</option>
-            {users.map(u => (
-              <option key={u.id} value={u.id}>
-                {u.name} {(u as any).telegram ? "📨" : ""}
-              </option>
-            ))}
+            {users.map(u => <option key={u.id} value={u.id}>{u.name} {(u as any).telegram ? "📨" : ""}</option>)}
           </select>
         </div>
-        
-        {/* 🆕 اضافه کردن گزینه "حساب به حساب" */}
-        <SelectField 
-          label="نوع معامله" 
-          value={mode} 
-          onChange={v => { 
-            setMode(v); 
-            clear();
-            // ریست کردن فیلدهای مرتبط هنگام تغییر mode
-            if (v === "حساب به حساب") {
-              setInternalReceiverId("");
-              setFromCur("AFN");
-              setToCur("AFN");
-            }
-          }} 
-          options={["انتقال", "تبادل", "حساب به حساب"]} 
-        />
 
-        {/* 🆕 UI جدید برای حالت حساب به حساب */}
+        <SelectField label="نوع معامله" value={mode}
+          onChange={v => { setMode(v); clear(); if (v === "حساب به حساب") { setInternalReceiverId(""); setFromCur("AFN"); setToCur("AFN"); } }}
+          options={["انتقال", "تبادل", "حساب به حساب"]} />
+
         {mode === "حساب به حساب" ? (
           <>
-            <SelectField 
-              label="از ارز (فرستنده)" 
-              value={fromCur} 
-              onChange={v => setFromCur(v as CurKey)} 
-              options={curOptions as any} 
-            />
+            <SelectField label="از ارز (فرستنده)" value={fromCur} onChange={v => setFromCur(v as CurKey)} options={curOptions as any} />
             <div>
               <label className="block text-sm font-bold mb-2">مشتری گیرنده</label>
-              <select 
-                className="input" 
-                value={internalReceiverId} 
-                onChange={e => setInternalReceiverId(e.target.value)}
-              >
-                <option value="">انتخاب مشتری گیرنده</option>
-                {users
-                  .filter(u => u.id !== user?.id)
-                  .map(u => (
-                    <option key={u.id} value={u.id}>
-                      {u.name} - {u.phone}
-                    </option>
-                  ))}
+              <select className="input" value={internalReceiverId} onChange={e => setInternalReceiverId(e.target.value)}>
+                <option value="">انتخاب گیرنده</option>
+                {users.filter(u => u.id !== user?.id).map(u => <option key={u.id} value={u.id}>{u.name} - {u.phone}</option>)}
               </select>
             </div>
-            <SelectField 
-              label="به ارز (گیرنده)" 
-              value={toCur} 
-              onChange={v => setToCur(v as CurKey)} 
-              options={curOptions as any} 
-            />
-            <Field 
-              label="مبلغ" 
-              value={amount} 
-              onChange={v => { setAmount(v); clear(); }} 
-              placeholder="مقدار" 
-            />
+            <SelectField label="به ارز (گیرنده)" value={toCur} onChange={v => setToCur(v as CurKey)} options={curOptions as any} />
+            <Field label="مبلغ" value={amount} onChange={v => { setAmount(v); clear(); }} placeholder="مقدار" />
 
             {user && internalReceiver && amt > 0 && (
               <div className="sm:col-span-2 lg:col-span-4 bg-gradient-to-r from-[#0b1f2e] to-[#0f2839] rounded-xl p-4 text-white space-y-2">
-                <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                  <span className="text-[#e3b45c] font-bold">💱 پیش‌نمایش انتقال داخلی</span>
-                </div>
+                <p className="text-[#e3b45c] font-bold text-sm">💱 پیش‌نمایش انتقال داخلی</p>
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div>
                     <p className="text-slate-300">کسر از <b>{user.name}</b>:</p>
-                    <p className="text-red-300 font-bold text-base">
-                      -{fa(amt)} {CURRENCY_META[fromCur].label}
-                    </p>
+                    <p className="text-red-300 font-bold text-base">-{fa(amt)} {CURRENCY_META[fromCur].label}</p>
                   </div>
                   <div>
                     <p className="text-slate-300">افزودن به <b>{internalReceiver.name}</b>:</p>
-                    <p className="text-emerald-300 font-bold text-base">
-                      +{fa(internalReceiverAmount)} {CURRENCY_META[toCur].label}
-                    </p>
+                    <p className="text-emerald-300 font-bold text-base">+{fa(internalReceiverAmount)} {CURRENCY_META[toCur].label}</p>
                   </div>
                 </div>
-                {fromCur !== toCur && (
-                  <p className="text-[#e3b45c] text-[11px] text-center pt-1 border-t border-white/10">
-                    ✨ تبدیل ارز با نرخ روز اعمال شد
-                  </p>
-                )}
-                {(user as any).telegram && (
-                  <p className="text-sky-300 text-[11px]">📨 رسید به تلگرام فرستنده ارسال می‌شود</p>
-                )}
-                {(internalReceiver as any).telegram && (
-                  <p className="text-sky-300 text-[11px]">📨 رسید به تلگرام گیرنده ارسال می‌شود</p>
-                )}
-              </div>
-            )}
-
-            {user && (
-              <div className="sm:col-span-2 lg:col-span-4 bg-slate-50 rounded-xl p-3 text-xs text-slate-600 space-y-1">
-                <p><b>مانده فرستنده ({user.name}):</b> 🇦🇫 {fa(user.balances?.AFN || 0)} | 🇺🇸 {fa(user.balances?.USD || 0)} | 🇮🇷 {fa(user.balances?.IRR || 0)}</p>
-                {internalReceiver && (
-                  <p><b>مانده گیرنده ({internalReceiver.name}):</b> 🇦🇫 {fa(internalReceiver.balances?.AFN || 0)} | 🇺🇸 {fa(internalReceiver.balances?.USD || 0)} | 🇮🇷 {fa(internalReceiver.balances?.IRR || 0)}</p>
-                )}
               </div>
             )}
           </>
@@ -478,11 +317,9 @@ ${fa(data.receiverAmount)} ${CURRENCY_META[data.toCur].label}${conversion}
             )}
             <Field label="گیرنده" value={receiver} onChange={v => { setReceiver(v); clear(); }} placeholder="نام گیرنده" />
             <Field label="مبلغ" value={amount} onChange={v => { setAmount(v); clear(); }} placeholder="مقدار" />
-
             {user && (
               <div className="sm:col-span-2 lg:col-span-4 bg-slate-50 rounded-xl p-3 text-xs text-slate-600 space-y-1">
                 <p>مانده <b>{user.name}</b>: 🇦🇫 {fa(user.balances?.AFN || 0)} | 🇺🇸 {fa(user.balances?.USD || 0)} | 🇮🇷 {fa(user.balances?.IRR || 0)}</p>
-                {(user as any).telegram && <p className="text-sky-600 font-bold">📨 رسید به تلگرام این مشتری ارسال می‌شود</p>}
                 {mode === "تبادل" && amt > 0 && <p className="text-[#c98f2d] font-bold">معادل دریافتی: {fa(exchTo)} {CURRENCY_META[toCur].label}</p>}
               </div>
             )}
@@ -497,11 +334,7 @@ ${fa(data.receiverAmount)} ${CURRENCY_META[data.toCur].label}${conversion}
         )}
         <div className="lg:col-span-4">
           <button className="btn-gold w-full" onClick={submit} disabled={sendingTg}>
-            {sendingTg 
-              ? "⏳ در حال ارسال تلگرام..." 
-              : mode === "حساب به حساب" 
-                ? "ثبت انتقال داخلی ✅" 
-                : "ثبت معامله ✅"}
+            {sendingTg ? "⏳ در حال ارسال..." : mode === "حساب به حساب" ? "ثبت انتقال داخلی ✅" : "ثبت معامله ✅"}
           </button>
         </div>
       </div>
