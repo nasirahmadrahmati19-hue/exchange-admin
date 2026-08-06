@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { sendTelegram, getLastChatId } from "../lib/telegram";
+import { sendTelegram, getLastChatId, getTelegramUsers, type TelegramUser } from "../lib/telegram";
 
 interface Settings {
   siteName: string;
@@ -32,6 +32,23 @@ export default function SettingsPage() {
   const [error, setError] = useState("");
   const [loaded, setLoaded] = useState(false);
   const mountedRef = useRef(true);
+
+  // 🆕 State برای لیست کاربران ربات
+  const [telegramUsers, setTelegramUsers] = useState<TelegramUser[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [usersMsg, setUsersMsg] = useState("");
+
+  // بارگذاری لیست کاربران از localStorage
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("db_telegram_users");
+      if (raw) {
+        setTelegramUsers(JSON.parse(raw));
+      }
+    } catch (e) {
+      console.error("Load telegram users error:", e);
+    }
+  }, []);
 
   // فقط یک بار در mount از localStorage بخوان
   useEffect(() => {
@@ -103,6 +120,40 @@ export default function SettingsPage() {
       setTgMsg("❌ chat_id پیدا نشد. اول در تلگرام به ربات /start بفرستید، سپس دوباره امتحان کنید");
     }
     setTgLoading(false);
+  };
+
+  // 🆕 تابع به‌روزرسانی لیست کاربران ربات
+  const refreshUsers = async () => {
+    if (!s.telegramToken.trim()) { 
+      setUsersMsg("❌ اول توکن ربات را وارد و ذخیره کنید"); 
+      return; 
+    }
+    
+    setUsersLoading(true);
+    setUsersMsg("⏳ در حال دریافت لیست کاربران...");
+    
+    const users = await getTelegramUsers(s.telegramToken.trim());
+    
+    if (users.length > 0) {
+      setTelegramUsers(users);
+      try {
+        localStorage.setItem("db_telegram_users", JSON.stringify(users));
+        setUsersMsg(`✅ ${users.length} کاربر از ربات دریافت شد`);
+      } catch (e) {
+        setUsersMsg("⚠️ کاربران دریافت شدند ولی ذخیره نشدند");
+      }
+    } else {
+      setUsersMsg("❌ کاربری پیدا نشد. مطمئن شوید کاربران به ربات /start فرستاده‌اند");
+    }
+    
+    setUsersLoading(false);
+  };
+
+  // 🆕 کپی chat_id
+  const copyChatId = (id: number) => {
+    navigator.clipboard.writeText(String(id));
+    setUsersMsg(`✅ chat_id ${id} کپی شد`);
+    setTimeout(() => setUsersMsg(""), 2000);
   };
 
   if (!loaded) {
@@ -184,6 +235,82 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        {/* 🆕 بخش جدید: لیست کاربران ربات */}
+        <div className="rounded-xl border-2 border-purple-200 bg-gradient-to-br from-purple-50 to-pink-50 p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-extrabold text-purple-800 text-base">👥 لیست کاربران ربات</p>
+              <p className="text-xs text-slate-600">کاربرانی که به ربات شما پیام فرستاده‌اند</p>
+            </div>
+            <button
+              className="px-4 py-2 rounded-lg bg-purple-600 text-white text-sm font-bold hover:bg-purple-700 disabled:opacity-50"
+              onClick={refreshUsers}
+              disabled={usersLoading}
+            >
+              {usersLoading ? "⏳" : "🔄"} به‌روزرسانی لیست
+            </button>
+          </div>
+
+          {usersMsg && (
+            <div className={`text-sm font-bold rounded-lg p-3 ${usersMsg.startsWith("✅") ? "bg-emerald-100 text-emerald-700" : usersMsg.startsWith("❌") ? "bg-red-100 text-red-700" : "bg-blue-100 text-blue-700"}`}>
+              {usersMsg}
+            </div>
+          )}
+
+          {telegramUsers.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-purple-100 text-purple-900">
+                  <tr>
+                    <th className="text-center px-3 py-2 font-bold w-12">شماره</th>
+                    <th className="text-right px-3 py-2 font-bold">نام تلگرام</th>
+                    <th className="text-right px-3 py-2 font-bold">Username</th>
+                    <th className="text-right px-3 py-2 font-bold">chat_id</th>
+                    <th className="text-center px-3 py-2 font-bold w-20">عملیات</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-purple-100">
+                  {telegramUsers.map((user, index) => (
+                    <tr key={user.id} className="hover:bg-purple-50">
+                      <td className="px-3 py-2 text-center font-mono font-bold text-purple-900">
+                        {(index + 1).toLocaleString("en-US")}
+                      </td>
+                      <td className="px-3 py-2 font-bold text-slate-900">
+                        {user.firstName} {user.lastName || ""}
+                      </td>
+                      <td className="px-3 py-2 text-slate-600 font-mono text-xs">
+                        {user.username ? `@${user.username}` : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-slate-600 font-mono text-xs" dir="ltr">
+                        {user.id}
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <button
+                          className="px-3 py-1.5 rounded-lg bg-purple-600 text-white text-xs font-bold hover:bg-purple-700"
+                          onClick={() => copyChatId(user.id)}
+                        >
+                          📋 کپی
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-slate-400 text-sm">
+              هنوز کاربری ثبت نشده. دکمه «به‌روزرسانی لیست» را بزنید.
+            </div>
+          )}
+
+          <div className="bg-white/70 rounded-lg p-3 text-xs text-slate-600 space-y-1">
+            <p className="font-bold text-slate-700 mb-1">💡 نکته:</p>
+            <p>• برای دیدن کاربران، باید حداقل یک نفر به ربات شما /start فرستاده باشد</p>
+            <p>• می‌توانید chat_id را کپی کرده و در بخش مشتریان استفاده کنید</p>
+            <p>• در تب مشتریان، می‌توانید مستقیماً از لیست انتخاب کنید</p>
+          </div>
+        </div>
+
         <div>
           <label className="block text-sm font-bold mb-2">کارمزد معاملات (%)</label>
           <input className="input" value={s.commission} onChange={e => update({ commission: e.target.value })} />
@@ -218,6 +345,7 @@ export default function SettingsPage() {
   hasTelegramToken: Boolean(s.telegramToken),
   telegramTokenLength: s.telegramToken.length,
   telegramChat: s.telegramChat,
+  telegramUsersCount: telegramUsers.length,
 }, null, 2)}
           </pre>
         </details>
