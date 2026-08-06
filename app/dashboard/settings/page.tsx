@@ -1,32 +1,54 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { sendTelegram, getLastChatId } from "../lib/telegram";
 
+interface Settings {
+  siteName: string;
+  whatsappPhone: string;
+  telegramToken: string;
+  telegramChat: string;
+  commission: string;
+  username: string;
+  password: string;
+}
+
+const defaults: Settings = {
+  siteName: "صرافی برادران نورزاد",
+  whatsappPhone: "989121234567",
+  telegramToken: "",
+  telegramChat: "",
+  commission: "0.5",
+  username: "admin",
+  password: "admin123",
+};
+
 export default function SettingsPage() {
-  const [s, setS] = useState({
-    siteName: "صرافی برادران نورزاد",
-    whatsappPhone: "989121234567",
-    telegramToken: "",
-    telegramChat: "",
-    commission: "0.5",
-    username: "admin",
-    password: "admin123",
-  });
+  const [s, setS] = useState<Settings>(defaults);
   const [saved, setSaved] = useState(false);
   const [tgMsg, setTgMsg] = useState("");
   const [tgLoading, setTgLoading] = useState(false);
   const [missing, setMissing] = useState<string[]>([]);
   const [error, setError] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const mountedRef = useRef(true);
 
+  // فقط یک بار در mount از localStorage بخوان
   useEffect(() => {
-    const v = localStorage.getItem("db_settings");
-    if (v) {
-      try { setS(prev => ({ ...prev, ...JSON.parse(v) })); } catch {}
+    try {
+      const raw = localStorage.getItem("db_settings");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setS(prev => ({ ...defaults, ...prev, ...parsed }));
+      }
+    } catch (e) {
+      console.error("Settings load error:", e);
     }
+    setLoaded(true);
+    return () => { mountedRef.current = false; };
   }, []);
 
-  const update = (patch: any) => {
+  const update = (patch: Partial<Settings>) => {
     setS(prev => ({ ...prev, ...patch }));
     setMissing([]);
     setError("");
@@ -45,46 +67,47 @@ export default function SettingsPage() {
       setError("لطفاً این فیلدها را پر کنید: " + m.join("، "));
       return;
     }
-    setMissing([]);
-    setError("");
-    localStorage.setItem("db_settings", JSON.stringify(s));
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+
+    try {
+      localStorage.setItem("db_settings", JSON.stringify(s));
+      setMissing([]);
+      setError("");
+      setSaved(true);
+      setTimeout(() => { if (mountedRef.current) setSaved(false); }, 2500);
+    } catch (e) {
+      setError("خطا در ذخیره: " + String(e));
+    }
   };
 
   const testTg = async () => {
-    if (!s.telegramToken.trim()) {
-      setTgMsg("❌ اول توکن ربات را وارد کنید");
-      return;
-    }
-    if (!s.telegramChat.trim()) {
-      setTgMsg("❌ اول chat_id را وارد یا دریافت کنید");
-      return;
-    }
+    if (!s.telegramToken.trim()) { setTgMsg("❌ اول توکن ربات را وارد و ذخیره کنید"); return; }
+    if (!s.telegramChat.trim()) { setTgMsg("❌ اول chat_id را وارد یا دریافت کنید"); return; }
+
     setTgLoading(true);
     setTgMsg("⏳ در حال ارسال...");
     const text = `✅ <b>تست موفق</b>\n\nربات تلگرام صرافی <b>${s.siteName}</b> با موفقیت وصل شد.\n\nاز این پس رسید معاملات به صورت خودکار برای مشتریان ارسال می‌شود.`;
-    const ok = await sendTelegram(s.telegramToken, s.telegramChat, text);
+    const ok = await sendTelegram(s.telegramToken.trim(), s.telegramChat.trim(), text);
     setTgMsg(ok ? "✅ پیام تست به ربات ارسال شد" : "❌ ارسال نشد؛ توکن یا chat_id را بررسی کنید");
     setTgLoading(false);
   };
 
   const getChat = async () => {
-    if (!s.telegramToken.trim()) {
-      setTgMsg("❌ اول توکن ربات را وارد و ذخیره کنید");
-      return;
-    }
+    if (!s.telegramToken.trim()) { setTgMsg("❌ اول توکن ربات را وارد کنید"); return; }
     setTgLoading(true);
     setTgMsg("⏳ در حال دریافت chat_id...");
-    const id = await getLastChatId(s.telegramToken);
+    const id = await getLastChatId(s.telegramToken.trim());
     if (id) {
-      setS(prev => ({ ...prev, telegramChat: id }));
-      setTgMsg(`✅ chat_id دریافت شد: ${id} — حالا ذخیره تنظیمات را بزنید`);
+      update({ telegramChat: id });
+      setTgMsg(`✅ chat_id دریافت شد: ${id} — حالا «ذخیره تنظیمات» را بزنید`);
     } else {
       setTgMsg("❌ chat_id پیدا نشد. اول در تلگرام به ربات /start بفرستید، سپس دوباره امتحان کنید");
     }
     setTgLoading(false);
   };
+
+  if (!loaded) {
+    return <div className="p-8 text-center">در حال بارگذاری...</div>;
+  }
 
   return (
     <div className="space-y-6">
@@ -134,14 +157,14 @@ export default function SettingsPage() {
               onClick={getChat}
               disabled={tgLoading}
             >
-              دریافت آخرین chat_id
+              {tgLoading ? "⏳" : "🔍"} دریافت آخرین chat_id
             </button>
             <button
               className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 disabled:opacity-50"
               onClick={testTg}
               disabled={tgLoading}
             >
-              تست ارسال پیام
+              {tgLoading ? "⏳" : "📤"} تست ارسال پیام
             </button>
           </div>
 
@@ -155,8 +178,8 @@ export default function SettingsPage() {
             <p className="font-bold text-slate-700 mb-1">📖 راهنما:</p>
             <p>۱. توکن را از BotFather بگیرید و بالا وارد کنید</p>
             <p>۲. در تلگرام به ربات خود <b>/start</b> بفرستید</p>
-            <p>۳. دکمه «دریافت آخرین chat_id» را بزنید</p>
-            <p>۴. ذخیره تنظیمات را بزنید</p>
+            <p>۳. دکمه «دریافت chat_id» را بزنید</p>
+            <p>۴. <b>ذخیره تنظیمات</b> را بزنید (مهم!)</p>
             <p>۵. دکمه «تست ارسال» را بزنید</p>
           </div>
         </div>
@@ -185,6 +208,19 @@ export default function SettingsPage() {
           <button className="btn-gold" onClick={save}>ذخیره تنظیمات</button>
           {saved && <span className="text-emerald-600 text-sm font-bold">✓ ذخیره شد</span>}
         </div>
+
+        {/* نمایش وضعیت ذخیره فعلی برای دیباگ */}
+        <details className="text-xs text-slate-500">
+          <summary className="cursor-pointer">🔍 نمایش وضعیت فعلی (برای دیباگ)</summary>
+          <pre className="mt-2 bg-slate-50 p-3 rounded-lg overflow-auto" dir="ltr">
+{JSON.stringify({
+  siteName: s.siteName,
+  hasTelegramToken: Boolean(s.telegramToken),
+  telegramTokenLength: s.telegramToken.length,
+  telegramChat: s.telegramChat,
+}, null, 2)}
+          </pre>
+        </details>
       </div>
     </div>
   );
