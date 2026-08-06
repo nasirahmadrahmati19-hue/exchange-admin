@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { useStored, Field, SelectField, ErrorBox, Modal } from "../lib/ui";
 import {
   loadRates, toAFN, fromAFN, fa, todayFa, checkRequired, requiredMessage,
-  CURRENCIES, CITIES, statusChipClass,
+  CURRENCIES, CITIES,
 } from "../lib/helpers";
 
 interface Hawala {
@@ -29,9 +29,14 @@ const emptyForm = {
   payCur: "افغانی", getCur: "تومان", amount: "", fee: "0",
 };
 
-// تابع تولید کد پیگیری
-const generateTrackCode = () => {
-  return "HW-" + Math.random().toString(36).substring(2, 8).toUpperCase();
+const generateTrackCode = () => "HW-" + Math.random().toString(36).substring(2, 8).toUpperCase();
+
+// استایل وضعیت‌های جدید
+const statusStyle = (status: string) => {
+  if (status === "در حال انتظار") return "bg-amber-50 text-amber-700 border-amber-200";
+  if (status === "پرداخت شد") return "bg-emerald-50 text-emerald-700 border-emerald-200";
+  if (status === "لغو شد") return "bg-red-50 text-red-700 border-red-200";
+  return "bg-slate-50 text-slate-700 border-slate-200";
 };
 
 export default function HawalaPage() {
@@ -39,63 +44,52 @@ export default function HawalaPage() {
   const [rates] = useState(loadRates());
   const [subTab, setSubTab] = useState("register");
 
-  // stateهای مشترک
   const [form, setForm] = useState(emptyForm);
   const [missing, setMissing] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [lastTrackCode, setLastTrackCode] = useState("");
 
-  // stateهای تاریخچه
   const [historyFilter, setHistoryFilter] = useState("همه");
   const [historySearch, setHistorySearch] = useState("");
 
-  // stateهای دریافت/پرداخت
-  const [selectedForPayment, setSelectedForPayment] = useState<Hawala | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState("نقدی");
+  // مودال جزئیات مشتری
+  const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null);
 
   const set = (patch: any) => { setForm({ ...form, ...patch }); setMissing([]); setError(""); };
   const result = fromAFN(Math.max(toAFN(Number(form.amount || 0), form.payCur, rates) - Number(form.fee || 0), 0), form.getCur, rates);
 
-  // فیلتر حواله‌ها بر اساس وضعیت
-  const pendingList = list.filter(h => h.status === "در انتظار");
-  const sentList = list.filter(h => h.status === "ارسال شده");
-  const deliveredList = list.filter(h => h.status === "تحویل شده");
+  // وضعیت‌های جدید
+  const pendingList = list.filter(h => h.status === "در حال انتظار");
+  const paidList = list.filter(h => h.status === "پرداخت شد");
+  const cancelledList = list.filter(h => h.status === "لغو شد");
 
-  // محاسبه آمار برای گزارشات
+  // آمار
   const stats = useMemo(() => {
-    let totalAmount = 0, totalFee = 0, totalResult = 0;
-    const cities: Record<string, number> = {};
-    const customers: Record<string, { count: number; volume: number; type: string }> = {};
+    let totalAmount = 0, totalFee = 0;
+    const customers: Record<string, { count: number; volume: number; type: string; transactions: Hawala[] }> = {};
 
     list.forEach(h => {
       totalAmount += Number(h.amount || 0);
       totalFee += Number(h.fee || 0);
-      totalResult += Number(h.result || 0);
-
-      const route = `${h.fromCity} ← ${h.toCity}`;
-      cities[route] = (cities[route] || 0) + 1;
 
       if (h.sender) {
-        customers[h.sender] = {
-          count: (customers[h.sender]?.count || 0) + 1,
-          volume: (customers[h.sender]?.volume || 0) + Number(h.amount || 0),
-          type: "فرستنده",
-        };
+        if (!customers[h.sender]) customers[h.sender] = { count: 0, volume: 0, type: "فرستنده", transactions: [] };
+        customers[h.sender].count++;
+        customers[h.sender].volume += Number(h.amount || 0);
+        customers[h.sender].transactions.push(h);
       }
       if (h.receiver) {
-        customers[h.receiver] = {
-          count: (customers[h.receiver]?.count || 0) + 1,
-          volume: (customers[h.receiver]?.volume || 0) + Number(h.result || 0),
-          type: "گیرنده",
-        };
+        if (!customers[h.receiver]) customers[h.receiver] = { count: 0, volume: 0, type: "گیرنده", transactions: [] };
+        customers[h.receiver].count++;
+        customers[h.receiver].volume += Number(h.result || 0);
+        customers[h.receiver].transactions.push(h);
       }
     });
 
-    return { totalAmount, totalFee, totalResult, cities, customers };
+    return { totalAmount, totalFee, customers };
   }, [list]);
 
-  // ثبت حواله جدید
   const add = () => {
     const m = checkRequired(form, [
       { key: "sender", label: "نام فرستنده" },
@@ -110,37 +104,22 @@ export default function HawalaPage() {
       ...form,
       result: result.toFixed(0),
       date: todayFa(),
-      status: "در انتظار",
+      status: "در حال انتظار",
       trackCode,
     };
     setList([newHawala, ...list]);
     setForm({ ...emptyForm });
     setLastTrackCode(trackCode);
-    setSuccess(`✨ حواله با موفقیت ثبت شد | کد پیگیری: ${trackCode}`);
+    setSuccess(`✨ حواله ثبت شد | کد پیگیری: ${trackCode}`);
     setTimeout(() => setSuccess(""), 5000);
   };
 
-  // تغییر وضعیت حواله
   const updateStatus = (id: number, status: string) => {
     setList(list.map(h => h.id === id ? { ...h, status } : h));
     setSuccess(`✨ وضعیت به «${status}» تغییر کرد`);
     setTimeout(() => setSuccess(""), 2000);
   };
 
-  // تأیید پرداخت
-  const confirmPayment = () => {
-    if (!selectedForPayment) return;
-    setList(list.map(h => h.id === selectedForPayment.id
-      ? { ...h, status: "تحویل شده" }
-      : h
-    ));
-    setSuccess(`✨ پرداخت به ${selectedForPayment.receiver} تأیید شد`);
-    setSelectedForPayment(null);
-    setPaymentMethod("نقدی");
-    setTimeout(() => setSuccess(""), 3000);
-  };
-
-  // ساخت لینک واتساپ
   const wa = (h: Hawala) => {
     const msg = encodeURIComponent(
       `صرافی برادران نورزاد هرات\n` +
@@ -153,7 +132,6 @@ export default function HawalaPage() {
     return `https://wa.me/${h.phone}?text=${msg}`;
   };
 
-  // فیلتر تاریخچه
   const filteredHistory = list.filter(h => {
     const matchStatus = historyFilter === "همه" || h.status === historyFilter;
     const matchSearch = h.sender.includes(historySearch) ||
@@ -162,11 +140,9 @@ export default function HawalaPage() {
     return matchStatus && matchSearch;
   });
 
-  // زیربخش‌ها با ایموجی‌های مدرن
+  // ۴ بخش اصلی
   const subTabs = [
     { id: "register", label: "ثبت حواله", icon: "✍️" },
-    { id: "pending", label: "در انتظار", icon: "🕐" },
-    { id: "receive", label: "دریافت/پرداخت", icon: "🪙" },
     { id: "history", label: "تاریخچه", icon: "🗂️" },
     { id: "reports", label: "گزارشات", icon: "📈" },
     { id: "customers", label: "مشتریان", icon: "🫂" },
@@ -183,13 +159,13 @@ export default function HawalaPage() {
         </h1>
         <div className="flex gap-2 text-sm">
           <span className="bg-amber-100 text-amber-700 px-3 py-1 rounded-full font-bold">
-            🕐 {pendingList.length}
-          </span>
-          <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-bold">
-            📮 {sentList.length}
+            ⏱️ {pendingList.length}
           </span>
           <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full font-bold">
-            ✨ {deliveredList.length}
+            💳 {paidList.length}
+          </span>
+          <span className="bg-red-100 text-red-700 px-3 py-1 rounded-full font-bold">
+            🚫 {cancelledList.length}
           </span>
         </div>
       </div>
@@ -212,14 +188,11 @@ export default function HawalaPage() {
         ))}
       </div>
 
-      {/* پیام موفقیت */}
       {success && (
         <div className="text-sm rounded-xl p-3 bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold">
           {success}
         </div>
       )}
-
-      {/* پیام خطا */}
       {error && (
         <div className="text-sm rounded-xl p-3 bg-red-50 text-red-700 border border-red-200 font-bold">
           {error}
@@ -242,7 +215,6 @@ export default function HawalaPage() {
             <SelectField label="ارز دریافت" value={form.getCur} onChange={v => set({ getCur: v })} options={CURRENCIES} />
             <Field label="کارمزد (افغانی)" value={form.fee} onChange={v => set({ fee: v })} placeholder="0" />
 
-            {/* نمایش قابل دریافت */}
             <div className="sm:col-span-2">
               <label className="block text-sm font-bold mb-2 invisible">-</label>
               <div className="flex items-center justify-between bg-gradient-to-r from-[#0b1f2e] to-[#16374d] rounded-xl px-4 py-2.5">
@@ -251,7 +223,6 @@ export default function HawalaPage() {
               </div>
             </div>
 
-            {/* دکمه ثبت */}
             <div className="flex items-end">
               <button className="btn-gold w-full" onClick={add}>✨ ثبت حواله</button>
             </div>
@@ -259,7 +230,6 @@ export default function HawalaPage() {
             <div className="lg:col-span-4"><ErrorBox error="" /></div>
           </div>
 
-          {/* نمایش کد پیگیری بعد از ثبت */}
           {lastTrackCode && (
             <div className="card p-4 bg-gradient-to-r from-sky-50 to-blue-50 border border-sky-200">
               <div className="flex items-center justify-between">
@@ -271,11 +241,11 @@ export default function HawalaPage() {
                   className="px-4 py-2 rounded-lg bg-sky-500 text-white text-sm font-bold hover:bg-sky-600"
                   onClick={() => {
                     navigator.clipboard.writeText(lastTrackCode);
-                    setSuccess("📄 کد پیگیری کپی شد");
+                    setSuccess("📋 کد پیگیری کپی شد");
                     setTimeout(() => setSuccess(""), 2000);
                   }}
                 >
-                  📄 کپی
+                  📋 کپی
                 </button>
               </div>
             </div>
@@ -284,167 +254,7 @@ export default function HawalaPage() {
       )}
 
       {/* ================================================================ */}
-      {/* 🕐 بخش ۲: حواله‌های در انتظار */}
-      {/* ================================================================ */}
-      {subTab === "pending" && (
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-extrabold flex items-center gap-2">
-              🕐 حواله‌های در انتظار ارسال
-            </h2>
-            <span className="text-sm bg-amber-100 text-amber-700 px-3 py-1 rounded-full font-bold">
-              {pendingList.length} حواله
-            </span>
-          </div>
-
-          {pendingList.length === 0 ? (
-            <div className="card p-8 text-center text-slate-400">
-              <p className="text-4xl mb-3">🎉</p>
-              <p className="font-bold">هیچ حواله‌ای در انتظار ارسال نیست</p>
-              <p className="text-xs mt-1">همه حواله‌ها ارسال شده‌اند</p>
-            </div>
-          ) : (
-            <div className="card overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-[#0b1f2e] text-[#e3b45c]">
-                  <tr>
-                    <th className="text-center px-4 py-3 font-bold w-16">ردیف</th>
-                    <th className="text-right px-4 py-3 font-bold">کد پیگیری</th>
-                    <th className="text-right px-4 py-3 font-bold">فرستنده</th>
-                    <th className="text-right px-4 py-3 font-bold">گیرنده</th>
-                    <th className="text-right px-4 py-3 font-bold">مسیر</th>
-                    <th className="text-right px-4 py-3 font-bold">مبلغ</th>
-                    <th className="text-right px-4 py-3 font-bold">دریافتی</th>
-                    <th className="text-right px-4 py-3 font-bold">تاریخ</th>
-                    <th className="text-right px-4 py-3 font-bold">عملیات</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {pendingList.map((h, index) => (
-                    <tr key={h.id} className="hover:bg-amber-50/40">
-                      <td className="px-4 py-3 text-center font-mono font-bold text-[#0b1f2e]">
-                        {(index + 1).toLocaleString("en-US")}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="font-mono text-xs bg-slate-100 px-2 py-1 rounded">
-                          {h.trackCode || "-"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 font-bold">{h.sender}</td>
-                      <td className="px-4 py-3">{h.receiver}</td>
-                      <td className="px-4 py-3 text-slate-500 text-xs">{h.fromCity} ← {h.toCity}</td>
-                      <td className="px-4 py-3">{fa(Number(h.amount))} {h.payCur}</td>
-                      <td className="px-4 py-3 font-bold text-[#c98f2d]">{fa(Number(h.result))} {h.getCur}</td>
-                      <td className="px-4 py-3 text-xs text-slate-500">{h.date}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex gap-2">
-                          <button
-                            className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700"
-                            onClick={() => updateStatus(h.id, "ارسال شده")}
-                          >
-                            📮 ارسال
-                          </button>
-                          <a href={wa(h)} target="_blank" rel="noopener noreferrer"
-                            className="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 text-xs font-bold hover:bg-blue-100">
-                            📱 واتساپ
-                          </a>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ================================================================ */}
-      {/* 🪙 بخش ۳: دریافت/پرداخت */}
-      {/* ================================================================ */}
-      {subTab === "receive" && (
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-extrabold flex items-center gap-2">
-              🪙 دریافت و پرداخت حواله‌ها
-            </h2>
-            <span className="text-sm bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-bold">
-              {sentList.length} در انتظار پرداخت
-            </span>
-          </div>
-
-          {sentList.length === 0 ? (
-            <div className="card p-8 text-center text-slate-400">
-              <p className="text-4xl mb-3">✨</p>
-              <p className="font-bold">هیچ حواله‌ای در انتظار پرداخت نیست</p>
-              <p className="text-xs mt-1">همه حواله‌ها تحویل شده‌اند</p>
-            </div>
-          ) : (
-            <div className="card overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-[#0b1f2e] text-[#e3b45c]">
-                  <tr>
-                    <th className="text-center px-4 py-3 font-bold w-16">ردیف</th>
-                    <th className="text-right px-4 py-3 font-bold">کد پیگیری</th>
-                    <th className="text-right px-4 py-3 font-bold">گیرنده</th>
-                    <th className="text-right px-4 py-3 font-bold">شهر مقصد</th>
-                    <th className="text-right px-4 py-3 font-bold">مبلغ پرداختی</th>
-                    <th className="text-right px-4 py-3 font-bold">ارز</th>
-                    <th className="text-right px-4 py-3 font-bold">تاریخ</th>
-                    <th className="text-right px-4 py-3 font-bold">عملیات</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {sentList.map((h, index) => (
-                    <tr key={h.id} className="hover:bg-blue-50/40">
-                      <td className="px-4 py-3 text-center font-mono font-bold text-[#0b1f2e]">
-                        {(index + 1).toLocaleString("en-US")}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="font-mono text-xs bg-slate-100 px-2 py-1 rounded">
-                          {h.trackCode || "-"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 font-bold">{h.receiver}</td>
-                      <td className="px-4 py-3">{h.toCity}</td>
-                      <td className="px-4 py-3 font-bold text-[#c98f2d]">{fa(Number(h.result))}</td>
-                      <td className="px-4 py-3">{h.getCur}</td>
-                      <td className="px-4 py-3 text-xs text-slate-500">{h.date}</td>
-                      <td className="px-4 py-3">
-                        <button
-                          className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700"
-                          onClick={() => setSelectedForPayment(h)}
-                        >
-                          ✨ تأیید پرداخت
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* خلاصه وضعیت */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
-            <div className="card p-4 bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200">
-              <p className="text-xs text-amber-700 font-bold mb-1">🕐 در انتظار ارسال</p>
-              <p className="text-2xl font-extrabold text-amber-700">{pendingList.length}</p>
-            </div>
-            <div className="card p-4 bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200">
-              <p className="text-xs text-blue-700 font-bold mb-1">📮 ارسال شده</p>
-              <p className="text-2xl font-extrabold text-blue-700">{sentList.length}</p>
-            </div>
-            <div className="card p-4 bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200">
-              <p className="text-xs text-emerald-700 font-bold mb-1">✨ تحویل شده</p>
-              <p className="text-2xl font-extrabold text-emerald-700">{deliveredList.length}</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ================================================================ */}
-      {/* 🗂️ بخش ۴: تاریخچه */}
+      {/* 🗂️ بخش ۲: تاریخچه */}
       {/* ================================================================ */}
       {subTab === "history" && (
         <div className="space-y-6">
@@ -459,13 +269,13 @@ export default function HawalaPage() {
                 onChange={e => setHistoryFilter(e.target.value)}
               >
                 <option>همه</option>
-                <option>در انتظار</option>
-                <option>ارسال شده</option>
-                <option>تحویل شده</option>
+                <option>در حال انتظار</option>
+                <option>پرداخت شد</option>
+                <option>لغو شد</option>
               </select>
               <input
                 className="input !w-auto text-sm"
-                placeholder="🔍 جستجو: نام یا کد پیگیری..."
+                placeholder="🔎 جستجو: نام یا کد پیگیری..."
                 value={historySearch}
                 onChange={e => setHistorySearch(e.target.value)}
               />
@@ -508,16 +318,22 @@ export default function HawalaPage() {
                       <td className="px-4 py-3">{fa(Number(h.amount))} {h.payCur}</td>
                       <td className="px-4 py-3 font-bold text-[#c98f2d]">{fa(Number(h.result))} {h.getCur}</td>
                       <td className="px-4 py-3">
-                        <span className={`text-xs px-2 py-1 rounded-full border ${statusChipClass(h.status)}`}>
-                          {h.status}
-                        </span>
+                        <select
+                          className={`text-xs px-2 py-1.5 rounded-full border ${statusStyle(h.status)}`}
+                          value={h.status}
+                          onChange={e => updateStatus(h.id, e.target.value)}
+                        >
+                          <option>در حال انتظار</option>
+                          <option>پرداخت شد</option>
+                          <option>لغو شد</option>
+                        </select>
                       </td>
                       <td className="px-4 py-3 text-xs text-slate-500">{h.date}</td>
                       <td className="px-4 py-3">
                         <div className="flex gap-2">
                           <a href={wa(h)} target="_blank" rel="noopener noreferrer"
                             className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-600 text-xs font-bold hover:bg-emerald-100">
-                            📱 واتساپ
+                            💬 واتساپ
                           </a>
                           <button
                             className="px-2 py-1 rounded-lg bg-red-50 text-red-600 text-xs font-bold hover:bg-red-100"
@@ -537,7 +353,7 @@ export default function HawalaPage() {
       )}
 
       {/* ================================================================ */}
-      {/* 📈 بخش ۵: گزارشات */}
+      {/* 📈 بخش ۳: گزارشات (ساده‌شده) */}
       {/* ================================================================ */}
       {subTab === "reports" && (
         <div className="space-y-6">
@@ -563,8 +379,8 @@ export default function HawalaPage() {
               <p className="text-[11px] opacity-70 mt-1">افغانی</p>
             </div>
             <div className="card p-5 bg-gradient-to-br from-purple-500 to-fuchsia-600 text-white">
-              <p className="text-xs opacity-80 font-bold">✨ تحویل شده</p>
-              <p className="text-2xl font-extrabold mt-2">{fa(deliveredList.length)}</p>
+              <p className="text-xs opacity-80 font-bold">💳 پرداخت شده</p>
+              <p className="text-2xl font-extrabold mt-2">{fa(paidList.length)}</p>
               <p className="text-[11px] opacity-70 mt-1">از {fa(list.length)} حواله</p>
             </div>
           </div>
@@ -575,87 +391,23 @@ export default function HawalaPage() {
             <div className="grid grid-cols-3 gap-4">
               <div className="text-center p-4 rounded-xl bg-amber-50 border border-amber-200">
                 <p className="text-2xl font-extrabold text-amber-700">{fa(pendingList.length)}</p>
-                <p className="text-xs text-amber-600 font-bold mt-1">🕐 در انتظار</p>
-              </div>
-              <div className="text-center p-4 rounded-xl bg-blue-50 border border-blue-200">
-                <p className="text-2xl font-extrabold text-blue-700">{fa(sentList.length)}</p>
-                <p className="text-xs text-blue-600 font-bold mt-1">📮 ارسال شده</p>
+                <p className="text-xs text-amber-600 font-bold mt-1">⏱️ در حال انتظار</p>
               </div>
               <div className="text-center p-4 rounded-xl bg-emerald-50 border border-emerald-200">
-                <p className="text-2xl font-extrabold text-emerald-700">{fa(deliveredList.length)}</p>
-                <p className="text-xs text-emerald-600 font-bold mt-1">✨ تحویل شده</p>
+                <p className="text-2xl font-extrabold text-emerald-700">{fa(paidList.length)}</p>
+                <p className="text-xs text-emerald-600 font-bold mt-1">💳 پرداخت شد</p>
+              </div>
+              <div className="text-center p-4 rounded-xl bg-red-50 border border-red-200">
+                <p className="text-2xl font-extrabold text-red-700">{fa(cancelledList.length)}</p>
+                <p className="text-xs text-red-600 font-bold mt-1">🚫 لغو شد</p>
               </div>
             </div>
-          </div>
-
-          {/* برترین مسیرها */}
-          <div className="card p-5">
-            <h3 className="font-bold mb-4">🗺️ برترین مسیرهای حواله</h3>
-            {Object.keys(stats.cities).length === 0 ? (
-              <p className="text-center text-slate-400 py-4">هنوز حواله‌ای ثبت نشده</p>
-            ) : (
-              <div className="space-y-2">
-                {Object.entries(stats.cities)
-                  .sort((a, b) => b[1] - a[1])
-                  .slice(0, 5)
-                  .map(([route, count], i) => (
-                    <div key={route} className="flex items-center justify-between p-3 rounded-lg bg-slate-50 hover:bg-slate-100">
-                      <div className="flex items-center gap-3">
-                        <span className="w-8 h-8 rounded-lg bg-[#0b1f2e] text-[#e3b45c] flex items-center justify-center font-bold text-sm">
-                          {(i + 1).toLocaleString("en-US")}
-                        </span>
-                        <span className="font-bold text-sm">{route}</span>
-                      </div>
-                      <span className="text-xs bg-slate-200 px-2 py-1 rounded-full font-bold">
-                        {fa(count)} حواله
-                      </span>
-                    </div>
-                  ))}
-              </div>
-            )}
-          </div>
-
-          {/* برترین مشتریان */}
-          <div className="card p-5">
-            <h3 className="font-bold mb-4">🫂 برترین مشتریان</h3>
-            {Object.keys(stats.customers).length === 0 ? (
-              <p className="text-center text-slate-400 py-4">هنوز مشتری‌ای ثبت نشده</p>
-            ) : (
-              <div className="space-y-2">
-                {Object.entries(stats.customers)
-                  .sort((a, b) => b[1].count - a[1].count)
-                  .slice(0, 5)
-                  .map(([name, info], i) => (
-                    <div key={name} className="flex items-center justify-between p-3 rounded-lg bg-slate-50 hover:bg-slate-100">
-                      <div className="flex items-center gap-3">
-                        <span className="w-8 h-8 rounded-lg bg-[#0b1f2e] text-[#e3b45c] flex items-center justify-center font-bold text-sm">
-                          {(i + 1).toLocaleString("en-US")}
-                        </span>
-                        <div>
-                          <span className="font-bold text-sm">{name}</span>
-                          <span className={`text-xs mr-2 px-2 py-0.5 rounded-full border ${
-                            info.type === "فرستنده"
-                              ? "bg-blue-50 text-blue-700 border-blue-200"
-                              : "bg-emerald-50 text-emerald-700 border-emerald-200"
-                          }`}>
-                            {info.type}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="text-left">
-                        <p className="text-xs font-bold text-[#0b1f2e]">{fa(info.count)} حواله</p>
-                        <p className="text-xs text-[#c98f2d]">حجم: {fa(info.volume)}</p>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            )}
           </div>
         </div>
       )}
 
       {/* ================================================================ */}
-      {/* 🫂 بخش ۶: مشتریان */}
+      {/* 🫂 بخش ۴: مشتریان (با ستون جزئیات) */}
       {/* ================================================================ */}
       {subTab === "customers" && (
         <div className="space-y-6">
@@ -684,6 +436,7 @@ export default function HawalaPage() {
                     <th className="text-right px-4 py-3 font-bold">نوع</th>
                     <th className="text-right px-4 py-3 font-bold">تعداد حواله</th>
                     <th className="text-right px-4 py-3 font-bold">حجم کل</th>
+                    <th className="text-right px-4 py-3 font-bold">جزئیات معاملات</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -706,6 +459,14 @@ export default function HawalaPage() {
                         </td>
                         <td className="px-4 py-3">{fa(info.count)} حواله</td>
                         <td className="px-4 py-3 font-bold text-[#c98f2d]">{fa(info.volume)}</td>
+                        <td className="px-4 py-3">
+                          <button
+                            className="px-3 py-1.5 rounded-lg bg-sky-50 text-sky-600 text-xs font-bold hover:bg-sky-100 flex items-center gap-1"
+                            onClick={() => setSelectedCustomer(name)}
+                          >
+                            🔍 جزئیات
+                          </button>
+                        </td>
                       </tr>
                     ))}
                 </tbody>
@@ -716,57 +477,71 @@ export default function HawalaPage() {
       )}
 
       {/* ================================================================ */}
-      {/* مودال تأیید پرداخت */}
+      {/* مودال جزئیات معاملات مشتری */}
       {/* ================================================================ */}
-      {selectedForPayment && (
-        <Modal title="✨ تأیید پرداخت" onClose={() => setSelectedForPayment(null)}>
+      {selectedCustomer && stats.customers[selectedCustomer] && (
+        <Modal title={`🔍 جزئیات معاملات ${selectedCustomer}`} onClose={() => setSelectedCustomer(null)}>
           <div className="space-y-4">
-            <div className="bg-slate-50 rounded-xl p-4 space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-500">کد پیگیری:</span>
-                <span className="font-mono font-bold">{selectedForPayment.trackCode || "-"}</span>
+            <div className="bg-slate-50 rounded-xl p-4 flex items-center justify-between">
+              <div>
+                <p className="font-bold text-[#0b1f2e]">{selectedCustomer}</p>
+                <p className="text-xs text-slate-500">
+                  {stats.customers[selectedCustomer].type} • {fa(stats.customers[selectedCustomer].count)} حواله
+                </p>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-500">گیرنده:</span>
-                <span className="font-bold">{selectedForPayment.receiver}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-500">مبلغ پرداختی:</span>
-                <span className="font-bold text-[#c98f2d]">
-                  {fa(Number(selectedForPayment.result))} {selectedForPayment.getCur}
-                </span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-500">شهر مقصد:</span>
-                <span className="font-bold">{selectedForPayment.toCity}</span>
+              <div className="text-left">
+                <p className="text-xs text-slate-500">حجم کل:</p>
+                <p className="font-bold text-[#c98f2d]">{fa(stats.customers[selectedCustomer].volume)}</p>
               </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-bold mb-2">🪙 روش پرداخت</label>
-              <select
-                className="input"
-                value={paymentMethod}
-                onChange={e => setPaymentMethod(e.target.value)}
-              >
-                <option>نقدی</option>
-                <option>حواله بانکی</option>
-                <option>صرافی همکار</option>
-                <option>سایر</option>
-              </select>
+            <div className="max-h-96 overflow-y-auto space-y-2">
+              {stats.customers[selectedCustomer].transactions.map((h, i) => (
+                <div key={h.id} className="p-3 rounded-xl border border-slate-200 hover:border-sky-300">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-mono text-xs bg-slate-100 px-2 py-1 rounded">
+                      {h.trackCode || "-"}
+                    </span>
+                    <span className={`text-xs px-2 py-1 rounded-full border ${statusStyle(h.status)}`}>
+                      {h.status}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <p className="text-slate-500">فرستنده:</p>
+                      <p className="font-bold">{h.sender}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500">گیرنده:</p>
+                      <p className="font-bold">{h.receiver}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500">مسیر:</p>
+                      <p className="font-bold">{h.fromCity} ← {h.toCity}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500">مبلغ:</p>
+                      <p className="font-bold">{fa(Number(h.amount))} {h.payCur}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500">دریافتی:</p>
+                      <p className="font-bold text-[#c98f2d]">{fa(Number(h.result))} {h.getCur}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500">تاریخ:</p>
+                      <p className="font-bold">{h.date}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
 
-            <div className="flex gap-2">
-              <button className="btn-gold flex-1" onClick={confirmPayment}>
-                ✨ تأیید پرداخت
-              </button>
-              <button
-                className="flex-1 rounded-xl border border-slate-200 text-sm font-bold"
-                onClick={() => setSelectedForPayment(null)}
-              >
-                انصراف
-              </button>
-            </div>
+            <button
+              className="w-full rounded-xl border border-slate-200 py-2 text-sm font-bold"
+              onClick={() => setSelectedCustomer(null)}
+            >
+              بستن
+            </button>
           </div>
         </Modal>
       )}
