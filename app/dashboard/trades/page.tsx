@@ -208,6 +208,8 @@ export default function TradesPage() {
         <table className="w-full text-sm">
           <thead className="bg-[#0b1f2e] text-[#e3b45c]">
             <tr>
+              {/* 🆕 ستون شماره */}
+              <th className="text-center px-4 py-3 font-bold w-20">شماره</th>
               <th className="text-right px-4 py-3 font-bold">رسید</th>
               <th className="text-right px-4 py-3 font-bold">مشتری</th>
               <th className="text-right px-4 py-3 font-bold">نوع</th>
@@ -217,9 +219,15 @@ export default function TradesPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {trades.length === 0 && <tr><td colSpan={6} className="text-center py-8 text-slate-400">هنوز معامله‌ای ثبت نشده</td></tr>}
-            {trades.map(t => (
+            {/* 🆕 colSpan را از 6 به 7 تغییر دادیم */}
+            {trades.length === 0 && <tr><td colSpan={7} className="text-center py-8 text-slate-400">هنوز معامله‌ای ثبت نشده</td></tr>}
+            {/* 🆕 اضافه کردن index به map */}
+            {trades.map((t, index) => (
               <tr key={t.id} className="hover:bg-amber-50/40">
+                {/* 🆕 ستون شماره با اعداد انگلیسی */}
+                <td className="px-4 py-3 text-center font-mono font-bold text-[#0b1f2e]">
+                  {(index + 1).toLocaleString("en-US")}
+                </td>
                 <td className="px-4 py-3 font-bold text-[#c98f2d]">{t.receiptNo}</td>
                 <td className="px-4 py-3 font-bold">{t.customer}</td>
                 <td className="px-4 py-3">{t.typeLabel}</td>
