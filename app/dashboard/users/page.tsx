@@ -62,8 +62,8 @@ export default function UsersPage() {
         <table className="w-full text-sm">
           <thead className="bg-[#0b1f2e] text-[#e3b45c]">
             <tr>
-              {/* 🆕 ستون شماره ردیف */}
-              <th className="text-center px-3 py-3 font-bold w-16">#</th>
+              {/* 🆕 سربرگ "شماره" به جای "#" */}
+              <th className="text-center px-4 py-3 font-bold w-20">شماره</th>
               <th className="text-right px-4 py-3 font-bold">نام</th>
               <th className="text-right px-4 py-3 font-bold">تماس</th>
               <th className="text-right px-4 py-3 font-bold">🇦🇫 افغانی</th>
@@ -81,12 +81,11 @@ export default function UsersPage() {
                 </td>
               </tr>
             ) : (
-              // 🆕 اضافه کردن index به map
               filtered.map((u, index) => (
                 <tr key={u.id} className="hover:bg-amber-50/40">
-                  {/* 🆕 نمایش شماره ردیف به صورت فارسی */}
-                  <td className="px-3 py-3 text-center font-mono font-bold text-[#0b1f2e]">
-                    {fa(index + 1)}
+                  {/* 🆕 شماره ردیف با اعداد انگلیسی (1, 2, 3...) */}
+                  <td className="px-4 py-3 text-center font-mono font-bold text-[#0b1f2e]">
+                    {(index + 1).toLocaleString("en-US")}
                   </td>
                   <td className="px-4 py-3 font-bold">{u.name}</td>
                   <td className="px-4 py-3 text-slate-500 text-xs">{u.phone}</td>
