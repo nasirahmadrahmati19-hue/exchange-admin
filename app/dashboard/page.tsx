@@ -4,15 +4,10 @@ import { useEffect, useState } from "react";
 
 export default function DashboardPage() {
   const [d, setD] = useState({
-    hawalaCount: 0,
-    hawalaVolume: 0,
-    tradeCount: 0,
-    tradeVolume: 0,
-    totalFee: 0,
-    tradeProfit: 0,
-    pending: 0,
-    today: 0,
+    hawalaCount: 0, hawalaVolume: 0, tradeCount: 0, tradeVolume: 0,
+    totalFee: 0, tradeProfit: 0, pending: 0, today: 0,
     cur: { "افغانی": 0, "دلار": 0, "تومان": 0, "یورو": 0 } as Record<string, number>,
+    accounts: { AFN: 0, USD: 0, IRR: 0 },
     rates: { usd: "70.5", eur: "76", toman: "0.64" },
     commission: "0.5",
     latest: [] as any[],
@@ -22,28 +17,30 @@ export default function DashboardPage() {
     try {
       const h = JSON.parse(localStorage.getItem("db_hawala") || "[]");
       const t = JSON.parse(localStorage.getItem("db_trades") || "[]");
+      const u = JSON.parse(localStorage.getItem("db_users") || "[]");
       let rates = { usd: "70.5", eur: "76", toman: "0.64" };
       const r = localStorage.getItem("db_rates");
       if (r) rates = { ...rates, ...JSON.parse(r) };
       let commission = "0.5";
       const s = localStorage.getItem("db_settings");
-      if (s) {
-        const p = JSON.parse(s);
-        if (p && p.commission) commission = p.commission;
-      }
+      if (s) { const p = JSON.parse(s); if (p && p.commission) commission = p.commission; }
 
       const toAFN = (amount: number, cur: string) => {
         if (cur === "تومان") return (amount / 1000) * Number(rates.toman);
-        if (cur === "دلار") return amount * Number(rates.usd);
+        if (cur === "دلار" || cur === "دالر") return amount * Number(rates.usd);
         if (cur === "یورو") return amount * Number(rates.eur);
         return amount;
       };
 
+      // مانده کل حساب‌های مشتریان
+      const acc = { AFN: 0, USD: 0, IRR: 0 };
+      u.forEach((x: any) => {
+        const b = x.balances || { AFN: Number(x.balance || 0), USD: 0, IRR: 0 };
+        acc.AFN += b.AFN || 0; acc.USD += b.USD || 0; acc.IRR += b.IRR || 0;
+      });
+
       const curSum: Record<string, number> = { "افغانی": 0, "دلار": 0, "تومان": 0, "یورو": 0 };
-      let hawalaVolume = 0;
-      let totalFee = 0;
-      let pending = 0;
-      let today = 0;
+      let hawalaVolume = 0, totalFee = 0, pending = 0, today = 0;
       const todayStr = new Date().toLocaleDateString("fa-IR");
 
       h.forEach((x: any) => {
@@ -55,8 +52,7 @@ export default function DashboardPage() {
         if (x.date === todayStr) today++;
       });
 
-      let tradeVolume = 0;
-      let tradeProfit = 0;
+      let tradeVolume = 0, tradeProfit = 0;
       t.forEach((x: any) => {
         const v = Number(x.afnValue || 0);
         tradeVolume += v;
@@ -65,18 +61,9 @@ export default function DashboardPage() {
       });
 
       setD({
-        hawalaCount: h.length,
-        hawalaVolume,
-        tradeCount: t.length,
-        tradeVolume,
-        totalFee,
-        tradeProfit,
-        pending,
-        today,
-        cur: curSum,
-        rates,
-        commission,
-        latest: h.slice(0, 4),
+        hawalaCount: h.length, hawalaVolume, tradeCount: t.length, tradeVolume,
+        totalFee, tradeProfit, pending, today,
+        cur: curSum, accounts: acc, rates, commission, latest: h.slice(0, 4),
       });
     } catch {}
   }, []);
@@ -90,7 +77,13 @@ export default function DashboardPage() {
     { t: "مفاد از تبادل ارز", v: fa(d.tradeProfit) + " افغانی", sub: "کارمزد " + d.commission + "٪" },
   ];
 
-  const currencies = [
+  const accountCards = [
+    { name: "افغانی", flag: "🇦🇫", code: "AFN", value: d.accounts.AFN, color: "from-emerald-500 to-teal-600" },
+    { name: "دالر", flag: "🇺🇸", code: "USD", value: d.accounts.USD, color: "from-blue-500 to-indigo-600" },
+    { name: "تومان", flag: "🇮🇷", code: "IRR", value: d.accounts.IRR, color: "from-amber-500 to-orange-600" },
+  ];
+
+  const turnover = [
     { name: "افغانی", symbol: "؋", color: "from-emerald-500 to-teal-600" },
     { name: "دلار", symbol: "$", color: "from-blue-500 to-indigo-600" },
     { name: "تومان", symbol: "﷼", color: "from-amber-500 to-orange-600" },
@@ -110,6 +103,23 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* مانده کل حساب‌های مشتریان */}
+      <div>
+        <h3 className="font-extrabold mb-4">مانده کل حساب‌های مشتریان</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+          {accountCards.map(c => (
+            <div key={c.code} className={`rounded-2xl bg-gradient-to-br ${c.color} p-5 text-white shadow-lg`}>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-bold opacity-90">{c.flag} {c.name}</span>
+                <span className="text-xs font-bold opacity-70">{c.code}</span>
+              </div>
+              <p className="text-2xl font-extrabold mt-3">{fa(c.value)}</p>
+              <p className="text-[11px] opacity-80 mt-1">مجموع مانده همه مشتریان</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* کارت‌های خلاصه کسب‌وکار */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         {summary.map(s => (
@@ -121,11 +131,11 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {/* مستطیل‌های جداگانه مجموع به تفکیک ارز */}
+      {/* گردش به تفکیک ارز */}
       <div>
-        <h3 className="font-extrabold mb-4">مجموع گردش به تفکیک ارز</h3>
+        <h3 className="font-extrabold mb-4">مجموع گردش به تفکیک ارز (حواله + تبادل)</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          {currencies.map(c => (
+          {turnover.map(c => (
             <div key={c.name} className={`rounded-2xl bg-gradient-to-br ${c.color} p-5 text-white shadow-lg`}>
               <div className="flex items-center justify-between">
                 <span className="text-sm font-bold opacity-90">{c.name}</span>
@@ -138,7 +148,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* آمار امروز + آخرین حواله‌ها */}
+      {/* وضعیت امروز + آخرین حواله‌ها */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="card p-6">
           <h3 className="font-extrabold mb-6">وضعیت امروز</h3>
