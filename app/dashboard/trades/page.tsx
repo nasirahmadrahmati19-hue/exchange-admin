@@ -53,7 +53,6 @@ export default function TradesPage() {
           setError(`موجودی کافی نیست. مانده ${CURRENCY_META[fromCur].label}: ${fa(user.balances[fromCur] || 0)}`); return;
         }
 
-        // ذخیره مانده قبل از معامله
         const senderBalancesBefore = { ...user.balances };
         const receiverBalancesBefore = { ...receiverUser.balances };
 
@@ -64,17 +63,20 @@ export default function TradesPage() {
         setUsers(users.map(u => u.id === user.id ? senderUpdated : u.id === receiverUser.id ? receiverUpdated : u));
 
         const receiptNo = nextReceiptNo();
+        const receiptNoClean = receiptNo.replace("#", "");
         const date = todayFa(), time = nowTime();
         const siteName = loadSiteName() || "برادران نورزاد";
-
         const amountLabel = fromCur === toCur
           ? `${fa(amt)} ${CURRENCY_META[fromCur].code}`
           : `${fa(amt)} ${CURRENCY_META[fromCur].code} → ${fa(receiverAmount)} ${CURRENCY_META[toCur].code}`;
 
-        // ساخت رسید برای فرستنده
+        // ✅ ساخت رسید برای فرستنده (بدون commission و serviceFee)
         const senderText = buildReceipt({
-          receiptNo, customer: user.name, typeLabel: `انتقال داخلی به ${receiverUser.name}`,
-          amountLabel, receiver: receiverUser.name,
+          receiptNo,
+          customer: user.name,
+          typeLabel: `انتقال داخلی به ${receiverUser.name}`,
+          amountLabel,
+          receiver: receiverUser.name,
           balances: senderUpdated.balances || { AFN: 0, USD: 0, IRR: 0 },
           balancesBefore: senderBalancesBefore,
           deductedAmount: amt,
@@ -84,19 +86,21 @@ export default function TradesPage() {
           date, time, siteName,
         });
 
-        // ساخت رسید برای گیرنده
+        // ✅ ساخت رسید برای گیرنده (بدون commission و serviceFee)
         const receiverText = buildReceipt({
-          receiptNo, customer: receiverUser.name, typeLabel: `دریافت داخلی از ${user.name}`,
-          amountLabel: `${fa(receiverAmount)} ${CURRENCY_META[toCur].code}`, receiver: user.name,
+          receiptNo,
+          customer: receiverUser.name,
+          typeLabel: `دریافت داخلی از ${user.name}`,
+          amountLabel: `${fa(receiverAmount)} ${CURRENCY_META[toCur].code}`,
+          receiver: user.name,
           balances: receiverUpdated.balances || { AFN: 0, USD: 0, IRR: 0 },
           balancesBefore: receiverBalancesBefore,
-          deductedAmount: 0,
           description: `دریافت ${fa(receiverAmount)} ${CURRENCY_META[toCur].label} از ${user.name}`,
           date, time, siteName,
         });
 
         const senderTx: Tx = {
-          id: Date.now(), receiptNo: `#${receiptNo.replace("#", "")}-A`,
+          id: Date.now(), receiptNo: `#${receiptNoClean}-A`,
           typeLabel: `انتقال داخلی به ${receiverUser.name}`,
           customer: user.name, receiver: receiverUser.name,
           currency: CURRENCY_META[fromCur].label, amount: amt,
@@ -105,9 +109,8 @@ export default function TradesPage() {
           balancesAfter: senderUpdated.balances || { AFN: 0, USD: 0, IRR: 0 },
           phone: user.phone || "",
         };
-
         const receiverTx: Tx = {
-          id: Date.now() + 1, receiptNo: `#${receiptNo.replace("#", "")}-B`,
+          id: Date.now() + 1, receiptNo: `#${receiptNoClean}-B`,
           typeLabel: `دریافت داخلی از ${user.name}`,
           customer: receiverUser.name, receiver: user.name,
           currency: CURRENCY_META[toCur].label, amount: receiverAmount,
@@ -118,32 +121,26 @@ export default function TradesPage() {
         };
         setTrades([receiverTx, senderTx, ...trades]);
 
-        // باز کردن واتساپ
         const phone1 = (user.phone || "").replace(/\D/g, "");
         if (phone1) try { window.open(`https://wa.me/${phone1}?text=${encodeURIComponent(senderText)}`, "_blank"); } catch {}
 
-        // ارسال تلگرام
         try {
           const settings = loadJSON<any>("db_settings", {});
           const tgToken = (settings.telegramToken || "").trim();
           const silent = settings.telegramSilent === true;
-
           if (tgToken) {
             setSendingTg(true);
             const results: string[] = [];
-
             const senderTgId = (user.telegram || "").trim();
             if (senderTgId) {
               const ok = await sendTelegram(tgToken, senderTgId, senderText, { silent });
               results.push(ok ? `✅ ${user.name}` : `⚠️ ${user.name}`);
             }
-
             const receiverTgId = (receiverUser.telegram || "").trim();
             if (receiverTgId) {
               const ok = await sendTelegram(tgToken, receiverTgId, receiverText, { silent });
               results.push(ok ? `✅ ${receiverUser.name}` : `⚠️ ${receiverUser.name}`);
             }
-
             setSendingTg(false);
             setTgStatus(results.length > 0 ? "🧾 تلگرام: " + results.join(" | ") : "ℹ️ chat_id یافت نشد");
           } else {
@@ -162,7 +159,6 @@ export default function TradesPage() {
       }
       if (!user) { setError("مشتری پیدا نشد"); return; }
 
-      // ذخیره مانده قبل از معامله
       const balancesBefore = { ...user.balances };
 
       let updated: any, typeLabel: string, curKey: CurKey;
@@ -189,21 +185,22 @@ export default function TradesPage() {
       const amountLabel = mode === "انتقال"
         ? `${fa(amt)} ${CURRENCY_META[curKey].code}`
         : `${fa(amt)} ${CURRENCY_META[fromCur].code} → ${fa(exchTo)} ${CURRENCY_META[toCur].code}`;
-
       const siteName = loadSiteName() || "برادران نورزاد";
 
-      // ساخت رسید با اطلاعات جدید
+      // ✅ ساخت رسید (بدون commission و serviceFee)
       const text = buildReceipt({
-        receiptNo, customer: user.name, typeLabel, amountLabel, receiver,
+        receiptNo,
+        customer: user.name,
+        typeLabel,
+        amountLabel,
+        receiver,
         balances: updated.balances || { AFN: 0, USD: 0, IRR: 0 },
         balancesBefore,
         deductedAmount: amt,
         deductedCurrency: mode === "انتقال" ? CURRENCY_META[curKey].label : CURRENCY_META[fromCur].label,
         exchangeRate: mode === "تبادل" ? fa(fromAFNk(toAFNk(1, fromCur, rates), toCur, rates)) : "—",
-        commission: 0,
-        serviceFee: 0,
-        description: mode === "انتقال" 
-          ? `انتقال ${amountLabel} به ${receiver}`
+        description: mode === "انتقال"
+          ? `انتقال مبلغ ${fa(amt)} ${CURRENCY_META[curKey].label} به گیرنده`
           : `تبادل ${fa(amt)} ${CURRENCY_META[fromCur].label} به ${fa(exchTo)} ${CURRENCY_META[toCur].label}`,
         date, time, siteName,
       });
@@ -226,7 +223,6 @@ export default function TradesPage() {
         const tgId = (user.telegram || "").trim();
         const tgToken = (settings.telegramToken || "").trim();
         const silent = settings.telegramSilent === true;
-
         if (tgToken && tgId) {
           setSendingTg(true);
           const ok = await sendTelegram(tgToken, tgId, text, { silent });
@@ -288,7 +284,6 @@ export default function TradesPage() {
             </div>
             <SelectField label="به ارز (گیرنده)" value={toCur} onChange={v => setToCur(v as CurKey)} options={curOptions as any} />
             <Field label="مبلغ" value={amount} onChange={v => { setAmount(v); clear(); }} placeholder="مقدار" />
-
             {user && internalReceiver && amt > 0 && (
               <div className="sm:col-span-2 lg:col-span-4 bg-gradient-to-r from-[#0b1f2e] to-[#0f2839] rounded-xl p-4 text-white space-y-2">
                 <p className="text-[#e3b45c] font-bold text-sm">💱 پیش‌نمایش انتقال داخلی</p>
@@ -328,7 +323,7 @@ export default function TradesPage() {
 
         <div className="lg:col-span-4"><ErrorBox error={error} /></div>
         {tgStatus && (
-          <div className={`lg:col-span-4 text-sm rounded-xl p-3 ${tgStatus.startsWith("✅") || tgStatus.startsWith("📨") ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : tgStatus.startsWith("⚠️") ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-blue-50 text-blue-700 border border-blue-200"}`}>
+          <div className={`lg:col-span-4 text-sm rounded-xl p-3 ${tgStatus.startsWith("✅") || tgStatus.startsWith("🧾") ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : tgStatus.startsWith("⚠️") ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-blue-50 text-blue-700 border border-blue-200"}`}>
             {tgStatus}
           </div>
         )}
@@ -356,9 +351,7 @@ export default function TradesPage() {
             {trades.length === 0 && <tr><td colSpan={7} className="text-center py-8 text-slate-400">هنوز معامله‌ای ثبت نشده</td></tr>}
             {trades.map((t, index) => (
               <tr key={t.id} className="hover:bg-amber-50/40">
-                <td className="px-4 py-3 text-center font-mono font-bold text-[#0b1f2e]">
-                  {(index + 1).toLocaleString("en-US")}
-                </td>
+                <td className="px-4 py-3 text-center font-mono font-bold text-[#0b1f2e]">{(index + 1).toLocaleString("en-US")}</td>
                 <td className="px-4 py-3 font-bold text-[#c98f2d]">{t.receiptNo}</td>
                 <td className="px-4 py-3 font-bold">{t.customer}</td>
                 <td className="px-4 py-3">{t.typeLabel}</td>
