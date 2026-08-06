@@ -63,6 +63,8 @@ export default function HawalaPage() {
         <table className="w-full text-sm">
           <thead className="bg-[#0b1f2e] text-[#e3b45c]">
             <tr>
+              {/* 🆕 ستون شماره */}
+              <th className="text-center px-4 py-3 font-bold w-20">شماره</th>
               <th className="text-right px-4 py-3 font-bold">فرستنده</th>
               <th className="text-right px-4 py-3 font-bold">گیرنده</th>
               <th className="text-right px-4 py-3 font-bold">مسیر</th>
@@ -72,9 +74,15 @@ export default function HawalaPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {list.length===0 && <tr><td colSpan={6} className="text-center py-8 text-slate-400">هنوز حواله‌ای ثبت نشده</td></tr>}
-            {list.map(h => (
+            {/* 🆕 colSpan را از 6 به 7 تغییر دادیم */}
+            {list.length===0 && <tr><td colSpan={7} className="text-center py-8 text-slate-400">هنوز حواله‌ای ثبت نشده</td></tr>}
+            {/* 🆕 اضافه کردن index به map */}
+            {list.map((h, index) => (
               <tr key={h.id} className="hover:bg-amber-50/40">
+                {/* 🆕 ستون شماره با اعداد انگلیسی */}
+                <td className="px-4 py-3 text-center font-mono font-bold text-[#0b1f2e]">
+                  {(index + 1).toLocaleString("en-US")}
+                </td>
                 <td className="px-4 py-3 font-bold">{h.sender}</td>
                 <td className="px-4 py-3">{h.receiver}</td>
                 <td className="px-4 py-3 text-slate-500 text-xs">{h.fromCity} ← {h.toCity}</td>
