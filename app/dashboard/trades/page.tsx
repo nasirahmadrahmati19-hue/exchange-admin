@@ -126,7 +126,7 @@ export default function TradesPage() {
             <option value="">انتخاب مشتری</option>
             {users.map(u => (
               <option key={u.id} value={u.id}>
-                {u.name} {u.telegram ? "📨" : ""}
+                {u.name} {(u as any).telegram ? "📨" : ""}
               </option>
             ))}
           </select>
