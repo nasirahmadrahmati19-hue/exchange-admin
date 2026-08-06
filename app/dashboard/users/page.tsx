@@ -2,23 +2,23 @@
 
 import { useState } from "react";
 import { useStored, Field, ErrorBox, Modal, ShareBar } from "../lib/ui";
-import { fa, checkRequired, requiredMessage, statusChipClass, CURRENCY_META } from "../lib/helpers";
+import { fa, checkRequired, requiredMessage, statusChipClass } from "../lib/helpers";
 import type { AccountUser } from "../lib/helpers";
 
-const empty = { name: "", phone: "", AFN: "", USD: "", IRR: "" };
+const empty = { name: "", phone: "", telegram: "", AFN: "", USD: "", IRR: "" };
 
-// اگر کاربر قدیمی (بدون balances) بود، خودکار به ساختار جدید تبدیل می‌کند
-const norm = (u: any): AccountUser => ({
+const norm = (u: any): any => ({
   id: u.id,
   name: u.name || "",
   phone: u.phone || "",
+  telegram: u.telegram || "",
   status: u.status || "فعال",
   balances: u.balances || { AFN: Number(u.balance || 0), USD: 0, IRR: 0 },
 });
 
 export default function UsersPage() {
-  const [raw, setRaw] = useStored<AccountUser[]>("db_users", [
-    { id: 1, name: "احمد", phone: "93700000000", balances: { AFN: 300000, USD: 1200, IRR: 85000000 }, status: "فعال" },
+  const [raw, setRaw] = useStored<any[]>("db_users", [
+    { id: 1, name: "احمد", phone: "93700000000", telegram: "", balances: { AFN: 300000, USD: 1200, IRR: 85000000 }, status: "فعال" },
   ]);
   const users = raw.map(norm);
 
@@ -28,7 +28,7 @@ export default function UsersPage() {
   const [form, setForm] = useState(empty);
   const [missing, setMissing] = useState<string[]>([]);
   const [error, setError] = useState("");
-  const [shareUser, setShareUser] = useState<AccountUser | null>(null);
+  const [shareUser, setShareUser] = useState<any | null>(null);
 
   const set = (patch: any) => { setForm({ ...form, ...patch }); setMissing([]); setError(""); };
 
@@ -37,9 +37,9 @@ export default function UsersPage() {
     if (m.length) { setMissing(m); setError(requiredMessage(m)); return; }
     const balances = { AFN: Number(form.AFN || 0), USD: Number(form.USD || 0), IRR: Number(form.IRR || 0) };
     if (editId) {
-      setRaw(raw.map(u => u.id === editId ? { ...norm(u), name: form.name, phone: form.phone, balances } : u));
+      setRaw(raw.map(u => u.id === editId ? { ...norm(u), name: form.name, phone: form.phone, telegram: form.telegram, balances } : u));
     } else {
-      setRaw([...raw, { id: Date.now(), name: form.name, phone: form.phone, balances, status: "فعال" }]);
+      setRaw([...raw, { id: Date.now(), name: form.name, phone: form.phone, telegram: form.telegram, balances, status: "فعال" }]);
     }
     setModal(false); setForm(empty); setEditId(null);
   };
@@ -67,7 +67,7 @@ export default function UsersPage() {
               <th className="text-right px-4 py-3 font-bold">🇦🇫 افغانی</th>
               <th className="text-right px-4 py-3 font-bold">🇺🇸 دالر</th>
               <th className="text-right px-4 py-3 font-bold">🇮🇷 تومان</th>
-              <th className="text-right px-4 py-3 font-bold">وضعیت</th>
+              <th className="text-right px-4 py-3 font-bold">تلگرام</th>
               <th className="text-right px-4 py-3 font-bold">عملیات</th>
             </tr>
           </thead>
@@ -79,11 +79,24 @@ export default function UsersPage() {
                 <td className="px-4 py-3">{fa(u.balances.AFN)}</td>
                 <td className="px-4 py-3">{fa(u.balances.USD)}</td>
                 <td className="px-4 py-3">{fa(u.balances.IRR)}</td>
-                <td className="px-4 py-3"><span className={`text-xs px-3 py-1 rounded-full border ${statusChipClass(u.status)}`}>{u.status}</span></td>
+                <td className="px-4 py-3">
+                  {u.telegram ? (
+                    <span className="text-xs px-2 py-1 rounded-full bg-sky-50 text-sky-700 border border-sky-200">✓ متصل</span>
+                  ) : (
+                    <span className="text-xs text-slate-400">—</span>
+                  )}
+                </td>
                 <td className="px-4 py-3">
                   <div className="flex gap-2">
                     <button className="text-xs px-3 py-1.5 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100" onClick={() => setShareUser(u)}>اشتراک</button>
-                    <button className="text-xs px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100" onClick={() => { setEditId(u.id); setForm({ name: u.name, phone: u.phone, AFN: String(u.balances.AFN), USD: String(u.balances.USD), IRR: String(u.balances.IRR) }); setMissing([]); setError(""); setModal(true); }}>ویرایش</button>
+                    <button className="text-xs px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100" onClick={() => {
+                      setEditId(u.id);
+                      setForm({
+                        name: u.name, phone: u.phone, telegram: u.telegram || "",
+                        AFN: String(u.balances.AFN), USD: String(u.balances.USD), IRR: String(u.balances.IRR)
+                      });
+                      setMissing([]); setError(""); setModal(true);
+                    }}>ویرایش</button>
                     <button className="text-xs px-3 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100" onClick={() => setRaw(raw.filter(x => x.id !== u.id))}>حذف</button>
                   </div>
                 </td>
@@ -97,8 +110,12 @@ export default function UsersPage() {
         <Modal title={editId ? "ویرایش حساب مشتری" : "مشتری جدید"} onClose={() => setModal(false)}>
           <div className="space-y-3">
             <Field label="نام" name="نام" missing={missing} value={form.name} onChange={v => set({ name: v })} />
-            <Field label="شماره تماس" name="شماره تماس" missing={missing} value={form.phone} onChange={v => set({ phone: v })} />
-            <div className="grid grid-cols-3 gap-3">
+            <Field label="شماره تماس (واتساپ)" name="شماره تماس" missing={missing} value={form.phone} onChange={v => set({ phone: v })} placeholder="93700000000" />
+            <Field label="تلگرام (chat_id) — برای ارسال رسید" value={form.telegram} onChange={v => set({ telegram: v })} placeholder="مثال: 123456789" />
+            <p className="text-[11px] text-slate-500 bg-slate-50 rounded-lg p-2">
+              💡 برای دریافت chat_id مشتری: او باید اول به ربات شما /start بفرستد، سپس در تنظیمات «دریافت chat_id» را بزنید.
+            </p>
+            <div className="grid grid-cols-3 gap-3 pt-2">
               <Field label="مانده افغانی" value={form.AFN} onChange={v => set({ AFN: v })} placeholder="0" />
               <Field label="مانده دالر" value={form.USD} onChange={v => set({ USD: v })} placeholder="0" />
               <Field label="مانده تومان" value={form.IRR} onChange={v => set({ IRR: v })} placeholder="0" />
@@ -122,7 +139,7 @@ export default function UsersPage() {
             <p><b>🇮🇷 تومان:</b> {fa(shareUser.balances.IRR)}</p>
           </div>
           <ShareBar
-            text={`مشتری: ${shareUser.name}\nشماره: ${shareUser.phone}\nمانده افغانی: ${fa(shareUser.balances.AFN)}\nمانده دالر: ${fa(shareUser.balances.USD)}\nمانده تومان: ${fa(shareUser.balances.IRR)}\nوضعیت: ${shareUser.status}`}
+            text={`مشتری: ${shareUser.name}\nشماره: ${shareUser.phone}\nمانده افغانی: ${fa(shareUser.balances.AFN)}\nمانده دالر: ${fa(shareUser.balances.USD)}\nمانده تومان: ${fa(shareUser.balances.IRR)}`}
             phone={shareUser.phone}
             pdfTitle="صورت حساب مشتری"
             pdfRows={[
