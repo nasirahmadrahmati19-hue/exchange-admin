@@ -38,6 +38,9 @@ export default function UsersPage() {
   const [missing, setMissing] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [shareUser, setShareUser] = useState<any | null>(null);
+  
+  // 🆕 state برای مودال لیست تلگرام
+  const [showTelegramModal, setShowTelegramModal] = useState(false);
 
   // 🆕 بارگذاری لیست کاربران تلگرام
   const [telegramUsers, setTelegramUsers] = useState<TelegramUser[]>([]);
@@ -65,6 +68,9 @@ export default function UsersPage() {
     }
     setModal(false); setForm(empty); setEditId(null);
   };
+
+  // 🆕 پیدا کردن اطلاعات کاربر تلگرام بر اساس chat_id
+  const selectedTelegramUser = telegramUsers.find(tu => String(tu.id) === form.telegram);
 
   const filtered = users.filter(u => u.name.includes(search) || u.phone.includes(search));
 
@@ -146,64 +152,54 @@ export default function UsersPage() {
             <Field label="نام" name="نام" missing={missing} value={form.name} onChange={v => set({ name: v })} />
             <Field label="شماره تماس (واتساپ)" name="شماره تماس" missing={missing} value={form.phone} onChange={v => set({ phone: v })} placeholder="93700000000" />
             
-            {/* 🆕 تغییر فیلد تلگرام به dropdown */}
+            {/* 🆕 فیلد تلگرام با قابلیت نوشتن دستی + انتخاب از لیست */}
             <div>
               <label className="block text-sm font-bold mb-2">
                 تلگرام (chat_id) — برای ارسال رسید
               </label>
+              <div className="flex gap-2">
+                <input
+                  className="input flex-1 font-mono text-sm"
+                  dir="ltr"
+                  value={form.telegram}
+                  onChange={e => set({ telegram: e.target.value })}
+                  placeholder="chat_id را تایپ کنید یا از لیست انتخاب کنید"
+                />
+                <button
+                  type="button"
+                  className="px-4 py-2 rounded-lg bg-slate-100 text-slate-600 text-xs font-bold hover:bg-slate-200 whitespace-nowrap border border-slate-200"
+                  onClick={() => setShowTelegramModal(true)}
+                >
+                  📋 انتخاب
+                </button>
+              </div>
               
-              {telegramUsers.length > 0 ? (
-                <>
-                  <select 
-                    className="input" 
-                    value={form.telegram}
-                    onChange={e => set({ telegram: e.target.value })}
-                  >
-                    <option value="">— انتخاب از لیست کاربران ربات —</option>
-                    {telegramUsers.map(user => (
-                      <option key={user.id} value={user.id}>
-                        {user.firstName} {user.lastName || ""} 
-                        {user.username ? ` (@${user.username})` : ""} 
-                        — {user.id}
-                      </option>
-                    ))}
-                    <option value="custom">✏️ وارد کردن دستی chat_id...</option>
-                  </select>
-                  
-                  {form.telegram === "custom" && (
-                    <input 
-                      className="input mt-2 font-mono text-xs" 
-                      dir="ltr"
-                      placeholder="مثال: 123456789"
-                      value=""
-                      onChange={e => set({ telegram: e.target.value })}
-                    />
-                  )}
-                  
-                  {form.telegram && form.telegram !== "custom" && (
-                    <p className="text-xs text-emerald-600 mt-1 font-bold">
-                      ✓ chat_id انتخاب شد: {form.telegram}
-                    </p>
-                  )}
-                  
-                  <p className="text-[11px] text-slate-500 bg-slate-50 rounded-lg p-2 mt-2">
-                    💡 برای دیدن لیست کاربران، ابتدا در بخش <b>تنظیمات</b> روی «به‌روزرسانی لیست» کلیک کنید
+              {/* 🆕 نمایش اطلاعات کاربر انتخاب‌شده */}
+              {selectedTelegramUser && (
+                <div className="mt-2 p-3 bg-sky-50 border border-sky-200 rounded-lg">
+                  <p className="text-xs text-sky-700 font-bold">
+                    ✓ کاربر انتخاب‌شده:
                   </p>
-                </>
-              ) : (
-                <>
-                  <input 
-                    className="input font-mono text-xs" 
-                    dir="ltr"
-                    placeholder="مثال: 123456789"
-                    value={form.telegram} 
-                    onChange={e => set({ telegram: e.target.value })} 
-                  />
-                  <p className="text-[11px] text-slate-500 bg-slate-50 rounded-lg p-2 mt-2">
-                    💡 برای دریافت chat_id مشتری: او باید اول به ربات شما /start بفرستد، سپس در تنظیمات «دریافت chat_id» را بزنید.
+                  <p className="text-sm text-sky-900 font-bold mt-1">
+                    {selectedTelegramUser.firstName} {selectedTelegramUser.lastName || ""}
                   </p>
-                </>
+                  <p className="text-xs text-sky-600 mt-0.5">
+                    {selectedTelegramUser.username ? `@${selectedTelegramUser.username} • ` : ""}
+                    chat_id: <span className="font-mono font-bold">{selectedTelegramUser.id}</span>
+                  </p>
+                </div>
               )}
+              
+              {/* 🆕 پیام راهنما */}
+              {form.telegram && !selectedTelegramUser && (
+                <p className="text-xs text-amber-600 mt-1">
+                  ⚠️ این chat_id در لیست کاربران ربات یافت نشد (اما می‌توانید از آن استفاده کنید)
+                </p>
+              )}
+              
+              <p className="text-[11px] text-slate-500 bg-slate-50 rounded-lg p-2 mt-2">
+                💡 می‌توانید chat_id را دستی تایپ کنید یا با کلیک روی «📋 انتخاب» از لیست کاربران ربات انتخاب کنید
+              </p>
             </div>
 
             <div className="grid grid-cols-3 gap-3 pt-2">
@@ -217,6 +213,64 @@ export default function UsersPage() {
             <button className="btn-gold flex-1" onClick={save}>ذخیره</button>
             <button className="flex-1 rounded-xl border border-slate-200 text-sm font-bold" onClick={() => setModal(false)}>انصراف</button>
           </div>
+        </Modal>
+      )}
+
+      {/* 🆕 مودال لیست کاربران تلگرام */}
+      {showTelegramModal && (
+        <Modal title="انتخاب کاربر تلگرام" onClose={() => setShowTelegramModal(false)}>
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {telegramUsers.length === 0 ? (
+              <div className="text-center py-8 text-slate-400">
+                <p className="font-bold mb-2">هیچ کاربری در ربات ثبت نشده</p>
+                <p className="text-xs">
+                  ابتدا در تب تنظیمات، دکمه «به‌روزرسانی لیست کاربران ربات» را بزنید
+                </p>
+              </div>
+            ) : (
+              <>
+                <p className="text-xs text-slate-500 mb-3">
+                  {telegramUsers.length} کاربر در لیست موجود است
+                </p>
+                {telegramUsers.map(tu => (
+                  <button
+                    key={tu.id}
+                    type="button"
+                    className={`w-full text-right p-3 rounded-xl border transition-colors ${
+                      String(tu.id) === form.telegram
+                        ? "bg-sky-100 border-sky-400 shadow-sm"
+                        : "border-slate-200 hover:bg-sky-50 hover:border-sky-300"
+                    }`}
+                    onClick={() => {
+                      set({ telegram: String(tu.id) });
+                      setShowTelegramModal(false);
+                    }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <div className="font-bold text-sm text-[#0b1f2e]">
+                          {tu.firstName} {tu.lastName || ""}
+                        </div>
+                        <div className="text-xs text-slate-500 mt-0.5">
+                          {tu.username ? `@${tu.username} • ` : ""}
+                          chat_id: <span className="font-mono font-bold">{tu.id}</span>
+                        </div>
+                      </div>
+                      {String(tu.id) === form.telegram && (
+                        <span className="text-emerald-600 text-lg">✓</span>
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
+          <button
+            className="mt-4 w-full rounded-xl border border-slate-200 py-2 text-sm font-bold"
+            onClick={() => setShowTelegramModal(false)}
+          >
+            بستن
+          </button>
         </Modal>
       )}
 
