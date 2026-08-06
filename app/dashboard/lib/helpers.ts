@@ -94,30 +94,60 @@ export function applyExchange(user: AccountUser, fromCur: CurKey, toCur: CurKey,
   return { ...user, balances };
 }
 
-/* ---------- ساخت رسید ---------- */
+/* ---------- ساخت رسید رسمی ---------- */
 export function buildReceipt(o: {
   receiptNo: string; customer: string; typeLabel: string; amountLabel: string;
   receiver: string; balances: Balances; date: string; time: string; siteName: string;
 }): string {
   const M = CURRENCY_META;
+  const LINE = "━━━━━━━━━━━━━━━━━━";
+  
+  // خواندن اطلاعات پشتیبانی از تنظیمات
+  const settings = loadJSON<any>("db_settings", {});
+  const phone = settings.phone || "+93 700 000 000";
+  const address = settings.address || "هرات، افغانستان";
+  const siteName = o.siteName || "صرافی نورزاد";
+
   return [
-    "🧾 رسید معامله صرافی", "",
-    `شماره رسید: ${o.receiptNo}`, "",
-    `👤 مشتری: ${o.customer}`, "",
+    `🏦 ${siteName}`,
+    `🧾 رسید رسمی معامله`,
+    ``,
+    LINE,
+    `🔖 شماره رسید: ${o.receiptNo}`,
+    `📅 تاریخ: ${o.date}`,
+    `🕐 ساعت: ${o.time}`,
+    LINE,
+    ``,
+    `👤 اطلاعات مشتری`,
+    ``,
+    `نام مشتری: ${o.customer}`,
+    ``,
+    LINE,
+    `💱 جزئیات معامله`,
+    ``,
     `نوع معامله: ${o.typeLabel}`,
     `مبلغ انتقال: ${o.amountLabel}`,
     `گیرنده: ${o.receiver}`,
-    "وضعیت: ✅ موفق", "",
-    "━━━━━━━━━━━━━━",
-    `💰 مانده حساب ${o.customer} پس از معامله:`, "",
+    `وضعیت: 🟢 موفق`,
+    ``,
+    LINE,
+    `💰 مانده حساب شما پس از معامله`,
+    ``,
     `${M.AFN.flag} افغانی: ${fa(o.balances.AFN)} AFN`,
     `${M.USD.flag} دالر: ${fa(o.balances.USD)} USD`,
-    `${M.IRR.flag} تومان: ${fa(o.balances.IRR)} IRR`, "",
-    "━━━━━━━━━━━━━━",
-    `📅 تاریخ: ${o.date}`,
-    `🕐 ساعت: ${o.time}`, "",
-    "تشکر از اعتماد شما 🌹",
-    `صرافی ${o.siteName}`,
+    `${M.IRR.flag} تومان: ${fa(o.balances.IRR)} IRR`,
+    ``,
+    LINE,
+    ``,
+    `✅ معامله با موفقیت ثبت و نهایی شد.`,
+    ``,
+    `از اعتماد شما سپاسگزاریم 🌹`,
+    ``,
+    `🏦 ${siteName}`,
+    `📞 پشتیبانی: ${phone}`,
+    `📍 آدرس: ${address}`,
+    ``,
+    `🔐 این رسید به‌صورت خودکار توسط سیستم صادر شده است.`,
   ].join("\n");
 }
 
