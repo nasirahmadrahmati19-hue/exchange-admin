@@ -8,15 +8,30 @@ import {
 } from "../lib/helpers";
 
 interface Hawala {
-  id: number; sender: string; receiver: string; phone: string;
-  fromCity: string; toCity: string; payCur: string; getCur: string;
-  amount: string; result: string; fee: string; date: string; status: string;
-  payMethod?: string; recMethod?: string;
+  id: number;
+  sender: string;
+  receiver: string;
+  phone: string;
+  fromCity: string;
+  toCity: string;
+  payCur: string;
+  getCur: string;
+  amount: string;
+  result: string;
+  fee: string;
+  date: string;
+  status: string;
+  trackCode?: string;
 }
 
 const emptyForm = {
   sender: "", receiver: "", phone: "", fromCity: "هرات", toCity: "مشهد",
   payCur: "افغانی", getCur: "تومان", amount: "", fee: "0",
+};
+
+// تابع تولید کد پیگیری
+const generateTrackCode = () => {
+  return "HW-" + Math.random().toString(36).substring(2, 8).toUpperCase();
 };
 
 export default function HawalaPage() {
@@ -29,10 +44,15 @@ export default function HawalaPage() {
   const [missing, setMissing] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [lastTrackCode, setLastTrackCode] = useState("");
 
   // stateهای تاریخچه
   const [historyFilter, setHistoryFilter] = useState("همه");
   const [historySearch, setHistorySearch] = useState("");
+
+  // stateهای دریافت/پرداخت
+  const [selectedForPayment, setSelectedForPayment] = useState<Hawala | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState("نقدی");
 
   const set = (patch: any) => { setForm({ ...form, ...patch }); setMissing([]); setError(""); };
   const result = fromAFN(Math.max(toAFN(Number(form.amount || 0), form.payCur, rates) - Number(form.fee || 0), 0), form.getCur, rates);
@@ -52,7 +72,10 @@ export default function HawalaPage() {
       totalAmount += Number(h.amount || 0);
       totalFee += Number(h.fee || 0);
       totalResult += Number(h.result || 0);
-      cities[`${h.fromCity} ← ${h.toCity}`] = (cities[`${h.fromCity} ← ${h.toCity}`] || 0) + 1;
+
+      const route = `${h.fromCity} ← ${h.toCity}`;
+      cities[route] = (cities[route] || 0) + 1;
+
       if (h.sender) {
         customers[h.sender] = {
           count: (customers[h.sender]?.count || 0) + 1,
@@ -72,6 +95,7 @@ export default function HawalaPage() {
     return { totalAmount, totalFee, totalResult, cities, customers };
   }, [list]);
 
+  // ثبت حواله جدید
   const add = () => {
     const m = checkRequired(form, [
       { key: "sender", label: "نام فرستنده" },
@@ -79,48 +103,103 @@ export default function HawalaPage() {
       { key: "amount", label: "مبلغ" },
     ]);
     if (m.length) { setMissing(m); setError(requiredMessage(m)); return; }
-    setList([{ id: Date.now(), ...form, result: result.toFixed(0), date: todayFa(), status: "در انتظار" }, ...list]);
+
+    const trackCode = generateTrackCode();
+    const newHawala: Hawala = {
+      id: Date.now(),
+      ...form,
+      result: result.toFixed(0),
+      date: todayFa(),
+      status: "در انتظار",
+      trackCode,
+    };
+    setList([newHawala, ...list]);
     setForm({ ...emptyForm });
-    setSuccess("✅ حواله با موفقیت ثبت شد");
-    setTimeout(() => setSuccess(""), 3000);
+    setLastTrackCode(trackCode);
+    setSuccess(`✨ حواله با موفقیت ثبت شد | کد پیگیری: ${trackCode}`);
+    setTimeout(() => setSuccess(""), 5000);
   };
 
+  // تغییر وضعیت حواله
   const updateStatus = (id: number, status: string) => {
     setList(list.map(h => h.id === id ? { ...h, status } : h));
-    setSuccess(`✅ وضعیت به «${status}» تغییر کرد`);
+    setSuccess(`✨ وضعیت به «${status}» تغییر کرد`);
     setTimeout(() => setSuccess(""), 2000);
   };
 
+  // تأیید پرداخت
+  const confirmPayment = () => {
+    if (!selectedForPayment) return;
+    setList(list.map(h => h.id === selectedForPayment.id
+      ? { ...h, status: "تحویل شده" }
+      : h
+    ));
+    setSuccess(`✨ پرداخت به ${selectedForPayment.receiver} تأیید شد`);
+    setSelectedForPayment(null);
+    setPaymentMethod("نقدی");
+    setTimeout(() => setSuccess(""), 3000);
+  };
+
+  // ساخت لینک واتساپ
   const wa = (h: Hawala) => {
-    const msg = encodeURIComponent(`صرافی برادران نورزاد هرات\nحواله از ${h.fromCity} به ${h.toCity}\nگیرنده: ${h.receiver}\nمبلغ قابل دریافت: ${fa(Number(h.result))} ${h.getCur}\nفرستنده: ${h.sender}`);
+    const msg = encodeURIComponent(
+      `صرافی برادران نورزاد هرات\n` +
+      `کد پیگیری: ${h.trackCode || "-"}\n` +
+      `حواله از ${h.fromCity} به ${h.toCity}\n` +
+      `گیرنده: ${h.receiver}\n` +
+      `مبلغ قابل دریافت: ${fa(Number(h.result))} ${h.getCur}\n` +
+      `فرستنده: ${h.sender}`
+    );
     return `https://wa.me/${h.phone}?text=${msg}`;
   };
 
+  // فیلتر تاریخچه
   const filteredHistory = list.filter(h => {
     const matchStatus = historyFilter === "همه" || h.status === historyFilter;
-    const matchSearch = h.sender.includes(historySearch) || h.receiver.includes(historySearch);
+    const matchSearch = h.sender.includes(historySearch) ||
+      h.receiver.includes(historySearch) ||
+      (h.trackCode || "").includes(historySearch.toUpperCase());
     return matchStatus && matchSearch;
   });
 
+  // زیربخش‌ها با ایموجی‌های مدرن
   const subTabs = [
-    { id: "register", label: "ثبت حواله", icon: "📝" },
-    { id: "pending", label: "حواله‌های در انتظار", icon: "⏳" },
-    { id: "receive", label: "دریافت/پرداخت", icon: "💸" },
-    { id: "history", label: "تاریخچه", icon: "📚" },
-    { id: "reports", label: "گزارشات", icon: "📊" },
-    { id: "customers", label: "مشتریان", icon: "👥" },
+    { id: "register", label: "ثبت حواله", icon: "✍️" },
+    { id: "pending", label: "در انتظار", icon: "🕐" },
+    { id: "receive", label: "دریافت/پرداخت", icon: "🪙" },
+    { id: "history", label: "تاریخچه", icon: "🗂️" },
+    { id: "reports", label: "گزارشات", icon: "📈" },
+    { id: "customers", label: "مشتریان", icon: "🫂" },
   ];
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-extrabold flex items-center gap-2">💸 حواله‌جات</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-extrabold flex items-center gap-2">
+          <span className="w-10 h-10 bg-gradient-to-br from-sky-400 to-blue-600 rounded-xl flex items-center justify-center text-xl">
+            💸
+          </span>
+          حواله‌جات
+        </h1>
+        <div className="flex gap-2 text-sm">
+          <span className="bg-amber-100 text-amber-700 px-3 py-1 rounded-full font-bold">
+            🕐 {pendingList.length}
+          </span>
+          <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-bold">
+            📮 {sentList.length}
+          </span>
+          <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full font-bold">
+            ✨ {deliveredList.length}
+          </span>
+        </div>
+      </div>
 
       {/* نوار زیربخش‌ها */}
       <div className="card p-2 flex gap-1 overflow-x-auto sticky top-0 z-10 bg-[#f6f4ee]">
         {subTabs.map(tab => (
           <button
             key={tab.id}
-            onClick={() => setSubTab(tab.id)}
+            onClick={() => { setSubTab(tab.id); setError(""); setSuccess(""); }}
             className={`px-4 py-2.5 rounded-xl text-sm font-bold whitespace-nowrap transition-all flex items-center gap-2 ${
               subTab === tab.id
                 ? "bg-[#0b1f2e] text-[#e3b45c] shadow-md"
@@ -133,14 +212,22 @@ export default function HawalaPage() {
         ))}
       </div>
 
+      {/* پیام موفقیت */}
       {success && (
         <div className="text-sm rounded-xl p-3 bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold">
           {success}
         </div>
       )}
 
+      {/* پیام خطا */}
+      {error && (
+        <div className="text-sm rounded-xl p-3 bg-red-50 text-red-700 border border-red-200 font-bold">
+          {error}
+        </div>
+      )}
+
       {/* ================================================================ */}
-      {/* 📝 بخش ۱: ثبت حواله */}
+      {/* ✍️ بخش ۱: ثبت حواله */}
       {/* ================================================================ */}
       {subTab === "register" && (
         <div className="space-y-6">
@@ -154,28 +241,57 @@ export default function HawalaPage() {
             <SelectField label="ارز پرداخت" value={form.payCur} onChange={v => set({ payCur: v })} options={CURRENCIES} />
             <SelectField label="ارز دریافت" value={form.getCur} onChange={v => set({ getCur: v })} options={CURRENCIES} />
             <Field label="کارمزد (افغانی)" value={form.fee} onChange={v => set({ fee: v })} placeholder="0" />
+
+            {/* نمایش قابل دریافت */}
             <div className="sm:col-span-2">
               <label className="block text-sm font-bold mb-2 invisible">-</label>
-              <div className="flex items-center justify-between bg-[#0b1f2e] rounded-xl px-4 py-2.5">
-                <span className="text-[#e3b45c] text-sm font-bold">قابل دریافت:</span>
+              <div className="flex items-center justify-between bg-gradient-to-r from-[#0b1f2e] to-[#16374d] rounded-xl px-4 py-2.5">
+                <span className="text-[#e3b45c] text-sm font-bold">🪙 قابل دریافت:</span>
                 <span className="text-white font-extrabold">{fa(result)} {form.getCur}</span>
               </div>
             </div>
+
+            {/* دکمه ثبت */}
             <div className="flex items-end">
-              <button className="btn-gold w-full" onClick={add}>ثبت حواله</button>
+              <button className="btn-gold w-full" onClick={add}>✨ ثبت حواله</button>
             </div>
-            <div className="lg:col-span-4"><ErrorBox error={error} /></div>
+
+            <div className="lg:col-span-4"><ErrorBox error="" /></div>
           </div>
+
+          {/* نمایش کد پیگیری بعد از ثبت */}
+          {lastTrackCode && (
+            <div className="card p-4 bg-gradient-to-r from-sky-50 to-blue-50 border border-sky-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-bold text-sky-700">🔍 کد پیگیری حواله:</p>
+                  <p className="text-xl font-extrabold text-sky-900 font-mono mt-1">{lastTrackCode}</p>
+                </div>
+                <button
+                  className="px-4 py-2 rounded-lg bg-sky-500 text-white text-sm font-bold hover:bg-sky-600"
+                  onClick={() => {
+                    navigator.clipboard.writeText(lastTrackCode);
+                    setSuccess("📄 کد پیگیری کپی شد");
+                    setTimeout(() => setSuccess(""), 2000);
+                  }}
+                >
+                  📄 کپی
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {/* ================================================================ */}
-      {/* ⏳ بخش ۲: حواله‌های در انتظار */}
+      {/* 🕐 بخش ۲: حواله‌های در انتظار */}
       {/* ================================================================ */}
       {subTab === "pending" && (
         <div className="space-y-6">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-extrabold">حواله‌های در انتظار ارسال</h2>
+            <h2 className="text-lg font-extrabold flex items-center gap-2">
+              🕐 حواله‌های در انتظار ارسال
+            </h2>
             <span className="text-sm bg-amber-100 text-amber-700 px-3 py-1 rounded-full font-bold">
               {pendingList.length} حواله
             </span>
@@ -183,14 +299,17 @@ export default function HawalaPage() {
 
           {pendingList.length === 0 ? (
             <div className="card p-8 text-center text-slate-400">
-              هیچ حواله‌ای در انتظار ارسال نیست 🎉
+              <p className="text-4xl mb-3">🎉</p>
+              <p className="font-bold">هیچ حواله‌ای در انتظار ارسال نیست</p>
+              <p className="text-xs mt-1">همه حواله‌ها ارسال شده‌اند</p>
             </div>
           ) : (
             <div className="card overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-[#0b1f2e] text-[#e3b45c]">
                   <tr>
-                    <th className="text-center px-4 py-3 font-bold w-20">شماره</th>
+                    <th className="text-center px-4 py-3 font-bold w-16">ردیف</th>
+                    <th className="text-right px-4 py-3 font-bold">کد پیگیری</th>
                     <th className="text-right px-4 py-3 font-bold">فرستنده</th>
                     <th className="text-right px-4 py-3 font-bold">گیرنده</th>
                     <th className="text-right px-4 py-3 font-bold">مسیر</th>
@@ -206,6 +325,11 @@ export default function HawalaPage() {
                       <td className="px-4 py-3 text-center font-mono font-bold text-[#0b1f2e]">
                         {(index + 1).toLocaleString("en-US")}
                       </td>
+                      <td className="px-4 py-3">
+                        <span className="font-mono text-xs bg-slate-100 px-2 py-1 rounded">
+                          {h.trackCode || "-"}
+                        </span>
+                      </td>
                       <td className="px-4 py-3 font-bold">{h.sender}</td>
                       <td className="px-4 py-3">{h.receiver}</td>
                       <td className="px-4 py-3 text-slate-500 text-xs">{h.fromCity} ← {h.toCity}</td>
@@ -218,10 +342,11 @@ export default function HawalaPage() {
                             className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700"
                             onClick={() => updateStatus(h.id, "ارسال شده")}
                           >
-                            📤 ارسال
+                            📮 ارسال
                           </button>
-                          <a href={wa(h)} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 text-xs font-bold hover:bg-blue-100">
-                            واتساپ
+                          <a href={wa(h)} target="_blank" rel="noopener noreferrer"
+                            className="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 text-xs font-bold hover:bg-blue-100">
+                            📱 واتساپ
                           </a>
                         </div>
                       </td>
@@ -235,12 +360,14 @@ export default function HawalaPage() {
       )}
 
       {/* ================================================================ */}
-      {/* 💸 بخش ۳: دریافت/پرداخت */}
+      {/* 🪙 بخش ۳: دریافت/پرداخت */}
       {/* ================================================================ */}
       {subTab === "receive" && (
         <div className="space-y-6">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-extrabold">دریافت و پرداخت حواله‌ها</h2>
+            <h2 className="text-lg font-extrabold flex items-center gap-2">
+              🪙 دریافت و پرداخت حواله‌ها
+            </h2>
             <span className="text-sm bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-bold">
               {sentList.length} در انتظار پرداخت
             </span>
@@ -248,14 +375,17 @@ export default function HawalaPage() {
 
           {sentList.length === 0 ? (
             <div className="card p-8 text-center text-slate-400">
-              هیچ حواله‌ای در انتظار پرداخت نیست ✅
+              <p className="text-4xl mb-3">✨</p>
+              <p className="font-bold">هیچ حواله‌ای در انتظار پرداخت نیست</p>
+              <p className="text-xs mt-1">همه حواله‌ها تحویل شده‌اند</p>
             </div>
           ) : (
             <div className="card overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-[#0b1f2e] text-[#e3b45c]">
                   <tr>
-                    <th className="text-center px-4 py-3 font-bold w-20">شماره</th>
+                    <th className="text-center px-4 py-3 font-bold w-16">ردیف</th>
+                    <th className="text-right px-4 py-3 font-bold">کد پیگیری</th>
                     <th className="text-right px-4 py-3 font-bold">گیرنده</th>
                     <th className="text-right px-4 py-3 font-bold">شهر مقصد</th>
                     <th className="text-right px-4 py-3 font-bold">مبلغ پرداختی</th>
@@ -270,6 +400,11 @@ export default function HawalaPage() {
                       <td className="px-4 py-3 text-center font-mono font-bold text-[#0b1f2e]">
                         {(index + 1).toLocaleString("en-US")}
                       </td>
+                      <td className="px-4 py-3">
+                        <span className="font-mono text-xs bg-slate-100 px-2 py-1 rounded">
+                          {h.trackCode || "-"}
+                        </span>
+                      </td>
                       <td className="px-4 py-3 font-bold">{h.receiver}</td>
                       <td className="px-4 py-3">{h.toCity}</td>
                       <td className="px-4 py-3 font-bold text-[#c98f2d]">{fa(Number(h.result))}</td>
@@ -278,9 +413,9 @@ export default function HawalaPage() {
                       <td className="px-4 py-3">
                         <button
                           className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700"
-                          onClick={() => updateStatus(h.id, "تحویل شده")}
+                          onClick={() => setSelectedForPayment(h)}
                         >
-                          ✅ تأیید پرداخت
+                          ✨ تأیید پرداخت
                         </button>
                       </td>
                     </tr>
@@ -290,18 +425,18 @@ export default function HawalaPage() {
             </div>
           )}
 
-          {/* خلاصه پرداخت‌های امروز */}
+          {/* خلاصه وضعیت */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
             <div className="card p-4 bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200">
-              <p className="text-xs text-amber-700 font-bold mb-1">⏳ در انتظار</p>
+              <p className="text-xs text-amber-700 font-bold mb-1">🕐 در انتظار ارسال</p>
               <p className="text-2xl font-extrabold text-amber-700">{pendingList.length}</p>
             </div>
             <div className="card p-4 bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200">
-              <p className="text-xs text-blue-700 font-bold mb-1">📤 ارسال شده</p>
+              <p className="text-xs text-blue-700 font-bold mb-1">📮 ارسال شده</p>
               <p className="text-2xl font-extrabold text-blue-700">{sentList.length}</p>
             </div>
             <div className="card p-4 bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200">
-              <p className="text-xs text-emerald-700 font-bold mb-1">✅ تحویل شده</p>
+              <p className="text-xs text-emerald-700 font-bold mb-1">✨ تحویل شده</p>
               <p className="text-2xl font-extrabold text-emerald-700">{deliveredList.length}</p>
             </div>
           </div>
@@ -309,12 +444,14 @@ export default function HawalaPage() {
       )}
 
       {/* ================================================================ */}
-      {/* 📚 بخش ۴: تاریخچه */}
+      {/* 🗂️ بخش ۴: تاریخچه */}
       {/* ================================================================ */}
       {subTab === "history" && (
         <div className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-lg font-extrabold">تاریخچه حواله‌ها</h2>
+            <h2 className="text-lg font-extrabold flex items-center gap-2">
+              🗂️ تاریخچه حواله‌ها
+            </h2>
             <div className="flex gap-2">
               <select
                 className="input !w-auto text-sm"
@@ -328,7 +465,7 @@ export default function HawalaPage() {
               </select>
               <input
                 className="input !w-auto text-sm"
-                placeholder="جستجوی فرستنده یا گیرنده..."
+                placeholder="🔍 جستجو: نام یا کد پیگیری..."
                 value={historySearch}
                 onChange={e => setHistorySearch(e.target.value)}
               />
@@ -339,7 +476,8 @@ export default function HawalaPage() {
             <table className="w-full text-sm">
               <thead className="bg-[#0b1f2e] text-[#e3b45c]">
                 <tr>
-                  <th className="text-center px-4 py-3 font-bold w-20">شماره</th>
+                  <th className="text-center px-4 py-3 font-bold w-16">ردیف</th>
+                  <th className="text-right px-4 py-3 font-bold">کد پیگیری</th>
                   <th className="text-right px-4 py-3 font-bold">فرستنده</th>
                   <th className="text-right px-4 py-3 font-bold">گیرنده</th>
                   <th className="text-right px-4 py-3 font-bold">مسیر</th>
@@ -352,12 +490,17 @@ export default function HawalaPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredHistory.length === 0 ? (
-                  <tr><td colSpan={9} className="text-center py-8 text-slate-400">حواله‌ای یافت نشد</td></tr>
+                  <tr><td colSpan={10} className="text-center py-8 text-slate-400">حواله‌ای یافت نشد</td></tr>
                 ) : (
                   filteredHistory.map((h, index) => (
                     <tr key={h.id} className="hover:bg-amber-50/40">
                       <td className="px-4 py-3 text-center font-mono font-bold text-[#0b1f2e]">
                         {(index + 1).toLocaleString("en-US")}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="font-mono text-xs bg-slate-100 px-2 py-1 rounded">
+                          {h.trackCode || "-"}
+                        </span>
                       </td>
                       <td className="px-4 py-3 font-bold">{h.sender}</td>
                       <td className="px-4 py-3">{h.receiver}</td>
@@ -365,13 +508,23 @@ export default function HawalaPage() {
                       <td className="px-4 py-3">{fa(Number(h.amount))} {h.payCur}</td>
                       <td className="px-4 py-3 font-bold text-[#c98f2d]">{fa(Number(h.result))} {h.getCur}</td>
                       <td className="px-4 py-3">
-                        <span className={`text-xs px-2 py-1 rounded-full border ${statusChipClass(h.status)}`}>{h.status}</span>
+                        <span className={`text-xs px-2 py-1 rounded-full border ${statusChipClass(h.status)}`}>
+                          {h.status}
+                        </span>
                       </td>
                       <td className="px-4 py-3 text-xs text-slate-500">{h.date}</td>
                       <td className="px-4 py-3">
                         <div className="flex gap-2">
-                          <a href={wa(h)} target="_blank" rel="noopener noreferrer" className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-600 text-xs font-bold hover:bg-emerald-100">واتساپ</a>
-                          <button className="px-2 py-1 rounded-lg bg-red-50 text-red-600 text-xs font-bold hover:bg-red-100" onClick={() => setList(list.filter(x => x.id !== h.id))}>حذف</button>
+                          <a href={wa(h)} target="_blank" rel="noopener noreferrer"
+                            className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-600 text-xs font-bold hover:bg-emerald-100">
+                            📱 واتساپ
+                          </a>
+                          <button
+                            className="px-2 py-1 rounded-lg bg-red-50 text-red-600 text-xs font-bold hover:bg-red-100"
+                            onClick={() => setList(list.filter(x => x.id !== h.id))}
+                          >
+                            🗑️ حذف
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -384,11 +537,13 @@ export default function HawalaPage() {
       )}
 
       {/* ================================================================ */}
-      {/* 📊 بخش ۵: گزارشات */}
+      {/* 📈 بخش ۵: گزارشات */}
       {/* ================================================================ */}
       {subTab === "reports" && (
         <div className="space-y-6">
-          <h2 className="text-lg font-extrabold">گزارشات حواله‌جات</h2>
+          <h2 className="text-lg font-extrabold flex items-center gap-2">
+            📈 گزارشات حواله‌جات
+          </h2>
 
           {/* کارت‌های آمار کلی */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -403,12 +558,12 @@ export default function HawalaPage() {
               <p className="text-[11px] opacity-70 mt-1">مجموع مبالغ ارسالی</p>
             </div>
             <div className="card p-5 bg-gradient-to-br from-amber-500 to-orange-600 text-white">
-              <p className="text-xs opacity-80 font-bold">💎 مجموع کارمزد</p>
+              <p className="text-xs opacity-80 font-bold">🪙 مجموع کارمزد</p>
               <p className="text-2xl font-extrabold mt-2">{fa(stats.totalFee)}</p>
               <p className="text-[11px] opacity-70 mt-1">افغانی</p>
             </div>
             <div className="card p-5 bg-gradient-to-br from-purple-500 to-fuchsia-600 text-white">
-              <p className="text-xs opacity-80 font-bold">🎯 تحویل شده</p>
+              <p className="text-xs opacity-80 font-bold">✨ تحویل شده</p>
               <p className="text-2xl font-extrabold mt-2">{fa(deliveredList.length)}</p>
               <p className="text-[11px] opacity-70 mt-1">از {fa(list.length)} حواله</p>
             </div>
@@ -420,22 +575,22 @@ export default function HawalaPage() {
             <div className="grid grid-cols-3 gap-4">
               <div className="text-center p-4 rounded-xl bg-amber-50 border border-amber-200">
                 <p className="text-2xl font-extrabold text-amber-700">{fa(pendingList.length)}</p>
-                <p className="text-xs text-amber-600 font-bold mt-1">⏳ در انتظار</p>
+                <p className="text-xs text-amber-600 font-bold mt-1">🕐 در انتظار</p>
               </div>
               <div className="text-center p-4 rounded-xl bg-blue-50 border border-blue-200">
                 <p className="text-2xl font-extrabold text-blue-700">{fa(sentList.length)}</p>
-                <p className="text-xs text-blue-600 font-bold mt-1">📤 ارسال شده</p>
+                <p className="text-xs text-blue-600 font-bold mt-1">📮 ارسال شده</p>
               </div>
               <div className="text-center p-4 rounded-xl bg-emerald-50 border border-emerald-200">
                 <p className="text-2xl font-extrabold text-emerald-700">{fa(deliveredList.length)}</p>
-                <p className="text-xs text-emerald-600 font-bold mt-1">✅ تحویل شده</p>
+                <p className="text-xs text-emerald-600 font-bold mt-1">✨ تحویل شده</p>
               </div>
             </div>
           </div>
 
           {/* برترین مسیرها */}
           <div className="card p-5">
-            <h3 className="font-bold mb-4">برترین مسیرهای حواله</h3>
+            <h3 className="font-bold mb-4">🗺️ برترین مسیرهای حواله</h3>
             {Object.keys(stats.cities).length === 0 ? (
               <p className="text-center text-slate-400 py-4">هنوز حواله‌ای ثبت نشده</p>
             ) : (
@@ -451,7 +606,46 @@ export default function HawalaPage() {
                         </span>
                         <span className="font-bold text-sm">{route}</span>
                       </div>
-                      <span className="text-xs bg-slate-200 px-2 py-1 rounded-full font-bold">{fa(count)} حواله</span>
+                      <span className="text-xs bg-slate-200 px-2 py-1 rounded-full font-bold">
+                        {fa(count)} حواله
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+
+          {/* برترین مشتریان */}
+          <div className="card p-5">
+            <h3 className="font-bold mb-4">🫂 برترین مشتریان</h3>
+            {Object.keys(stats.customers).length === 0 ? (
+              <p className="text-center text-slate-400 py-4">هنوز مشتری‌ای ثبت نشده</p>
+            ) : (
+              <div className="space-y-2">
+                {Object.entries(stats.customers)
+                  .sort((a, b) => b[1].count - a[1].count)
+                  .slice(0, 5)
+                  .map(([name, info], i) => (
+                    <div key={name} className="flex items-center justify-between p-3 rounded-lg bg-slate-50 hover:bg-slate-100">
+                      <div className="flex items-center gap-3">
+                        <span className="w-8 h-8 rounded-lg bg-[#0b1f2e] text-[#e3b45c] flex items-center justify-center font-bold text-sm">
+                          {(i + 1).toLocaleString("en-US")}
+                        </span>
+                        <div>
+                          <span className="font-bold text-sm">{name}</span>
+                          <span className={`text-xs mr-2 px-2 py-0.5 rounded-full border ${
+                            info.type === "فرستنده"
+                              ? "bg-blue-50 text-blue-700 border-blue-200"
+                              : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          }`}>
+                            {info.type}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-left">
+                        <p className="text-xs font-bold text-[#0b1f2e]">{fa(info.count)} حواله</p>
+                        <p className="text-xs text-[#c98f2d]">حجم: {fa(info.volume)}</p>
+                      </div>
                     </div>
                   ))}
               </div>
@@ -461,12 +655,14 @@ export default function HawalaPage() {
       )}
 
       {/* ================================================================ */}
-      {/* 👥 بخش ۶: مشتریان */}
+      {/* 🫂 بخش ۶: مشتریان */}
       {/* ================================================================ */}
       {subTab === "customers" && (
         <div className="space-y-6">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-extrabold">مشتریان حواله‌جات</h2>
+            <h2 className="text-lg font-extrabold flex items-center gap-2">
+              🫂 مشتریان حواله‌جات
+            </h2>
             <span className="text-sm bg-slate-100 text-slate-700 px-3 py-1 rounded-full font-bold">
               {Object.keys(stats.customers).length} مشتری
             </span>
@@ -474,14 +670,16 @@ export default function HawalaPage() {
 
           {Object.keys(stats.customers).length === 0 ? (
             <div className="card p-8 text-center text-slate-400">
-              هنوز مشتری‌ای ثبت نشده است
+              <p className="text-4xl mb-3">🫂</p>
+              <p className="font-bold">هنوز مشتری‌ای ثبت نشده است</p>
+              <p className="text-xs mt-1">اولین حواله را ثبت کنید</p>
             </div>
           ) : (
             <div className="card overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-[#0b1f2e] text-[#e3b45c]">
                   <tr>
-                    <th className="text-center px-4 py-3 font-bold w-20">شماره</th>
+                    <th className="text-center px-4 py-3 font-bold w-16">ردیف</th>
                     <th className="text-right px-4 py-3 font-bold">نام</th>
                     <th className="text-right px-4 py-3 font-bold">نوع</th>
                     <th className="text-right px-4 py-3 font-bold">تعداد حواله</th>
@@ -515,6 +713,62 @@ export default function HawalaPage() {
             </div>
           )}
         </div>
+      )}
+
+      {/* ================================================================ */}
+      {/* مودال تأیید پرداخت */}
+      {/* ================================================================ */}
+      {selectedForPayment && (
+        <Modal title="✨ تأیید پرداخت" onClose={() => setSelectedForPayment(null)}>
+          <div className="space-y-4">
+            <div className="bg-slate-50 rounded-xl p-4 space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500">کد پیگیری:</span>
+                <span className="font-mono font-bold">{selectedForPayment.trackCode || "-"}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500">گیرنده:</span>
+                <span className="font-bold">{selectedForPayment.receiver}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500">مبلغ پرداختی:</span>
+                <span className="font-bold text-[#c98f2d]">
+                  {fa(Number(selectedForPayment.result))} {selectedForPayment.getCur}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500">شهر مقصد:</span>
+                <span className="font-bold">{selectedForPayment.toCity}</span>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold mb-2">🪙 روش پرداخت</label>
+              <select
+                className="input"
+                value={paymentMethod}
+                onChange={e => setPaymentMethod(e.target.value)}
+              >
+                <option>نقدی</option>
+                <option>حواله بانکی</option>
+                <option>صرافی همکار</option>
+                <option>سایر</option>
+              </select>
+            </div>
+
+            <div className="flex gap-2">
+              <button className="btn-gold flex-1" onClick={confirmPayment}>
+                ✨ تأیید پرداخت
+              </button>
+              <button
+                className="flex-1 rounded-xl border border-slate-200 text-sm font-bold"
+                onClick={() => setSelectedForPayment(null)}
+              >
+                انصراف
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );
