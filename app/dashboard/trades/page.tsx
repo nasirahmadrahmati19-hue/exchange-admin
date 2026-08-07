@@ -31,12 +31,46 @@ export default function TradesPage() {
   const [sendingTg, setSendingTg] = useState(false);
   const [tgStatus, setTgStatus] = useState("");
   const [internalReceiverId, setInternalReceiverId] = useState("");
+  const [deleteConfirm, setDeleteConfirm] = useState<Tx | null>(null);
 
   const user = users.find(u => u.id === Number(customerId)) as any;
   const amt = Number(amount || 0);
   const exchTo = fromAFNk(toAFNk(amt, fromCur, rates), toCur, rates);
 
   const clear = () => { setError(""); setTgStatus(""); };
+
+  const deleteTrade = (tx: Tx) => {
+    try {
+      // پیدا کردن معاملات مرتبط (برای حساب به حساب که دو تراکنش -A و -B دارد)
+      const receiptBase = tx.receiptNo.replace(/-[AB]$/, "");
+      const relatedTxs = trades.filter(t => t.receiptNo.replace(/-[AB]$/, "") === receiptBase);
+      
+      // برگرداندن مانده حساب مشتریان
+      const updatedUsers = [...users];
+      relatedTxs.forEach(relatedTx => {
+        const userIdx = updatedUsers.findIndex(u => u.name === relatedTx.customer);
+        if (userIdx === -1) return;
+        
+        const balancesBefore = (relatedTx as any).balancesBefore;
+        if (balancesBefore) {
+          updatedUsers[userIdx] = {
+            ...updatedUsers[userIdx],
+            balances: balancesBefore
+          };
+        }
+      });
+      
+      // حذف معاملات
+      const newTrades = trades.filter(t => t.receiptNo.replace(/-[AB]$/, "") !== receiptBase);
+      
+      setUsers(updatedUsers);
+      setTrades(newTrades);
+      setDeleteConfirm(null);
+    } catch (e) {
+      setError("خطا در حذف معامله: " + String(e));
+      setDeleteConfirm(null);
+    }
+  };
 
   const submit = async () => {
     try {
@@ -70,7 +104,6 @@ export default function TradesPage() {
           ? `${fa(amt)} ${CURRENCY_META[fromCur].code}`
           : `${fa(amt)} ${CURRENCY_META[fromCur].code} → ${fa(receiverAmount)} ${CURRENCY_META[toCur].code}`;
 
-        // ✅ ساخت رسید برای فرستنده (بدون commission و serviceFee)
         const senderText = buildReceipt({
           receiptNo,
           customer: user.name,
@@ -86,7 +119,6 @@ export default function TradesPage() {
           date, time, siteName,
         });
 
-        // ✅ ساخت رسید برای گیرنده (بدون commission و serviceFee)
         const receiverText = buildReceipt({
           receiptNo,
           customer: receiverUser.name,
@@ -108,7 +140,8 @@ export default function TradesPage() {
           status: "موفق", date, time,
           balancesAfter: senderUpdated.balances || { AFN: 0, USD: 0, IRR: 0 },
           phone: user.phone || "",
-        };
+          balancesBefore: senderBalancesBefore,
+        } as Tx;
         const receiverTx: Tx = {
           id: Date.now() + 1, receiptNo: `#${receiptNoClean}-B`,
           typeLabel: `دریافت داخلی از ${user.name}`,
@@ -118,7 +151,8 @@ export default function TradesPage() {
           status: "موفق", date, time,
           balancesAfter: receiverUpdated.balances || { AFN: 0, USD: 0, IRR: 0 },
           phone: receiverUser.phone || "",
-        };
+          balancesBefore: receiverBalancesBefore,
+        } as Tx;
         setTrades([receiverTx, senderTx, ...trades]);
 
         const phone1 = (user.phone || "").replace(/\D/g, "");
@@ -187,7 +221,6 @@ export default function TradesPage() {
         : `${fa(amt)} ${CURRENCY_META[fromCur].code} → ${fa(exchTo)} ${CURRENCY_META[toCur].code}`;
       const siteName = loadSiteName() || "برادران نورزاد";
 
-      // ✅ ساخت رسید (بدون commission و serviceFee)
       const text = buildReceipt({
         receiptNo,
         customer: user.name,
@@ -212,7 +245,8 @@ export default function TradesPage() {
         status: "موفق", date, time,
         balancesAfter: updated.balances || { AFN: 0, USD: 0, IRR: 0 },
         phone: user.phone || "",
-      };
+        balancesBefore,
+      } as Tx;
       setTrades([tx, ...trades]);
 
       const phone = (user.phone || "").replace(/\D/g, "");
@@ -345,10 +379,11 @@ export default function TradesPage() {
               <th className="text-right px-4 py-3 font-bold">مبلغ</th>
               <th className="text-right px-4 py-3 font-bold">وضعیت</th>
               <th className="text-right px-4 py-3 font-bold">عملیات</th>
+              <th className="text-center px-4 py-3 font-bold w-24">🗑️ حذف</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {trades.length === 0 && <tr><td colSpan={7} className="text-center py-8 text-slate-400">هنوز معامله‌ای ثبت نشده</td></tr>}
+            {trades.length === 0 && <tr><td colSpan={8} className="text-center py-8 text-slate-400">هنوز معامله‌ای ثبت نشده</td></tr>}
             {trades.map((t, index) => (
               <tr key={t.id} className="hover:bg-amber-50/40">
                 <td className="px-4 py-3 text-center font-mono font-bold text-[#0b1f2e]">{(index + 1).toLocaleString("en-US")}</td>
@@ -359,6 +394,14 @@ export default function TradesPage() {
                 <td className="px-4 py-3"><span className={`text-xs px-3 py-1 rounded-full border ${statusChipClass(t.status)}`}>{t.status}</span></td>
                 <td className="px-4 py-3">
                   <button className="px-3 py-1.5 rounded-lg bg-sky-50 text-sky-600 text-xs font-bold" onClick={() => reopen(t)}>مشاهده رسید</button>
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <button 
+                    className="px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold transition-colors" 
+                    onClick={() => setDeleteConfirm(t)}
+                  >
+                    🗑️
+                  </button>
                 </td>
               </tr>
             ))}
@@ -380,6 +423,44 @@ export default function TradesPage() {
               ]} />
           </div>
           <button className="mt-4 w-full rounded-xl border border-slate-200 py-2 text-sm font-bold" onClick={() => setReceipt("")}>بستن</button>
+        </Modal>
+      )}
+
+      {deleteConfirm && (
+        <Modal title="⚠️ تأیید حذف معامله" onClose={() => setDeleteConfirm(null)}>
+          <div className="space-y-4">
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
+              <p className="text-red-700 font-bold text-lg">آیا مطمئن هستید؟</p>
+              <p className="text-red-600 text-sm mt-2">این عمل قابل بازگشت نیست!</p>
+            </div>
+            
+            <div className="bg-slate-50 rounded-xl p-4 space-y-2 text-sm">
+              <p><span className="font-bold text-slate-700">رسید:</span> <span className="text-[#c98f2d] font-bold">{deleteConfirm.receiptNo}</span></p>
+              <p><span className="font-bold text-slate-700">مشتری:</span> {deleteConfirm.customer}</p>
+              <p><span className="font-bold text-slate-700">نوع:</span> {deleteConfirm.typeLabel}</p>
+              <p><span className="font-bold text-slate-700">مبلغ:</span> {fa(deleteConfirm.amount)} {deleteConfirm.currency}</p>
+              <p><span className="font-bold text-slate-700">تاریخ:</span> {deleteConfirm.date} {deleteConfirm.time}</p>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
+              ⚠️ با حذف این معامله، <b>مانده حساب مشتری</b> به حالت قبل از معامله برمی‌گردد.
+            </div>
+
+            <div className="flex gap-3">
+              <button 
+                className="flex-1 rounded-xl bg-red-600 hover:bg-red-700 text-white py-3 font-bold transition-colors"
+                onClick={() => deleteTrade(deleteConfirm)}
+              >
+                بله، حذف شود 🗑️
+              </button>
+              <button 
+                className="flex-1 rounded-xl border border-slate-200 hover:bg-slate-50 py-3 font-bold transition-colors"
+                onClick={() => setDeleteConfirm(null)}
+              >
+                انصراف
+              </button>
+            </div>
+          </div>
         </Modal>
       )}
     </div>
