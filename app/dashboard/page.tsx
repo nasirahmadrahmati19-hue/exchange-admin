@@ -330,7 +330,7 @@ export default function DashboardPage() {
           sub={"حجم " + faNum(d.hawalaVolume)}
           totals={d.hawalaTotals}
           fa={faNum}
-          icon="📨"
+          icon="💸"
           gradient="from-blue-500 via-blue-600 to-indigo-700"
         />
         <KpiCard 
@@ -385,7 +385,7 @@ export default function DashboardPage() {
           <div className="relative z-10">
             <div className="flex items-center gap-3 mb-3">
               <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                <span className="text-2xl">🚀</span>
+                <span className="text-2xl">📈</span>
               </div>
               <div>
                 <p className="text-white/80 text-sm font-bold">مفاد کل تبادل ارز</p>
