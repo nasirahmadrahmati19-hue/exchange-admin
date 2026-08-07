@@ -13,7 +13,7 @@ import {
    انواع داده (Types)
    ========================================================================== */
 
-type CurCode = "AFN" | "USD" | "IRT" | "EUR";
+type CurCode = "AFN" | "USD" | "IRT" | "EUR" | "PKR";
 
 interface Hawala {
   id: string | number;
@@ -57,7 +57,7 @@ interface DashboardData {
   todayHawalaFee: number;
   todayTradeCount: number;
   todayTradeProfit: number;
-  accounts: { AFN: number; USD: number; IRR: number };
+  accounts: { AFN: number; USD: number; IRR: number; EUR: number; PKR: number };
   totalDebt: number;
   totalReceivable: number;
   pendingHawala: number;
@@ -66,7 +66,7 @@ interface DashboardData {
   lastUpdated: Date | null;
 }
 
-const EMPTY_TOTALS: Record<CurCode, number> = { AFN: 0, USD: 0, IRT: 0, EUR: 0 };
+const EMPTY_TOTALS: Record<CurCode, number> = { AFN: 0, USD: 0, IRT: 0, EUR: 0, PKR: 0 };
 
 const EMPTY_DATA: DashboardData = {
   hawalaCount: 0,
@@ -81,11 +81,11 @@ const EMPTY_DATA: DashboardData = {
   todayHawalaFee: 0,
   todayTradeCount: 0,
   todayTradeProfit: 0,
-  accounts: { AFN: 0, USD: 0, IRR: 0 },
+  accounts: { AFN: 0, USD: 0, IRR: 0, EUR: 0, PKR: 0 },
   totalDebt: 0,
   totalReceivable: 0,
   pendingHawala: 0,
-  rates: { usd: "70.5", eur: "76", toman: "0.64" },
+  rates: { usd: "70.5", eur: "76", pkr: "25", toman: "0.64" },
   commission: "0.5",
   lastUpdated: null,
 };
@@ -99,6 +99,7 @@ const CUR_ALIASES: Record<string, CurCode> = {
   "دالر": "USD",
   "تومان": "IRT",
   "یورو": "EUR",
+  "کلدار": "PKR",
 };
 
 function normalizeCur(name: string | undefined | null): CurCode | null {
@@ -115,6 +116,8 @@ function toAFN(amount: number, curCode: CurCode | null, rates: Rates): number {
       return amount * Number(rates.usd || 0);
     case "EUR":
       return amount * Number(rates.eur || 0);
+    case "PKR":
+      return amount * Number(rates.pkr || 0);
     default:
       return amount;
   }
@@ -190,23 +193,29 @@ export default function DashboardPage() {
       }
     }
 
-    const accounts = { AFN: 0, USD: 0, IRR: 0 };
+    const accounts = { AFN: 0, USD: 0, IRR: 0, EUR: 0, PKR: 0 };
     let totalDebt = 0;
     let totalReceivable = 0;
 
     for (const x of u) {
-      const b = x.balances || { AFN: 0, USD: 0, IRR: 0 };
+      const b = x.balances || { AFN: 0, USD: 0, IRR: 0, EUR: 0, PKR: 0 };
       const afnBalance = b.AFN || 0;
       const usdBalance = b.USD || 0;
       const irrBalance = b.IRR || 0;
+      const eurBalance = b.EUR || 0;
+      const pkrBalance = b.PKR || 0;
 
       accounts.AFN += afnBalance;
       accounts.USD += usdBalance;
       accounts.IRR += irrBalance;
+      accounts.EUR += eurBalance;
+      accounts.PKR += pkrBalance;
 
       const afnValue = afnBalance +
                        (usdBalance * Number(rates.usd || 0)) +
-                       ((irrBalance / 1000) * Number(rates.toman || 0));
+                       ((irrBalance / 1000) * Number(rates.toman || 0)) +
+                       (eurBalance * Number(rates.eur || 0)) +
+                       (pkrBalance * Number(rates.pkr || 0));
 
       if (afnValue > 0) totalDebt += afnValue;
       else if (afnValue < 0) totalReceivable += Math.abs(afnValue);
@@ -269,8 +278,9 @@ export default function DashboardPage() {
         </div>
         <div className="flex flex-wrap gap-4 mt-4 text-sm">
           <span className="bg-white/5 rounded-xl px-4 py-2 border border-white/5">🇺🇸 دلار <b className="text-[#e3b45c]">{d.rates.usd}</b></span>
-          <span className="bg-white/5 rounded-xl px-4 py-2 border border-white/5">🇮🇷 تومان <b className="text-[#e3b45c]">{d.rates.toman}</b></span>
           <span className="bg-white/5 rounded-xl px-4 py-2 border border-white/5">🇪🇺 یورو <b className="text-[#e3b45c]">{d.rates.eur}</b></span>
+          <span className="bg-white/5 rounded-xl px-4 py-2 border border-white/5">🇵🇰 کلدار <b className="text-[#e3b45c]">{d.rates.pkr}</b></span>
+          <span className="bg-white/5 rounded-xl px-4 py-2 border border-white/5">🇮🇷 تومان <b className="text-[#e3b45c]">{d.rates.toman}</b></span>
         </div>
       </div>
 
@@ -304,9 +314,8 @@ export default function DashboardPage() {
           title="مانده سیستم"
           value={null}
           sub="مجموع مانده مشتریان"
-          totals={{ AFN: d.accounts.AFN, USD: d.accounts.USD, IRT: d.accounts.IRR, EUR: 0 }}
+          totals={{ AFN: d.accounts.AFN, USD: d.accounts.USD, IRT: d.accounts.IRR, EUR: d.accounts.EUR, PKR: d.accounts.PKR }}
           fa={faNum}
-          hideZeroEUR
         />
       </div>
 
@@ -333,21 +342,21 @@ export default function DashboardPage() {
    ========================================================================== */
 
 function KpiCard({
-  title, value, sub, totals, fa, hideZeroEUR,
+  title, value, sub, totals, fa,
 }: {
   title: string;
   value: string | null;
   sub: string;
   totals: Record<CurCode, number>;
   fa: (n: number) => string;
-  hideZeroEUR?: boolean;
 }) {
   const rows: { code: CurCode; label: string }[] = [
     { code: "AFN", label: "افغانی" },
     { code: "USD", label: "دالر" },
     { code: "IRT", label: "تومان" },
+    { code: "EUR", label: "یورو" },
+    { code: "PKR", label: "کلدار" },
   ];
-  if (!hideZeroEUR) rows.push({ code: "EUR", label: "یورو" });
 
   return (
     <div className="rounded-2xl bg-white border border-slate-100 p-6 shadow-sm">
