@@ -1,603 +1,526 @@
-```tsx
-return (
-  <div dir="rtl" className="min-h-screen bg-[#f5f7fb] space-y-6 pb-8">
+"use client";
 
-    {/* ================= HEADER ================= */}
-    <section className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-[#071a2b] via-[#0b263b] to-[#123a50] p-6 md:p-8 text-white shadow-[0_20px_60px_rgba(7,26,43,0.18)]">
+import { useCallback, useEffect, useState } from "react";
+import {
+  loadRates,
+  loadCommission,
+  defaultRates,
+  fa,
+  type Rates,
+  type AccountUser,
+} from "./lib/helpers";
 
-      {/* Decorative circles */}
-      <div className="absolute -top-24 -left-24 w-64 h-64 rounded-full bg-white/5 blur-2xl" />
-      <div className="absolute -bottom-32 right-10 w-72 h-72 rounded-full bg-[#e7b75a]/10 blur-3xl" />
+type CurCode = "AFN" | "USD" | "IRT" | "EUR" | "PKR";
 
-      <div className="relative z-10">
+interface Hawala {
+  id: string | number;
+  amount: number;
+  payCur: string;
+  getCur: string;
+  result: number;
+  fee?: number;
+  status?: string;
+  date?: string;
+  createdAt?: number;
+  sender?: string;
+  receiver?: string;
+  fromCity?: string;
+  toCity?: string;
+  manualRate?: string;
+}
 
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-5">
+interface Trade {
+  id?: string | number;
+  amount: number;
+  currency: string;
+  afnValue: number;
+  type?: string;
+  status?: string;
+  date?: string;
+  createdAt?: number;
+  customer?: string;
+  description?: string;
+  manualRate?: string;
+}
 
-          <div className="flex items-center gap-4">
+interface DashboardData {
+  hawalaCount: number;
+  hawalaVolume: number;
+  hawalaTotals: Record<CurCode, number>;
+  hawalaFee: number;
+  tradeCount: number;
+  tradeVolume: number;
+  tradeTotals: Record<CurCode, number>;
+  tradeProfit: number;
+  todayHawalaCount: number;
+  todayHawalaFee: number;
+  todayTradeCount: number;
+  todayTradeProfit: number;
+  accounts: { AFN: number; USD: number; IRR: number; EUR: number; PKR: number };
+  totalDebt: number;
+  totalReceivable: number;
+  pendingHawala: number;
+  rates: Rates;
+  commission: string;
+  lastUpdated: Date | null;
+}
 
-            <div className="w-14 h-14 rounded-2xl bg-white/10 border border-white/10 backdrop-blur-md flex items-center justify-center text-3xl shadow-lg">
-              🏦
-            </div>
+const EMPTY_TOTALS: Record<CurCode, number> = { AFN: 0, USD: 0, IRT: 0, EUR: 0, PKR: 0 };
 
+const EMPTY_DATA: DashboardData = {
+  hawalaCount: 0,
+  hawalaVolume: 0,
+  hawalaTotals: { ...EMPTY_TOTALS },
+  hawalaFee: 0,
+  tradeCount: 0,
+  tradeVolume: 0,
+  tradeTotals: { ...EMPTY_TOTALS },
+  tradeProfit: 0,
+  todayHawalaCount: 0,
+  todayHawalaFee: 0,
+  todayTradeCount: 0,
+  todayTradeProfit: 0,
+  accounts: { AFN: 0, USD: 0, IRR: 0, EUR: 0, PKR: 0 },
+  totalDebt: 0,
+  totalReceivable: 0,
+  pendingHawala: 0,
+  rates: defaultRates,
+  commission: "0.5",
+  lastUpdated: null,
+};
+
+const PENDING_STATUSES = ["در انتظار", "در حال انتظار", "در حال ارسال", "معلق"];
+
+const CUR_ALIASES: Record<string, CurCode> = {
+  "افغانی": "AFN",
+  "افغانی ": "AFN",
+  "دلار": "USD",
+  "دالر": "USD",
+  "تومان": "IRT",
+  "یورو": "EUR",
+  "کلدار": "PKR",
+};
+
+function normalizeCur(name: string | undefined | null): CurCode | null {
+  if (!name) return null;
+  return CUR_ALIASES[name.trim()] ?? null;
+}
+
+function toAFN(amount: number, curCode: CurCode | null, rates: Rates): number {
+  if (!curCode || !Number.isFinite(amount)) return 0;
+  switch (curCode) {
+    case "IRT":
+      return (amount / 1000) * Number(rates.toman || 0);
+    case "USD":
+      return amount * Number(rates.usd || 0);
+    case "EUR":
+      return amount * Number(rates.eur || 0);
+    case "PKR":
+      return amount * Number(rates.pkr || 0);
+    default:
+      return amount;
+  }
+}
+
+function safeParse<T>(key: string, fallback: T): { value: T; error: string | null } {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return { value: fallback, error: null };
+    return { value: JSON.parse(raw) as T, error: null };
+  } catch {
+    return { value: fallback, error: `داده ${key} در حافظه محلی خراب است.` };
+  }
+}
+
+export default function DashboardPage() {
+  const [d, setD] = useState<DashboardData>(EMPTY_DATA);
+  const [errors, setErrors] = useState<string[]>([]);
+
+  const load = useCallback(() => {
+    const collectedErrors: string[] = [];
+
+    const { value: h, error: eH } = safeParse<Hawala[]>("db_hawala", []);
+    const { value: t, error: eT } = safeParse<Trade[]>("db_trades", []);
+    const { value: u, error: eU } = safeParse<AccountUser[]>("db_users", []);
+    const rates = loadRates();
+    const commission = loadCommission();
+
+    const { value: settingsRaw, error: eS } = safeParse<{ commission?: string }>("db_settings", {});
+    [eH, eT, eU, eS].forEach((e) => e && collectedErrors.push(e));
+
+    const commissionRate = Number(commission) / 100;
+
+    const hawalaTotals: Record<CurCode, number> = { ...EMPTY_TOTALS };
+    const tradeTotals: Record<CurCode, number> = { ...EMPTY_TOTALS };
+
+    let hawalaVolume = 0, hawalaFee = 0;
+    let tradeVolume = 0, tradeProfit = 0;
+    let todayHawalaCount = 0, todayHawalaFee = 0;
+    let todayTradeCount = 0, todayTradeProfit = 0;
+    let pendingHawala = 0;
+
+    const todayStr = new Date().toLocaleDateString("fa-IR");
+
+    for (const x of h) {
+      const amt = Number(x.amount || 0);
+      const payCode = normalizeCur(x.payCur);
+      const fee = Number(x.fee || 0);
+
+      if (payCode) hawalaTotals[payCode] += amt;
+      hawalaVolume += toAFN(amt, payCode, rates);
+      hawalaFee += fee;
+
+      if (x.date === todayStr) {
+        todayHawalaCount++;
+        todayHawalaFee += fee;
+      }
+
+      if (x.status && PENDING_STATUSES.includes(x.status)) pendingHawala++;
+    }
+
+    for (const x of t) {
+      const amt = Number(x.amount || 0);
+      const code = normalizeCur(x.currency);
+      if (code) tradeTotals[code] += amt;
+      const v = Number(x.afnValue || 0);
+      tradeVolume += v;
+      tradeProfit += v * commissionRate;
+
+      if (x.date === todayStr) {
+        todayTradeCount++;
+        todayTradeProfit += v * commissionRate;
+      }
+    }
+
+    const accounts = { AFN: 0, USD: 0, IRR: 0, EUR: 0, PKR: 0 };
+    let totalDebt = 0;
+    let totalReceivable = 0;
+
+    for (const x of u) {
+      const b = x.balances || { AFN: 0, USD: 0, IRR: 0, EUR: 0, PKR: 0 };
+      const afnBalance = b.AFN || 0;
+      const usdBalance = b.USD || 0;
+      const irrBalance = b.IRR || 0;
+      const eurBalance = b.EUR || 0;
+      const pkrBalance = b.PKR || 0;
+
+      accounts.AFN += afnBalance;
+      accounts.USD += usdBalance;
+      accounts.IRR += irrBalance;
+      accounts.EUR += eurBalance;
+      accounts.PKR += pkrBalance;
+
+      const afnValue = afnBalance +
+                       (usdBalance * Number(rates.usd || 0)) +
+                       ((irrBalance / 1000) * Number(rates.toman || 0)) +
+                       (eurBalance * Number(rates.eur || 0)) +
+                       (pkrBalance * Number(rates.pkr || 0));
+
+      if (afnValue > 0) totalDebt += afnValue;
+      else if (afnValue < 0) totalReceivable += Math.abs(afnValue);
+    }
+
+    setD({
+      hawalaCount: h.length,
+      hawalaVolume,
+      hawalaTotals,
+      hawalaFee,
+      tradeCount: t.length,
+      tradeVolume,
+      tradeTotals,
+      tradeProfit,
+      todayHawalaCount,
+      todayHawalaFee,
+      todayTradeCount,
+      todayTradeProfit,
+      accounts,
+      totalDebt,
+      totalReceivable,
+      pendingHawala,
+      rates,
+      commission,
+      lastUpdated: new Date(),
+    });
+    setErrors(collectedErrors);
+  }, []);
+
+  useEffect(() => {
+    load();
+    const onStorage = () => load();
+    const onCustom = () => load();
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("db:updated", onCustom);
+    const interval = setInterval(load, 15000);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("db:updated", onCustom);
+      clearInterval(interval);
+    };
+  }, [load]);
+
+  const faNum = (n: number) => (Number.isFinite(n) ? n : 0).toLocaleString("fa-IR", { maximumFractionDigits: 0 });
+
+  return (
+    <div className="space-y-6">
+      {/* بنر نرخ روز - مدرن */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#0b1f2e] via-[#16374d] to-[#1e4a6b] p-8 shadow-2xl">
+        {/* Background decorations */}
+        <div className="absolute inset-0 opacity-20">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-[#e3b45c] rounded-full blur-3xl"></div>
+          <div className="absolute bottom-0 left-0 w-96 h-96 bg-blue-400 rounded-full blur-3xl"></div>
+        </div>
+        
+        {/* Content */}
+        <div className="relative z-10">
+          <div className="flex items-start justify-between mb-6">
             <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[#e7b75a] text-xs md:text-sm font-bold">
-                  داشبورد مدیریت
-                </span>
-
-                <span className="px-2 py-1 rounded-full bg-emerald-400/10 border border-emerald-400/20 text-emerald-300 text-[10px]">
-                  ● فعال
-                </span>
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#e3b45c] to-[#c98f2d] flex items-center justify-center shadow-lg">
+                  <span className="text-[#0b1f2e] text-2xl font-black">ن</span>
+                </div>
+                <div>
+                  <p className="text-[#e3b45c] text-xs font-bold tracking-wider uppercase">صرافی و حواله‌جات</p>
+                  <h2 className="text-white text-2xl font-black">برادران نورزاد</h2>
+                </div>
               </div>
-
-              <h1 className="text-xl md:text-2xl font-black mt-1">
-                صرافی و حواله‌جات برادران نورزاد
-              </h1>
-
-              <p className="text-white/50 text-xs mt-1">
-                📍 هرات، افغانستان
-              </p>
+              <p className="text-white/60 text-sm">هرات، افغانستان</p>
             </div>
-
+            
+            {d.lastUpdated && (
+              <div className="flex items-center gap-2 bg-white/10 backdrop-blur-sm rounded-xl px-4 py-2 border border-white/20">
+                <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
+                <p className="text-white/80 text-xs font-medium">
+                  {d.lastUpdated.toLocaleTimeString("fa-IR")}
+                </p>
+              </div>
+            )}
           </div>
 
-          {d.lastUpdated && (
-            <div className="self-start md:self-auto rounded-2xl bg-white/5 border border-white/10 px-4 py-3 backdrop-blur-md">
-              <p className="text-[10px] text-white/40 mb-1">
-                آخرین بروزرسانی
-              </p>
+          {/* نرخ ارزها - ۵ کارت شفاف */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <CurrencyCard flag="🇦🇫" name="افغانی" rate="۱.۰۰" color="from-blue-500/20 to-blue-600/20" borderColor="border-blue-400/30" />
+            <CurrencyCard flag="🇺🇸" name="دلار" rate={d.rates.usd} color="from-emerald-500/20 to-emerald-600/20" borderColor="border-emerald-400/30" />
+            <CurrencyCard flag="🇪🇺" name="یورو" rate={d.rates.eur} color="from-purple-500/20 to-purple-600/20" borderColor="border-purple-400/30" />
+            <CurrencyCard flag="🇵🇰" name="کلدار" rate={d.rates.pkr} color="from-amber-500/20 to-amber-600/20" borderColor="border-amber-400/30" />
+            <CurrencyCard flag="🇮🇷" name="تومان" rate={d.rates.toman} color="from-rose-500/20 to-rose-600/20" borderColor="border-rose-400/30" />
+          </div>
+        </div>
+      </div>
 
-              <p className="text-sm font-bold">
-                🕐 {d.lastUpdated.toLocaleTimeString("fa-IR")}
-              </p>
+      {/* خطاها */}
+      {errors.length > 0 && (
+        <div className="rounded-2xl bg-gradient-to-r from-rose-50 to-red-50 border-2 border-rose-200 p-5 shadow-lg">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-rose-100 flex items-center justify-center flex-shrink-0">
+              <span className="text-rose-600 text-xl">⚠️</span>
             </div>
-          )}
-
-        </div>
-
-
-        {/* ================= RATES ================= */}
-        <div className="mt-7">
-
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-lg">💱</span>
-            <span className="text-sm font-bold text-white/80">
-              نرخ‌های امروز
-            </span>
+            <div>
+              <p className="font-bold text-rose-900 mb-1">برخی داده‌ها قابل خواندن نبودند</p>
+              <ul className="list-disc pr-5 space-y-0.5 text-sm text-rose-700">
+                {errors.map((e) => <li key={e}>{e}</li>)}
+              </ul>
+            </div>
           </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-
-            <RateBox
-              icon="🇺🇸"
-              title="دالر"
-              code="USD"
-              value={d.rates.usd}
-            />
-
-            <RateBox
-              icon="🇪🇺"
-              title="یورو"
-              code="EUR"
-              value={d.rates.eur}
-            />
-
-            <RateBox
-              icon="🇵🇰"
-              title="کلدار"
-              code="PKR"
-              value={d.rates.pkr}
-            />
-
-            <RateBox
-              icon="🇮🇷"
-              title="تومان"
-              code="IRT"
-              value={d.rates.toman}
-            />
-
-          </div>
-
         </div>
+      )}
 
-      </div>
-    </section>
-
-
-    {/* ================= ERRORS ================= */}
-    {errors.length > 0 && (
-      <div className="rounded-2xl bg-rose-50 border border-rose-200 p-4 text-sm text-rose-700 shadow-sm">
-
-        <div className="flex items-center gap-2 font-bold mb-2">
-          <span className="text-xl">⚠️</span>
-          <span>هشدار سیستم</span>
-        </div>
-
-        <ul className="list-disc pr-6 space-y-1 text-xs">
-          {errors.map((e) => (
-            <li key={e}>{e}</li>
-          ))}
-        </ul>
-
-      </div>
-    )}
-
-
-    {/* ================= MAIN KPI ================= */}
-    <section>
-
-      <div className="flex items-center gap-2 mb-4 px-1">
-        <span className="text-xl">📊</span>
-
-        <div>
-          <h2 className="text-base font-black text-slate-800">
-            خلاصه وضعیت
-          </h2>
-
-          <p className="text-[11px] text-slate-400">
-            وضعیت کلی فعالیت‌های مالی سیستم
-          </p>
-        </div>
-      </div>
-
-
+      {/* سه کارت اصلی */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-
-        <KpiCard
-          icon="💸"
+        <KpiCard 
           title="حواله‌ها"
           value={faNum(d.hawalaCount)}
-          sub={"حجم کل " + faNum(d.hawalaVolume) + " افغانی"}
+          sub={"حجم " + faNum(d.hawalaVolume)}
           totals={d.hawalaTotals}
           fa={faNum}
-          accent="blue"
+          icon="💸"
+          gradient="from-blue-500 via-blue-600 to-indigo-700"
         />
-
-        <KpiCard
-          icon="💱"
+        <KpiCard 
           title="تبادل ارز"
           value={faNum(d.tradeCount)}
-          sub={"حجم کل " + faNum(d.tradeVolume) + " افغانی"}
+          sub={"حجم " + faNum(d.tradeVolume)}
           totals={d.tradeTotals}
           fa={faNum}
-          accent="gold"
+          icon="💱"
+          gradient="from-emerald-500 via-emerald-600 to-teal-700"
         />
-
-        <KpiCard
-          icon="💰"
+        <KpiCard 
           title="مانده سیستم"
           value={null}
-          sub="مجموع مانده حساب مشتریان"
-          totals={{
-            AFN: d.accounts.AFN,
-            USD: d.accounts.USD,
-            IRT: d.accounts.IRR,
-            EUR: d.accounts.EUR,
-            PKR: d.accounts.PKR
-          }}
+          sub="مجموع مانده مشتریان"
+          totals={{ AFN: d.accounts.AFN, USD: d.accounts.USD, IRT: d.accounts.IRR, EUR: d.accounts.EUR, PKR: d.accounts.PKR }}
           fa={faNum}
-          accent="green"
+          icon="⚖️"
+          gradient="from-amber-500 via-amber-600 to-orange-700"
         />
-
       </div>
 
-    </section>
-
-
-    {/* ================= TODAY ================= */}
-    <section>
-
-      <div className="flex items-center gap-2 mb-4 px-1">
-        <span className="text-xl">📅</span>
-
-        <div>
-          <h2 className="text-base font-black text-slate-800">
-            وضعیت امروز
-          </h2>
-
-          <p className="text-[11px] text-slate-400">
-            خلاصه فعالیت‌های مالی امروز
-          </p>
-        </div>
-      </div>
-
-
+      {/* کارت‌های آماری */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-
-        <StatChip
-          icon="📨"
-          label="حواله امروز"
-          value={faNum(d.todayHawalaCount)}
-          sub={faNum(d.todayHawalaFee) + " کمیشن"}
-          accent="blue"
-        />
-
-        <StatChip
-          icon="📈"
-          label="تبادل امروز"
-          value={faNum(d.todayTradeCount)}
-          sub={faNum(d.todayTradeProfit) + " مفاد"}
-          accent="green"
-        />
-
-        <StatChip
-          icon="⏳"
-          label="حواله در انتظار"
-          value={faNum(d.pendingHawala)}
-          sub="نیازمند پیگیری"
-          accent="orange"
-        />
-
-        <StatChip
-          icon="👤"
-          label="طلب مشتری"
-          value={faNum(d.totalDebt)}
-          sub="مجموع بدهی مشتریان"
-          accent="red"
-        />
-
-        <StatChip
-          icon="🏦"
-          label="طلب صرافی"
-          value={faNum(d.totalReceivable)}
-          sub="مجموع طلب صرافی"
-          accent="purple"
-        />
-
+        <StatChip label="حواله امروز" value={faNum(d.todayHawalaCount)} sub={faNum(d.todayHawalaFee) + " کمیشن"} icon="📊" color="blue" />
+        <StatChip label="تبادل امروز" value={faNum(d.todayTradeCount)} sub={faNum(d.todayTradeProfit) + " مفاد"} icon="📈" color="emerald" />
+        <StatChip label="در انتظار" value={faNum(d.pendingHawala)} sub="حواله" icon="⏱️" color="amber" />
+        <StatChip label="طلب مشتری" value={faNum(d.totalDebt)} icon="💳" color="purple" />
+        <StatChip label="طلب صرافی" value={faNum(d.totalReceivable)} icon="🏦" color="rose" />
       </div>
 
-    </section>
-
-
-    {/* ================= PROFIT ================= */}
-    <section>
-
+      {/* ردیف پایین */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-sky-500 via-blue-600 to-indigo-700 p-6 shadow-xl">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
+          <div className="relative z-10">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                <span className="text-2xl">💰</span>
+              </div>
+              <div>
+                <p className="text-white/80 text-xs font-medium">کمیشن کل حواله‌جات</p>
+                <p className="text-white text-3xl font-black mt-1">{faNum(d.hawalaFee)}</p>
+              </div>
+            </div>
+            <p className="text-white/60 text-xs">افغانی</p>
+          </div>
+        </div>
 
-        <FinancialCard
-          icon="💵"
-          title="کمیشن کل حواله‌ها"
-          value={faNum(d.hawalaFee)}
-          subtitle="مجموع کمیشن ثبت‌شده"
-          accent="blue"
-        />
-
-        <FinancialCard
-          icon="📈"
-          title="مفاد کل معاملات"
-          value={faNum(d.tradeProfit)}
-          subtitle={`بر اساس کارمزد ${d.commission}٪`}
-          accent="green"
-        />
-
-      </div>
-
-    </section>
-
-  </div>
-);
-
-
-/* ==========================================================================
-   RATE BOX
-   ========================================================================== */
-
-function RateBox({
-  icon,
-  title,
-  code,
-  value,
-}: {
-  icon: string;
-  title: string;
-  code: string;
-  value: number;
-}) {
-  return (
-    <div className="group rounded-2xl bg-white/[0.07] hover:bg-white/[0.11] border border-white/10 px-4 py-3 transition-all duration-300">
-
-      <div className="flex items-center justify-between">
-
-        <div className="flex items-center gap-2">
-
-          <span className="text-xl">
-            {icon}
-          </span>
-
-          <div>
-            <p className="text-xs font-bold text-white/80">
-              {title}
-            </p>
-
-            <p className="text-[9px] text-white/30 uppercase">
-              {code}
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-700 p-6 shadow-xl">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
+          <div className="relative z-10">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                <span className="text-2xl">📈</span>
+              </div>
+              <div>
+                <p className="text-white/80 text-xs font-medium">مفاد کل تبادل ارز</p>
+                <p className="text-white text-3xl font-black mt-1">{faNum(d.tradeProfit)}</p>
+              </div>
+            </div>
+            <p className="text-white/90 text-xs font-bold bg-white/20 inline-block px-3 py-1 rounded-full">
+              کارمزد {d.commission}٪
             </p>
           </div>
-
         </div>
-
-        <div className="text-left">
-          <p className="text-[#e7b75a] text-base font-black">
-            {value}
-          </p>
-
-          <p className="text-[9px] text-white/30">
-            AFN
-          </p>
-        </div>
-
       </div>
-
     </div>
   );
 }
 
-
 /* ==========================================================================
-   KPI CARD
+   کامپوننت‌های کمکی
    ========================================================================== */
 
-function KpiCard({
-  icon,
-  title,
-  value,
-  sub,
-  totals,
-  fa,
-  accent = "blue",
-}: {
-  icon: string;
+function CurrencyCard({ flag, name, rate, color, borderColor }: {
+  flag: string;
+  name: string;
+  rate: string;
+  color: string;
+  borderColor: string;
+}) {
+  return (
+    <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${color} backdrop-blur-sm border ${borderColor} p-4 hover:scale-105 transition-transform cursor-pointer`}>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-3xl">{flag}</span>
+      </div>
+      <p className="text-white/70 text-xs font-medium mb-1">{name}</p>
+      <p className="text-white text-xl font-black">{rate}</p>
+      <p className="text-white/50 text-[10px] mt-1">افغانی</p>
+    </div>
+  );
+}
+
+function KpiCard({ title, value, sub, totals, fa, icon, gradient }: {
   title: string;
   value: string | null;
   sub: string;
   totals: Record<CurCode, number>;
   fa: (n: number) => string;
-  accent?: "blue" | "gold" | "green";
+  icon: string;
+  gradient: string;
 }) {
-
-  const rows: { code: CurCode; label: string; emoji: string }[] = [
-    { code: "AFN", label: "افغانی", emoji: "🇦🇫" },
-    { code: "USD", label: "دالر", emoji: "🇺🇸" },
-    { code: "IRT", label: "تومان", emoji: "🇮🇷" },
-    { code: "EUR", label: "یورو", emoji: "🇪🇺" },
-    { code: "PKR", label: "کلدار", emoji: "🇵🇰" },
+  const rows: { code: CurCode; label: string; flag: string }[] = [
+    { code: "AFN", label: "افغانی", flag: "🇦🇫" },
+    { code: "USD", label: "دالر", flag: "🇺🇸" },
+    { code: "IRT", label: "تومان", flag: "🇮🇷" },
+    { code: "EUR", label: "یورو", flag: "🇪🇺" },
+    { code: "PKR", label: "کلدار", flag: "🇵🇰" },
   ];
 
-  const accentClasses = {
-    blue: "from-blue-500/10 to-transparent",
-    gold: "from-[#e7b75a]/15 to-transparent",
-    green: "from-emerald-500/10 to-transparent",
-  };
-
   return (
-    <div className="group relative overflow-hidden rounded-[24px] bg-white border border-slate-100 p-5 shadow-[0_8px_30px_rgba(15,23,42,0.05)] hover:shadow-[0_15px_40px_rgba(15,23,42,0.09)] hover:-translate-y-1 transition-all duration-300">
+    <div className={`relative overflow-hidden rounded-3xl bg-gradient-to-br ${gradient} p-6 shadow-xl hover:shadow-2xl transition-shadow`}>
+      {/* Background decoration */}
+      <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full blur-3xl -mr-20 -mt-20"></div>
+      <div className="absolute bottom-0 left-0 w-32 h-32 bg-white/5 rounded-full blur-2xl -ml-16 -mb-16"></div>
 
-      <div
-        className={`absolute inset-0 bg-gradient-to-br ${accentClasses[accent]} pointer-events-none`}
-      />
-
-      <div className="relative">
-
-        <div className="flex items-center justify-between">
-
-          <div className="flex items-center gap-3">
-
-            <div className="w-12 h-12 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center text-2xl">
-              {icon}
-            </div>
-
-            <div>
-              <p className="text-sm font-black text-slate-800">
-                {title}
-              </p>
-
-              <p className="text-[10px] text-slate-400 mt-0.5">
-                {sub}
-              </p>
-            </div>
-
+      <div className="relative z-10">
+        {/* Header */}
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center shadow-lg">
+            <span className="text-3xl">{icon}</span>
           </div>
-
-          <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 text-xs">
-            ↗
+          <div>
+            <p className="text-white/80 text-xs font-medium">{title}</p>
+            {value && <p className="text-white text-3xl font-black mt-1">{value}</p>}
           </div>
-
         </div>
 
-
-        {value && (
-          <div className="mt-5">
-
-            <p className="text-3xl font-black tracking-tight text-slate-900">
-              {value}
-            </p>
-
-            <p className="text-[10px] text-slate-400 mt-1">
-              تعداد ثبت‌شده
-            </p>
-
-          </div>
-        )}
-
-
-        <div className={`${value ? "mt-5" : "mt-6"} space-y-2.5`}>
-
-          {rows.map((r) => (
-
-            <div
-              key={r.code}
-              className="flex items-center justify-between rounded-xl bg-slate-50/80 px-3 py-2 border border-slate-100/70"
-            >
-
-              <div className="flex items-center gap-2">
-
-                <span className="text-base">
-                  {r.emoji}
-                </span>
-
-                <span className="text-xs font-medium text-slate-500">
+        {/* Totals */}
+        <div className="space-y-2 mt-6">
+          {rows.map((r) => {
+            const amount = totals[r.code] || 0;
+            if (amount === 0) return null;
+            return (
+              <div key={r.code} className="flex justify-between items-center bg-white/10 backdrop-blur-sm rounded-xl px-4 py-2.5 border border-white/20">
+                <span className="text-white/90 text-sm font-medium flex items-center gap-2">
+                  <span className="text-lg">{r.flag}</span>
                   {r.label}
                 </span>
-
+                <span className="text-white font-bold">{fa(amount)}</span>
               </div>
-
-              <span className="text-xs font-black text-slate-700">
-                {fa(totals[r.code] || 0)}
-              </span>
-
-            </div>
-
-          ))}
-
+            );
+          })}
         </div>
 
+        {/* Subtitle */}
+        <p className="text-white/60 text-xs mt-4 text-center">{sub}</p>
       </div>
-
     </div>
   );
 }
 
-
-/* ==========================================================================
-   STAT CHIP
-   ========================================================================== */
-
-function StatChip({
-  icon,
-  label,
-  value,
-  sub,
-  accent = "blue",
-}: {
-  icon: string;
+function StatChip({ label, value, sub, note, icon, color }: {
   label: string;
   value: string | number;
   sub?: string;
-  accent?: "blue" | "green" | "orange" | "red" | "purple";
+  note?: string;
+  icon: string;
+  color: "blue" | "emerald" | "amber" | "purple" | "rose";
 }) {
+  const colorClasses = {
+    blue: "from-blue-50 to-blue-100 border-blue-200 text-blue-900",
+    emerald: "from-emerald-50 to-emerald-100 border-emerald-200 text-emerald-900",
+    amber: "from-amber-50 to-amber-100 border-amber-200 text-amber-900",
+    purple: "from-purple-50 to-purple-100 border-purple-200 text-purple-900",
+    rose: "from-rose-50 to-rose-100 border-rose-200 text-rose-900",
+  };
 
-  const accentClasses = {
-    blue: "bg-blue-50 text-blue-600",
-    green: "bg-emerald-50 text-emerald-600",
-    orange: "bg-orange-50 text-orange-600",
-    red: "bg-rose-50 text-rose-600",
-    purple: "bg-purple-50 text-purple-600",
+  const iconBgClasses = {
+    blue: "bg-blue-500/20 text-blue-600",
+    emerald: "bg-emerald-500/20 text-emerald-600",
+    amber: "bg-amber-500/20 text-amber-600",
+    purple: "bg-purple-500/20 text-purple-600",
+    rose: "bg-rose-500/20 text-rose-600",
   };
 
   return (
-    <div className="group rounded-[20px] bg-white border border-slate-100 p-4 shadow-[0_5px_20px_rgba(15,23,42,0.04)] hover:-translate-y-0.5 hover:shadow-lg transition-all duration-300">
-
-      <div className="flex items-start justify-between gap-2">
-
-        <div
-          className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg ${accentClasses[accent]}`}
-        >
-          {icon}
+    <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${colorClasses[color]} border-2 p-5 shadow-lg hover:shadow-xl transition-all hover:scale-[1.02] cursor-pointer`}>
+      <div className="flex items-start justify-between mb-3">
+        <div className={`w-12 h-12 rounded-xl ${iconBgClasses[color]} flex items-center justify-center`}>
+          <span className="text-2xl">{icon}</span>
         </div>
-
-        <span className="text-[9px] text-slate-300">
-          امروز
-        </span>
-
       </div>
-
-      <p className="text-xs text-slate-400 font-medium mt-4">
-        {label}
-      </p>
-
-      <p className="text-xl font-black text-slate-900 mt-1">
-        {value}
-      </p>
-
-      {sub && (
-        <p className="text-[10px] text-slate-500 mt-1">
-          {sub}
-        </p>
-      )}
-
+      <p className="text-xs font-medium opacity-70 mb-1">{label}</p>
+      <p className="text-2xl font-black mb-1">{value}</p>
+      {sub && <p className="text-xs opacity-60">{sub}</p>}
+      {note && <p className="text-xs font-bold mt-2 text-[#c98f2d]">{note}</p>}
     </div>
   );
 }
-
-
-/* ==========================================================================
-   FINANCIAL CARD
-   ========================================================================== */
-
-function FinancialCard({
-  icon,
-  title,
-  value,
-  subtitle,
-  accent,
-}: {
-  icon: string;
-  title: string;
-  value: string;
-  subtitle: string;
-  accent: "blue" | "green";
-}) {
-
-  const isGreen = accent === "green";
-
-  return (
-    <div className="relative overflow-hidden rounded-[24px] bg-white border border-slate-100 p-6 shadow-[0_8px_30px_rgba(15,23,42,0.05)]">
-
-      <div
-        className={`absolute -left-10 -top-10 w-32 h-32 rounded-full blur-3xl ${
-          isGreen ? "bg-emerald-400/10" : "bg-blue-400/10"
-        }`}
-      />
-
-      <div className="relative flex items-center justify-between">
-
-        <div className="flex items-center gap-4">
-
-          <div
-            className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl ${
-              isGreen
-                ? "bg-emerald-50"
-                : "bg-blue-50"
-            }`}
-          >
-            {icon}
-          </div>
-
-          <div>
-
-            <p className="text-sm font-bold text-slate-500">
-              {title}
-            </p>
-
-            <p className="text-[10px] text-slate-400 mt-1">
-              {subtitle}
-            </p>
-
-          </div>
-
-        </div>
-
-        <div className="text-left">
-
-          <p
-            className={`text-2xl md:text-3xl font-black ${
-              isGreen
-                ? "text-emerald-600"
-                : "text-blue-600"
-            }`}
-          >
-            {value}
-          </p>
-
-          <p className="text-[10px] text-slate-400 mt-1">
-            افغانی
-          </p>
-
-        </div>
-
-      </div>
-
-    </div>
-  );
-}
-```
