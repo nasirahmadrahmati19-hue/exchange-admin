@@ -3,7 +3,6 @@ export const defaultRates: Rates = { usd: "70.5", eur: "76", pkr: "25", toman: "
 export const CURRENCIES = ["افغانی", "تومان", "دلار", "یورو", "کلدار"];
 export const CITIES = ["هرات", "کابل", "اسلام‌قلعه", "مشهد", "تهران", "دوغارون"];
 
-/* ---------- حساب‌ها ---------- */
 export type CurKey = "AFN" | "USD" | "IRR" | "EUR" | "PKR";
 export interface Balances { AFN: number; USD: number; IRR: number; EUR: number; PKR: number; }
 export interface AccountUser { id: number; name: string; phone: string; telegram?: string; balances: Balances; status: string; }
@@ -25,7 +24,6 @@ export const CURRENCY_META: Record<CurKey, { label: string; flag: string; code: 
 
 export function emptyBalances(): Balances { return { AFN: 0, USD: 0, IRR: 0, EUR: 0, PKR: 0 }; }
 
-/* ---------- ذخیره ---------- */
 export function loadJSON<T>(key: string, fallback: T): T {
   try { const s = localStorage.getItem(key); if (s) return JSON.parse(s) as T; } catch {}
   return fallback;
@@ -34,7 +32,6 @@ export function loadRates(): Rates { return { ...defaultRates, ...loadJSON<Parti
 export function loadCommission(): string { const s = loadJSON<any>("db_settings", {}); return s && s.commission ? String(s.commission) : "0.5"; }
 export function loadSiteName(): string { const s = loadJSON<any>("db_settings", {}); return s && s.siteName ? s.siteName : "برادران نورزاد"; }
 
-/* ---------- تبدیل ارز ---------- */
 export function toAFN(amount: number, cur: string, rates: Rates): number {
   if (cur === "تومان") return (amount / 1000) * Number(rates.toman);
   if (cur === "دلار" || cur === "دالر") return amount * Number(rates.usd);
@@ -64,12 +61,10 @@ export function fromAFNk(afn: number, k: CurKey, r: Rates): number {
   return (afn / Number(r.toman)) * 1000;
 }
 
-/* ---------- قالب ---------- */
 export function fa(n: number): string { return n.toLocaleString("fa-IR", { maximumFractionDigits: 0 }); }
 export function todayFa(): string { return new Date().toLocaleDateString("fa-IR"); }
 export function nowTime(): string { return new Date().toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" }); }
 
-/* ---------- اعتبارسنجی ---------- */
 export function checkRequired(form: Record<string, string>, required: { key: string; label: string }[]): string[] {
   const missing: string[] = [];
   required.forEach(r => { if (!(form[r.key] || "").trim()) missing.push(r.label); });
@@ -85,7 +80,6 @@ export function statusChipClass(s: string): string {
   return "bg-slate-50 text-slate-600 border-slate-200";
 }
 
-/* ---------- موتور حسابداری ---------- */
 export function nextReceiptNo(): string {
   let n = 1024;
   try { const s = localStorage.getItem("db_receipt_counter"); if (s) n = Number(s); } catch {}
@@ -108,7 +102,6 @@ export function applyExchange(user: AccountUser, fromCur: CurKey, toCur: CurKey,
   return { ...user, balances };
 }
 
-/* ---------- توابع کمکی برای رسید ---------- */
 function getMainCurrency(amountLabel: string): string {
   const match = amountLabel.match(/(AFN|USD|IRR|EUR|PKR)/);
   if (match) return match[1];
@@ -138,7 +131,6 @@ function getCurrencyFlag(currency: string): string {
   return "💰";
 }
 
-/* ---------- ساخت رسید رسمی ---------- */
 export function buildReceipt(o: {
   receiptNo: string;
   customer: string;
@@ -249,7 +241,6 @@ export function buildReceipt(o: {
   return lines.join("\n");
 }
 
-/* ---------- اشتراک ---------- */
 export function shareLinks(text: string, phone?: string) {
   const enc = encodeURIComponent(text);
   const cleanPhone = (phone || "").replace(/\D/g, "");
