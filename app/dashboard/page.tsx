@@ -1,6 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import {
+  loadRates,
+  loadCommission,
+  fa,
+  type Rates,
+  type AccountUser,
+} from "../lib/helpers";
 
 /* ==========================================================================
    انواع داده (Types)
@@ -35,21 +42,6 @@ interface Trade {
   createdAt?: number;
   customer?: string;
   description?: string;
-}
-
-interface UserAccount {
-  id?: string | number;
-  name: string;
-  balance?: number;
-  balances?: { AFN?: number; USD?: number; IRR?: number };
-  phone?: string;
-  telegram?: string;
-}
-
-interface Rates {
-  usd: string;
-  eur: string;
-  toman: string;
 }
 
 interface DashboardData {
@@ -109,13 +101,6 @@ const CUR_ALIASES: Record<string, CurCode> = {
   "یورو": "EUR",
 };
 
-const CUR_LABEL: Record<CurCode, string> = {
-  AFN: "افغانی",
-  USD: "دالر",
-  IRT: "تومان",
-  EUR: "یورو",
-};
-
 function normalizeCur(name: string | undefined | null): CurCode | null {
   if (!name) return null;
   return CUR_ALIASES[name.trim()] ?? null;
@@ -145,10 +130,6 @@ function safeParse<T>(key: string, fallback: T): { value: T; error: string | nul
   }
 }
 
-// ============================================================
-// کامپوننت اصلی صفحه
-// ============================================================
-
 export default function DashboardPage() {
   const [d, setD] = useState<DashboardData>(EMPTY_DATA);
   const [errors, setErrors] = useState<string[]>([]);
@@ -158,13 +139,13 @@ export default function DashboardPage() {
 
     const { value: h, error: eH } = safeParse<Hawala[]>("db_hawala", []);
     const { value: t, error: eT } = safeParse<Trade[]>("db_trades", []);
-    const { value: u, error: eU } = safeParse<UserAccount[]>("db_users", []);
-    const { value: ratesRaw, error: eR } = safeParse<Partial<Rates>>("db_rates", {});
-    const { value: settingsRaw, error: eS } = safeParse<{ commission?: string }>("db_settings", {});
-    [eH, eT, eU, eR, eS].forEach((e) => e && collectedErrors.push(e));
+    const { value: u, error: eU } = safeParse<AccountUser[]>("db_users", []);
+    const rates = loadRates();
+    const commission = loadCommission();
 
-    const rates: Rates = { ...EMPTY_DATA.rates, ...ratesRaw };
-    const commission = settingsRaw.commission || EMPTY_DATA.commission;
+    const { value: settingsRaw, error: eS } = safeParse<{ commission?: string }>("db_settings", {});
+    [eH, eT, eU, eS].forEach((e) => e && collectedErrors.push(e));
+
     const commissionRate = Number(commission) / 100;
 
     const hawalaTotals: Record<CurCode, number> = { ...EMPTY_TOTALS };
@@ -214,7 +195,7 @@ export default function DashboardPage() {
     let totalReceivable = 0;
 
     for (const x of u) {
-      const b = x.balances || { AFN: Number(x.balance || 0), USD: 0, IRR: 0 };
+      const b = x.balances || { AFN: 0, USD: 0, IRR: 0 };
       const afnBalance = b.AFN || 0;
       const usdBalance = b.USD || 0;
       const irrBalance = b.IRR || 0;
@@ -225,7 +206,7 @@ export default function DashboardPage() {
 
       const afnValue = afnBalance +
                        (usdBalance * Number(rates.usd || 0)) +
-                       ((irrBalance / 100) * Number(rates.toman || 0));
+                       ((irrBalance / 1000) * Number(rates.toman || 0));
 
       if (afnValue > 0) totalDebt += afnValue;
       else if (afnValue < 0) totalReceivable += Math.abs(afnValue);
@@ -269,33 +250,33 @@ export default function DashboardPage() {
     };
   }, [load]);
 
-  const fa = (n: number) => (Number.isFinite(n) ? n : 0).toLocaleString("fa-IR", { maximumFractionDigits: 0 });
+  const faNum = (n: number) => (Number.isFinite(n) ? n : 0).toLocaleString("fa-IR", { maximumFractionDigits: 0 });
 
   return (
     <div className="space-y-6">
-      {/* بنر نرخ روز */}
-      <div className="rounded-2xl bg-gradient-to-l from-[#0a1a2a] to-[#142c3f] text-white p-6 shadow-xl">
+      {/* بنر نرخ روز - ساده و مینیمال */}
+      <div className="rounded-2xl bg-[#0b1f2e] text-white p-6 shadow-lg">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
-            <p className="text-[#e3b45c] text-base font-bold tracking-wide">صرافی و حواله‌جات برادران نورزاد</p>
-            <h2 className="text-2xl font-extrabold mt-1">هرات، افغانستان</h2>
+            <p className="text-[#e3b45c] text-sm font-bold tracking-wide">صرافی و حواله‌جات برادران نورزاد</p>
+            <h2 className="text-xl font-extrabold mt-1">هرات، افغانستان</h2>
           </div>
           {d.lastUpdated && (
-            <p className="text-xs text-white/40 font-light">
-              آخرین به‌روزرسانی: {d.lastUpdated.toLocaleTimeString("fa-IR")}
+            <p className="text-[11px] text-white/40 font-light">
+              {d.lastUpdated.toLocaleTimeString("fa-IR")}
             </p>
           )}
         </div>
-        <div className="flex flex-wrap gap-4 mt-5 text-base">
-          <span className="bg-white/10 rounded-xl px-5 py-2.5 backdrop-blur-sm">🇺🇸 دلار: <b className="text-[#e3b45c] text-lg">{d.rates.usd}</b> افغانی</span>
-          <span className="bg-white/10 rounded-xl px-5 py-2.5 backdrop-blur-sm">🇮🇷 ۱۰۰ تومان: <b className="text-[#e3b45c] text-lg">{d.rates.toman}</b> افغانی</span>
-          <span className="bg-white/10 rounded-xl px-5 py-2.5 backdrop-blur-sm">🇪🇺 یورو: <b className="text-[#e3b45c] text-lg">{d.rates.eur}</b> افغانی</span>
+        <div className="flex flex-wrap gap-4 mt-4 text-sm">
+          <span className="bg-white/5 rounded-xl px-4 py-2 border border-white/5">🇺🇸 دلار <b className="text-[#e3b45c]">{d.rates.usd}</b></span>
+          <span className="bg-white/5 rounded-xl px-4 py-2 border border-white/5">🇮🇷 تومان <b className="text-[#e3b45c]">{d.rates.toman}</b></span>
+          <span className="bg-white/5 rounded-xl px-4 py-2 border border-white/5">🇪🇺 یورو <b className="text-[#e3b45c]">{d.rates.eur}</b></span>
         </div>
       </div>
 
       {/* خطاها */}
       {errors.length > 0 && (
-        <div className="rounded-xl bg-rose-900/80 border border-rose-700 p-4 text-sm text-rose-100">
+        <div className="rounded-xl bg-rose-50 border border-rose-200 p-4 text-sm text-rose-700">
           <p className="font-bold mb-1">⚠️ برخی داده‌ها قابل خواندن نبودند:</p>
           <ul className="list-disc pr-5 space-y-0.5">
             {errors.map((e) => <li key={e}>{e}</li>)}
@@ -303,111 +284,64 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* سه کارت اصلی */}
+      {/* سه کارت اصلی - ساده و بدون رنگ اضافی */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <KpiCard
-          title="مجموع حواله‌جات"
-          value={fa(d.hawalaCount) + " حواله"}
-          sub={"حجم: " + fa(d.hawalaVolume) + " افغانی"}
-          accent="emerald"
+          title="حواله‌ها"
+          value={faNum(d.hawalaCount)}
+          sub={"حجم " + faNum(d.hawalaVolume)}
           totals={d.hawalaTotals}
-          fa={fa}
-          icon="📤"
+          fa={faNum}
         />
         <KpiCard
-          title="مجموع تبادل ارز"
-          value={fa(d.tradeCount) + " معامله"}
-          sub={"حجم: " + fa(d.tradeVolume) + " افغانی"}
-          accent="rose"
+          title="تبادل ارز"
+          value={faNum(d.tradeCount)}
+          sub={"حجم " + faNum(d.tradeVolume)}
           totals={d.tradeTotals}
-          fa={fa}
-          icon="💱"
+          fa={faNum}
         />
         <KpiCard
-          title="موجودی کل سیستم"
+          title="مانده سیستم"
           value={null}
-          sub="مجموع مانده همه مشتریان"
-          accent="amber"
+          sub="مجموع مانده مشتریان"
           totals={{ AFN: d.accounts.AFN, USD: d.accounts.USD, IRT: d.accounts.IRR, EUR: 0 }}
-          fa={fa}
-          icon="🏛️"
+          fa={faNum}
           hideZeroEUR
         />
       </div>
 
-      {/* ردیف دوم */}
+      {/* کارت‌های آماری - ساده و مینیمال */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <StatChip
-          label="📋 حواله‌های امروز"
-          value={fa(d.todayHawalaCount)}
-          sub={"کمیشن: " + fa(d.todayHawalaFee) + " افغانی"}
-          tone="emerald"
-        />
-        <StatChip
-          label="📊 تبادل امروز"
-          value={fa(d.todayTradeCount)}
-          sub={"مفاد: " + fa(d.todayTradeProfit) + " افغانی"}
-          tone="rose"
-        />
-        <StatChip
-          label="⏳ در انتظار"
-          value={fa(d.pendingHawala)}
-          sub="حواله‌های معلق"
-          tone="amber"
-        />
-        <StatChip
-          label="💰 طلب مشتری"
-          value={fa(d.totalDebt) + " افغانی"}
-          tone="blue"
-        />
-        <StatChip
-          label="💳 طلب صرافی"
-          value={fa(d.totalReceivable) + " افغانی"}
-          tone="purple"
-        />
+        <StatChip label="امروز" value={faNum(d.todayHawalaCount)} sub={faNum(d.todayHawalaFee) + " کمیشن"} />
+        <StatChip label="تبادل امروز" value={faNum(d.todayTradeCount)} sub={faNum(d.todayTradeProfit) + " مفاد"} />
+        <StatChip label="در انتظار" value={faNum(d.pendingHawala)} sub="حواله" />
+        <StatChip label="طلب مشتری" value={faNum(d.totalDebt)} />
+        <StatChip label="طلب صرافی" value={faNum(d.totalReceivable)} />
       </div>
 
-      {/* ردیف سوم */}
+      {/* ردیف پایین */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-        <StatChip
-          label="💎 کمیشن کل حواله‌جات"
-          value={fa(d.hawalaFee) + " افغانی"}
-          tone="slate"
-        />
-        <StatChip
-          label="📈 مفاد کل تبادل ارز"
-          value={fa(d.tradeProfit) + " افغانی"}
-          tone="slate"
-          note={`کارمزد ${d.commission}٪`}
-        />
+        <StatChip label="کمیشن کل" value={faNum(d.hawalaFee)} />
+        <StatChip label="مفاد کل" value={faNum(d.tradeProfit)} note={`کارمزد ${d.commission}٪`} />
       </div>
     </div>
   );
 }
 
 /* ==========================================================================
-   کامپوننت‌های کمکی
+   کامپوننت‌های کمکی - ساده و مینیمال
    ========================================================================== */
 
-const ACCENT_MAP: Record<string, string> = {
-  emerald: "text-emerald-400",
-  rose: "text-rose-400",
-  amber: "text-amber-400",
-};
-
 function KpiCard({
-  title, value, sub, accent, totals, fa, icon, hideZeroEUR,
+  title, value, sub, totals, fa, hideZeroEUR,
 }: {
   title: string;
   value: string | null;
   sub: string;
-  accent: "emerald" | "rose" | "amber";
   totals: Record<CurCode, number>;
   fa: (n: number) => string;
-  icon: string;
   hideZeroEUR?: boolean;
 }) {
-  const color = ACCENT_MAP[accent];
   const rows: { code: CurCode; label: string }[] = [
     { code: "AFN", label: "افغانی" },
     { code: "USD", label: "دالر" },
@@ -416,48 +350,36 @@ function KpiCard({
   if (!hideZeroEUR) rows.push({ code: "EUR", label: "یورو" });
 
   return (
-    <div className="rounded-2xl bg-[#1a2a3a] border border-[#2a4050] p-6 shadow-lg hover:shadow-xl transition-all">
-      <div className="flex items-start justify-between">
-        <p className="text-slate-300 font-bold text-xl tracking-wide">{title}</p>
-        <span className={`${color} text-3xl`}>{icon}</span>
-      </div>
-      {value && <p className="text-4xl font-black text-white mt-2">{value}</p>}
-      <div className={value ? "mt-6 space-y-2.5 text-base" : "mt-4 space-y-2.5 text-base"}>
+    <div className="rounded-2xl bg-white border border-slate-100 p-6 shadow-sm">
+      <p className="text-slate-600 font-bold text-sm">{title}</p>
+      {value && <p className="text-3xl font-extrabold text-slate-900 mt-1">{value}</p>}
+      <div className={value ? "mt-5 space-y-2 text-sm" : "mt-3 space-y-2 text-sm"}>
         {rows.map((r) => (
-          <div key={r.code} className="flex justify-between border-b border-[#2a4050] pb-1.5 last:border-0">
-            <span className="text-slate-400 text-base">{r.label}</span>
-            <span className={`${color} font-extrabold text-lg`}>{fa(totals[r.code] || 0)}</span>
+          <div key={r.code} className="flex justify-between border-b border-slate-50 pb-1 last:border-0">
+            <span className="text-slate-500">{r.label}</span>
+            <span className="font-bold text-slate-700">{fa(totals[r.code] || 0)}</span>
           </div>
         ))}
       </div>
-      <p className="text-xs text-slate-500 mt-5 tracking-wide">{sub}</p>
+      <p className="text-[11px] text-slate-400 mt-4">{sub}</p>
     </div>
   );
 }
 
 function StatChip({
-  label, value, sub, tone, note,
+  label, value, sub, note,
 }: {
   label: string;
   value: string | number;
   sub?: string;
-  tone: "slate" | "emerald" | "rose" | "amber" | "blue" | "purple";
   note?: string;
 }) {
-  const toneMap = {
-    slate: "bg-[#1a2a3a] border-[#2a4050] text-slate-200",
-    emerald: "bg-emerald-900/30 border-emerald-800/50 text-emerald-200",
-    rose: "bg-rose-900/30 border-rose-800/50 text-rose-200",
-    amber: "bg-amber-900/30 border-amber-800/50 text-amber-200",
-    blue: "bg-blue-900/30 border-blue-800/50 text-blue-200",
-    purple: "bg-purple-900/30 border-purple-800/50 text-purple-200",
-  } as const;
   return (
-    <div className={`rounded-2xl border p-5 shadow-md ${toneMap[tone]}`}>
-      <p className="text-sm font-bold tracking-wider opacity-80 mb-2">{label}</p>
-      <p className="text-2xl font-extrabold">{value}</p>
-      {sub && <p className="text-xs mt-1 opacity-70 font-medium">{sub}</p>}
-      {note && <p className="text-xs font-bold mt-1 text-amber-300">{note}</p>}
+    <div className="rounded-2xl bg-white border border-slate-100 p-5 shadow-sm">
+      <p className="text-xs text-slate-400 font-medium">{label}</p>
+      <p className="text-2xl font-extrabold text-slate-900 mt-1">{value}</p>
+      {sub && <p className="text-xs text-slate-500 mt-1">{sub}</p>}
+      {note && <p className="text-xs font-bold mt-1 text-[#c98f2d]">{note}</p>}
     </div>
   );
 }
