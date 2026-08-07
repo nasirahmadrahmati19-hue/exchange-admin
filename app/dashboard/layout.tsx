@@ -10,7 +10,6 @@ const menuItems = [
   { title: "تبادل ارز", href: "/dashboard/trades" },
   { title: "نرخ ارزها", href: "/dashboard/rates" },
   { title: "مشتریان", href: "/dashboard/users" },
-  { title: "احراز هویت", href: "/dashboard/kyc" },
   { title: "تیکت‌ها", href: "/dashboard/tickets" },
   { title: "تنظیمات", href: "/dashboard/settings" },
 ];
