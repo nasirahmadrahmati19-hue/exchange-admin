@@ -1,4 +1,3 @@
-```tsx
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
@@ -136,7 +135,7 @@ function safeParse<T>(key: string, fallback: T): { value: T; error: string | nul
     if (!raw) return { value: fallback, error: null };
     return { value: JSON.parse(raw) as T, error: null };
   } catch {
-    return { value: fallback, error: `داده «${key}» در حافظه محلی خراب است و نادیده گرفته شد.` };
+    return { value: fallback, error: `داده ${key} در حافظه محلی خراب است و نادیده گرفته شد.` };
   }
 }
 
@@ -482,4 +481,3 @@ function VaultIcon() {
     </svg>
   );
 }
-```
