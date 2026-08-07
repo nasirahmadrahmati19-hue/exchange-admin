@@ -22,16 +22,16 @@ interface Hawala {
   date: string;
   status: string;
   trackCode?: string;
+  manualRate?: string;
 }
 
 const emptyForm = {
   sender: "", receiver: "", phone: "", fromCity: "هرات", toCity: "مشهد",
-  payCur: "افغانی", getCur: "تومان", amount: "", fee: "0",
+  payCur: "افغانی", getCur: "تومان", amount: "", fee: "0", manualRate: "",
 };
 
 const generateTrackCode = () => "HW-" + Math.random().toString(36).substring(2, 8).toUpperCase();
 
-// استایل وضعیت‌های جدید
 const statusStyle = (status: string) => {
   if (status === "در حال انتظار") return "bg-amber-50 text-amber-700 border-amber-200";
   if (status === "پرداخت شد") return "bg-emerald-50 text-emerald-700 border-emerald-200";
@@ -53,18 +53,42 @@ export default function HawalaPage() {
   const [historyFilter, setHistoryFilter] = useState("همه");
   const [historySearch, setHistorySearch] = useState("");
 
-  // مودال جزئیات مشتری
   const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null);
 
   const set = (patch: any) => { setForm({ ...form, ...patch }); setMissing([]); setError(""); };
-  const result = fromAFN(Math.max(toAFN(Number(form.amount || 0), form.payCur, rates) - Number(form.fee || 0), 0), form.getCur, rates);
+  
+  // محاسبه با نرخ دستی یا سیستم
+  const needsRate = form.payCur !== form.getCur;
+  const effectiveRate = form.manualRate && !isNaN(Number(form.manualRate)) ? Number(form.manualRate) : 0;
+  
+  const calcResult = () => {
+    const amountNum = Number(form.amount || 0);
+    const feeNum = Number(form.fee || 0);
+    if (amountNum <= 0) return 0;
+    
+    if (!needsRate) {
+      // ارز یکسان
+      return Math.max(amountNum - feeNum, 0);
+    }
+    
+    if (effectiveRate > 0) {
+      // نرخ دستی
+      const amountInAFN = toAFN(amountNum, form.payCur, rates);
+      const resultInAFN = amountInAFN - feeNum;
+      // استفاده از نرخ دستی برای تبدیل از payCur به getCur
+      return Math.max(amountNum * effectiveRate - feeNum, 0);
+    }
+    
+    // نرخ سیستم
+    return fromAFN(Math.max(toAFN(amountNum, form.payCur, rates) - feeNum, 0), form.getCur, rates);
+  };
+  
+  const result = calcResult();
 
-  // وضعیت‌های جدید
   const pendingList = list.filter(h => h.status === "در حال انتظار");
   const paidList = list.filter(h => h.status === "پرداخت شد");
   const cancelledList = list.filter(h => h.status === "لغو شد");
 
-  // آمار
   const stats = useMemo(() => {
     let totalAmount = 0, totalFee = 0;
     const customers: Record<string, { count: number; volume: number; type: string; transactions: Hawala[] }> = {};
@@ -91,11 +115,25 @@ export default function HawalaPage() {
   }, [list]);
 
   const add = () => {
-    const m = checkRequired(form, [
+    const required: { key: string; label: string }[] = [
       { key: "sender", label: "نام فرستنده" },
       { key: "receiver", label: "نام گیرنده" },
       { key: "amount", label: "مبلغ" },
-    ]);
+    ];
+    
+    // اگر ارز متفاوت است، نرخ الزامی
+    if (form.payCur !== form.getCur) {
+      required.push({ key: "manualRate", label: "نرخ توافقی" });
+    }
+    
+    const m = checkRequired(form, required);
+    
+    // بررسی اضافی برای نرخ
+    if (form.payCur !== form.getCur && form.manualRate && (isNaN(Number(form.manualRate)) || Number(form.manualRate) <= 0)) {
+      setError("نرخ توافقی باید یک عدد معتبر و بزرگتر از صفر باشد");
+      return;
+    }
+    
     if (m.length) { setMissing(m); setError(requiredMessage(m)); return; }
 
     const trackCode = generateTrackCode();
@@ -127,7 +165,8 @@ export default function HawalaPage() {
       `حواله از ${h.fromCity} به ${h.toCity}\n` +
       `گیرنده: ${h.receiver}\n` +
       `مبلغ قابل دریافت: ${fa(Number(h.result))} ${h.getCur}\n` +
-      `فرستنده: ${h.sender}`
+      `فرستنده: ${h.sender}` +
+      (h.manualRate ? `\nنرخ: ${h.manualRate}` : "")
     );
     return `https://wa.me/${h.phone}?text=${msg}`;
   };
@@ -140,7 +179,6 @@ export default function HawalaPage() {
     return matchStatus && matchSearch;
   });
 
-  // ۴ بخش اصلی
   const subTabs = [
     { id: "register", label: "ثبت حواله", icon: "✍️" },
     { id: "history", label: "تاریخچه", icon: "🗂️" },
@@ -170,7 +208,6 @@ export default function HawalaPage() {
         </div>
       </div>
 
-      {/* نوار زیربخش‌ها */}
       <div className="card p-2 flex gap-1 overflow-x-auto sticky top-0 z-10 bg-[#f6f4ee]">
         {subTabs.map(tab => (
           <button
@@ -199,9 +236,6 @@ export default function HawalaPage() {
         </div>
       )}
 
-      {/* ================================================================ */}
-      {/* ✍️ بخش ۱: ثبت حواله */}
-      {/* ================================================================ */}
       {subTab === "register" && (
         <div className="space-y-6">
           <div className="card p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -214,6 +248,38 @@ export default function HawalaPage() {
             <SelectField label="ارز پرداخت" value={form.payCur} onChange={v => set({ payCur: v })} options={CURRENCIES} />
             <SelectField label="ارز دریافت" value={form.getCur} onChange={v => set({ getCur: v })} options={CURRENCIES} />
             <Field label="کارمزد (افغانی)" value={form.fee} onChange={v => set({ fee: v })} placeholder="0" />
+            
+            {/* فیلد نرخ توافقی - فقط وقتی ارزها متفاوت هستند */}
+            {form.payCur !== form.getCur && (
+              <div className="sm:col-span-2 lg:col-span-4">
+                <div className="bg-gradient-to-r from-[#0b1f2e] to-[#16374d] rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[#e3b45c] font-bold text-sm">💱 نرخ توافقی</span>
+                    <button 
+                      onClick={() => set({ manualRate: "" })} 
+                      className="text-xs bg-red-500/20 text-red-200 px-3 py-1 rounded-lg hover:bg-red-500/30 transition-colors font-bold"
+                    >
+                      🧹 پاک کردن
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-white text-sm whitespace-nowrap">۱ {form.payCur} =</span>
+                    <input 
+                      type="text"
+                      value={form.manualRate} 
+                      onChange={e => set({ manualRate: e.target.value })}
+                      placeholder="نرخ را وارد کنید"
+                      name="manualRate"
+                      className={`input flex-1 text-center text-[#e3b45c] font-extrabold !border-[#e3b45c]/30 !bg-white/10 !text-white ${missing.includes("نرخ توافقی") ? "!border-red-500" : ""}`}
+                    />
+                    <span className="text-white text-sm whitespace-nowrap">{form.getCur}</span>
+                  </div>
+                  <p className="text-slate-400 text-[11px] mt-2">
+                    💡 نرخ توافقی با مشتری را وارد کنید (اجباری)
+                  </p>
+                </div>
+              </div>
+            )}
 
             <div className="sm:col-span-2">
               <label className="block text-sm font-bold mb-2 invisible">-</label>
@@ -253,9 +319,6 @@ export default function HawalaPage() {
         </div>
       )}
 
-      {/* ================================================================ */}
-      {/* 🗂️ بخش ۲: تاریخچه */}
-      {/* ================================================================ */}
       {subTab === "history" && (
         <div className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -293,6 +356,7 @@ export default function HawalaPage() {
                   <th className="text-right px-4 py-3 font-bold">مسیر</th>
                   <th className="text-right px-4 py-3 font-bold">مبلغ</th>
                   <th className="text-right px-4 py-3 font-bold">دریافتی</th>
+                  <th className="text-right px-4 py-3 font-bold">نرخ</th>
                   <th className="text-right px-4 py-3 font-bold">وضعیت</th>
                   <th className="text-right px-4 py-3 font-bold">تاریخ</th>
                   <th className="text-right px-4 py-3 font-bold">عملیات</th>
@@ -300,7 +364,7 @@ export default function HawalaPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredHistory.length === 0 ? (
-                  <tr><td colSpan={10} className="text-center py-8 text-slate-400">حواله‌ای یافت نشد</td></tr>
+                  <tr><td colSpan={11} className="text-center py-8 text-slate-400">حواله‌ای یافت نشد</td></tr>
                 ) : (
                   filteredHistory.map((h, index) => (
                     <tr key={h.id} className="hover:bg-amber-50/40">
@@ -317,6 +381,15 @@ export default function HawalaPage() {
                       <td className="px-4 py-3 text-slate-500 text-xs">{h.fromCity} ← {h.toCity}</td>
                       <td className="px-4 py-3">{fa(Number(h.amount))} {h.payCur}</td>
                       <td className="px-4 py-3 font-bold text-[#c98f2d]">{fa(Number(h.result))} {h.getCur}</td>
+                      <td className="px-4 py-3 text-xs">
+                        {h.manualRate ? (
+                          <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded-full border border-blue-200">
+                            {h.manualRate}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">سیستم</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3">
                         <select
                           className={`text-xs px-2 py-1.5 rounded-full border ${statusStyle(h.status)}`}
@@ -352,16 +425,12 @@ export default function HawalaPage() {
         </div>
       )}
 
-      {/* ================================================================ */}
-      {/* 📈 بخش ۳: گزارشات (ساده‌شده) */}
-      {/* ================================================================ */}
       {subTab === "reports" && (
         <div className="space-y-6">
           <h2 className="text-lg font-extrabold flex items-center gap-2">
             📈 گزارشات حواله‌جات
           </h2>
 
-          {/* کارت‌های آمار کلی */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="card p-5 bg-gradient-to-br from-sky-500 to-blue-600 text-white">
               <p className="text-xs opacity-80 font-bold">📊 مجموع حواله‌ها</p>
@@ -385,7 +454,6 @@ export default function HawalaPage() {
             </div>
           </div>
 
-          {/* وضعیت حواله‌ها */}
           <div className="card p-5">
             <h3 className="font-bold mb-4">وضعیت حواله‌ها</h3>
             <div className="grid grid-cols-3 gap-4">
@@ -406,9 +474,6 @@ export default function HawalaPage() {
         </div>
       )}
 
-      {/* ================================================================ */}
-      {/* 🫂 بخش ۴: مشتریان (با ستون جزئیات) */}
-      {/* ================================================================ */}
       {subTab === "customers" && (
         <div className="space-y-6">
           <div className="flex items-center justify-between">
@@ -476,9 +541,6 @@ export default function HawalaPage() {
         </div>
       )}
 
-      {/* ================================================================ */}
-      {/* مودال جزئیات معاملات مشتری */}
-      {/* ================================================================ */}
       {selectedCustomer && stats.customers[selectedCustomer] && (
         <Modal title={`🔍 جزئیات معاملات ${selectedCustomer}`} onClose={() => setSelectedCustomer(null)}>
           <div className="space-y-4">
@@ -531,6 +593,12 @@ export default function HawalaPage() {
                       <p className="text-slate-500">تاریخ:</p>
                       <p className="font-bold">{h.date}</p>
                     </div>
+                    {h.manualRate && (
+                      <div className="col-span-2">
+                        <p className="text-slate-500">نرخ توافقی:</p>
+                        <p className="font-bold text-blue-600">{h.manualRate}</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
