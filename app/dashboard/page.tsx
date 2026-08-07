@@ -332,7 +332,7 @@ export default function DashboardPage() {
           sub={"حجم " + faNum(d.hawalaVolume)}
           totals={d.hawalaTotals}
           fa={faNum}
-          icon="💸"
+          icon="📨"
           gradient="from-blue-500 via-blue-600 to-indigo-700"
         />
         <KpiCard 
@@ -350,7 +350,7 @@ export default function DashboardPage() {
           sub="مجموع مانده مشتریان"
           totals={{ AFN: d.accounts.AFN, USD: d.accounts.USD, IRT: d.accounts.IRR, EUR: d.accounts.EUR, PKR: d.accounts.PKR }}
           fa={faNum}
-          icon="⚖️"
+          icon="🏦"
           gradient="from-amber-500 via-amber-600 to-orange-700"
         />
       </div>
@@ -359,9 +359,9 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <StatChip label="حواله امروز" value={faNum(d.todayHawalaCount)} sub={faNum(d.todayHawalaFee) + " کمیشن"} icon="📊" color="blue" />
         <StatChip label="تبادل امروز" value={faNum(d.todayTradeCount)} sub={faNum(d.todayTradeProfit) + " مفاد"} icon="📈" color="emerald" />
-        <StatChip label="در انتظار" value={faNum(d.pendingHawala)} sub="حواله" icon="⏱️" color="amber" />
+        <StatChip label="در انتظار" value={faNum(d.pendingHawala)} sub="حواله" icon="⏳" color="amber" />
         <StatChip label="طلب مشتری" value={faNum(d.totalDebt)} icon="💳" color="purple" />
-        <StatChip label="طلب صرافی" value={faNum(d.totalReceivable)} icon="🏦" color="rose" />
+        <StatChip label="طلب صرافی" value={faNum(d.totalReceivable)} icon="🏛️" color="rose" />
       </div>
 
       {/* ردیف پایین */}
@@ -387,7 +387,7 @@ export default function DashboardPage() {
           <div className="relative z-10">
             <div className="flex items-center gap-3 mb-3">
               <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                <span className="text-2xl">📈</span>
+                <span className="text-2xl">🚀</span>
               </div>
               <div>
                 <p className="text-white/80 text-xs font-medium">مفاد کل تبادل ارز</p>
