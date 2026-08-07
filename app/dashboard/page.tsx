@@ -29,7 +29,7 @@ interface Trade {
   amount: number;
   currency: string;
   afnValue: number;
-  type?: string; // "deposit" | "withdraw" | "exchange" | "account-transfer"
+  type?: string;
   status?: string;
   date?: string;
   createdAt?: number;
@@ -53,31 +53,22 @@ interface Rates {
 }
 
 interface DashboardData {
-  // مجموع حواله‌ها
   hawalaCount: number;
   hawalaVolume: number;
   hawalaTotals: Record<CurCode, number>;
   hawalaFee: number;
-  
-  // مجموع تبادل ارز
   tradeCount: number;
   tradeVolume: number;
   tradeTotals: Record<CurCode, number>;
   tradeProfit: number;
-  
-  // امروز
   todayHawalaCount: number;
   todayHawalaFee: number;
   todayTradeCount: number;
   todayTradeProfit: number;
-  
-  // موجودی کل سیستم
   accounts: { AFN: number; USD: number; IRR: number };
-  
-  // طلب‌ها
-  totalDebt: number; // طلب مشتری از صرافی
-  totalReceivable: number; // طلب صرافی از مشتری
-  
+  totalDebt: number;
+  totalReceivable: number;
+  pendingHawala: number; // جدید
   rates: Rates;
   commission: string;
   lastUpdated: Date | null;
@@ -101,6 +92,7 @@ const EMPTY_DATA: DashboardData = {
   accounts: { AFN: 0, USD: 0, IRR: 0 },
   totalDebt: 0,
   totalReceivable: 0,
+  pendingHawala: 0,
   rates: { usd: "70.5", eur: "76", toman: "0.64" },
   commission: "0.5",
   lastUpdated: null,
@@ -122,13 +114,6 @@ const CUR_LABEL: Record<CurCode, string> = {
   USD: "دالر",
   IRT: "تومان",
   EUR: "یورو",
-};
-
-const CUR_SYMBOL: Record<CurCode, string> = {
-  AFN: "؋",
-  USD: "$",
-  IRT: "﷼",
-  EUR: "€",
 };
 
 function normalizeCur(name: string | undefined | null): CurCode | null {
@@ -185,71 +170,61 @@ export default function DashboardPage() {
     let tradeVolume = 0, tradeProfit = 0;
     let todayHawalaCount = 0, todayHawalaFee = 0;
     let todayTradeCount = 0, todayTradeProfit = 0;
-    
+    let pendingHawala = 0;
+
     const todayStr = new Date().toLocaleDateString("fa-IR");
 
-    // محاسبه حواله‌ها
     for (const x of h) {
       const amt = Number(x.amount || 0);
       const payCode = normalizeCur(x.payCur);
       const fee = Number(x.fee || 0);
-      
-      if (payCode) {
-        hawalaTotals[payCode] += amt;
-      }
+
+      if (payCode) hawalaTotals[payCode] += amt;
       hawalaVolume += toAFN(amt, payCode, rates);
       hawalaFee += fee;
-      
-      // حواله‌های امروز
+
       if (x.date === todayStr) {
         todayHawalaCount++;
         todayHawalaFee += fee;
       }
+
+      if (x.status && PENDING_STATUSES.includes(x.status)) pendingHawala++;
     }
 
-    // محاسبه تبادل ارز
     for (const x of t) {
       const amt = Number(x.amount || 0);
       const code = normalizeCur(x.currency);
-      if (code) {
-        tradeTotals[code] += amt;
-      }
+      if (code) tradeTotals[code] += amt;
       const v = Number(x.afnValue || 0);
       tradeVolume += v;
       tradeProfit += v * commissionRate;
-      
-      // تبادل‌های امروز
+
       if (x.date === todayStr) {
         todayTradeCount++;
         todayTradeProfit += v * commissionRate;
       }
     }
 
-    // محاسبه موجودی و طلب‌ها
     const accounts = { AFN: 0, USD: 0, IRR: 0 };
-    let totalDebt = 0; // طلب مشتری از صرافی (موجودی مثبت)
-    let totalReceivable = 0; // طلب صرافی از مشتری (موجودی منفی)
-    
+    let totalDebt = 0;
+    let totalReceivable = 0;
+
     for (const x of u) {
       const b = x.balances || { AFN: Number(x.balance || 0), USD: 0, IRR: 0 };
       const afnBalance = b.AFN || 0;
       const usdBalance = b.USD || 0;
       const irrBalance = b.IRR || 0;
-      
+
       accounts.AFN += afnBalance;
       accounts.USD += usdBalance;
       accounts.IRR += irrBalance;
-      
-      // محاسبه طلب‌ها به افغانی
-      const afnValue = afnBalance + 
-                       (usdBalance * Number(rates.usd || 0)) + 
+
+      const afnValue = afnBalance +
+                       (usdBalance * Number(rates.usd || 0)) +
                        ((irrBalance / 100) * Number(rates.toman || 0));
-      
-      if (afnValue > 0) {
-        totalDebt += afnValue; // مشتری از صرافی طلب دارد
-      } else if (afnValue < 0) {
-        totalReceivable += Math.abs(afnValue); // صرافی از مشتری طلب دارد
-      }
+
+      if (afnValue > 0) totalDebt += afnValue;
+      else if (afnValue < 0) totalReceivable += Math.abs(afnValue);
     }
 
     setD({
@@ -268,6 +243,7 @@ export default function DashboardPage() {
       accounts,
       totalDebt,
       totalReceivable,
+      pendingHawala,
       rates,
       commission,
       lastUpdated: new Date(),
@@ -293,37 +269,37 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* بنر نرخ روز */}
-      <div className="rounded-2xl bg-gradient-to-l from-[#0b1f2e] to-[#16374d] text-white p-6">
+      {/* بنر نرخ روز - تیره‌تر و بزرگ‌تر */}
+      <div className="rounded-2xl bg-gradient-to-l from-[#0a1a2a] to-[#142c3f] text-white p-6 shadow-xl">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
-            <p className="text-[#e3b45c] text-sm font-bold">صرافی و حواله‌جات برادران نورزاد</p>
-            <h2 className="text-xl font-extrabold mt-1">هرات، افغانستان</h2>
+            <p className="text-[#e3b45c] text-base font-bold tracking-wide">صرافی و حواله‌جات برادران نورزاد</p>
+            <h2 className="text-2xl font-extrabold mt-1">هرات، افغانستان</h2>
           </div>
           {d.lastUpdated && (
-            <p className="text-[11px] text-white/50">
+            <p className="text-xs text-white/40 font-light">
               آخرین به‌روزرسانی: {d.lastUpdated.toLocaleTimeString("fa-IR")}
             </p>
           )}
         </div>
-        <div className="flex flex-wrap gap-3 mt-4 text-sm">
-          <span className="bg-white/10 rounded-xl px-4 py-2">دالر: <b className="text-[#e3b45c]">{d.rates.usd}</b> افغانی</span>
-          <span className="bg-white/10 rounded-xl px-4 py-2">۱۰۰ تومان: <b className="text-[#e3b45c]">{d.rates.toman}</b> افغانی</span>
-          <span className="bg-white/10 rounded-xl px-4 py-2">یورو: <b className="text-[#e3b45c]">{d.rates.eur}</b> افغانی</span>
+        <div className="flex flex-wrap gap-4 mt-5 text-base">
+          <span className="bg-white/10 rounded-xl px-5 py-2.5 backdrop-blur-sm">دالر: <b className="text-[#e3b45c] text-lg">{d.rates.usd}</b> افغانی</span>
+          <span className="bg-white/10 rounded-xl px-5 py-2.5 backdrop-blur-sm">۱۰۰ تومان: <b className="text-[#e3b45c] text-lg">{d.rates.toman}</b> افغانی</span>
+          <span className="bg-white/10 rounded-xl px-5 py-2.5 backdrop-blur-sm">یورو: <b className="text-[#e3b45c] text-lg">{d.rates.eur}</b> افغانی</span>
         </div>
       </div>
 
       {/* خطاها */}
       {errors.length > 0 && (
-        <div className="rounded-xl bg-rose-50 border border-rose-200 p-4 text-sm text-rose-700">
-          <p className="font-bold mb-1">برخی داده‌ها قابل خواندن نبودند:</p>
+        <div className="rounded-xl bg-rose-900/80 border border-rose-700 p-4 text-sm text-rose-100">
+          <p className="font-bold mb-1">⚠️ برخی داده‌ها قابل خواندن نبودند:</p>
           <ul className="list-disc pr-5 space-y-0.5">
             {errors.map((e) => <li key={e}>{e}</li>)}
           </ul>
         </div>
       )}
 
-      {/* سه کارت اصلی */}
+      {/* سه کارت اصلی - تیره‌تر و بزرگ‌تر */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <KpiCard
           title="مجموع حواله‌جات"
@@ -355,43 +331,49 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* آمار امروز و طلب‌ها */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        <StatChip 
-          label="📊 حواله‌های امروز" 
-          value={fa(d.todayHawalaCount)} 
+      {/* ردیف آمار امروز + در انتظار */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <StatChip
+          label="📊 حواله‌های امروز"
+          value={fa(d.todayHawalaCount)}
           sub={"کمیشن: " + fa(d.todayHawalaFee) + " افغانی"}
-          tone="emerald" 
+          tone="emerald"
         />
-        <StatChip 
-          label="📈 تبادل امروز" 
-          value={fa(d.todayTradeCount)} 
+        <StatChip
+          label="📈 تبادل امروز"
+          value={fa(d.todayTradeCount)}
           sub={"مفاد: " + fa(d.todayTradeProfit) + " افغانی"}
-          tone="rose" 
+          tone="rose"
         />
-        <StatChip 
-          label="💰 طلب مشتری از صرافی" 
+        <StatChip
+          label="⏳ در انتظار"
+          value={fa(d.pendingHawala)}
+          sub="حواله‌های معلق"
+          tone="amber"
+        />
+        <StatChip
+          label="💰 طلب مشتری"
           value={fa(d.totalDebt) + " افغانی"}
-          tone="blue" 
+          tone="blue"
         />
-        <StatChip 
-          label="💳 طلب صرافی از مشتری" 
+        <StatChip
+          label="💳 طلب صرافی"
           value={fa(d.totalReceivable) + " افغانی"}
-          tone="amber" 
+          tone="purple"
         />
       </div>
 
       {/* کمیشن کل و مفاد کل */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-        <StatChip 
-          label="کمیشن کل حواله‌جات" 
+        <StatChip
+          label="کمیشن کل حواله‌جات"
           value={fa(d.hawalaFee) + " افغانی"}
-          tone="slate" 
+          tone="slate"
         />
-        <StatChip 
-          label="مفاد کل تبادل ارز" 
+        <StatChip
+          label="مفاد کل تبادل ارز"
           value={fa(d.tradeProfit) + " افغانی"}
-          tone="slate" 
+          tone="slate"
           note={`کارمزد ${d.commission}٪`}
         />
       </div>
@@ -400,13 +382,13 @@ export default function DashboardPage() {
 }
 
 /* ==========================================================================
-   کامپوننت‌های کمکی
+   کامپوننت‌های کمکی - با استایل تیره‌تر و فونت بزرگ‌تر
    ========================================================================== */
 
 const ACCENT_MAP: Record<string, string> = {
-  emerald: "text-emerald-600",
-  rose: "text-rose-600",
-  amber: "text-[#c98f2d]",
+  emerald: "text-emerald-400",
+  rose: "text-rose-400",
+  amber: "text-amber-400",
 };
 
 function KpiCard({
@@ -429,55 +411,58 @@ function KpiCard({
   ];
   if (!hideZeroEUR) rows.push({ code: "EUR", label: "یورو" });
 
+  // پس‌زمینه تیره‌تر، حاشیه طلایی ملایم
   return (
-    <div className="rounded-2xl bg-slate-50 border border-slate-200 p-5 shadow-sm">
+    <div className="rounded-2xl bg-[#1a2a3a] border border-[#2a4050] p-6 shadow-lg hover:shadow-xl transition-all">
       <div className="flex items-start justify-between">
-        <p className="text-slate-600 font-bold">{title}</p>
+        <p className="text-slate-300 font-bold text-lg tracking-wide">{title}</p>
         <span className={color}>{icon}</span>
       </div>
-      {value && <p className="text-3xl font-extrabold text-slate-900 mt-1">{value}</p>}
-      <div className={value ? "mt-5 space-y-2 text-sm" : "mt-3 space-y-2 text-sm"}>
+      {value && <p className="text-4xl font-black text-white mt-2">{value}</p>}
+      <div className={value ? "mt-6 space-y-2.5 text-base" : "mt-4 space-y-2.5 text-base"}>
         {rows.map((r) => (
-          <div key={r.code} className="flex justify-between">
-            <span className="text-slate-600">{r.label}</span>
-            <span className={`${color} font-bold`}>{fa(totals[r.code] || 0)}</span>
+          <div key={r.code} className="flex justify-between border-b border-[#2a4050] pb-1.5 last:border-0">
+            <span className="text-slate-400">{r.label}</span>
+            <span className={`${color} font-extrabold text-lg`}>{fa(totals[r.code] || 0)}</span>
           </div>
         ))}
       </div>
-      <p className="text-[11px] text-slate-400 mt-4">{sub}</p>
+      <p className="text-xs text-slate-500 mt-5 tracking-wide">{sub}</p>
     </div>
   );
 }
 
 function StatChip({
   label, value, sub, tone, note,
-}: { 
-  label: string; 
-  value: string | number; 
+}: {
+  label: string;
+  value: string | number;
   sub?: string;
-  tone: "slate" | "emerald" | "rose" | "amber" | "blue"; 
-  note?: string 
+  tone: "slate" | "emerald" | "rose" | "amber" | "blue" | "purple";
+  note?: string;
 }) {
   const toneMap = {
-    slate: "bg-white border-slate-200 text-[#0b1f2e]",
-    emerald: "bg-emerald-50 border-emerald-100 text-emerald-700",
-    rose: "bg-rose-50 border-rose-100 text-rose-700",
-    amber: "bg-amber-50 border-amber-100 text-amber-700",
-    blue: "bg-blue-50 border-blue-100 text-blue-700",
+    slate: "bg-[#1a2a3a] border-[#2a4050] text-slate-200",
+    emerald: "bg-emerald-900/30 border-emerald-800/50 text-emerald-200",
+    rose: "bg-rose-900/30 border-rose-800/50 text-rose-200",
+    amber: "bg-amber-900/30 border-amber-800/50 text-amber-200",
+    blue: "bg-blue-900/30 border-blue-800/50 text-blue-200",
+    purple: "bg-purple-900/30 border-purple-800/50 text-purple-200",
   } as const;
   return (
-    <div className={`rounded-2xl border p-5 ${toneMap[tone]}`}>
-      <p className="text-xs mb-2 opacity-70">{label}</p>
-      <p className="text-xl font-extrabold">{value}</p>
-      {sub && <p className="text-xs mt-1 opacity-70">{sub}</p>}
-      {note && <p className="text-xs font-bold mt-1 text-[#c98f2d]">{note}</p>}
+    <div className={`rounded-2xl border p-5 shadow-md ${toneMap[tone]}`}>
+      <p className="text-xs font-bold tracking-wider opacity-80 mb-2">{label}</p>
+      <p className="text-2xl font-extrabold">{value}</p>
+      {sub && <p className="text-xs mt-1 opacity-70 font-medium">{sub}</p>}
+      {note && <p className="text-xs font-bold mt-1 text-amber-300">{note}</p>}
     </div>
   );
 }
 
+// آیکون‌ها (بدون تغییر)
 function TransferIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-8 h-8">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-9 h-9">
       <circle cx="12" cy="12" r="9" />
       <path d="M12 8v8" />
       <path d="M9 13l3 3 3-3" />
@@ -487,7 +472,7 @@ function TransferIcon() {
 
 function ExchangeIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-8 h-8">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-9 h-9">
       <circle cx="12" cy="12" r="9" />
       <path d="M12 16V8" />
       <path d="M9 11l3-3 3 3" />
@@ -497,7 +482,7 @@ function ExchangeIcon() {
 
 function VaultIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-8 h-8">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-9 h-9">
       <path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z" />
       <path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z" />
       <path d="M7 21h10" />
