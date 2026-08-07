@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 export default function RatesPage() {
-  const [rates, setRates] = useState({ usd: "70.5", eur: "76", toman: "0.64" });
+  const [rates, setRates] = useState({ usd: "70.5", eur: "76", pkr: "25", toman: "0.64" });
   const [updated, setUpdated] = useState("");
   const [saved, setSaved] = useState(false);
   const [missing, setMissing] = useState<string[]>([]);
@@ -30,6 +30,7 @@ export default function RatesPage() {
     const m: string[] = [];
     if (!rates.usd.trim() || isNaN(Number(rates.usd))) m.push("نرخ دلار");
     if (!rates.eur.trim() || isNaN(Number(rates.eur))) m.push("نرخ یورو");
+    if (!rates.pkr.trim() || isNaN(Number(rates.pkr))) m.push("نرخ کلدار");
     if (!rates.toman.trim() || isNaN(Number(rates.toman))) m.push("نرخ تومان");
     if (m.length > 0) {
       setMissing(m);
@@ -47,9 +48,10 @@ export default function RatesPage() {
   };
 
   const items = [
-    { key: "usd", title: "دلار آمریکا", desc: "نرخ ۱ دلار به افغانی" },
-    { key: "eur", title: "یورو", desc: "نرخ ۱ یورو به افغانی" },
-    { key: "toman", title: "تومان ایران", desc: "نرخ ۱۰۰ تومان به افغانی" },
+    { key: "usd", title: "دلار آمریکا", desc: "نرخ ۱ دلار به افغانی", flag: "🇺🇸" },
+    { key: "eur", title: "یورو", desc: "نرخ ۱ یورو به افغانی", flag: "🇪🇺" },
+    { key: "pkr", title: "کلدار پاکستان", desc: "نرخ ۱ کلدار به افغانی", flag: "🇵🇰" },
+    { key: "toman", title: "تومان ایران", desc: "نرخ ۱۰۰ تومان به افغانی", flag: "🇮🇷" },
   ];
 
   return (
@@ -69,10 +71,13 @@ export default function RatesPage() {
         <div className="bg-red-50 text-red-600 text-sm rounded-xl p-3 border border-red-200">{error}</div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         {items.map(item => (
           <div key={item.key} className="card p-6">
-            <p className="font-extrabold">{item.title}</p>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-2xl">{item.flag}</span>
+              <p className="font-extrabold">{item.title}</p>
+            </div>
             <p className="text-xs text-slate-500 mt-1 mb-4">{item.desc}</p>
             <label className="block text-sm font-bold mb-2">نرخ به افغانی</label>
             <input
@@ -83,6 +88,12 @@ export default function RatesPage() {
             <p className="text-xs text-slate-400 mt-3 text-center">افغانی</p>
           </div>
         ))}
+      </div>
+
+      <div className="card p-5 bg-blue-50 border border-blue-200">
+        <p className="text-sm text-blue-900">
+          <span className="font-bold">💡 نکته:</span> این نرخ‌ها به‌عنوان پیش‌فرض استفاده می‌شوند. در هر معامله می‌توانید نرخ توافقی جداگانه‌ای وارد کنید.
+        </p>
       </div>
     </div>
   );
