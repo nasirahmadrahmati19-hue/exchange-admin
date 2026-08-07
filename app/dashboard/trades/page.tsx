@@ -9,11 +9,11 @@ import {
 import { sendTelegram } from "../lib/telegram";
 import type { AccountUser, CurKey, Tx } from "../lib/helpers";
 
-const curOptions: CurKey[] = ["AFN", "USD", "IRR"];
+const curOptions: CurKey[] = ["AFN", "USD", "IRR", "EUR", "PKR"];
 
 export default function TradesPage() {
   const [users, setUsers] = useStored<AccountUser[]>("db_users", [
-    { id: 1, name: "احمد", phone: "93700000000", telegram: "", balances: { AFN: 300000, USD: 1200, IRR: 85000000 }, status: "فعال" },
+    { id: 1, name: "احمد", phone: "93700000000", telegram: "", balances: { AFN: 300000, USD: 1200, IRR: 85000000, EUR: 0, PKR: 0 }, status: "فعال" },
   ] as any);
   const [trades, setTrades] = useStored<Tx[]>("db_trades", []);
   const [rates] = useState(loadRates());
@@ -25,6 +25,7 @@ export default function TradesPage() {
   const [toCur, setToCur] = useState<CurKey>("IRR");
   const [receiver, setReceiver] = useState("");
   const [amount, setAmount] = useState("");
+  const [manualRate, setManualRate] = useState("");
   const [error, setError] = useState("");
   const [receipt, setReceipt] = useState("");
   const [lastTx, setLastTx] = useState<Tx | null>(null);
@@ -35,7 +36,13 @@ export default function TradesPage() {
 
   const user = users.find(u => u.id === Number(customerId)) as any;
   const amt = Number(amount || 0);
-  const exchTo = fromAFNk(toAFNk(amt, fromCur, rates), toCur, rates);
+  
+  // محاسبه با نرخ دستی یا سیستم
+  const needsRate = mode === "تبادل" || mode === "حساب به حساب";
+  const effectiveRate = manualRate && !isNaN(Number(manualRate)) ? Number(manualRate) : 0;
+  const exchTo = needsRate && effectiveRate > 0 && fromCur !== toCur
+    ? amt * effectiveRate
+    : fromAFNk(toAFNk(amt, fromCur, rates), toCur, rates);
 
   const clear = () => { setError(""); setTgStatus(""); };
 
@@ -80,11 +87,15 @@ export default function TradesPage() {
 
   const submit = async () => {
     try {
+      // ========== حالت حساب به حساب ==========
       if (mode === "حساب به حساب") {
         if (!customerId || !internalReceiverId || !amount.trim() || amt <= 0) {
           setError("لطفاً فرستنده، گیرنده و مبلغ را وارد کنید"); return;
         }
         if (!user) { setError("فرستنده پیدا نشد"); return; }
+        if (fromCur !== toCur && (!manualRate.trim() || isNaN(Number(manualRate)) || Number(manualRate) <= 0)) {
+          setError("لطفاً نرخ توافقی را وارد کنید"); return;
+        }
         const receiverUser = users.find(u => u.id === Number(internalReceiverId)) as any;
         if (!receiverUser) { setError("گیرنده پیدا نشد"); return; }
         if (user.id === receiverUser.id) { setError("فرستنده و گیرنده نمی‌توانند یک نفر باشند"); return; }
@@ -96,7 +107,9 @@ export default function TradesPage() {
         const receiverBalancesBefore = { ...receiverUser.balances };
 
         const senderUpdated = applyTransfer(user, fromCur, amt);
-        const receiverAmount = fromCur === toCur ? amt : fromAFNk(toAFNk(amt, fromCur, rates), toCur, rates);
+        const receiverAmount = fromCur === toCur 
+          ? amt 
+          : (effectiveRate > 0 ? amt * effectiveRate : fromAFNk(toAFNk(amt, fromCur, rates), toCur, rates));
         const receiverUpdated = { ...receiverUser, balances: { ...receiverUser.balances, [toCur]: (receiverUser.balances[toCur] || 0) + receiverAmount } };
 
         setUsers(users.map(u => u.id === user.id ? senderUpdated : u.id === receiverUser.id ? receiverUpdated : u));
@@ -115,11 +128,13 @@ export default function TradesPage() {
           typeLabel: `انتقال داخلی به ${receiverUser.name}`,
           amountLabel,
           receiver: receiverUser.name,
-          balances: senderUpdated.balances || { AFN: 0, USD: 0, IRR: 0 },
+          balances: senderUpdated.balances || { AFN: 0, USD: 0, IRR: 0, EUR: 0, PKR: 0 },
           balancesBefore: senderBalancesBefore,
           deductedAmount: amt,
           deductedCurrency: CURRENCY_META[fromCur].label,
-          exchangeRate: fromCur !== toCur ? fa(fromAFNk(toAFNk(1, fromCur, rates), toCur, rates)) : "—",
+          exchangeRate: fromCur !== toCur 
+            ? (effectiveRate > 0 ? fa(effectiveRate) : fa(fromAFNk(toAFNk(1, fromCur, rates), toCur, rates)))
+            : "—",
           description: `انتقال ${amountLabel} به ${receiverUser.name}`,
           date, time, siteName,
         });
@@ -130,7 +145,7 @@ export default function TradesPage() {
           typeLabel: `دریافت داخلی از ${user.name}`,
           amountLabel: `${fa(receiverAmount)} ${CURRENCY_META[toCur].code}`,
           receiver: user.name,
-          balances: receiverUpdated.balances || { AFN: 0, USD: 0, IRR: 0 },
+          balances: receiverUpdated.balances || { AFN: 0, USD: 0, IRR: 0, EUR: 0, PKR: 0 },
           balancesBefore: receiverBalancesBefore,
           description: `دریافت ${fa(receiverAmount)} ${CURRENCY_META[toCur].label} از ${user.name}`,
           date, time, siteName,
@@ -143,9 +158,10 @@ export default function TradesPage() {
           currency: CURRENCY_META[fromCur].label, amount: amt,
           afnValue: String(toAFNk(amt, fromCur, rates)),
           status: "موفق", date, time,
-          balancesAfter: senderUpdated.balances || { AFN: 0, USD: 0, IRR: 0 },
+          balancesAfter: senderUpdated.balances || { AFN: 0, USD: 0, IRR: 0, EUR: 0, PKR: 0 },
           phone: user.phone || "",
           balancesBefore: senderBalancesBefore,
+          manualRate: manualRate || undefined,
         } as Tx;
         const receiverTx: Tx = {
           id: Date.now() + 1, receiptNo: `#${receiptNoClean}-B`,
@@ -154,9 +170,10 @@ export default function TradesPage() {
           currency: CURRENCY_META[toCur].label, amount: receiverAmount,
           afnValue: String(toAFNk(receiverAmount, toCur, rates)),
           status: "موفق", date, time,
-          balancesAfter: receiverUpdated.balances || { AFN: 0, USD: 0, IRR: 0 },
+          balancesAfter: receiverUpdated.balances || { AFN: 0, USD: 0, IRR: 0, EUR: 0, PKR: 0 },
           phone: receiverUser.phone || "",
           balancesBefore: receiverBalancesBefore,
+          manualRate: manualRate || undefined,
         } as Tx;
         setTrades([receiverTx, senderTx, ...trades]);
 
@@ -188,14 +205,18 @@ export default function TradesPage() {
           }
         } catch { setSendingTg(false); setTgStatus("⚠️ خطا در ارسال تلگرام"); }
 
-        setReceipt(senderText); setLastTx(senderTx); setAmount(""); setInternalReceiverId("");
+        setReceipt(senderText); setLastTx(senderTx); setAmount(""); setInternalReceiverId(""); setManualRate("");
         return;
       }
 
+      // ========== حالت انتقال / تبادل ==========
       if (!customerId || !receiver.trim() || !amount.trim() || amt <= 0) {
         setError("لطفاً مشتری، گیرنده و مبلغ را وارد کنید"); return;
       }
       if (!user) { setError("مشتری پیدا نشد"); return; }
+      if (mode === "تبادل" && fromCur !== toCur && (!manualRate.trim() || isNaN(Number(manualRate)) || Number(manualRate) <= 0)) {
+        setError("لطفاً نرخ توافقی را وارد کنید"); return;
+      }
 
       const balancesBefore = { ...user.balances };
 
@@ -211,7 +232,10 @@ export default function TradesPage() {
         if ((user.balances[fromCur] || 0) < amt) {
           setError(`موجودی کافی نیست. مانده ${CURRENCY_META[fromCur].label}: ${fa(user.balances[fromCur] || 0)}`); return;
         }
-        updated = applyExchange(user, fromCur, toCur, amt, exchTo);
+        const toAmount = fromCur === toCur 
+          ? amt 
+          : (effectiveRate > 0 ? amt * effectiveRate : exchTo);
+        updated = applyExchange(user, fromCur, toCur, amt, toAmount);
         typeLabel = `تبادل ${CURRENCY_META[fromCur].label} به ${CURRENCY_META[toCur].label}`;
         curKey = fromCur;
       }
@@ -231,11 +255,15 @@ export default function TradesPage() {
         typeLabel,
         amountLabel,
         receiver,
-        balances: updated.balances || { AFN: 0, USD: 0, IRR: 0 },
+        balances: updated.balances || { AFN: 0, USD: 0, IRR: 0, EUR: 0, PKR: 0 },
         balancesBefore,
         deductedAmount: amt,
         deductedCurrency: mode === "انتقال" ? CURRENCY_META[curKey].label : CURRENCY_META[fromCur].label,
-        exchangeRate: mode === "تبادل" ? fa(fromAFNk(toAFNk(1, fromCur, rates), toCur, rates)) : "—",
+        exchangeRate: mode === "تبادل" 
+          ? (fromCur === toCur 
+            ? "—" 
+            : (effectiveRate > 0 ? fa(effectiveRate) : fa(fromAFNk(toAFNk(1, fromCur, rates), toCur, rates))))
+          : "—",
         description: mode === "انتقال"
           ? `انتقال مبلغ ${fa(amt)} ${CURRENCY_META[curKey].label} به گیرنده`
           : `تبادل ${fa(amt)} ${CURRENCY_META[fromCur].label} به ${fa(exchTo)} ${CURRENCY_META[toCur].label}`,
@@ -247,9 +275,10 @@ export default function TradesPage() {
         currency: CURRENCY_META[curKey].label, amount: amt,
         afnValue: String(toAFNk(amt, curKey, rates)),
         status: "موفق", date, time,
-        balancesAfter: updated.balances || { AFN: 0, USD: 0, IRR: 0 },
+        balancesAfter: updated.balances || { AFN: 0, USD: 0, IRR: 0, EUR: 0, PKR: 0 },
         phone: user.phone || "",
         balancesBefore,
+        manualRate: manualRate || undefined,
       } as Tx;
       setTrades([tx, ...trades]);
 
@@ -272,7 +301,7 @@ export default function TradesPage() {
         }
       } catch { setSendingTg(false); setTgStatus("⚠️ خطا در ارسال تلگرام"); }
 
-      setReceipt(text); setLastTx(tx); setAmount(""); setReceiver("");
+      setReceipt(text); setLastTx(tx); setAmount(""); setReceiver(""); setManualRate("");
     } catch (e) { setError("خطای غیرمنتظره: " + String(e)); }
   };
 
@@ -281,7 +310,7 @@ export default function TradesPage() {
       const text = buildReceipt({
         receiptNo: t.receiptNo, customer: t.customer, typeLabel: t.typeLabel,
         amountLabel: `${fa(t.amount)} ${t.currency}`, receiver: t.receiver,
-        balances: t.balancesAfter || { AFN: 0, USD: 0, IRR: 0 },
+        balances: t.balancesAfter || { AFN: 0, USD: 0, IRR: 0, EUR: 0, PKR: 0 },
         date: t.date, time: t.time,
         siteName: loadSiteName() || "برادران نورزاد",
       });
@@ -291,7 +320,10 @@ export default function TradesPage() {
 
   const internalReceiver = users.find(u => u.id === Number(internalReceiverId)) as any;
   const internalReceiverAmount = user && internalReceiver && amt > 0
-    ? (fromCur === toCur ? amt : fromAFNk(toAFNk(amt, fromCur, rates), toCur, rates)) : 0;
+    ? (fromCur === toCur 
+      ? amt 
+      : (effectiveRate > 0 ? amt * effectiveRate : fromAFNk(toAFNk(amt, fromCur, rates), toCur, rates))) 
+    : 0;
 
   return (
     <div className="space-y-6">
@@ -307,12 +339,12 @@ export default function TradesPage() {
         </div>
 
         <SelectField label="نوع معامله" value={mode}
-          onChange={v => { setMode(v); clear(); if (v === "حساب به حساب") { setInternalReceiverId(""); setFromCur("AFN"); setToCur("AFN"); } }}
+          onChange={v => { setMode(v); clear(); if (v === "حساب به حساب") { setInternalReceiverId(""); setFromCur("AFN"); setToCur("AFN"); setManualRate(""); } }}
           options={["انتقال", "تبادل", "حساب به حساب"]} />
 
         {mode === "حساب به حساب" ? (
           <>
-            <SelectField label="از ارز (فرستنده)" value={fromCur} onChange={v => setFromCur(v as CurKey)} options={curOptions as any} />
+            <SelectField label="از ارز (فرستنده)" value={fromCur} onChange={v => { setFromCur(v as CurKey); clear(); }} options={curOptions as any} />
             <div>
               <label className="block text-sm font-bold mb-2">مشتری گیرنده</label>
               <select className="input" value={internalReceiverId} onChange={e => setInternalReceiverId(e.target.value)}>
@@ -320,8 +352,40 @@ export default function TradesPage() {
                 {users.filter(u => u.id !== user?.id).map(u => <option key={u.id} value={u.id}>{u.name} - {u.phone}</option>)}
               </select>
             </div>
-            <SelectField label="به ارز (گیرنده)" value={toCur} onChange={v => setToCur(v as CurKey)} options={curOptions as any} />
+            <SelectField label="به ارز (گیرنده)" value={toCur} onChange={v => { setToCur(v as CurKey); clear(); }} options={curOptions as any} />
             <Field label="مبلغ" value={amount} onChange={v => { setAmount(v); clear(); }} placeholder="مقدار" />
+            
+            {/* فیلد نرخ توافقی - فقط وقتی ارزها متفاوت هستند */}
+            {fromCur !== toCur && (
+              <div className="sm:col-span-2 lg:col-span-4">
+                <div className="bg-gradient-to-r from-[#0b1f2e] to-[#16374d] rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[#e3b45c] font-bold text-sm">💱 نرخ توافقی</span>
+                    <button 
+                      onClick={() => setManualRate("")} 
+                      className="text-xs bg-red-500/20 text-red-200 px-3 py-1 rounded-lg hover:bg-red-500/30 transition-colors font-bold"
+                    >
+                      🧹 پاک کردن
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-white text-sm whitespace-nowrap">۱ {CURRENCY_META[fromCur].label} =</span>
+                    <input 
+                      type="text"
+                      value={manualRate} 
+                      onChange={e => setManualRate(e.target.value)}
+                      placeholder="نرخ را وارد کنید"
+                      className="input flex-1 text-center text-[#e3b45c] font-extrabold !border-[#e3b45c]/30 !bg-white/10 !text-white"
+                    />
+                    <span className="text-white text-sm whitespace-nowrap">{CURRENCY_META[toCur].label}</span>
+                  </div>
+                  <p className="text-slate-400 text-[11px] mt-2">
+                    💡 نرخ توافقی با مشتری را وارد کنید (اجباری)
+                  </p>
+                </div>
+              </div>
+            )}
+
             {user && internalReceiver && amt > 0 && (
               <div className="sm:col-span-2 lg:col-span-4 bg-gradient-to-r from-[#0b1f2e] to-[#0f2839] rounded-xl p-4 text-white space-y-2">
                 <p className="text-[#e3b45c] font-bold text-sm">💱 پیش‌نمایش انتقال داخلی</p>
@@ -341,18 +405,50 @@ export default function TradesPage() {
         ) : (
           <>
             {mode === "انتقال" ? (
-              <SelectField label="ارز انتقال" value={cur} onChange={v => setCur(v as CurKey)} options={curOptions as any} />
+              <SelectField label="ارز انتقال" value={cur} onChange={v => { setCur(v as CurKey); clear(); }} options={curOptions as any} />
             ) : (
               <>
-                <SelectField label="از ارز" value={fromCur} onChange={v => setFromCur(v as CurKey)} options={curOptions as any} />
-                <SelectField label="به ارز" value={toCur} onChange={v => setToCur(v as CurKey)} options={curOptions as any} />
+                <SelectField label="از ارز" value={fromCur} onChange={v => { setFromCur(v as CurKey); clear(); }} options={curOptions as any} />
+                <SelectField label="به ارز" value={toCur} onChange={v => { setToCur(v as CurKey); clear(); }} options={curOptions as any} />
               </>
             )}
             <Field label="گیرنده" value={receiver} onChange={v => { setReceiver(v); clear(); }} placeholder="نام گیرنده" />
             <Field label="مبلغ" value={amount} onChange={v => { setAmount(v); clear(); }} placeholder="مقدار" />
+            
+            {/* فیلد نرخ توافقی برای تبادل - فقط وقتی ارزها متفاوت هستند */}
+            {mode === "تبادل" && fromCur !== toCur && (
+              <div className="sm:col-span-2 lg:col-span-4">
+                <div className="bg-gradient-to-r from-[#0b1f2e] to-[#16374d] rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[#e3b45c] font-bold text-sm">💱 نرخ توافقی</span>
+                    <button 
+                      onClick={() => setManualRate("")} 
+                      className="text-xs bg-red-500/20 text-red-200 px-3 py-1 rounded-lg hover:bg-red-500/30 transition-colors font-bold"
+                    >
+                      🧹 پاک کردن
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-white text-sm whitespace-nowrap">۱ {CURRENCY_META[fromCur].label} =</span>
+                    <input 
+                      type="text"
+                      value={manualRate} 
+                      onChange={e => setManualRate(e.target.value)}
+                      placeholder="نرخ را وارد کنید"
+                      className="input flex-1 text-center text-[#e3b45c] font-extrabold !border-[#e3b45c]/30 !bg-white/10 !text-white"
+                    />
+                    <span className="text-white text-sm whitespace-nowrap">{CURRENCY_META[toCur].label}</span>
+                  </div>
+                  <p className="text-slate-400 text-[11px] mt-2">
+                    💡 نرخ توافقی با مشتری را وارد کنید (اجباری)
+                  </p>
+                </div>
+              </div>
+            )}
+
             {user && (
               <div className="sm:col-span-2 lg:col-span-4 bg-slate-50 rounded-xl p-3 text-xs text-slate-600 space-y-1">
-                <p>مانده <b>{user.name}</b>: 🇦🇫 {fa(user.balances?.AFN || 0)} | 🇺🇸 {fa(user.balances?.USD || 0)} | 🇮🇷 {fa(user.balances?.IRR || 0)}</p>
+                <p>مانده <b>{user.name}</b>: 🇦🇫 {fa(user.balances?.AFN || 0)} | 🇺🇸 {fa(user.balances?.USD || 0)} | 🇮🇷 {fa(user.balances?.IRR || 0)} | 🇪🇺 {fa(user.balances?.EUR || 0)} | 🇵🇰 {fa(user.balances?.PKR || 0)}</p>
                 {mode === "تبادل" && amt > 0 && <p className="text-[#c98f2d] font-bold">معادل دریافتی: {fa(exchTo)} {CURRENCY_META[toCur].label}</p>}
               </div>
             )}
