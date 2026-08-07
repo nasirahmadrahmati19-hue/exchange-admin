@@ -7,7 +7,7 @@ import {
   fa,
   type Rates,
   type AccountUser,
-} from "../lib/helpers";
+} from "./lib/helpers";
 
 /* ==========================================================================
    انواع داده (Types)
@@ -254,7 +254,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* بنر نرخ روز - ساده و مینیمال */}
+      {/* بنر نرخ روز */}
       <div className="rounded-2xl bg-[#0b1f2e] text-white p-6 shadow-lg">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
@@ -284,7 +284,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* سه کارت اصلی - ساده و بدون رنگ اضافی */}
+      {/* سه کارت اصلی */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <KpiCard
           title="حواله‌ها"
@@ -310,7 +310,7 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* کارت‌های آماری - ساده و مینیمال */}
+      {/* کارت‌های آماری */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <StatChip label="امروز" value={faNum(d.todayHawalaCount)} sub={faNum(d.todayHawalaFee) + " کمیشن"} />
         <StatChip label="تبادل امروز" value={faNum(d.todayTradeCount)} sub={faNum(d.todayTradeProfit) + " مفاد"} />
@@ -329,7 +329,7 @@ export default function DashboardPage() {
 }
 
 /* ==========================================================================
-   کامپوننت‌های کمکی - ساده و مینیمال
+   کامپوننت‌های کمکی
    ========================================================================== */
 
 function KpiCard({
