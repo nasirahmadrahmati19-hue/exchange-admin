@@ -264,13 +264,11 @@ export default function DashboardPage() {
     <div className="space-y-6">
       {/* بنر نرخ روز - مدرن */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#0b1f2e] via-[#16374d] to-[#1e4a6b] p-8 shadow-2xl">
-        {/* Background decorations */}
         <div className="absolute inset-0 opacity-20">
           <div className="absolute top-0 right-0 w-64 h-64 bg-[#e3b45c] rounded-full blur-3xl"></div>
           <div className="absolute bottom-0 left-0 w-96 h-96 bg-blue-400 rounded-full blur-3xl"></div>
         </div>
         
-        {/* Content */}
         <div className="relative z-10">
           <div className="flex items-start justify-between mb-6">
             <div>
@@ -279,8 +277,8 @@ export default function DashboardPage() {
                   <span className="text-[#0b1f2e] text-2xl font-black">ن</span>
                 </div>
                 <div>
-                  <p className="text-[#e3b45c] text-xs font-bold tracking-wider uppercase">صرافی و حواله‌جات</p>
-                  <h2 className="text-white text-2xl font-black">برادران نورزاد</h2>
+                  <p className="text-[#e3b45c] text-sm font-bold tracking-wider">صرافی و حواله‌جات</p>
+                  <h2 className="text-white text-3xl font-extrabold">برادران نورزاد</h2>
                 </div>
               </div>
               <p className="text-white/60 text-sm">هرات، افغانستان</p>
@@ -374,7 +372,7 @@ export default function DashboardPage() {
                 <span className="text-2xl">💰</span>
               </div>
               <div>
-                <p className="text-white/80 text-xs font-medium">کمیشن کل حواله‌جات</p>
+                <p className="text-white/80 text-sm font-bold">کمیشن کل حواله‌جات</p>
                 <p className="text-white text-3xl font-black mt-1">{faNum(d.hawalaFee)}</p>
               </div>
             </div>
@@ -390,7 +388,7 @@ export default function DashboardPage() {
                 <span className="text-2xl">🚀</span>
               </div>
               <div>
-                <p className="text-white/80 text-xs font-medium">مفاد کل تبادل ارز</p>
+                <p className="text-white/80 text-sm font-bold">مفاد کل تبادل ارز</p>
                 <p className="text-white text-3xl font-black mt-1">{faNum(d.tradeProfit)}</p>
               </div>
             </div>
@@ -420,7 +418,7 @@ function CurrencyCard({ flag, name, rate, color, borderColor }: {
       <div className="flex items-center justify-between mb-2">
         <span className="text-3xl">{flag}</span>
       </div>
-      <p className="text-white/70 text-xs font-medium mb-1">{name}</p>
+      <p className="text-white/70 text-sm font-bold mb-1">{name}</p>
       <p className="text-white text-xl font-black">{rate}</p>
       <p className="text-white/50 text-[10px] mt-1">افغانی</p>
     </div>
@@ -446,7 +444,6 @@ function KpiCard({ title, value, sub, totals, fa, icon, gradient }: {
 
   return (
     <div className={`relative overflow-hidden rounded-3xl bg-gradient-to-br ${gradient} p-6 shadow-xl hover:shadow-2xl transition-shadow`}>
-      {/* Background decoration */}
       <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full blur-3xl -mr-20 -mt-20"></div>
       <div className="absolute bottom-0 left-0 w-32 h-32 bg-white/5 rounded-full blur-2xl -ml-16 -mb-16"></div>
 
@@ -457,7 +454,7 @@ function KpiCard({ title, value, sub, totals, fa, icon, gradient }: {
             <span className="text-3xl">{icon}</span>
           </div>
           <div>
-            <p className="text-white/80 text-xs font-medium">{title}</p>
+            <p className="text-white text-lg font-extrabold">{title}</p>
             {value && <p className="text-white text-3xl font-black mt-1">{value}</p>}
           </div>
         </div>
@@ -469,7 +466,7 @@ function KpiCard({ title, value, sub, totals, fa, icon, gradient }: {
             if (amount === 0) return null;
             return (
               <div key={r.code} className="flex justify-between items-center bg-white/10 backdrop-blur-sm rounded-xl px-4 py-2.5 border border-white/20">
-                <span className="text-white/90 text-sm font-medium flex items-center gap-2">
+                <span className="text-white text-sm font-bold flex items-center gap-2">
                   <span className="text-lg">{r.flag}</span>
                   {r.label}
                 </span>
@@ -517,7 +514,7 @@ function StatChip({ label, value, sub, note, icon, color }: {
           <span className="text-2xl">{icon}</span>
         </div>
       </div>
-      <p className="text-xs font-medium opacity-70 mb-1">{label}</p>
+      <p className="text-sm font-extrabold mb-1">{label}</p>
       <p className="text-2xl font-black mb-1">{value}</p>
       {sub && <p className="text-xs opacity-60">{sub}</p>}
       {note && <p className="text-xs font-bold mt-2 text-[#c98f2d]">{note}</p>}
