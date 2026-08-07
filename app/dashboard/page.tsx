@@ -3,13 +3,17 @@
 import { useEffect, useState } from "react";
 
 export default function DashboardPage() {
-  const [d, setD] = useState({
-    hawalaCount: 0, hawalaVolume: 0, tradeCount: 0, tradeVolume: 0,
-    totalFee: 0, tradeProfit: 0, pending: 0, today: 0,
-    cur: { "افغانی": 0, "دلار": 0, "تومان": 0, "یورو": 0 } as Record<string, number>,
+  const [d, setD] = useState<any>({
+    hawalaCount: 0,
+    hawalaTotals: { AFN: 0, USD: 0, IRR: 0 },
+    tradeCount: 0,
+    tradeTotals: { AFN: 0, USD: 0, IRR: 0 },
     accounts: { AFN: 0, USD: 0, IRR: 0 },
+    pending: 0,
+    today: 0,
+    totalFee: 0,
+    tradeProfit: 0,
     rates: { usd: "70.5", eur: "76", toman: "0.64" },
-    commission: "0.5",
     latest: [] as any[],
   });
 
@@ -25,69 +29,48 @@ export default function DashboardPage() {
       const s = localStorage.getItem("db_settings");
       if (s) { const p = JSON.parse(s); if (p && p.commission) commission = p.commission; }
 
-      const toAFN = (amount: number, cur: string) => {
-        if (cur === "تومان") return (amount / 1000) * Number(rates.toman);
-        if (cur === "دلار" || cur === "دالر") return amount * Number(rates.usd);
-        if (cur === "یورو") return amount * Number(rates.eur);
-        return amount;
-      };
+      // ---------- مجموع حواله‌جات به تفکیک ارز ----------
+      const hawalaTotals = { AFN: 0, USD: 0, IRR: 0 };
+      let totalFee = 0, pending = 0, today = 0;
+      const todayStr = new Date().toLocaleDateString("fa-IR");
+      h.forEach((x: any) => {
+        const amt = Number(x.amount || 0);
+        if (x.payCur === "افغانی") hawalaTotals.AFN += amt;
+        else if (x.payCur === "دلار" || x.payCur === "دالر") hawalaTotals.USD += amt;
+        else if (x.payCur === "تومان") hawalaTotals.IRR += amt;
+        totalFee += Number(x.fee || 0);
+        if (x.status === "در انتظار" || x.status === "در حال انتظار") pending++;
+        if (x.date === todayStr) today++;
+      });
 
+      // ---------- مجموع تبادل ارز به تفکیک ارز ----------
+      const tradeTotals = { AFN: 0, USD: 0, IRR: 0 };
+      let tradeProfit = 0;
+      t.forEach((x: any) => {
+        const amt = Number(x.amount || 0);
+        if (x.currency === "افغانی") tradeTotals.AFN += amt;
+        else if (x.currency === "دالر" || x.currency === "دلار") tradeTotals.USD += amt;
+        else if (x.currency === "تومان") tradeTotals.IRR += amt;
+        tradeProfit += Number(x.afnValue || 0) * (Number(commission) / 100);
+      });
+
+      // ---------- مانده کل سیستم ----------
       const acc = { AFN: 0, USD: 0, IRR: 0 };
       u.forEach((x: any) => {
         const b = x.balances || { AFN: Number(x.balance || 0), USD: 0, IRR: 0 };
         acc.AFN += b.AFN || 0; acc.USD += b.USD || 0; acc.IRR += b.IRR || 0;
       });
 
-      const curSum: Record<string, number> = { "افغانی": 0, "دلار": 0, "تومان": 0, "یورو": 0 };
-      let hawalaVolume = 0, totalFee = 0, pending = 0, today = 0;
-      const todayStr = new Date().toLocaleDateString("fa-IR");
-
-      h.forEach((x: any) => {
-        hawalaVolume += toAFN(Number(x.amount || 0), x.payCur);
-        totalFee += Number(x.fee || 0);
-        if (curSum[x.payCur] !== undefined) curSum[x.payCur] += Number(x.amount || 0);
-        if (curSum[x.getCur] !== undefined) curSum[x.getCur] += Number(x.result || 0);
-        if (x.status === "در انتظار") pending++;
-        if (x.date === todayStr) today++;
-      });
-
-      let tradeVolume = 0, tradeProfit = 0;
-      t.forEach((x: any) => {
-        const v = Number(x.afnValue || 0);
-        tradeVolume += v;
-        tradeProfit += v * (Number(commission) / 100);
-        if (curSum[x.currency] !== undefined) curSum[x.currency] += Number(x.amount || 0);
-      });
-
       setD({
-        hawalaCount: h.length, hawalaVolume, tradeCount: t.length, tradeVolume,
-        totalFee, tradeProfit, pending, today,
-        cur: curSum, accounts: acc, rates, commission, latest: h.slice(0, 4),
+        hawalaCount: h.length, hawalaTotals,
+        tradeCount: t.length, tradeTotals,
+        accounts: acc, pending, today, totalFee, tradeProfit, rates,
+        latest: h.slice(0, 4),
       });
     } catch {}
   }, []);
 
   const fa = (n: number) => n.toLocaleString("fa-IR", { maximumFractionDigits: 0 });
-
-  const summary = [
-    { t: "مجموع حواله‌جات", v: fa(d.hawalaCount) + " حواله", sub: "حجم: " + fa(d.hawalaVolume) + " افغانی" },
-    { t: "مجموع تبادل ارز", v: fa(d.tradeCount) + " معامله", sub: "حجم: " + fa(d.tradeVolume) + " افغانی" },
-    { t: "مجموع کمیشن‌ها", v: fa(d.totalFee) + " افغانی", sub: "از حواله‌جات" },
-    { t: "مفاد از تبادل ارز", v: fa(d.tradeProfit) + " افغانی", sub: "کارمزد " + d.commission + "٪" },
-  ];
-
-  const accountCards = [
-    { name: "افغانی", flag: "🇦🇫", code: "AFN", value: d.accounts.AFN, color: "from-emerald-500 to-teal-600" },
-    { name: "دالر", flag: "🇺🇸", code: "USD", value: d.accounts.USD, color: "from-blue-500 to-indigo-600" },
-    { name: "تومان", flag: "🇮🇷", code: "IRR", value: d.accounts.IRR, color: "from-amber-500 to-orange-600" },
-  ];
-
-  const turnover = [
-    { name: "افغانی", symbol: "؋", color: "from-emerald-500 to-teal-600" },
-    { name: "دلار", symbol: "$", color: "from-blue-500 to-indigo-600" },
-    { name: "تومان", symbol: "﷼", color: "from-amber-500 to-orange-600" },
-    { name: "یورو", symbol: "€", color: "from-purple-500 to-fuchsia-600" },
-  ];
 
   return (
     <div className="space-y-8">
@@ -102,48 +85,90 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* مانده کل حساب‌های مشتریان */}
-      <div>
-        <h3 className="font-extrabold mb-4">مانده کل حساب‌های مشتریان</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-          {accountCards.map(c => (
-            <div key={c.code} className={`rounded-2xl bg-gradient-to-br ${c.color} p-5 text-white shadow-lg`}>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-bold opacity-90">{c.flag} {c.name}</span>
-                <span className="text-xs font-bold opacity-70">{c.code}</span>
-              </div>
-              <p className="text-2xl font-extrabold mt-3">{fa(c.value)}</p>
-              <p className="text-[11px] opacity-80 mt-1">مجموع مانده همه مشتریان</p>
-            </div>
-          ))}
-        </div>
-      </div>
+      {/* ========== سه کارت افقی (طبق عکس) ========== */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
 
-      {/* کارت‌های خلاصه کسب‌وکار */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        {summary.map(s => (
-          <div key={s.t} className="card p-5">
-            <p className="text-slate-500 text-xs mb-2">{s.t}</p>
-            <p className="text-xl font-extrabold text-[#0b1f2e]">{s.v}</p>
-            <p className="text-xs text-[#c98f2d] font-bold mt-1">{s.sub}</p>
+        {/* کارت ۱: مجموع حواله‌جات (سبز) */}
+        <div className="rounded-2xl bg-slate-50 border border-slate-200 p-5 shadow-sm">
+          <div className="flex items-start justify-between">
+            <p className="text-slate-600 font-bold">مجموع حواله‌جات</p>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-8 h-8 text-emerald-600">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 8v8" />
+              <path d="M9 13l3 3 3-3" />
+            </svg>
           </div>
-        ))}
-      </div>
-
-      {/* گردش به تفکیک ارز */}
-      <div>
-        <h3 className="font-extrabold mb-4">مجموع گردش به تفکیک ارز (حواله + تبادل)</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          {turnover.map(c => (
-            <div key={c.name} className={`rounded-2xl bg-gradient-to-br ${c.color} p-5 text-white shadow-lg`}>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-bold opacity-90">{c.name}</span>
-                <span className="text-2xl font-extrabold opacity-80">{c.symbol}</span>
-              </div>
-              <p className="text-2xl font-extrabold mt-3">{fa(d.cur[c.name] || 0)}</p>
-              <p className="text-[11px] opacity-80 mt-1">مجموع حواله + تبادل</p>
+          <p className="text-3xl font-extrabold text-slate-900 mt-1">{fa(d.hawalaCount)}</p>
+          <div className="mt-5 space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-slate-600">افغانی</span>
+              <span className="text-emerald-600 font-bold">{fa(d.hawalaTotals.AFN)}</span>
             </div>
-          ))}
+            <div className="flex justify-between">
+              <span className="text-slate-600">دالر</span>
+              <span className="text-emerald-600 font-bold">{fa(d.hawalaTotals.USD)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-600">تومان</span>
+              <span className="text-emerald-600 font-bold">{fa(d.hawalaTotals.IRR)}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* کارت ۲: مجموع تبادل ارز (سرمه‌ای/قرمز) */}
+        <div className="rounded-2xl bg-slate-50 border border-slate-200 p-5 shadow-sm">
+          <div className="flex items-start justify-between">
+            <p className="text-slate-600 font-bold">مجموع تبادل ارز</p>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-8 h-8 text-rose-600">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 16V8" />
+              <path d="M9 11l3-3 3 3" />
+            </svg>
+          </div>
+          <p className="text-3xl font-extrabold text-slate-900 mt-1">{fa(d.tradeCount)}</p>
+          <div className="mt-5 space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-slate-600">افغانی</span>
+              <span className="text-rose-600 font-bold">{fa(d.tradeTotals.AFN)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-600">دالر</span>
+              <span className="text-rose-600 font-bold">{fa(d.tradeTotals.USD)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-600">تومان</span>
+              <span className="text-rose-600 font-bold">{fa(d.tradeTotals.IRR)}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* کارت ۳: مانده کل سیستم (طلایی) */}
+        <div className="rounded-2xl bg-slate-50 border border-slate-200 p-5 shadow-sm">
+          <div className="flex items-start justify-between">
+            <p className="text-slate-600 font-bold">مانده کل سیستم</p>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-8 h-8 text-[#c98f2d]">
+              <path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z" />
+              <path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z" />
+              <path d="M7 21h10" />
+              <path d="M12 3v18" />
+              <path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2" />
+            </svg>
+          </div>
+          <div className="mt-5 space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-slate-600">افغانی</span>
+              <span className="text-[#c98f2d] font-bold">{fa(d.accounts.AFN)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-600">دالر</span>
+              <span className="text-[#c98f2d] font-bold">{fa(d.accounts.USD)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-600">تومان</span>
+              <span className="text-[#c98f2d] font-bold">{fa(d.accounts.IRR)}</span>
+            </div>
+          </div>
+          <p className="text-[11px] text-slate-400 mt-4">مجموع مانده همه مشتریان</p>
         </div>
       </div>
 
@@ -173,7 +198,7 @@ export default function DashboardPage() {
             <p className="text-sm text-slate-400 text-center py-8">هنوز حواله‌ای ثبت نشده است</p>
           ) : (
             <div className="space-y-3">
-              {d.latest.map(h => (
+              {d.latest.map((h: any) => (
                 <div key={h.id} className="flex items-center justify-between p-3 rounded-xl border border-slate-100">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-[#0b1f2e] text-[#e3b45c] flex items-center justify-center font-bold text-sm">
