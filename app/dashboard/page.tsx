@@ -68,7 +68,7 @@ interface DashboardData {
   accounts: { AFN: number; USD: number; IRR: number };
   totalDebt: number;
   totalReceivable: number;
-  pendingHawala: number; // جدید
+  pendingHawala: number;
   rates: Rates;
   commission: string;
   lastUpdated: Date | null;
@@ -269,7 +269,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* بنر نرخ روز - تیره‌تر و بزرگ‌تر */}
+      {/* بنر نرخ روز */}
       <div className="rounded-2xl bg-gradient-to-l from-[#0a1a2a] to-[#142c3f] text-white p-6 shadow-xl">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
@@ -299,7 +299,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* سه کارت اصلی - تیره‌تر و بزرگ‌تر */}
+      {/* سه کارت اصلی با ایموجی مناسب */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <KpiCard
           title="مجموع حواله‌جات"
@@ -308,7 +308,7 @@ export default function DashboardPage() {
           accent="emerald"
           totals={d.hawalaTotals}
           fa={fa}
-          icon={<TransferIcon />}
+          icon="📤"
         />
         <KpiCard
           title="مجموع تبادل ارز"
@@ -317,7 +317,7 @@ export default function DashboardPage() {
           accent="rose"
           totals={d.tradeTotals}
           fa={fa}
-          icon={<ExchangeIcon />}
+          icon="💱"
         />
         <KpiCard
           title="موجودی کل سیستم"
@@ -326,52 +326,52 @@ export default function DashboardPage() {
           accent="amber"
           totals={{ AFN: d.accounts.AFN, USD: d.accounts.USD, IRT: d.accounts.IRR, EUR: 0 }}
           fa={fa}
-          icon={<VaultIcon />}
+          icon="🏦"
           hideZeroEUR
         />
       </div>
 
-      {/* ردیف آمار امروز + در انتظار */}
+      {/* ردیف دوم - آمار امروز + در انتظار - ایموجی‌های مدرن */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <StatChip
-          label="📊 حواله‌های امروز"
+          label="📋 حواله‌های امروز"
           value={fa(d.todayHawalaCount)}
           sub={"کمیشن: " + fa(d.todayHawalaFee) + " افغانی"}
           tone="emerald"
         />
         <StatChip
-          label="📈 تبادل امروز"
+          label="📊 تبادل امروز"
           value={fa(d.todayTradeCount)}
           sub={"مفاد: " + fa(d.todayTradeProfit) + " افغانی"}
           tone="rose"
         />
         <StatChip
-          label="⏳ در انتظار"
+          label="⏱️ در انتظار"
           value={fa(d.pendingHawala)}
           sub="حواله‌های معلق"
           tone="amber"
         />
         <StatChip
-          label="💰 طلب مشتری"
+          label="💵 طلب مشتری"
           value={fa(d.totalDebt) + " افغانی"}
           tone="blue"
         />
         <StatChip
-          label="💳 طلب صرافی"
+          label="🏛️ طلب صرافی"
           value={fa(d.totalReceivable) + " افغانی"}
           tone="purple"
         />
       </div>
 
-      {/* کمیشن کل و مفاد کل */}
+      {/* ردیف سوم - کمیشن و مفاد کل */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
         <StatChip
-          label="کمیشن کل حواله‌جات"
+          label="💰 کمیشن کل حواله‌جات"
           value={fa(d.hawalaFee) + " افغانی"}
           tone="slate"
         />
         <StatChip
-          label="مفاد کل تبادل ارز"
+          label="📈 مفاد کل تبادل ارز"
           value={fa(d.tradeProfit) + " افغانی"}
           tone="slate"
           note={`کارمزد ${d.commission}٪`}
@@ -382,7 +382,7 @@ export default function DashboardPage() {
 }
 
 /* ==========================================================================
-   کامپوننت‌های کمکی - با استایل تیره‌تر و فونت بزرگ‌تر
+   کامپوننت‌های کمکی
    ========================================================================== */
 
 const ACCENT_MAP: Record<string, string> = {
@@ -400,7 +400,7 @@ function KpiCard({
   accent: "emerald" | "rose" | "amber";
   totals: Record<CurCode, number>;
   fa: (n: number) => string;
-  icon: React.ReactNode;
+  icon: string; // ایموجی
   hideZeroEUR?: boolean;
 }) {
   const color = ACCENT_MAP[accent];
@@ -411,18 +411,17 @@ function KpiCard({
   ];
   if (!hideZeroEUR) rows.push({ code: "EUR", label: "یورو" });
 
-  // پس‌زمینه تیره‌تر، حاشیه طلایی ملایم
   return (
     <div className="rounded-2xl bg-[#1a2a3a] border border-[#2a4050] p-6 shadow-lg hover:shadow-xl transition-all">
       <div className="flex items-start justify-between">
-        <p className="text-slate-300 font-bold text-lg tracking-wide">{title}</p>
-        <span className={color}>{icon}</span>
+        <p className="text-slate-300 font-bold text-xl tracking-wide">{title}</p>
+        <span className={`${color} text-3xl`}>{icon}</span>
       </div>
       {value && <p className="text-4xl font-black text-white mt-2">{value}</p>}
       <div className={value ? "mt-6 space-y-2.5 text-base" : "mt-4 space-y-2.5 text-base"}>
         {rows.map((r) => (
           <div key={r.code} className="flex justify-between border-b border-[#2a4050] pb-1.5 last:border-0">
-            <span className="text-slate-400">{r.label}</span>
+            <span className="text-slate-400 text-base">{r.label}</span>
             <span className={`${color} font-extrabold text-lg`}>{fa(totals[r.code] || 0)}</span>
           </div>
         ))}
@@ -451,43 +450,10 @@ function StatChip({
   } as const;
   return (
     <div className={`rounded-2xl border p-5 shadow-md ${toneMap[tone]}`}>
-      <p className="text-xs font-bold tracking-wider opacity-80 mb-2">{label}</p>
+      <p className="text-sm font-bold tracking-wider opacity-80 mb-2">{label}</p>
       <p className="text-2xl font-extrabold">{value}</p>
       {sub && <p className="text-xs mt-1 opacity-70 font-medium">{sub}</p>}
       {note && <p className="text-xs font-bold mt-1 text-amber-300">{note}</p>}
     </div>
-  );
-}
-
-// آیکون‌ها (بدون تغییر)
-function TransferIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-9 h-9">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 8v8" />
-      <path d="M9 13l3 3 3-3" />
-    </svg>
-  );
-}
-
-function ExchangeIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-9 h-9">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 16V8" />
-      <path d="M9 11l3-3 3 3" />
-    </svg>
-  );
-}
-
-function VaultIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-9 h-9">
-      <path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z" />
-      <path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z" />
-      <path d="M7 21h10" />
-      <path d="M12 3v18" />
-      <path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2" />
-    </svg>
   );
 }
