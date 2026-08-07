@@ -4,14 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import {
   loadRates,
   loadCommission,
+  defaultRates,
   fa,
   type Rates,
   type AccountUser,
 } from "./lib/helpers";
-
-/* ==========================================================================
-   انواع داده (Types)
-   ========================================================================== */
 
 type CurCode = "AFN" | "USD" | "IRT" | "EUR" | "PKR";
 
@@ -85,7 +82,7 @@ const EMPTY_DATA: DashboardData = {
   totalDebt: 0,
   totalReceivable: 0,
   pendingHawala: 0,
-  rates: { usd: "70.5", eur: "76", pkr: "25", toman: "0.64" },
+  rates: defaultRates,
   commission: "0.5",
   lastUpdated: null,
 };
@@ -263,7 +260,6 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* بنر نرخ روز */}
       <div className="rounded-2xl bg-[#0b1f2e] text-white p-6 shadow-lg">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
@@ -284,7 +280,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* خطاها */}
       {errors.length > 0 && (
         <div className="rounded-xl bg-rose-50 border border-rose-200 p-4 text-sm text-rose-700">
           <p className="font-bold mb-1">⚠️ برخی داده‌ها قابل خواندن نبودند:</p>
@@ -294,32 +289,12 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* سه کارت اصلی */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        <KpiCard
-          title="حواله‌ها"
-          value={faNum(d.hawalaCount)}
-          sub={"حجم " + faNum(d.hawalaVolume)}
-          totals={d.hawalaTotals}
-          fa={faNum}
-        />
-        <KpiCard
-          title="تبادل ارز"
-          value={faNum(d.tradeCount)}
-          sub={"حجم " + faNum(d.tradeVolume)}
-          totals={d.tradeTotals}
-          fa={faNum}
-        />
-        <KpiCard
-          title="مانده سیستم"
-          value={null}
-          sub="مجموع مانده مشتریان"
-          totals={{ AFN: d.accounts.AFN, USD: d.accounts.USD, IRT: d.accounts.IRR, EUR: d.accounts.EUR, PKR: d.accounts.PKR }}
-          fa={faNum}
-        />
+        <KpiCard title="حواله‌ها" value={faNum(d.hawalaCount)} sub={"حجم " + faNum(d.hawalaVolume)} totals={d.hawalaTotals} fa={faNum} />
+        <KpiCard title="تبادل ارز" value={faNum(d.tradeCount)} sub={"حجم " + faNum(d.tradeVolume)} totals={d.tradeTotals} fa={faNum} />
+        <KpiCard title="مانده سیستم" value={null} sub="مجموع مانده مشتریان" totals={{ AFN: d.accounts.AFN, USD: d.accounts.USD, IRT: d.accounts.IRR, EUR: d.accounts.EUR, PKR: d.accounts.PKR }} fa={faNum} />
       </div>
 
-      {/* کارت‌های آماری */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <StatChip label="امروز" value={faNum(d.todayHawalaCount)} sub={faNum(d.todayHawalaFee) + " کمیشن"} />
         <StatChip label="تبادل امروز" value={faNum(d.todayTradeCount)} sub={faNum(d.todayTradeProfit) + " مفاد"} />
@@ -328,7 +303,6 @@ export default function DashboardPage() {
         <StatChip label="طلب صرافی" value={faNum(d.totalReceivable)} />
       </div>
 
-      {/* ردیف پایین */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
         <StatChip label="کمیشن کل" value={faNum(d.hawalaFee)} />
         <StatChip label="مفاد کل" value={faNum(d.tradeProfit)} note={`کارمزد ${d.commission}٪`} />
@@ -337,19 +311,7 @@ export default function DashboardPage() {
   );
 }
 
-/* ==========================================================================
-   کامپوننت‌های کمکی
-   ========================================================================== */
-
-function KpiCard({
-  title, value, sub, totals, fa,
-}: {
-  title: string;
-  value: string | null;
-  sub: string;
-  totals: Record<CurCode, number>;
-  fa: (n: number) => string;
-}) {
+function KpiCard({ title, value, sub, totals, fa }: { title: string; value: string | null; sub: string; totals: Record<CurCode, number>; fa: (n: number) => string; }) {
   const rows: { code: CurCode; label: string }[] = [
     { code: "AFN", label: "افغانی" },
     { code: "USD", label: "دالر" },
@@ -375,14 +337,7 @@ function KpiCard({
   );
 }
 
-function StatChip({
-  label, value, sub, note,
-}: {
-  label: string;
-  value: string | number;
-  sub?: string;
-  note?: string;
-}) {
+function StatChip({ label, value, sub, note }: { label: string; value: string | number; sub?: string; note?: string; }) {
   return (
     <div className="rounded-2xl bg-white border border-slate-100 p-5 shadow-sm">
       <p className="text-xs text-slate-400 font-medium">{label}</p>
