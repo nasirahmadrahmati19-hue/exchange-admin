@@ -1,25 +1,29 @@
-export interface Rates { usd: string; eur: string; toman: string; }
-export const defaultRates: Rates = { usd: "70.5", eur: "76", toman: "0.64" };
-export const CURRENCIES = ["افغانی", "تومان", "دلار", "یورو"];
+export interface Rates { usd: string; eur: string; pkr: string; toman: string; }
+export const defaultRates: Rates = { usd: "70.5", eur: "76", pkr: "25", toman: "0.64" };
+export const CURRENCIES = ["افغانی", "تومان", "دلار", "یورو", "کلدار"];
 export const CITIES = ["هرات", "کابل", "اسلام‌قلعه", "مشهد", "تهران", "دوغارون"];
 
 /* ---------- حساب‌ها ---------- */
-export type CurKey = "AFN" | "USD" | "IRR";
-export interface Balances { AFN: number; USD: number; IRR: number; }
+export type CurKey = "AFN" | "USD" | "IRR" | "EUR" | "PKR";
+export interface Balances { AFN: number; USD: number; IRR: number; EUR: number; PKR: number; }
 export interface AccountUser { id: number; name: string; phone: string; telegram?: string; balances: Balances; status: string; }
 export interface Tx {
   id: number; receiptNo: string; typeLabel: string; customer: string; receiver: string;
   currency: string; amount: number; afnValue: string; status: string; date: string; time: string;
   balancesAfter: Balances; phone: string;
+  balancesBefore?: Balances;
+  manualRate?: string;
 }
 
 export const CURRENCY_META: Record<CurKey, { label: string; flag: string; code: string }> = {
   AFN: { label: "افغانی", flag: "🇦🇫", code: "AFN" },
   USD: { label: "دالر", flag: "🇺🇸", code: "USD" },
   IRR: { label: "تومان", flag: "🇮🇷", code: "IRR" },
+  EUR: { label: "یورو", flag: "🇪🇺", code: "EUR" },
+  PKR: { label: "کلدار", flag: "🇵🇰", code: "PKR" },
 };
 
-export function emptyBalances(): Balances { return { AFN: 0, USD: 0, IRR: 0 }; }
+export function emptyBalances(): Balances { return { AFN: 0, USD: 0, IRR: 0, EUR: 0, PKR: 0 }; }
 
 /* ---------- ذخیره ---------- */
 export function loadJSON<T>(key: string, fallback: T): T {
@@ -35,22 +39,28 @@ export function toAFN(amount: number, cur: string, rates: Rates): number {
   if (cur === "تومان") return (amount / 1000) * Number(rates.toman);
   if (cur === "دلار" || cur === "دالر") return amount * Number(rates.usd);
   if (cur === "یورو") return amount * Number(rates.eur);
+  if (cur === "کلدار") return amount * Number(rates.pkr);
   return amount;
 }
 export function fromAFN(afn: number, cur: string, rates: Rates): number {
   if (cur === "تومان") return (afn / Number(rates.toman)) * 1000;
   if (cur === "دلار" || cur === "دالر") return afn / Number(rates.usd);
   if (cur === "یورو") return afn / Number(rates.eur);
+  if (cur === "کلدار") return afn / Number(rates.pkr);
   return afn;
 }
 export function toAFNk(amt: number, k: CurKey, r: Rates): number {
   if (k === "AFN") return amt;
   if (k === "USD") return amt * Number(r.usd);
+  if (k === "EUR") return amt * Number(r.eur);
+  if (k === "PKR") return amt * Number(r.pkr);
   return (amt / 1000) * Number(r.toman);
 }
 export function fromAFNk(afn: number, k: CurKey, r: Rates): number {
   if (k === "AFN") return afn;
   if (k === "USD") return afn / Number(r.usd);
+  if (k === "EUR") return afn / Number(r.eur);
+  if (k === "PKR") return afn / Number(r.pkr);
   return (afn / Number(r.toman)) * 1000;
 }
 
@@ -100,11 +110,13 @@ export function applyExchange(user: AccountUser, fromCur: CurKey, toCur: CurKey,
 
 /* ---------- توابع کمکی برای رسید ---------- */
 function getMainCurrency(amountLabel: string): string {
-  const match = amountLabel.match(/(AFN|USD|IRR)/);
+  const match = amountLabel.match(/(AFN|USD|IRR|EUR|PKR)/);
   if (match) return match[1];
   if (amountLabel.includes("افغانی")) return "AFN";
   if (amountLabel.includes("دالر") || amountLabel.includes("دلار")) return "USD";
   if (amountLabel.includes("تومان")) return "IRR";
+  if (amountLabel.includes("یورو")) return "EUR";
+  if (amountLabel.includes("کلدار")) return "PKR";
   return "AFN";
 }
 
@@ -112,6 +124,8 @@ function getCurrencyLabel(currency: string): string {
   if (currency === "AFN") return "افغانی";
   if (currency === "USD") return "دالر";
   if (currency === "IRR") return "تومان";
+  if (currency === "EUR") return "یورو";
+  if (currency === "PKR") return "کلدار";
   return "افغانی";
 }
 
@@ -119,6 +133,8 @@ function getCurrencyFlag(currency: string): string {
   if (currency === "AFN") return "🇦🇫";
   if (currency === "USD") return "🇺🇸";
   if (currency === "IRR") return "🇮🇷";
+  if (currency === "EUR") return "🇪🇺";
+  if (currency === "PKR") return "🇵🇰";
   return "💰";
 }
 
@@ -188,6 +204,10 @@ export function buildReceipt(o: {
   if (o.balancesBefore) {
     lines.push("مانده قبل از معامله:");
     lines.push("🇦🇫 افغانی: " + fa(o.balancesBefore.AFN) + " AFN");
+    lines.push("🇺🇸 دالر: " + fa(o.balancesBefore.USD) + " USD");
+    lines.push("🇮🇷 تومان: " + fa(o.balancesBefore.IRR) + " IRR");
+    lines.push("🇪🇺 یورو: " + fa(o.balancesBefore.EUR) + " EUR");
+    lines.push("🇵🇰 کلدار: " + fa(o.balancesBefore.PKR) + " PKR");
     lines.push("");
   }
 
@@ -201,6 +221,8 @@ export function buildReceipt(o: {
   lines.push("🇦🇫 افغانی: " + fa(o.balances.AFN) + " AFN");
   lines.push("🇺🇸 دالر: " + fa(o.balances.USD) + " USD");
   lines.push("🇮🇷 تومان: " + fa(o.balances.IRR) + " IRR");
+  lines.push("🇪🇺 یورو: " + fa(o.balances.EUR) + " EUR");
+  lines.push("🇵🇰 کلدار: " + fa(o.balances.PKR) + " PKR");
   lines.push("");
   lines.push(LINE);
   lines.push("");
