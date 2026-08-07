@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from "react";
    انواع داده (Types)
    ========================================================================== */
 
-type CurCode = "AFN" | "USD" | "IRT" | "EUR"; // افغانی، دالر، تومان، یورو
+type CurCode = "AFN" | "USD" | "IRT" | "EUR";
 
 interface Hawala {
   id: string | number;
@@ -16,8 +16,8 @@ interface Hawala {
   result: number;
   fee?: number;
   status?: string;
-  date?: string;      // تاریخ نمایشی (fa-IR)
-  createdAt?: number;  // timestamp (اختیاری، برای مرتب‌سازی دقیق)
+  date?: string;
+  createdAt?: number;
   sender?: string;
   receiver?: string;
   fromCity?: string;
@@ -25,38 +25,61 @@ interface Hawala {
 }
 
 interface Trade {
+  id?: string | number;
   amount: number;
   currency: string;
   afnValue: number;
+  type?: string; // "deposit" | "withdraw" | "exchange" | "account-transfer"
+  status?: string;
+  date?: string;
+  createdAt?: number;
+  customer?: string;
+  description?: string;
 }
 
 interface UserAccount {
+  id?: string | number;
+  name: string;
   balance?: number;
   balances?: { AFN?: number; USD?: number; IRR?: number };
+  phone?: string;
+  telegram?: string;
 }
 
 interface Rates {
   usd: string;
   eur: string;
-  toman: string; // نرخ به ازای هر ۱۰۰ تومان
+  toman: string;
 }
 
 interface DashboardData {
+  // مجموع حواله‌ها
   hawalaCount: number;
   hawalaVolume: number;
   hawalaTotals: Record<CurCode, number>;
+  hawalaFee: number;
+  
+  // مجموع تبادل ارز
   tradeCount: number;
   tradeVolume: number;
   tradeTotals: Record<CurCode, number>;
-  turnover: Record<CurCode, number>; // حواله + تبادل
-  accounts: { AFN: number; USD: number; IRR: number };
-  totalFee: number;
   tradeProfit: number;
-  pending: number;
-  today: number;
+  
+  // امروز
+  todayHawalaCount: number;
+  todayHawalaFee: number;
+  todayTradeCount: number;
+  todayTradeProfit: number;
+  
+  // موجودی کل سیستم
+  accounts: { AFN: number; USD: number; IRR: number };
+  
+  // طلب‌ها
+  totalDebt: number; // طلب مشتری از صرافی
+  totalReceivable: number; // طلب صرافی از مشتری
+  
   rates: Rates;
   commission: string;
-  latest: Hawala[];
   lastUpdated: Date | null;
 }
 
@@ -66,28 +89,25 @@ const EMPTY_DATA: DashboardData = {
   hawalaCount: 0,
   hawalaVolume: 0,
   hawalaTotals: { ...EMPTY_TOTALS },
+  hawalaFee: 0,
   tradeCount: 0,
   tradeVolume: 0,
   tradeTotals: { ...EMPTY_TOTALS },
-  turnover: { ...EMPTY_TOTALS },
-  accounts: { AFN: 0, USD: 0, IRR: 0 },
-  totalFee: 0,
   tradeProfit: 0,
-  pending: 0,
-  today: 0,
+  todayHawalaCount: 0,
+  todayHawalaFee: 0,
+  todayTradeCount: 0,
+  todayTradeProfit: 0,
+  accounts: { AFN: 0, USD: 0, IRR: 0 },
+  totalDebt: 0,
+  totalReceivable: 0,
   rates: { usd: "70.5", eur: "76", toman: "0.64" },
   commission: "0.5",
-  latest: [],
   lastUpdated: null,
 };
 
 const PENDING_STATUSES = ["در انتظار", "در حال انتظار", "در حال ارسال", "معلق"];
 
-/* ==========================================================================
-   نگاشت املاهای مختلف نام ارز به یک کد یکتا
-   قبلاً «دالر» و «دلار» به‌صورت ناسازگار چک می‌شدند و باعث گم شدن بی‌صدای
-   مبالغ در جمع «گردش به تفکیک ارز» می‌شدند. اینجا همه‌چیز یک‌بار نرمال می‌شود.
-   ========================================================================== */
 const CUR_ALIASES: Record<string, CurCode> = {
   "افغانی": "AFN",
   "افغانی ": "AFN",
@@ -104,17 +124,18 @@ const CUR_LABEL: Record<CurCode, string> = {
   EUR: "یورو",
 };
 
+const CUR_SYMBOL: Record<CurCode, string> = {
+  AFN: "؋",
+  USD: "$",
+  IRT: "﷼",
+  EUR: "€",
+};
+
 function normalizeCur(name: string | undefined | null): CurCode | null {
   if (!name) return null;
   return CUR_ALIASES[name.trim()] ?? null;
 }
 
-/* ==========================================================================
-   تبدیل مبلغ به افغانی
-   نکته‌ی مهم: نرخ تومان در این سیستم به‌ازای هر «۱۰۰ تومان» ثبت می‌شود
-   (همان‌طور که در بنر نرخ روز نمایش داده می‌شود). نسخه‌ی قبلی کد به اشتباه
-   بر ۱۰۰۰ تقسیم می‌کرد که حجم معاملات تومانی را ۱۰ برابر کمتر محاسبه می‌کرد.
-   ========================================================================== */
 function toAFN(amount: number, curCode: CurCode | null, rates: Rates): number {
   if (!curCode || !Number.isFinite(amount)) return 0;
   switch (curCode) {
@@ -135,23 +156,9 @@ function safeParse<T>(key: string, fallback: T): { value: T; error: string | nul
     if (!raw) return { value: fallback, error: null };
     return { value: JSON.parse(raw) as T, error: null };
   } catch {
-    return { value: fallback, error: `داده ${key} در حافظه محلی خراب است و نادیده گرفته شد.` };
+    return { value: fallback, error: `داده ${key} در حافظه محلی خراب است.` };
   }
 }
-
-/** جدیدترین حواله‌ها را برمی‌گرداند؛ در صورت وجود createdAt دقیق مرتب می‌کند،
- *  در غیر این صورت فرض می‌شود آخرین آیتم‌های آرایه جدیدترین‌اند. */
-function getLatest(hawala: Hawala[], count: number): Hawala[] {
-  const hasTimestamps = hawala.some((h) => typeof h.createdAt === "number");
-  const sorted = hasTimestamps
-    ? [...hawala].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
-    : [...hawala].reverse();
-  return sorted.slice(0, count);
-}
-
-/* ==========================================================================
-   کامپوننت اصلی
-   ========================================================================== */
 
 export default function DashboardPage() {
   const [d, setD] = useState<DashboardData>(EMPTY_DATA);
@@ -173,65 +180,96 @@ export default function DashboardPage() {
 
     const hawalaTotals: Record<CurCode, number> = { ...EMPTY_TOTALS };
     const tradeTotals: Record<CurCode, number> = { ...EMPTY_TOTALS };
-    const turnover: Record<CurCode, number> = { ...EMPTY_TOTALS };
 
-    let hawalaVolume = 0, totalFee = 0, pending = 0, today = 0;
+    let hawalaVolume = 0, hawalaFee = 0;
+    let tradeVolume = 0, tradeProfit = 0;
+    let todayHawalaCount = 0, todayHawalaFee = 0;
+    let todayTradeCount = 0, todayTradeProfit = 0;
+    
     const todayStr = new Date().toLocaleDateString("fa-IR");
 
+    // محاسبه حواله‌ها
     for (const x of h) {
       const amt = Number(x.amount || 0);
       const payCode = normalizeCur(x.payCur);
-      const getCode = normalizeCur(x.getCur);
-
+      const fee = Number(x.fee || 0);
+      
       if (payCode) {
         hawalaTotals[payCode] += amt;
-        turnover[payCode] += amt;
       }
       hawalaVolume += toAFN(amt, payCode, rates);
-      totalFee += Number(x.fee || 0);
-      if (getCode) turnover[getCode] += Number(x.result || 0);
-
-      if (x.status && PENDING_STATUSES.includes(x.status)) pending++;
-      if (x.date === todayStr) today++;
+      hawalaFee += fee;
+      
+      // حواله‌های امروز
+      if (x.date === todayStr) {
+        todayHawalaCount++;
+        todayHawalaFee += fee;
+      }
     }
 
-    let tradeVolume = 0, tradeProfit = 0;
+    // محاسبه تبادل ارز
     for (const x of t) {
       const amt = Number(x.amount || 0);
       const code = normalizeCur(x.currency);
       if (code) {
         tradeTotals[code] += amt;
-        turnover[code] += amt;
       }
       const v = Number(x.afnValue || 0);
       tradeVolume += v;
       tradeProfit += v * commissionRate;
+      
+      // تبادل‌های امروز
+      if (x.date === todayStr) {
+        todayTradeCount++;
+        todayTradeProfit += v * commissionRate;
+      }
     }
 
+    // محاسبه موجودی و طلب‌ها
     const accounts = { AFN: 0, USD: 0, IRR: 0 };
+    let totalDebt = 0; // طلب مشتری از صرافی (موجودی مثبت)
+    let totalReceivable = 0; // طلب صرافی از مشتری (موجودی منفی)
+    
     for (const x of u) {
       const b = x.balances || { AFN: Number(x.balance || 0), USD: 0, IRR: 0 };
-      accounts.AFN += b.AFN || 0;
-      accounts.USD += b.USD || 0;
-      accounts.IRR += b.IRR || 0;
+      const afnBalance = b.AFN || 0;
+      const usdBalance = b.USD || 0;
+      const irrBalance = b.IRR || 0;
+      
+      accounts.AFN += afnBalance;
+      accounts.USD += usdBalance;
+      accounts.IRR += irrBalance;
+      
+      // محاسبه طلب‌ها به افغانی
+      const afnValue = afnBalance + 
+                       (usdBalance * Number(rates.usd || 0)) + 
+                       ((irrBalance / 100) * Number(rates.toman || 0));
+      
+      if (afnValue > 0) {
+        totalDebt += afnValue; // مشتری از صرافی طلب دارد
+      } else if (afnValue < 0) {
+        totalReceivable += Math.abs(afnValue); // صرافی از مشتری طلب دارد
+      }
     }
 
     setD({
       hawalaCount: h.length,
       hawalaVolume,
       hawalaTotals,
+      hawalaFee,
       tradeCount: t.length,
       tradeVolume,
       tradeTotals,
-      turnover,
-      accounts,
-      totalFee,
       tradeProfit,
-      pending,
-      today,
+      todayHawalaCount,
+      todayHawalaFee,
+      todayTradeCount,
+      todayTradeProfit,
+      accounts,
+      totalDebt,
+      totalReceivable,
       rates,
       commission,
-      latest: getLatest(h, 4),
       lastUpdated: new Date(),
     });
     setErrors(collectedErrors);
@@ -239,7 +277,6 @@ export default function DashboardPage() {
 
   useEffect(() => {
     load();
-    // به‌روزرسانی خودکار: هنگام تغییر در همین تب (رویداد سفارشی) و تب‌های دیگر (storage)
     const onStorage = () => load();
     const onCustom = () => load();
     window.addEventListener("storage", onStorage);
@@ -254,15 +291,8 @@ export default function DashboardPage() {
 
   const fa = (n: number) => (Number.isFinite(n) ? n : 0).toLocaleString("fa-IR", { maximumFractionDigits: 0 });
 
-  const turnoverCards: { code: CurCode; symbol: string; color: string }[] = [
-    { code: "AFN", symbol: "؋", color: "from-emerald-500 to-teal-600" },
-    { code: "USD", symbol: "$", color: "from-blue-500 to-indigo-600" },
-    { code: "IRT", symbol: "﷼", color: "from-amber-500 to-orange-600" },
-    { code: "EUR", symbol: "€", color: "from-purple-500 to-fuchsia-600" },
-  ];
-
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* بنر نرخ روز */}
       <div className="rounded-2xl bg-gradient-to-l from-[#0b1f2e] to-[#16374d] text-white p-6">
         <div className="flex flex-wrap items-start justify-between gap-2">
@@ -283,7 +313,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* هشدار خرابی داده — قبلاً این خطاها بی‌صدا نادیده گرفته می‌شدند */}
+      {/* خطاها */}
       {errors.length > 0 && (
         <div className="rounded-xl bg-rose-50 border border-rose-200 p-4 text-sm text-rose-700">
           <p className="font-bold mb-1">برخی داده‌ها قابل خواندن نبودند:</p>
@@ -293,7 +323,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* سه کارت اصلی — شامل تعداد، حجم و تفکیک ارز، بدون تکرار در جای دیگر */}
+      {/* سه کارت اصلی */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <KpiCard
           title="مجموع حواله‌جات"
@@ -314,7 +344,7 @@ export default function DashboardPage() {
           icon={<ExchangeIcon />}
         />
         <KpiCard
-          title="مانده کل سیستم"
+          title="موجودی کل سیستم"
           value={null}
           sub="مجموع مانده همه مشتریان"
           accent="amber"
@@ -325,66 +355,52 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* ردیف شاخص‌های کسب‌وکار — کمیشن، مفاد، وضعیت امروز؛ بدون تکرار تعداد/حجم بالا */}
+      {/* آمار امروز و طلب‌ها */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        <StatChip label="کمیشن حواله‌جات" value={fa(d.totalFee) + " افغانی"} tone="slate" />
-        <StatChip label="مفاد تبادل ارز" value={fa(d.tradeProfit) + " افغانی"} tone="slate" note={`کارمزد ${d.commission}٪`} />
-        <StatChip label="حواله‌های امروز" value={fa(d.today)} tone="amber" />
-        <StatChip label="در انتظار ارسال" value={fa(d.pending)} tone="blue" />
+        <StatChip 
+          label="📊 حواله‌های امروز" 
+          value={fa(d.todayHawalaCount)} 
+          sub={"کمیشن: " + fa(d.todayHawalaFee) + " افغانی"}
+          tone="emerald" 
+        />
+        <StatChip 
+          label="📈 تبادل امروز" 
+          value={fa(d.todayTradeCount)} 
+          sub={"مفاد: " + fa(d.todayTradeProfit) + " افغانی"}
+          tone="rose" 
+        />
+        <StatChip 
+          label="💰 طلب مشتری از صرافی" 
+          value={fa(d.totalDebt) + " افغانی"}
+          tone="blue" 
+        />
+        <StatChip 
+          label="💳 طلب صرافی از مشتری" 
+          value={fa(d.totalReceivable) + " افغانی"}
+          tone="amber" 
+        />
       </div>
 
-      {/* گردش به تفکیک ارز (حواله + تبادل) */}
-      <div>
-        <h3 className="font-extrabold mb-4">مجموع گردش به تفکیک ارز (حواله + تبادل)</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          {turnoverCards.map((c) => (
-            <div key={c.code} className={`rounded-2xl bg-gradient-to-br ${c.color} p-5 text-white shadow-lg`}>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-bold opacity-90">{CUR_LABEL[c.code]}</span>
-                <span className="text-2xl font-extrabold opacity-80">{c.symbol}</span>
-              </div>
-              <p className="text-2xl font-extrabold mt-3">{fa(d.turnover[c.code] || 0)}</p>
-              <p className="text-[11px] opacity-80 mt-1">مجموع حواله + تبادل</p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* آخرین حواله‌ها */}
-      <div className="card p-6">
-        <h3 className="font-extrabold mb-6">آخرین حواله‌ها</h3>
-        {d.latest.length === 0 ? (
-          <p className="text-sm text-slate-400 text-center py-8">هنوز حواله‌ای ثبت نشده است</p>
-        ) : (
-          <div className="space-y-3">
-            {d.latest.map((h) => (
-              <div key={h.id} className="flex items-center justify-between p-3 rounded-xl border border-slate-100">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#0b1f2e] text-[#e3b45c] flex items-center justify-center font-bold text-sm shrink-0">
-                    {h.sender ? h.sender.charAt(0) : "-"}
-                  </div>
-                  <div>
-                    <p className="font-bold text-sm">{h.sender} ← {h.receiver}</p>
-                    <p className="text-xs text-slate-500">{h.fromCity} به {h.toCity}</p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="font-bold text-sm text-[#c98f2d]">
-                    {Number(h.result || 0).toLocaleString("fa-IR")} {h.getCur}
-                  </p>
-                  <p className="text-xs text-slate-500">{h.status}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+      {/* کمیشن کل و مفاد کل */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        <StatChip 
+          label="کمیشن کل حواله‌جات" 
+          value={fa(d.hawalaFee) + " افغانی"}
+          tone="slate" 
+        />
+        <StatChip 
+          label="مفاد کل تبادل ارز" 
+          value={fa(d.tradeProfit) + " افغانی"}
+          tone="slate" 
+          note={`کارمزد ${d.commission}٪`}
+        />
       </div>
     </div>
   );
 }
 
 /* ==========================================================================
-   کامپوننت‌های کمکی — برای حذف تکرار سه‌بارهٔ JSX کارت‌های ارزی
+   کامپوننت‌های کمکی
    ========================================================================== */
 
 const ACCENT_MAP: Record<string, string> = {
@@ -434,17 +450,26 @@ function KpiCard({
 }
 
 function StatChip({
-  label, value, tone, note,
-}: { label: string; value: string | number; tone: "slate" | "amber" | "blue"; note?: string }) {
+  label, value, sub, tone, note,
+}: { 
+  label: string; 
+  value: string | number; 
+  sub?: string;
+  tone: "slate" | "emerald" | "rose" | "amber" | "blue"; 
+  note?: string 
+}) {
   const toneMap = {
     slate: "bg-white border-slate-200 text-[#0b1f2e]",
+    emerald: "bg-emerald-50 border-emerald-100 text-emerald-700",
+    rose: "bg-rose-50 border-rose-100 text-rose-700",
     amber: "bg-amber-50 border-amber-100 text-amber-700",
     blue: "bg-blue-50 border-blue-100 text-blue-700",
   } as const;
   return (
-    <div className={`card rounded-2xl border p-5 ${toneMap[tone]}`}>
+    <div className={`rounded-2xl border p-5 ${toneMap[tone]}`}>
       <p className="text-xs mb-2 opacity-70">{label}</p>
       <p className="text-xl font-extrabold">{value}</p>
+      {sub && <p className="text-xs mt-1 opacity-70">{sub}</p>}
       {note && <p className="text-xs font-bold mt-1 text-[#c98f2d]">{note}</p>}
     </div>
   );
