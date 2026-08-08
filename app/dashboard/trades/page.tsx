@@ -1,3 +1,9 @@
+فایل `app/dashboard/trades/page.tsx` شما با خطای Syntax Error مواجه شده است.  
+علت این خطا وجود **کاراکترهای اضافی در ابتدای فایل** است: ```` ` ``` ` ```` و عبارت `typescript` که مربوط به فرمت نمایش کد در پیام‌های قبلی بوده و نباید در فایل واقعی وجود داشته باشند.
+
+✅ **راه‌حل:**  
+فایل خود را کاملاً پاک کرده و محتوای زیر را دقیقاً از خط اول `"use client"` در آن جای‌گذاری کنید. هیچ فاصله، خط خالی یا کاراکتر اضافه‌ای قبل از `"use client"` نباشد.
+
 ```typescript
 "use client";
 import { useState, useMemo } from "react";
@@ -21,7 +27,7 @@ interface ExchangeTransaction extends BaseTransaction {
   receivedAmount: number;
   paidCurrency: string;
   paidAmount: number;
-  rate: number; // 1 baseUnit(receivedCurrency) = rate paidCurrency
+  rate: number;
 }
 
 interface TransferTransaction extends BaseTransaction {
@@ -32,7 +38,7 @@ interface TransferTransaction extends BaseTransaction {
   senderAmount: number;
   receiverCurrency: string;
   receiverAmount: number;
-  rate: number; // 1 baseUnit(receiverCurrency) = rate senderCurrency
+  rate: number;
   commission: number;
   commissionCurrency: string;
 }
@@ -57,16 +63,15 @@ function formatNumber(n: number): string {
   return n % 1 === 0 ? n.toString() : n.toFixed(2);
 }
 
-// ---------- موتور تبدیل مشترک (تک‌تابع) ----------
+// ---------- موتور تبدیل مشترک ----------
 function convertAmount(
   fromAmount: number,
-  fromCurrency: string,   // مبدأ
-  toCurrency: string,     // مقصد
-  rate: number            // 1 baseUnit(to) = rate from
+  fromCurrency: string,
+  toCurrency: string,
+  rate: number
 ): number {
   if (fromCurrency === toCurrency) return fromAmount;
   const baseTo = baseUnits[toCurrency] || 1;
-  // تبدیل از مبدأ به مقصد: (fromAmount / rate) * baseUnit(مقصد)
   return (fromAmount / rate) * baseTo;
 }
 
@@ -143,18 +148,18 @@ export default function CurrencyExchangePage() {
 
   // Exchange form
   const [exCustomer, setExCustomer] = useState("");
-  const [exReceivedCurrency, setExReceivedCurrency] = useState("AFN");   // مقصد
+  const [exReceivedCurrency, setExReceivedCurrency] = useState("AFN");
   const [exReceivedAmount, setExReceivedAmount] = useState("");
-  const [exPaidCurrency, setExPaidCurrency] = useState("USD");           // مبدأ
+  const [exPaidCurrency, setExPaidCurrency] = useState("USD");
   const [exPaidAmount, setExPaidAmount] = useState("");
   const [exRate, setExRate] = useState("");
 
   // Transfer form
   const [trSender, setTrSender] = useState("");
-  const [trSenderCurrency, setTrSenderCurrency] = useState("AFN");      // مبدأ
+  const [trSenderCurrency, setTrSenderCurrency] = useState("AFN");
   const [trSenderAmount, setTrSenderAmount] = useState("");
   const [trReceiver, setTrReceiver] = useState("");
-  const [trReceiverCurrency, setTrReceiverCurrency] = useState("AFN");  // مقصد
+  const [trReceiverCurrency, setTrReceiverCurrency] = useState("AFN");
   const [trReceiverAmount, setTrReceiverAmount] = useState("");
   const [trRate, setTrRate] = useState("1");
   const [trCommission, setTrCommission] = useState("0");
@@ -171,8 +176,7 @@ export default function CurrencyExchangePage() {
     const rate = parseFloat(exRate);
     if (isNaN(received) || isNaN(rate) || rate === 0) return;
 
-    // receivedCurrency مقصد است – ما می‌خواهیم از مقصد به مبدأ تبدیل کنیم (برعکس معمول)
-    // فرمول معکوس: paidAmount = (receivedAmount / baseUnit(received)) * rate
+    // receivedCurrency مقصد است – تبدیل معکوس از مقصد به مبدأ
     const baseReceived = baseUnits[exReceivedCurrency] || 1;
     const paid = (received / baseReceived) * rate;
     setExPaidAmount(formatNumber(paid));
@@ -187,7 +191,6 @@ export default function CurrencyExchangePage() {
     const rate = parseFloat(trRate);
     if (isNaN(senderAmt) || isNaN(rate) || rate === 0) return;
 
-    // senderCurrency مبدأ است، receiverCurrency مقصد
     const receiver = convertAmount(senderAmt, trSenderCurrency, trReceiverCurrency, rate);
     setTrReceiverAmount(formatNumber(receiver));
   };
