@@ -65,17 +65,17 @@ function convertCurrency(
   isFromReceiver: boolean
 ): number {
   if (fromCurrency === toCurrency) {
-    return amount; // تبدیل یکسان (۱:۱ بدون در نظر گرفتن پایه)
+    return amount;
   }
 
   const receiverCurrency = isFromReceiver ? fromCurrency : toCurrency;
   const baseReceiver = baseUnits[receiverCurrency] || 1;
 
   if (isFromReceiver) {
-    // از ارز دریافتی (گیرنده) به فرستنده → senderAmount = (receiverAmount * rate) / baseReceiver
+    // از ارز دریافتی (گیرنده) به فرستنده
     return (amount * rate) / baseReceiver;
   } else {
-    // از فرستنده به گیرنده → receiverAmount = (senderAmount / rate) * baseReceiver
+    // از فرستنده به گیرنده
     return (amount / rate) * baseReceiver;
   }
 }
@@ -175,15 +175,15 @@ export default function CurrencyExchangePage() {
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [viewTx, setViewTx] = useState<Transaction | null>(null);
 
-  // ---------- محاسبه تبادل صرافی-مشتری ----------
+  // ---------- محاسبه تبادل صرافی-مشتری (همان منطق انتقال) ----------
   const computeExchangePaid = () => {
     if (!exRate || !exReceivedAmount) return;
     const received = parseFloat(exReceivedAmount);
     const rate = parseFloat(exRate);
     if (isNaN(received) || isNaN(rate) || rate === 0) return;
 
-    // ارز دریافتی = گیرنده، بنابراین isFromReceiver = true
-    const paid = convertCurrency(received, exReceivedCurrency, exPaidCurrency, rate, true);
+    // استفاده از همان پارامتر false که در انتقال استفاده می‌شود
+    const paid = convertCurrency(received, exReceivedCurrency, exPaidCurrency, rate, false);
     setExPaidAmount(formatNumber(paid));
   };
 
@@ -196,7 +196,6 @@ export default function CurrencyExchangePage() {
     const rate = parseFloat(trRate);
     if (isNaN(senderAmt) || isNaN(rate) || rate === 0) return;
 
-    // ارز فرستنده فرستنده است، بنابراین isFromReceiver = false
     const receiver = convertCurrency(senderAmt, trSenderCurrency, trReceiverCurrency, rate, false);
     setTrReceiverAmount(formatNumber(receiver));
   };
