@@ -110,9 +110,7 @@ function computeBalances(customers: Customer[], transactions: Transaction[]) {
       const sender = balances[tx.senderId];
       const receiver = balances[tx.receiverId];
       if (sender) {
-        // Deduct transfer amount
         sender[tx.senderCurrency] = (sender[tx.senderCurrency] || 0) - tx.senderAmount;
-        // Deduct commission separately
         if (tx.commission > 0 && tx.commissionCurrency) {
           sender[tx.commissionCurrency] = (sender[tx.commissionCurrency] || 0) - tx.commission;
         }
@@ -169,7 +167,7 @@ export default function CurrencyExchangePage() {
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [viewTx, setViewTx] = useState<Transaction | null>(null);
 
-  // ---------- Auto-calculation: Exchange (unchanged) ----------
+  // ---------- Auto-calculation: Exchange ----------
   const computeExchangePaid = () => {
     if (!exRate || !exReceivedAmount || !exRateUnit) return;
     const received = parseFloat(exReceivedAmount);
@@ -190,7 +188,7 @@ export default function CurrencyExchangePage() {
 
   useMemo(() => computeExchangePaid(), [exReceivedAmount, exRate, exRateBaseCurrency, exRateUnit, exReceivedCurrency, exPaidCurrency]);
 
-  // ---------- NEW: Transfer calculation based on requested formula ----------
+  // ---------- Auto-calculation: Transfer ----------
   const computeTransferReceiver = () => {
     if (!trRate || !trSenderAmount || !trRateUnit) return;
     const senderAmt = parseFloat(trSenderAmount);
@@ -198,7 +196,6 @@ export default function CurrencyExchangePage() {
     const unit = parseFloat(trRateUnit);
     if (isNaN(senderAmt) || isNaN(rate) || isNaN(unit) || rate === 0) return;
 
-    // Formula: receiverAmount = (senderAmount / rateUnit) * rate
     const receiver = (senderAmt / unit) * rate;
     setTrReceiverAmount(formatNumber(receiver));
   };
@@ -230,7 +227,7 @@ export default function CurrencyExchangePage() {
     setTrCommissionCurrency("AFN");
   };
 
-  // ---------- Submit Exchange (unchanged) ----------
+  // ---------- Submit Exchange ----------
   const submitExchange = () => {
     if (!exCustomer || !exReceivedAmount || !exPaidAmount || !exRate || !exRateUnit) return;
     const tx: ExchangeTransaction = {
@@ -266,7 +263,6 @@ export default function CurrencyExchangePage() {
     const unitNum = parseFloat(trRateUnit);
     const commissionNum = parseFloat(trCommission) || 0;
 
-    // Recalculate receiver amount using the exact formula
     const receiverAmountNum = (senderAmountNum / unitNum) * rateNum;
 
     const tx: TransferTransaction = {
@@ -280,7 +276,7 @@ export default function CurrencyExchangePage() {
       receiverCurrency: trReceiverCurrency,
       receiverAmount: receiverAmountNum,
       rate: rateNum,
-      rateBaseCurrency: trSenderCurrency,  // Not used in calculation but stored as sender currency for reference
+      rateBaseCurrency: trSenderCurrency,
       rateUnit: unitNum,
       commission: commissionNum,
       commissionCurrency: trCommissionCurrency,
@@ -376,22 +372,34 @@ export default function CurrencyExchangePage() {
         </button>
       </div>
 
-      {/* Exchange Form (unchanged) */}
+      {/* Exchange Form – ظاهر جدید فقط این بخش تغییر کرده است */}
       {activeTab === "صرافی-مشتری" ? (
-        <div className="bg-white rounded-xl shadow p-5">
-          <h2 className="text-lg font-semibold text-gray-700 mb-4">تبادل ارز</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+          <h2 className="text-lg font-semibold text-gray-800 mb-6">تبادل ارز</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             <div>
-              <label className="text-sm text-gray-600 font-bold">شماره سند</label>
-              <input value={docId} readOnly className="w-full px-3 py-2 border rounded-lg bg-gray-50 text-sm" />
+              <label className="block text-sm font-bold text-gray-700 mb-2">شماره سند</label>
+              <input
+                value={docId}
+                readOnly
+                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-gray-50 text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20"
+              />
             </div>
             <div>
-              <label className="text-sm text-gray-600 font-bold">تاریخ و ساعت</label>
-              <input value={new Date().toLocaleString("fa-IR")} readOnly className="w-full px-3 py-2 border rounded-lg bg-gray-50 text-sm" />
+              <label className="block text-sm font-bold text-gray-700 mb-2">تاریخ و ساعت</label>
+              <input
+                value={new Date().toLocaleString("fa-IR")}
+                readOnly
+                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-gray-50 text-gray-800 text-sm"
+              />
             </div>
             <div>
-              <label className="text-sm text-gray-600 font-bold">مشتری</label>
-              <select value={exCustomer} onChange={(e) => setExCustomer(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
+              <label className="block text-sm font-bold text-gray-700 mb-2">مشتری</label>
+              <select
+                value={exCustomer}
+                onChange={(e) => setExCustomer(e.target.value)}
+                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20"
+              >
                 <option value="">انتخاب مشتری</option>
                 {customers.map((c, index) => (
                   <option key={c.id} value={c.id}>{index + 1}. {c.name}</option>
@@ -399,59 +407,105 @@ export default function CurrencyExchangePage() {
               </select>
             </div>
             <div>
-              <label className="text-sm text-gray-600 font-bold">ارز دریافتی (مشتری دریافت می‌کند)</label>
-              <select value={exReceivedCurrency} onChange={(e) => setExReceivedCurrency(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
+              <label className="block text-sm font-bold text-gray-700 mb-2">ارز دریافتی (مشتری دریافت می‌کند)</label>
+              <select
+                value={exReceivedCurrency}
+                onChange={(e) => setExReceivedCurrency(e.target.value)}
+                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20"
+              >
                 {currencies.map((cur) => (
                   <option key={cur} value={cur}>{currencyLabels[cur]}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="text-sm text-gray-600 font-bold">مبلغ دریافتی</label>
-              <input type="number" value={exReceivedAmount} onChange={(e) => setExReceivedAmount(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" />
+              <label className="block text-sm font-bold text-gray-700 mb-2">مبلغ دریافتی</label>
+              <input
+                type="number"
+                value={exReceivedAmount}
+                onChange={(e) => setExReceivedAmount(e.target.value)}
+                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20"
+              />
             </div>
             <div>
-              <label className="text-sm text-gray-600 font-bold">ارز پرداختی (مشتری می‌پردازد)</label>
-              <select value={exPaidCurrency} onChange={(e) => setExPaidCurrency(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
+              <label className="block text-sm font-bold text-gray-700 mb-2">ارز پرداختی (مشتری می‌پردازد)</label>
+              <select
+                value={exPaidCurrency}
+                onChange={(e) => setExPaidCurrency(e.target.value)}
+                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20"
+              >
                 {currencies.map((cur) => (
                   <option key={cur} value={cur}>{currencyLabels[cur]}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="text-sm text-gray-600 font-bold">مبلغ پرداختی (محاسبه شده)</label>
-              <input type="text" value={exPaidAmount} readOnly className="w-full px-3 py-2 border rounded-lg bg-gray-50 text-sm" />
+              <label className="block text-sm font-bold text-gray-700 mb-2">مبلغ پرداختی (محاسبه شده)</label>
+              <input
+                type="text"
+                value={exPaidAmount}
+                readOnly
+                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-gray-50 text-gray-800 text-sm"
+              />
             </div>
             <div>
-              <label className="text-sm text-gray-600 font-bold">نرخ تبدیل</label>
-              <input type="number" step="any" value={exRate} onChange={(e) => setExRate(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" />
+              <label className="block text-sm font-bold text-gray-700 mb-2">نرخ تبدیل</label>
+              <input
+                type="number"
+                step="any"
+                value={exRate}
+                onChange={(e) => setExRate(e.target.value)}
+                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20"
+              />
             </div>
             <div>
-              <label className="text-sm text-gray-600 font-bold">مبنای نرخ (ارز پایه)</label>
-              <select value={exRateBaseCurrency} onChange={(e) => setExRateBaseCurrency(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
+              <label className="block text-sm font-bold text-gray-700 mb-2">مبنای نرخ (ارز پایه)</label>
+              <select
+                value={exRateBaseCurrency}
+                onChange={(e) => setExRateBaseCurrency(e.target.value)}
+                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20"
+              >
                 <option value={exReceivedCurrency}>{currencyLabels[exReceivedCurrency]} (دریافتی)</option>
                 <option value={exPaidCurrency}>{currencyLabels[exPaidCurrency]} (پرداختی)</option>
               </select>
             </div>
             <div>
-              <label className="text-sm text-gray-600 font-bold">واحد نرخ (مثلاً 1، 100، 1000)</label>
-              <input type="number" value={exRateUnit} onChange={(e) => setExRateUnit(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" />
+              <label className="block text-sm font-bold text-gray-700 mb-2">واحد نرخ (مثلاً 1، 100، 1000)</label>
+              <input
+                type="number"
+                value={exRateUnit}
+                onChange={(e) => setExRateUnit(e.target.value)}
+                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20"
+              />
             </div>
             <div>
-              <label className="text-sm text-gray-600 font-bold">مفاد معامله</label>
-              <input value={terms} onChange={(e) => setTerms(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" />
+              <label className="block text-sm font-bold text-gray-700 mb-2">مفاد معامله</label>
+              <input
+                value={terms}
+                onChange={(e) => setTerms(e.target.value)}
+                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20"
+              />
             </div>
             <div>
-              <label className="text-sm text-gray-600 font-bold">یادداشت</label>
-              <input value={note} onChange={(e) => setNote(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" />
+              <label className="block text-sm font-bold text-gray-700 mb-2">یادداشت</label>
+              <input
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20"
+              />
             </div>
             <div className="flex items-end">
-              <button onClick={submitExchange} className="w-full py-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-lg hover:shadow-lg text-sm">ثبت معامله</button>
+              <button
+                onClick={submitExchange}
+                className="w-full h-14 rounded-2xl bg-[#092F3A] text-white font-medium hover:bg-[#0a3f4a] transition-colors shadow-sm"
+              >
+                ثبت معامله
+              </button>
             </div>
           </div>
         </div>
       ) : (
-        /* Transfer Form with new formula */
+        /* Transfer Form – بدون تغییر */
         <div className="bg-white rounded-xl shadow p-5">
           <h2 className="text-lg font-semibold text-gray-700 mb-4">تبادل بین حساب مشتریان</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -536,7 +590,7 @@ export default function CurrencyExchangePage() {
         </div>
       )}
 
-      {/* Customer Balances */}
+      {/* Customer Balances – بدون تغییر */}
       <div className="bg-white rounded-xl shadow p-5">
         <h2 className="text-lg font-semibold text-gray-700 mb-3">موجودی فعلی مشتریان</h2>
         <div className="overflow-x-auto">
@@ -566,7 +620,7 @@ export default function CurrencyExchangePage() {
         </div>
       </div>
 
-      {/* Transactions Table */}
+      {/* Transactions Table – بدون تغییر */}
       <div className="bg-white rounded-xl shadow overflow-x-auto">
         <h2 className="text-lg font-semibold text-gray-700 p-5 pb-2">آخرین معاملات</h2>
         <table className="min-w-full text-sm">
@@ -643,7 +697,7 @@ export default function CurrencyExchangePage() {
         </table>
       </div>
 
-      {/* View Modal */}
+      {/* View Modal – بدون تغییر */}
       {viewTx && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4" onClick={() => setViewTx(null)}>
           <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -677,7 +731,7 @@ export default function CurrencyExchangePage() {
         </div>
       )}
 
-      {/* Edit Modal (simplified, doesn't recalculate formula) */}
+      {/* Edit Modal – بدون تغییر */}
       {editMode && editingTx && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl p-6 max-w-lg w-full shadow-2xl">
