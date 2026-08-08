@@ -20,7 +20,7 @@ interface ExchangeTransaction extends BaseTransaction {
   receivedAmount: number;
   paidCurrency: string;
   paidAmount: number;
-  rate: number; // ۱ واحد پایه از received = rate واحد paid
+  rate: number; // 1 baseUnit(receivedCurrency) = rate paidCurrency
 }
 
 interface TransferTransaction extends BaseTransaction {
@@ -31,7 +31,7 @@ interface TransferTransaction extends BaseTransaction {
   senderAmount: number;
   receiverCurrency: string;
   receiverAmount: number;
-  rate: number; // ۱ واحد پایه از receiver = rate واحد sender
+  rate: number; // 1 baseUnit(receiverCurrency) = rate senderCurrency
   commission: number;
   commissionCurrency: string;
 }
@@ -41,10 +41,10 @@ type Transaction = ExchangeTransaction | TransferTransaction;
 interface Customer {
   id: string;
   name: string;
-  balances: Record<string, number>; // AFN, USD, IRR, PKR
+  balances: Record<string, number>;
 }
 
-// ---------- پایه (base unit) هر ارز ----------
+// ---------- واحد پایه هر ارز ----------
 const baseUnits: Record<string, number> = {
   AFN: 1,
   USD: 1,
@@ -54,6 +54,30 @@ const baseUnits: Record<string, number> = {
 
 function formatNumber(n: number): string {
   return n % 1 === 0 ? n.toString() : n.toFixed(2);
+}
+
+// ---------- موتور تبدیل مشترک ----------
+function convertCurrency(
+  amount: number,
+  fromCurrency: string,
+  toCurrency: string,
+  rate: number,
+  isFromReceiver: boolean
+): number {
+  if (fromCurrency === toCurrency) {
+    return amount; // تبدیل یکسان (۱:۱ بدون در نظر گرفتن پایه)
+  }
+
+  const receiverCurrency = isFromReceiver ? fromCurrency : toCurrency;
+  const baseReceiver = baseUnits[receiverCurrency] || 1;
+
+  if (isFromReceiver) {
+    // از ارز دریافتی (گیرنده) به فرستنده → senderAmount = (receiverAmount * rate) / baseReceiver
+    return (amount * rate) / baseReceiver;
+  } else {
+    // از فرستنده به گیرنده → receiverAmount = (senderAmount / rate) * baseReceiver
+    return (amount / rate) * baseReceiver;
+  }
 }
 
 // ---------- Initial Data ----------
@@ -77,7 +101,7 @@ const generateDocId = () => {
   return `EX-${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, "0")}${now.getDate().toString().padStart(2, "0")}-${Math.floor(Math.random() * 10000).toString().padStart(4, "0")}`;
 };
 
-// ---------- Balance calculation from transactions ----------
+// ---------- Balance calculation ----------
 function computeBalances(customers: Customer[], transactions: Transaction[]) {
   const balances: Record<string, Record<string, number>> = {};
   customers.forEach((c) => {
@@ -151,35 +175,33 @@ export default function CurrencyExchangePage() {
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [viewTx, setViewTx] = useState<Transaction | null>(null);
 
-  // ---------- Auto-calculation: Exchange ----------
+  // ---------- محاسبه تبادل صرافی-مشتری ----------
   const computeExchangePaid = () => {
     if (!exRate || !exReceivedAmount) return;
     const received = parseFloat(exReceivedAmount);
     const rate = parseFloat(exRate);
     if (isNaN(received) || isNaN(rate) || rate === 0) return;
 
-    const baseUnitReceived = baseUnits[exReceivedCurrency] || 1;
-    // paidAmount = (receivedAmount * rate) / baseUnitReceived
-    const paid = (received * rate) / baseUnitReceived;
+    // ارز دریافتی = گیرنده، بنابراین isFromReceiver = true
+    const paid = convertCurrency(received, exReceivedCurrency, exPaidCurrency, rate, true);
     setExPaidAmount(formatNumber(paid));
   };
 
-  useMemo(() => computeExchangePaid(), [exReceivedAmount, exRate, exReceivedCurrency]);
+  useMemo(() => computeExchangePaid(), [exReceivedAmount, exRate, exReceivedCurrency, exPaidCurrency]);
 
-  // ---------- Auto-calculation: Transfer ----------
+  // ---------- محاسبه تبادل بین مشتریان ----------
   const computeTransferReceiver = () => {
     if (!trRate || !trSenderAmount) return;
     const senderAmt = parseFloat(trSenderAmount);
     const rate = parseFloat(trRate);
     if (isNaN(senderAmt) || isNaN(rate) || rate === 0) return;
 
-    const baseUnitReceiver = baseUnits[trReceiverCurrency] || 1;
-    // receiverAmount = (senderAmount / rate) * baseUnitReceiver
-    const receiver = (senderAmt / rate) * baseUnitReceiver;
+    // ارز فرستنده فرستنده است، بنابراین isFromReceiver = false
+    const receiver = convertCurrency(senderAmt, trSenderCurrency, trReceiverCurrency, rate, false);
     setTrReceiverAmount(formatNumber(receiver));
   };
 
-  useMemo(() => computeTransferReceiver(), [trSenderAmount, trRate, trReceiverCurrency]);
+  useMemo(() => computeTransferReceiver(), [trSenderAmount, trRate, trSenderCurrency, trReceiverCurrency]);
 
   // ---------- Reset Form ----------
   const resetForm = () => {
@@ -235,9 +257,14 @@ export default function CurrencyExchangePage() {
     const senderAmountNum = parseFloat(trSenderAmount);
     const rateNum = parseFloat(trRate);
     const commissionNum = parseFloat(trCommission) || 0;
-    const baseUnitReceiver = baseUnits[trReceiverCurrency] || 1;
 
-    const receiverAmountNum = (senderAmountNum / rateNum) * baseUnitReceiver;
+    const receiverAmountNum = convertCurrency(
+      senderAmountNum,
+      trSenderCurrency,
+      trReceiverCurrency,
+      rateNum,
+      false
+    );
 
     const tx: TransferTransaction = {
       id: docId,
@@ -346,121 +373,69 @@ export default function CurrencyExchangePage() {
         </button>
       </div>
 
-      {/* تب تبادل ارز (صرافی با مشتری) */}
+      {/* تب صرافی-مشتری */}
       {activeTab === "صرافی-مشتری" ? (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-lg font-semibold text-gray-800 mb-6">تبادل ارز</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">شماره سند</label>
-              <input
-                value={docId}
-                readOnly
-                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-gray-50 text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20"
-              />
+              <input value={docId} readOnly className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-gray-50 text-gray-800 text-sm" />
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">تاریخ و ساعت</label>
-              <input
-                value={new Date().toLocaleString("fa-IR")}
-                readOnly
-                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-gray-50 text-gray-800 text-sm"
-              />
+              <input value={new Date().toLocaleString("fa-IR")} readOnly className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-gray-50 text-gray-800 text-sm" />
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">مشتری</label>
-              <select
-                value={exCustomer}
-                onChange={(e) => setExCustomer(e.target.value)}
-                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20"
-              >
+              <select value={exCustomer} onChange={(e) => setExCustomer(e.target.value)} className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20">
                 <option value="">انتخاب مشتری</option>
-                {customers.map((c, index) => (
-                  <option key={c.id} value={c.id}>{index + 1}. {c.name}</option>
+                {customers.map((c, i) => (
+                  <option key={c.id} value={c.id}>{i + 1}. {c.name}</option>
                 ))}
               </select>
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">ارز دریافتی (مشتری دریافت می‌کند)</label>
-              <select
-                value={exReceivedCurrency}
-                onChange={(e) => setExReceivedCurrency(e.target.value)}
-                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20"
-              >
-                {currencies.map((cur) => (
-                  <option key={cur} value={cur}>{currencyLabels[cur]}</option>
-                ))}
+              <select value={exReceivedCurrency} onChange={(e) => setExReceivedCurrency(e.target.value)} className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20">
+                {currencies.map(cur => <option key={cur} value={cur}>{currencyLabels[cur]}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">مبلغ دریافتی</label>
-              <input
-                type="number"
-                value={exReceivedAmount}
-                onChange={(e) => setExReceivedAmount(e.target.value)}
-                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20"
-              />
+              <input type="number" value={exReceivedAmount} onChange={(e) => setExReceivedAmount(e.target.value)} className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20" />
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">ارز پرداختی (مشتری می‌پردازد)</label>
-              <select
-                value={exPaidCurrency}
-                onChange={(e) => setExPaidCurrency(e.target.value)}
-                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20"
-              >
-                {currencies.map((cur) => (
-                  <option key={cur} value={cur}>{currencyLabels[cur]}</option>
-                ))}
+              <select value={exPaidCurrency} onChange={(e) => setExPaidCurrency(e.target.value)} className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20">
+                {currencies.map(cur => <option key={cur} value={cur}>{currencyLabels[cur]}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">مبلغ پرداختی (محاسبه شده)</label>
-              <input
-                type="text"
-                value={exPaidAmount}
-                readOnly
-                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-gray-50 text-gray-800 text-sm"
-              />
+              <input type="text" value={exPaidAmount} readOnly className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-gray-50 text-gray-800 text-sm" />
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">نرخ تبدیل</label>
-              <input
-                type="number"
-                step="any"
-                value={exRate}
-                onChange={(e) => setExRate(e.target.value)}
-                placeholder={`${baseUnits[exReceivedCurrency]} ${currencyLabels[exReceivedCurrency]} = ? ${currencyLabels[exPaidCurrency]}`}
-                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20"
-              />
+              <input type="number" step="any" value={exRate} onChange={(e) => setExRate(e.target.value)} placeholder={`${baseUnits[exReceivedCurrency]} ${currencyLabels[exReceivedCurrency]} = ? ${currencyLabels[exPaidCurrency]}`} className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20" />
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">مفاد معامله</label>
-              <input
-                value={terms}
-                onChange={(e) => setTerms(e.target.value)}
-                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20"
-              />
+              <input value={terms} onChange={(e) => setTerms(e.target.value)} className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20" />
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">یادداشت</label>
-              <input
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20"
-              />
+              <input value={note} onChange={(e) => setNote(e.target.value)} className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20" />
             </div>
             <div className="flex items-end">
-              <button
-                onClick={submitExchange}
-                className="w-full h-14 rounded-2xl bg-[#092F3A] text-white font-medium hover:bg-[#0a3f4a] transition-colors shadow-sm"
-              >
+              <button onClick={submitExchange} className="w-full h-14 rounded-2xl bg-[#092F3A] text-white font-medium hover:bg-[#0a3f4a] transition-colors shadow-sm">
                 ثبت معامله
               </button>
             </div>
           </div>
         </div>
       ) : (
-        /* تب تبادل بین حساب مشتریان */
+        /* تب تبادل بین مشتریان */
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-lg font-semibold text-gray-800 mb-6">تبادل بین حساب مشتریان</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -474,117 +449,62 @@ export default function CurrencyExchangePage() {
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">مشتری فرستنده</label>
-              <select
-                value={trSender}
-                onChange={(e) => setTrSender(e.target.value)}
-                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20"
-              >
+              <select value={trSender} onChange={(e) => setTrSender(e.target.value)} className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20">
                 <option value="">انتخاب مشتری</option>
-                {customers.map((c, index) => (
-                  <option key={c.id} value={c.id}>{index + 1}. {c.name}</option>
+                {customers.map((c, i) => (
+                  <option key={c.id} value={c.id}>{i + 1}. {c.name}</option>
                 ))}
               </select>
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">ارز فرستنده</label>
-              <select
-                value={trSenderCurrency}
-                onChange={(e) => setTrSenderCurrency(e.target.value)}
-                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20"
-              >
-                {currencies.map((cur) => (
-                  <option key={cur} value={cur}>{currencyLabels[cur]}</option>
-                ))}
+              <select value={trSenderCurrency} onChange={(e) => setTrSenderCurrency(e.target.value)} className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20">
+                {currencies.map(cur => <option key={cur} value={cur}>{currencyLabels[cur]}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">مبلغ فرستنده</label>
-              <input
-                type="number"
-                value={trSenderAmount}
-                onChange={(e) => setTrSenderAmount(e.target.value)}
-                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20"
-              />
+              <input type="number" value={trSenderAmount} onChange={(e) => setTrSenderAmount(e.target.value)} className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20" />
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">مشتری گیرنده</label>
-              <select
-                value={trReceiver}
-                onChange={(e) => setTrReceiver(e.target.value)}
-                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20"
-              >
+              <select value={trReceiver} onChange={(e) => setTrReceiver(e.target.value)} className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20">
                 <option value="">انتخاب مشتری</option>
-                {customers.map((c, index) => (
-                  <option key={c.id} value={c.id}>{index + 1}. {c.name}</option>
+                {customers.map((c, i) => (
+                  <option key={c.id} value={c.id}>{i + 1}. {c.name}</option>
                 ))}
               </select>
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">ارز گیرنده</label>
-              <select
-                value={trReceiverCurrency}
-                onChange={(e) => setTrReceiverCurrency(e.target.value)}
-                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20"
-              >
-                {currencies.map((cur) => (
-                  <option key={cur} value={cur}>{currencyLabels[cur]}</option>
-                ))}
+              <select value={trReceiverCurrency} onChange={(e) => setTrReceiverCurrency(e.target.value)} className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20">
+                {currencies.map(cur => <option key={cur} value={cur}>{currencyLabels[cur]}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">مبلغ گیرنده (محاسبه شده)</label>
-              <input
-                type="text"
-                value={trReceiverAmount}
-                readOnly
-                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-gray-50 text-gray-800 text-sm"
-              />
+              <input type="text" value={trReceiverAmount} readOnly className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-gray-50 text-gray-800 text-sm" />
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">نرخ تبدیل</label>
-              <input
-                type="number"
-                step="any"
-                value={trRate}
-                onChange={(e) => setTrRate(e.target.value)}
-                placeholder={`${baseUnits[trReceiverCurrency]} ${currencyLabels[trReceiverCurrency]} = ? ${currencyLabels[trSenderCurrency]}`}
-                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20"
-              />
+              <input type="number" step="any" value={trRate} onChange={(e) => setTrRate(e.target.value)} placeholder={`${baseUnits[trReceiverCurrency]} ${currencyLabels[trReceiverCurrency]} = ? ${currencyLabels[trSenderCurrency]}`} className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20" />
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">کارمزد (اختیاری)</label>
-              <input
-                type="number"
-                value={trCommission}
-                onChange={(e) => setTrCommission(e.target.value)}
-                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20"
-              />
+              <input type="number" value={trCommission} onChange={(e) => setTrCommission(e.target.value)} className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20" />
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">ارز کارمزد</label>
-              <select
-                value={trCommissionCurrency}
-                onChange={(e) => setTrCommissionCurrency(e.target.value)}
-                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20"
-              >
-                {currencies.map((cur) => (
-                  <option key={cur} value={cur}>{currencyLabels[cur]}</option>
-                ))}
+              <select value={trCommissionCurrency} onChange={(e) => setTrCommissionCurrency(e.target.value)} className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20">
+                {currencies.map(cur => <option key={cur} value={cur}>{currencyLabels[cur]}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">یادداشت</label>
-              <input
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20"
-              />
+              <input value={note} onChange={(e) => setNote(e.target.value)} className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-[#092F3A]/20" />
             </div>
             <div className="flex items-end">
-              <button
-                onClick={submitTransfer}
-                className="w-full h-14 rounded-2xl bg-[#092F3A] text-white font-medium hover:bg-[#0a3f4a] transition-colors shadow-sm"
-              >
+              <button onClick={submitTransfer} className="w-full h-14 rounded-2xl bg-[#092F3A] text-white font-medium hover:bg-[#0a3f4a] transition-colors shadow-sm">
                 ثبت معامله
               </button>
             </div>
@@ -652,9 +572,7 @@ export default function CurrencyExchangePage() {
                   <td className="py-3 px-2 font-mono text-xs">{tx.id}</td>
                   <td className="py-3 px-2 text-xs">{new Date(tx.date).toLocaleString("fa-IR")}</td>
                   <td className="py-3 px-2">
-                    <span className={`px-2 py-0.5 rounded text-xs ${
-                      tx.type === "صرافی-مشتری" ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700"
-                    }`}>
+                    <span className={`px-2 py-0.5 rounded text-xs ${tx.type === "صرافی-مشتری" ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700"}`}>
                       {tx.type === "صرافی-مشتری" ? "صرافی-مشتری" : "بین مشتریان"}
                     </span>
                   </td>
@@ -742,78 +660,41 @@ export default function CurrencyExchangePage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="font-bold">مشتری</label>
-                  <select
-                    value={(editingTx as ExchangeTransaction).customerId}
-                    onChange={(e) => setEditingTx({ ...editingTx, customerId: e.target.value } as ExchangeTransaction)}
-                    className="w-full border rounded p-1"
-                  >
-                    {customers.map((c, index) => (
-                      <option key={c.id} value={c.id}>{index + 1}. {c.name}</option>
-                    ))}
+                  <select value={(editingTx as ExchangeTransaction).customerId} onChange={(e) => setEditingTx({ ...editingTx, customerId: e.target.value } as ExchangeTransaction)} className="w-full border rounded p-1">
+                    {customers.map((c, i) => <option key={c.id} value={c.id}>{i + 1}. {c.name}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="font-bold">ارز دریافتی</label>
-                  <select
-                    value={(editingTx as ExchangeTransaction).receivedCurrency}
-                    onChange={(e) => setEditingTx({ ...editingTx, receivedCurrency: e.target.value } as ExchangeTransaction)}
-                    className="w-full border rounded p-1"
-                  >
-                    {currencies.map((c) => <option key={c} value={c}>{currencyLabels[c]}</option>)}
+                  <select value={(editingTx as ExchangeTransaction).receivedCurrency} onChange={(e) => setEditingTx({ ...editingTx, receivedCurrency: e.target.value } as ExchangeTransaction)} className="w-full border rounded p-1">
+                    {currencies.map(cur => <option key={cur} value={cur}>{currencyLabels[cur]}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="font-bold">مبلغ دریافتی</label>
-                  <input
-                    type="number"
-                    value={(editingTx as ExchangeTransaction).receivedAmount}
-                    onChange={(e) => setEditingTx({ ...editingTx, receivedAmount: +e.target.value } as ExchangeTransaction)}
-                    className="w-full border rounded p-1"
-                  />
+                  <input type="number" value={(editingTx as ExchangeTransaction).receivedAmount} onChange={(e) => setEditingTx({ ...editingTx, receivedAmount: +e.target.value } as ExchangeTransaction)} className="w-full border rounded p-1" />
                 </div>
                 <div>
                   <label className="font-bold">ارز پرداختی</label>
-                  <select
-                    value={(editingTx as ExchangeTransaction).paidCurrency}
-                    onChange={(e) => setEditingTx({ ...editingTx, paidCurrency: e.target.value } as ExchangeTransaction)}
-                    className="w-full border rounded p-1"
-                  >
-                    {currencies.map((c) => <option key={c} value={c}>{currencyLabels[c]}</option>)}
+                  <select value={(editingTx as ExchangeTransaction).paidCurrency} onChange={(e) => setEditingTx({ ...editingTx, paidCurrency: e.target.value } as ExchangeTransaction)} className="w-full border rounded p-1">
+                    {currencies.map(cur => <option key={cur} value={cur}>{currencyLabels[cur]}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="font-bold">مبلغ پرداختی</label>
-                  <input
-                    type="number"
-                    value={(editingTx as ExchangeTransaction).paidAmount}
-                    onChange={(e) => setEditingTx({ ...editingTx, paidAmount: +e.target.value } as ExchangeTransaction)}
-                    className="w-full border rounded p-1"
-                  />
+                  <input type="number" value={(editingTx as ExchangeTransaction).paidAmount} onChange={(e) => setEditingTx({ ...editingTx, paidAmount: +e.target.value } as ExchangeTransaction)} className="w-full border rounded p-1" />
                 </div>
                 <div>
                   <label className="font-bold">نرخ</label>
-                  <input
-                    type="number"
-                    value={(editingTx as ExchangeTransaction).rate}
-                    onChange={(e) => setEditingTx({ ...editingTx, rate: +e.target.value } as ExchangeTransaction)}
-                    className="w-full border rounded p-1"
-                  />
+                  <input type="number" value={(editingTx as ExchangeTransaction).rate} onChange={(e) => setEditingTx({ ...editingTx, rate: +e.target.value } as ExchangeTransaction)} className="w-full border rounded p-1" />
                 </div>
                 <div>
                   <label className="font-bold">مفاد</label>
-                  <input
-                    value={editingTx.terms}
-                    onChange={(e) => setEditingTx({ ...editingTx, terms: e.target.value })}
-                    className="w-full border rounded p-1"
-                  />
+                  <input value={editingTx.terms} onChange={(e) => setEditingTx({ ...editingTx, terms: e.target.value })} className="w-full border rounded p-1" />
                 </div>
                 <div>
                   <label className="font-bold">یادداشت</label>
-                  <input
-                    value={editingTx.note}
-                    onChange={(e) => setEditingTx({ ...editingTx, note: e.target.value })}
-                    className="w-full border rounded p-1"
-                  />
+                  <input value={editingTx.note} onChange={(e) => setEditingTx({ ...editingTx, note: e.target.value })} className="w-full border rounded p-1" />
                 </div>
               </div>
             )}
@@ -821,101 +702,53 @@ export default function CurrencyExchangePage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="font-bold">فرستنده</label>
-                  <select
-                    value={(editingTx as TransferTransaction).senderId}
-                    onChange={(e) => setEditingTx({ ...editingTx, senderId: e.target.value } as TransferTransaction)}
-                    className="w-full border rounded p-1"
-                  >
-                    {customers.map((c, index) => (
-                      <option key={c.id} value={c.id}>{index + 1}. {c.name}</option>
-                    ))}
+                  <select value={(editingTx as TransferTransaction).senderId} onChange={(e) => setEditingTx({ ...editingTx, senderId: e.target.value } as TransferTransaction)} className="w-full border rounded p-1">
+                    {customers.map((c, i) => <option key={c.id} value={c.id}>{i + 1}. {c.name}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="font-bold">گیرنده</label>
-                  <select
-                    value={(editingTx as TransferTransaction).receiverId}
-                    onChange={(e) => setEditingTx({ ...editingTx, receiverId: e.target.value } as TransferTransaction)}
-                    className="w-full border rounded p-1"
-                  >
-                    {customers.map((c, index) => (
-                      <option key={c.id} value={c.id}>{index + 1}. {c.name}</option>
-                    ))}
+                  <select value={(editingTx as TransferTransaction).receiverId} onChange={(e) => setEditingTx({ ...editingTx, receiverId: e.target.value } as TransferTransaction)} className="w-full border rounded p-1">
+                    {customers.map((c, i) => <option key={c.id} value={c.id}>{i + 1}. {c.name}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="font-bold">ارز فرستنده</label>
-                  <select
-                    value={(editingTx as TransferTransaction).senderCurrency}
-                    onChange={(e) => setEditingTx({ ...editingTx, senderCurrency: e.target.value } as TransferTransaction)}
-                    className="w-full border rounded p-1"
-                  >
-                    {currencies.map((c) => <option key={c} value={c}>{currencyLabels[c]}</option>)}
+                  <select value={(editingTx as TransferTransaction).senderCurrency} onChange={(e) => setEditingTx({ ...editingTx, senderCurrency: e.target.value } as TransferTransaction)} className="w-full border rounded p-1">
+                    {currencies.map(cur => <option key={cur} value={cur}>{currencyLabels[cur]}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="font-bold">مبلغ فرستنده</label>
-                  <input
-                    type="number"
-                    value={(editingTx as TransferTransaction).senderAmount}
-                    onChange={(e) => setEditingTx({ ...editingTx, senderAmount: +e.target.value } as TransferTransaction)}
-                    className="w-full border rounded p-1"
-                  />
+                  <input type="number" value={(editingTx as TransferTransaction).senderAmount} onChange={(e) => setEditingTx({ ...editingTx, senderAmount: +e.target.value } as TransferTransaction)} className="w-full border rounded p-1" />
                 </div>
                 <div>
                   <label className="font-bold">ارز گیرنده</label>
-                  <select
-                    value={(editingTx as TransferTransaction).receiverCurrency}
-                    onChange={(e) => setEditingTx({ ...editingTx, receiverCurrency: e.target.value } as TransferTransaction)}
-                    className="w-full border rounded p-1"
-                  >
-                    {currencies.map((c) => <option key={c} value={c}>{currencyLabels[c]}</option>)}
+                  <select value={(editingTx as TransferTransaction).receiverCurrency} onChange={(e) => setEditingTx({ ...editingTx, receiverCurrency: e.target.value } as TransferTransaction)} className="w-full border rounded p-1">
+                    {currencies.map(cur => <option key={cur} value={cur}>{currencyLabels[cur]}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="font-bold">مبلغ گیرنده</label>
-                  <input
-                    type="number"
-                    value={(editingTx as TransferTransaction).receiverAmount}
-                    onChange={(e) => setEditingTx({ ...editingTx, receiverAmount: +e.target.value } as TransferTransaction)}
-                    className="w-full border rounded p-1"
-                  />
+                  <input type="number" value={(editingTx as TransferTransaction).receiverAmount} onChange={(e) => setEditingTx({ ...editingTx, receiverAmount: +e.target.value } as TransferTransaction)} className="w-full border rounded p-1" />
                 </div>
                 <div>
                   <label className="font-bold">نرخ</label>
-                  <input
-                    type="number"
-                    value={(editingTx as TransferTransaction).rate}
-                    onChange={(e) => setEditingTx({ ...editingTx, rate: +e.target.value } as TransferTransaction)}
-                    className="w-full border rounded p-1"
-                  />
+                  <input type="number" value={(editingTx as TransferTransaction).rate} onChange={(e) => setEditingTx({ ...editingTx, rate: +e.target.value } as TransferTransaction)} className="w-full border rounded p-1" />
                 </div>
                 <div>
                   <label className="font-bold">کارمزد</label>
-                  <input
-                    type="number"
-                    value={(editingTx as TransferTransaction).commission}
-                    onChange={(e) => setEditingTx({ ...editingTx, commission: +e.target.value } as TransferTransaction)}
-                    className="w-full border rounded p-1"
-                  />
+                  <input type="number" value={(editingTx as TransferTransaction).commission} onChange={(e) => setEditingTx({ ...editingTx, commission: +e.target.value } as TransferTransaction)} className="w-full border rounded p-1" />
                 </div>
                 <div>
                   <label className="font-bold">ارز کارمزد</label>
-                  <select
-                    value={(editingTx as TransferTransaction).commissionCurrency}
-                    onChange={(e) => setEditingTx({ ...editingTx, commissionCurrency: e.target.value } as TransferTransaction)}
-                    className="w-full border rounded p-1"
-                  >
-                    {currencies.map((c) => <option key={c} value={c}>{currencyLabels[c]}</option>)}
+                  <select value={(editingTx as TransferTransaction).commissionCurrency} onChange={(e) => setEditingTx({ ...editingTx, commissionCurrency: e.target.value } as TransferTransaction)} className="w-full border rounded p-1">
+                    {currencies.map(cur => <option key={cur} value={cur}>{currencyLabels[cur]}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="font-bold">یادداشت</label>
-                  <input
-                    value={editingTx.note}
-                    onChange={(e) => setEditingTx({ ...editingTx, note: e.target.value })}
-                    className="w-full border rounded p-1"
-                  />
+                  <input value={editingTx.note} onChange={(e) => setEditingTx({ ...editingTx, note: e.target.value })} className="w-full border rounded p-1" />
                 </div>
               </div>
             )}
