@@ -1,4 +1,3 @@
---- FILE: app/dashboard/trades/page.tsx ---
 "use client";
 import { useState, useMemo } from "react";
 
@@ -144,7 +143,7 @@ export default function CurrencyExchangePage() {
   const [terms, setTerms] = useState("نقدی");
 
   // Exchange form
-  const [exCustomer, setExCustomer] = useState(""); // تغییر: پیش‌فرض خالی
+  const [exCustomer, setExCustomer] = useState("");
   const [exReceivedCurrency, setExReceivedCurrency] = useState("AFN");
   const [exReceivedAmount, setExReceivedAmount] = useState("");
   const [exPaidCurrency, setExPaidCurrency] = useState("USD");
@@ -154,10 +153,10 @@ export default function CurrencyExchangePage() {
   const [exRateUnit, setExRateUnit] = useState("1");
 
   // Transfer form
-  const [trSender, setTrSender] = useState(""); // تغییر: خالی
+  const [trSender, setTrSender] = useState("");
   const [trSenderCurrency, setTrSenderCurrency] = useState("AFN");
   const [trSenderAmount, setTrSenderAmount] = useState("");
-  const [trReceiver, setTrReceiver] = useState(""); // تغییر: خالی
+  const [trReceiver, setTrReceiver] = useState("");
   const [trReceiverCurrency, setTrReceiverCurrency] = useState("AFN");
   const [trReceiverAmount, setTrReceiverAmount] = useState("");
   const [trRate, setTrRate] = useState("1");
@@ -218,7 +217,7 @@ export default function CurrencyExchangePage() {
     setDocId(generateDocId());
     setNote("");
     setTerms("نقدی");
-    setExCustomer(""); // خالی
+    setExCustomer("");
     setExReceivedCurrency("AFN");
     setExReceivedAmount("");
     setExPaidCurrency("USD");
@@ -226,10 +225,10 @@ export default function CurrencyExchangePage() {
     setExRate("");
     setExRateBaseCurrency("USD");
     setExRateUnit("1");
-    setTrSender(""); // خالی
+    setTrSender("");
     setTrSenderCurrency("AFN");
     setTrSenderAmount("");
-    setTrReceiver(""); // خالی
+    setTrReceiver("");
     setTrReceiverCurrency("AFN");
     setTrReceiverAmount("");
     setTrRate("1");
