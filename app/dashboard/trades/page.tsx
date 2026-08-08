@@ -483,7 +483,7 @@ export default function CurrencyExchangePage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             {/* سمت راست (RTL): اطلاعات فرستنده */}
             <div className="bg-blue-50/50 rounded-xl p-5 border border-blue-100">
-              <h3 className="text-sm font-bold text-blue-700 mb-4 uppercase tracking-wide">🟦 اطلاعات فرستنده</h3>
+              <h3 className="text-sm font-bold text-blue-700 mb-4 uppercase tracking-wide">اطلاعات فرستنده</h3>
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">مشتری فرستنده</label>
@@ -522,7 +522,7 @@ export default function CurrencyExchangePage() {
 
             {/* سمت چپ (RTL): اطلاعات گیرنده */}
             <div className="bg-green-50/50 rounded-xl p-5 border border-green-100">
-              <h3 className="text-sm font-bold text-green-700 mb-4 uppercase tracking-wide">🟩 اطلاعات گیرنده</h3>
+              <h3 className="text-sm font-bold text-green-700 mb-4 uppercase tracking-wide">اطلاعات گیرنده</h3>
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">مشتری گیرنده</label>
