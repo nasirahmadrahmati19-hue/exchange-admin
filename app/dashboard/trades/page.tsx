@@ -44,7 +44,7 @@ interface Customer {
   balances: Record<string, number>;
 }
 
-// ---------- واحد پایه هر ارز ----------
+// ---------- واحد پایه هر ارز (داخلی) ----------
 const baseUnits: Record<string, number> = {
   AFN: 1,
   USD: 1,
@@ -56,28 +56,17 @@ function formatNumber(n: number): string {
   return n % 1 === 0 ? n.toString() : n.toFixed(2);
 }
 
-// ---------- موتور تبدیل مشترک ----------
-function convertCurrency(
-  amount: number,
-  fromCurrency: string,
-  toCurrency: string,
-  rate: number,
-  isFromReceiver: boolean
+// ---------- موتور تبدیل مشترک (تک‌تابع) ----------
+function convertAmount(
+  fromAmount: number,
+  fromCurrency: string,   // مبدأ
+  toCurrency: string,     // مقصد
+  rate: number            // 1 baseUnit(to) = rate from
 ): number {
-  if (fromCurrency === toCurrency) {
-    return amount;
-  }
-
-  const receiverCurrency = isFromReceiver ? fromCurrency : toCurrency;
-  const baseReceiver = baseUnits[receiverCurrency] || 1;
-
-  if (isFromReceiver) {
-    // از ارز گیرنده (پایه نرخ) به ارز فرستنده
-    return (amount * rate) / baseReceiver;
-  } else {
-    // از ارز فرستنده به ارز گیرنده (پایه نرخ)
-    return (amount / rate) * baseReceiver;
-  }
+  if (fromCurrency === toCurrency) return fromAmount;
+  const baseTo = baseUnits[toCurrency] || 1;
+  // تبدیل از مبدأ به مقصد: (fromAmount / rate) * baseUnit(مقصد)
+  return (fromAmount / rate) * baseTo;
 }
 
 // ---------- Initial Data ----------
@@ -153,18 +142,18 @@ export default function CurrencyExchangePage() {
 
   // Exchange form
   const [exCustomer, setExCustomer] = useState("");
-  const [exReceivedCurrency, setExReceivedCurrency] = useState("AFN");
+  const [exReceivedCurrency, setExReceivedCurrency] = useState("AFN");   // مقصد
   const [exReceivedAmount, setExReceivedAmount] = useState("");
-  const [exPaidCurrency, setExPaidCurrency] = useState("USD");
+  const [exPaidCurrency, setExPaidCurrency] = useState("USD");           // مبدأ
   const [exPaidAmount, setExPaidAmount] = useState("");
   const [exRate, setExRate] = useState("");
 
   // Transfer form
   const [trSender, setTrSender] = useState("");
-  const [trSenderCurrency, setTrSenderCurrency] = useState("AFN");
+  const [trSenderCurrency, setTrSenderCurrency] = useState("AFN");      // مبدأ
   const [trSenderAmount, setTrSenderAmount] = useState("");
   const [trReceiver, setTrReceiver] = useState("");
-  const [trReceiverCurrency, setTrReceiverCurrency] = useState("AFN");
+  const [trReceiverCurrency, setTrReceiverCurrency] = useState("AFN");  // مقصد
   const [trReceiverAmount, setTrReceiverAmount] = useState("");
   const [trRate, setTrRate] = useState("1");
   const [trCommission, setTrCommission] = useState("0");
@@ -174,28 +163,31 @@ export default function CurrencyExchangePage() {
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [viewTx, setViewTx] = useState<Transaction | null>(null);
 
-  // ---------- محاسبه تبادل صرافی-مشتری (اصلاح جهت تبدیل) ----------
+  // ---------- محاسبه تبادل صرافی-مشتری ----------
   const computeExchangePaid = () => {
     if (!exRate || !exReceivedAmount) return;
     const received = parseFloat(exReceivedAmount);
     const rate = parseFloat(exRate);
     if (isNaN(received) || isNaN(rate) || rate === 0) return;
 
-    // exReceivedCurrency ارز پایه نرخ است (گیرنده)، پس isFromReceiver = true
-    const paid = convertCurrency(received, exReceivedCurrency, exPaidCurrency, rate, true);
+    // receivedCurrency مقصد است – ما می‌خواهیم از مقصد به مبدأ تبدیل کنیم (برعکس معمول)
+    // فرمول معکوس: paidAmount = (receivedAmount / baseUnit(received)) * rate
+    const baseReceived = baseUnits[exReceivedCurrency] || 1;
+    const paid = (received / baseReceived) * rate;
     setExPaidAmount(formatNumber(paid));
   };
 
-  useMemo(() => computeExchangePaid(), [exReceivedAmount, exRate, exReceivedCurrency, exPaidCurrency]);
+  useMemo(() => computeExchangePaid(), [exReceivedAmount, exRate, exReceivedCurrency]);
 
-  // ---------- محاسبه تبادل بین مشتریان (بدون تغییر، false) ----------
+  // ---------- محاسبه تبادل بین مشتریان ----------
   const computeTransferReceiver = () => {
     if (!trRate || !trSenderAmount) return;
     const senderAmt = parseFloat(trSenderAmount);
     const rate = parseFloat(trRate);
     if (isNaN(senderAmt) || isNaN(rate) || rate === 0) return;
 
-    const receiver = convertCurrency(senderAmt, trSenderCurrency, trReceiverCurrency, rate, false);
+    // senderCurrency مبدأ است، receiverCurrency مقصد
+    const receiver = convertAmount(senderAmt, trSenderCurrency, trReceiverCurrency, rate);
     setTrReceiverAmount(formatNumber(receiver));
   };
 
@@ -253,12 +245,11 @@ export default function CurrencyExchangePage() {
     const rateNum = parseFloat(trRate);
     const commissionNum = parseFloat(trCommission) || 0;
 
-    const receiverAmountNum = convertCurrency(
+    const receiverAmountNum = convertAmount(
       senderAmountNum,
       trSenderCurrency,
       trReceiverCurrency,
-      rateNum,
-      false
+      rateNum
     );
 
     const tx: TransferTransaction = {
