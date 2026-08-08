@@ -1,87 +1,37 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-
-/* =========================================================
-   Types
-========================================================= */
-
-type ExchangeType = "صرافی-مشتری" | "بین-مشتریان";
+import { useEffect, useState } from "react";
 
 type Currency = "AFN" | "USD" | "IRR" | "PKR";
-
-type BaseTransaction = {
-  id: string;
-  type: ExchangeType;
-  date: string;
-  terms: string;
-  note: string;
-  status: "active" | "voided";
-};
-
-type ExchangeTransaction = BaseTransaction & {
-  type: "صرافی-مشتری";
-  customerId: string;
-
-  receivedCurrency: Currency;
-  receivedAmount: number;
-
-  paidCurrency: Currency;
-  paidAmount: number;
-
-  /*
-    نرخ ذخیره‌شده همان نرخ دستی کاربر است.
-
-    مثال:
-    AFN/USD
-    1 USD = 50 AFN
-    rate = 50
-
-    اگر معامله برعکس شود:
-    USD/AFN
-    همچنان:
-    1 USD = 50 AFN
-    rate = 50
-  */
-  rate: number;
-
-  profit: number;
-  profitCurrency: Currency;
-};
-
-type TransferTransaction = BaseTransaction & {
-  type: "بین-مشتریان";
-
-  senderId: string;
-  receiverId: string;
-
-  senderCurrency: Currency;
-  senderAmount: number;
-
-  receiverCurrency: Currency;
-  receiverAmount: number;
-
-  rate: number;
-
-  commission: number;
-  commissionCurrency: Currency;
-};
-
-type Transaction = ExchangeTransaction | TransferTransaction;
 
 type Customer = {
   id: string;
   name: string;
-  balances: Record<Currency, number>;
+  balances: Record<string, number>;
 };
 
-/* =========================================================
-   Currency Configuration
-========================================================= */
+type Transaction = {
+  id: string;
+  type: "exchange" | "transfer";
+  date: string;
+  customerId?: string;
+  senderId?: string;
+  receiverId?: string;
+  fromCurrency: Currency;
+  fromAmount: number;
+  toCurrency: Currency;
+  toAmount: number;
+  rate: number;
+  commission?: number;
+  commissionCurrency?: Currency;
+  profit?: number;
+  profitCurrency?: Currency;
+  status: "active" | "voided";
+};
 
 const currencies: Currency[] = ["AFN", "USD", "IRR", "PKR"];
 
-const currencyLabels: Record<Currency, string> = {
+const labels: Record<Currency, string> = {
   AFN: "افغانی",
   USD: "دالر",
   IRR: "تومان",
@@ -89,2362 +39,812 @@ const currencyLabels: Record<Currency, string> = {
 };
 
 /*
-  ترتیب استاندارد داخلی جفت ارزها.
+  نرخ همیشه به شکل زیر ثبت می‌شود:
 
-  این ترتیب فقط برای اینکه نرخ معکوس
-  بدون تبدیل 0.02 ذخیره و نمایش شود استفاده می‌شود.
+  1 USD = 50 AFN
+  1000 IRR = 0.38 AFN
+  1 PKR = 0.45 AFN
 
-  USD همیشه مرجع بالاتر از AFN قرار دارد.
-  بنابراین:
-
-  USD / AFN
-  => 1 USD = X AFN
-
-  USD / IRR
-  => 1 USD = X IRR
-
-  AFN / IRR
-  => 1 AFN = X IRR
-
-  کاربر این ترتیب داخلی را نمی‌بیند.
+  یعنی RATE همیشه مقدار ارز مقابل برای یک واحد/واحد استاندارد ارز مبنا است.
 */
-const currencyPriority: Record<Currency, number> = {
-  USD: 1,
-  AFN: 2,
-  IRR: 3,
-  PKR: 4,
-};
 
-/* =========================================================
-   Initial Customers
-========================================================= */
+const rateUnits: Record<Currency, number> = {
+  AFN: 1,
+  USD: 1,
+  IRR: 1000,
+  PKR: 1,
+};
 
 const initialCustomers: Customer[] = [
   {
-    id: "c1",
+    id: "1",
     name: "احمد رحیمی",
-    balances: {
-      AFN: 500000,
-      USD: 10000,
-      IRR: 0,
-      PKR: 0,
-    },
+    balances: { AFN: 500000, USD: 10000, IRR: 0, PKR: 0 },
   },
   {
-    id: "c2",
+    id: "2",
     name: "محمد ظاهر",
-    balances: {
-      AFN: 200000,
-      USD: 5000,
-      IRR: 0,
-      PKR: 0,
-    },
+    balances: { AFN: 200000, USD: 5000, IRR: 0, PKR: 0 },
   },
   {
-    id: "c3",
+    id: "3",
     name: "فاطمه حسینی",
-    balances: {
-      AFN: 0,
-      USD: 0,
-      IRR: 50000000,
-      PKR: 0,
-    },
-  },
-  {
-    id: "c4",
-    name: "علی کریمی",
-    balances: {
-      AFN: 0,
-      USD: 0,
-      IRR: 0,
-      PKR: 200000,
-    },
+    balances: { AFN: 0, USD: 0, IRR: 50000000, PKR: 0 },
   },
 ];
 
-/* =========================================================
-   Number Helpers
-========================================================= */
-
-const formatNumber = (n: number) =>
+const fmt = (n: number) =>
   Number.isFinite(n)
-    ? n.toLocaleString("en-US", {
-        maximumFractionDigits: 8,
-      })
+    ? n.toLocaleString("en-US", { maximumFractionDigits: 8 })
     : "0";
 
-const parseNumber = (value: string | number) => {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
-};
-
-const roundAmount = (value: number, decimals = 8) => {
-  const factor = Math.pow(10, decimals);
-  return Math.round((value + Number.EPSILON) * factor) / factor;
-};
-
-/* =========================================================
-   Document ID
-========================================================= */
-
-const generateDocId = () => {
-  const d = new Date();
-
-  return `EX-${d.getFullYear()}${String(
-    d.getMonth() + 1
-  ).padStart(2, "0")}${String(d.getDate()).padStart(
-    2,
-    "0"
-  )}-${String(Math.floor(Math.random() * 10000)).padStart(
-    4,
-    "0"
-  )}`;
-};
-
-/* =========================================================
-   Rate Logic
-========================================================= */
+const newId = () =>
+  `EX-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
 /*
-  تعیین جهت استاندارد جفت ارز.
+  تابع اصلی محاسبه ارز
 
   مثال:
+  AFN -> USD
+  50000 AFN / 50 = 1000 USD
 
-  AFN + USD
-  => USD → AFN
-  => 1 USD = X AFN
+  USD -> AFN
+  1000 USD * 50 = 50000 AFN
 
-  USD + AFN
-  => همان جفت
-  => 1 USD = X AFN
-
-  AFN + IRR
-  => AFN → IRR
-  => 1 AFN = X IRR
-
-  بنابراین نرخ معکوس هرگز به 0.02 تبدیل نمی‌شود.
+  IRR نیز بر اساس 1000 تومان محاسبه می‌شود.
 */
-function getStandardPair(
-  currencyA: Currency,
-  currencyB: Currency
-): [Currency, Currency] {
-  if (currencyPriority[currencyA] < currencyPriority[currencyB]) {
-    return [currencyA, currencyB];
-  }
-
-  return [currencyB, currencyA];
-}
-
-/*
-  متن استاندارد نرخ.
-
-  مثال:
-  rate = 50
-  pair = USD / AFN
-
-  خروجی:
-  1 دالر = 50 افغانی
-*/
-function getRateDisplay(
-  currencyA: Currency,
-  currencyB: Currency,
-  rate: number
-) {
-  if (currencyA === currencyB) {
-    return `1 ${currencyLabels[currencyA]} = 1 ${currencyLabels[currencyA]}`;
-  }
-
-  const [standardFrom, standardTo] = getStandardPair(
-    currencyA,
-    currencyB
-  );
-
-  return `1 ${currencyLabels[standardFrom]} = ${formatNumber(
-    rate
-  )} ${currencyLabels[standardTo]}`;
-}
-
-/*
-  تبدیل ارز اصلی سیستم.
-
-  نرخ همیشه بر اساس جفت استاندارد است.
-
-  مثال:
-
-  1 USD = 50 AFN
-
-  AFN → USD:
-  50000 / 50 = 1000
-
-  USD → AFN:
-  1000 * 50 = 50000
-*/
-function convertCurrency(
+function convert(
   amount: number,
   from: Currency,
   to: Currency,
   rate: number
-): number {
-  if (from === to) {
-    return amount;
-  }
-
-  if (
-    !Number.isFinite(amount) ||
-    amount < 0 ||
-    !Number.isFinite(rate) ||
-    rate <= 0
-  ) {
-    return 0;
-  }
-
-  const [standardFrom, standardTo] = getStandardPair(
-    from,
-    to
-  );
-
-  /*
-    اگر جهت معامله همان جهت استاندارد باشد:
-
-    مثال:
-    USD → AFN
-    rate = 50
-
-    1000 USD × 50 = 50000 AFN
-  */
-  if (from === standardFrom && to === standardTo) {
-    return roundAmount(amount * rate);
-  }
-
-  /*
-    اگر جهت معامله برعکس باشد:
-
-    مثال:
-    AFN → USD
-    rate = 50
-
-    50000 AFN ÷ 50 = 1000 USD
-  */
-  return roundAmount(amount / rate);
-}
-
-/* =========================================================
-   Balance Calculation
-========================================================= */
-
-function computeBalances(
-  customers: Customer[],
-  transactions: Transaction[]
 ) {
-  const balances: Record<
-    string,
-    Record<Currency, number>
-  > = {};
+  if (!amount || !rate || rate <= 0) return 0;
+  if (from === to) return amount;
 
-  customers.forEach((customer) => {
-    balances[customer.id] = {
-      AFN: customer.balances.AFN || 0,
-      USD: customer.balances.USD || 0,
-      IRR: customer.balances.IRR || 0,
-      PKR: customer.balances.PKR || 0,
-    };
-  });
+  const fromUnit = rateUnits[from];
+  const toUnit = rateUnits[to];
 
-  transactions.forEach((tx) => {
-    if (tx.status === "voided") return;
+  /*
+    نرخ یعنی:
+    fromUnit از ارز مبدا = rate از ارز مقصد
 
-    if (tx.type === "صرافی-مشتری") {
-      const customer = balances[tx.customerId];
+    مثال:
+    1 USD = 50 AFN
+    1000 IRR = 0.38 AFN
+  */
 
-      if (!customer) return;
-
-      /*
-        مشتری ارز دریافتی را به صرافی می‌دهد.
-        بنابراین از حساب مشتری کم می‌شود.
-      */
-      customer[tx.receivedCurrency] =
-        (customer[tx.receivedCurrency] || 0) -
-        tx.receivedAmount;
-
-      /*
-        صرافی ارز پرداختی را به مشتری می‌دهد.
-        بنابراین به حساب مشتری اضافه می‌شود.
-      */
-      customer[tx.paidCurrency] =
-        (customer[tx.paidCurrency] || 0) +
-        tx.paidAmount;
-    }
-
-    if (tx.type === "بین-مشتریان") {
-      const sender = balances[tx.senderId];
-      const receiver = balances[tx.receiverId];
-
-      if (sender) {
-        sender[tx.senderCurrency] =
-          (sender[tx.senderCurrency] || 0) -
-          tx.senderAmount;
-
-        if (tx.commission > 0) {
-          sender[tx.commissionCurrency] =
-            (sender[tx.commissionCurrency] || 0) -
-            tx.commission;
-        }
-      }
-
-      if (receiver) {
-        receiver[tx.receiverCurrency] =
-          (receiver[tx.receiverCurrency] || 0) +
-          tx.receiverAmount;
-      }
-    }
-  });
-
-  return balances;
+  return (amount / fromUnit) * rate / toUnit;
 }
 
-/* =========================================================
-   Main Component
-========================================================= */
+/*
+  محاسبه با توجه به جهت واقعی معامله.
+
+  اگر کاربر نرخ را این‌گونه وارد کند:
+
+  USD -> AFN
+  1 USD = 50 AFN
+
+  و معامله برعکس باشد:
+
+  AFN -> USD
+
+  سیستم خودکار می‌کند:
+
+  amount / 50
+*/
+function calculateAmount(
+  amount: number,
+  from: Currency,
+  to: Currency,
+  rate: number,
+  rateFrom: Currency
+) {
+  if (!amount || !rate) return 0;
+
+  if (from === rateFrom) {
+    return convert(amount, from, to, rate);
+  }
+
+  /*
+    جهت معامله برعکس است.
+    ضریب معکوس فقط داخلی استفاده می‌شود.
+    به کاربر 0.02 نمایش داده نمی‌شود.
+  */
+
+  const fromUnit = rateUnits[rateFrom];
+  const toUnit = rateUnits[to];
+
+  return (amount / toUnit) / rate * fromUnit;
+}
+
+function rateDescription(
+  rate: number,
+  rateFrom: Currency,
+  rateTo: Currency
+) {
+  return `${rateUnits[rateFrom].toLocaleString()} ${labels[rateFrom]} = ${fmt(
+    rate
+  )} ${labels[rateTo]}`;
+}
 
 export default function CurrencyExchangePage() {
-  const [customers] =
-    useState<Customer[]>(initialCustomers);
+  const [customers] = useState<Customer[]>(initialCustomers);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
 
-  const [transactions, setTransactions] =
-    useState<Transaction[]>([]);
+  const [tab, setTab] = useState<"exchange" | "transfer">("exchange");
 
-  const [activeTab, setActiveTab] =
-    useState<ExchangeType>("صرافی-مشتری");
+  /* ---------------- Exchange ---------------- */
 
-  const [docId, setDocId] =
-    useState(generateDocId());
-
-  const [note, setNote] = useState("");
-  const [terms, setTerms] = useState("نقدی");
-
-  /* =====================================================
-     Exchange Form
-  ===================================================== */
-
-  const [exCustomer, setExCustomer] =
-    useState("");
-
-  const [exReceivedCurrency, setExReceivedCurrency] =
+  const [customer, setCustomer] = useState("");
+  const [receivedCurrency, setReceivedCurrency] =
     useState<Currency>("AFN");
+  const [receivedAmount, setReceivedAmount] = useState("");
 
-  const [exReceivedAmount, setExReceivedAmount] =
-    useState("");
-
-  const [exPaidCurrency, setExPaidCurrency] =
+  const [paidCurrency, setPaidCurrency] =
     useState<Currency>("USD");
+  const [paidAmount, setPaidAmount] = useState("");
 
-  const [exPaidAmount, setExPaidAmount] =
-    useState("");
+  /*
+    نرخ همیشه دستی وارد می‌شود.
+    مثال:
+    USD = 50 AFN
+  */
+  const [rate, setRate] = useState("");
 
-  const [exRate, setExRate] =
-    useState("");
+  /*
+    ارز مبنای نرخ فقط برای محاسبه داخلی است.
+    کاربر دیگر "مبنای نرخ" را انتخاب نمی‌کند.
+    سیستم از جهت ارزهای انتخاب‌شده استفاده می‌کند.
+  */
+  const [rateFrom, setRateFrom] = useState<Currency>("USD");
 
-  const [exProfit, setExProfit] =
-    useState("");
+  /* ---------------- Transfer ---------------- */
 
-  const [exProfitCurrency, setExProfitCurrency] =
+  const [sender, setSender] = useState("");
+  const [receiver, setReceiver] = useState("");
+
+  const [senderCurrency, setSenderCurrency] =
+    useState<Currency>("AFN");
+  const [receiverCurrency, setReceiverCurrency] =
     useState<Currency>("AFN");
 
-  /* =====================================================
-     Transfer Form
-  ===================================================== */
+  const [senderAmount, setSenderAmount] = useState("");
+  const [receiverAmount, setReceiverAmount] = useState("");
 
-  const [trSender, setTrSender] =
-    useState("");
-
-  const [trSenderCurrency, setTrSenderCurrency] =
+  const [transferRate, setTransferRate] = useState("");
+  const [transferRateFrom, setTransferRateFrom] =
     useState<Currency>("AFN");
 
-  const [trSenderAmount, setTrSenderAmount] =
-    useState("");
+  const [commission, setCommission] = useState("0");
 
-  const [trReceiver, setTrReceiver] =
-    useState("");
-
-  const [trReceiverCurrency, setTrReceiverCurrency] =
-    useState<Currency>("AFN");
-
-  const [trReceiverAmount, setTrReceiverAmount] =
-    useState("");
-
-  const [trRate, setTrRate] =
-    useState("1");
-
-  const [trCommission, setTrCommission] =
-    useState("0");
-
-  const [trCommissionCurrency, setTrCommissionCurrency] =
-    useState<Currency>("AFN");
-
-  /* =====================================================
-     UI State
-  ===================================================== */
-
-  const [viewTx, setViewTx] =
-    useState<Transaction | null>(null);
-
-  const [editingTx, setEditingTx] =
-    useState<Transaction | null>(null);
-
-  const [openMenu, setOpenMenu] =
-    useState<string | null>(null);
-
-  /* =====================================================
-     Live Balances
-  ===================================================== */
-
-  const liveBalances = useMemo(
-    () => computeBalances(customers, transactions),
-    [customers, transactions]
-  );
-
-  /* =====================================================
-     Exchange Calculation
-  ===================================================== */
+  /* ---------------- Exchange Calculation ---------------- */
 
   useEffect(() => {
-    const amount = parseNumber(exReceivedAmount);
-    const rate = parseNumber(exRate);
+    const amount = Number(receivedAmount);
+    const r = Number(rate);
 
-    if (
-      amount > 0 &&
-      rate > 0 &&
-      exReceivedCurrency !== exPaidCurrency
-    ) {
-      const result = convertCurrency(
-        amount,
-        exReceivedCurrency,
-        exPaidCurrency,
-        rate
-      );
-
-      setExPaidAmount(formatNumber(result));
-    } else if (
-      amount > 0 &&
-      exReceivedCurrency === exPaidCurrency
-    ) {
-      setExPaidAmount(formatNumber(amount));
-    } else {
-      setExPaidAmount("");
+    if (!amount || !r) {
+      setPaidAmount("");
+      return;
     }
+
+    const result = calculateAmount(
+      amount,
+      receivedCurrency,
+      paidCurrency,
+      r,
+      rateFrom
+    );
+
+    setPaidAmount(fmt(result));
   }, [
-    exReceivedAmount,
-    exReceivedCurrency,
-    exPaidCurrency,
-    exRate,
+    receivedAmount,
+    receivedCurrency,
+    paidCurrency,
+    rate,
+    rateFrom,
   ]);
 
-  /* =====================================================
-     Transfer Calculation
-  ===================================================== */
+  /* ---------------- Transfer Calculation ---------------- */
 
   useEffect(() => {
-    const amount = parseNumber(trSenderAmount);
-    const rate = parseNumber(trRate);
+    const amount = Number(senderAmount);
+    const r = Number(transferRate);
 
-    if (
-      amount > 0 &&
-      rate > 0 &&
-      trSenderCurrency !== trReceiverCurrency
-    ) {
-      const result = convertCurrency(
-        amount,
-        trSenderCurrency,
-        trReceiverCurrency,
-        rate
-      );
-
-      setTrReceiverAmount(formatNumber(result));
-    } else if (
-      amount > 0 &&
-      trSenderCurrency === trReceiverCurrency
-    ) {
-      setTrReceiverAmount(formatNumber(amount));
-    } else {
-      setTrReceiverAmount("");
+    if (!amount || !r) {
+      setReceiverAmount("");
+      return;
     }
+
+    const result = calculateAmount(
+      amount,
+      senderCurrency,
+      receiverCurrency,
+      r,
+      transferRateFrom
+    );
+
+    setReceiverAmount(fmt(result));
   }, [
-    trSenderAmount,
-    trSenderCurrency,
-    trReceiverCurrency,
-    trRate,
+    senderAmount,
+    senderCurrency,
+    receiverCurrency,
+    transferRate,
+    transferRateFrom,
   ]);
 
-  /* =====================================================
-     Reset
-  ===================================================== */
+  /* ---------------- Submit Exchange ---------------- */
 
-  const resetForm = () => {
-    setDocId(generateDocId());
+  function submitExchange() {
+    if (!customer || !receivedAmount || !rate) return;
 
-    setNote("");
-    setTerms("نقدی");
-
-    setExCustomer("");
-    setExReceivedCurrency("AFN");
-    setExReceivedAmount("");
-    setExPaidCurrency("USD");
-    setExPaidAmount("");
-    setExRate("");
-    setExProfit("");
-    setExProfitCurrency("AFN");
-
-    setTrSender("");
-    setTrSenderCurrency("AFN");
-    setTrSenderAmount("");
-    setTrReceiver("");
-    setTrReceiverCurrency("AFN");
-    setTrReceiverAmount("");
-    setTrRate("1");
-    setTrCommission("0");
-    setTrCommissionCurrency("AFN");
-  };
-
-  /* =====================================================
-     Customer Balance Validation
-  ===================================================== */
-
-  const hasEnoughBalance = (
-    customerId: string,
-    currency: Currency,
-    amount: number,
-    extraAmount = 0,
-    extraCurrency?: Currency
-  ) => {
-    const balance =
-      liveBalances[customerId]?.[currency] || 0;
-
-    if (balance < amount) {
-      return false;
-    }
-
-    if (
-      extraCurrency &&
-      extraCurrency === currency &&
-      extraAmount > 0
-    ) {
-      return balance >= amount + extraAmount;
-    }
-
-    return true;
-  };
-
-  /* =====================================================
-     Submit Exchange
-  ===================================================== */
-
-  const submitExchange = () => {
-    if (!exCustomer) {
-      alert("لطفاً مشتری را انتخاب کنید.");
-      return;
-    }
-
-    const receivedAmount =
-      parseNumber(exReceivedAmount);
-
-    const paidAmount =
-      parseNumber(exPaidAmount);
-
-    const rate =
-      parseNumber(exRate);
-
-    const profit =
-      parseNumber(exProfit);
-
-    if (receivedAmount <= 0) {
-      alert("مبلغ دریافتی باید بیشتر از صفر باشد.");
-      return;
-    }
-
-    if (rate <= 0) {
-      alert("نرخ تبدیل باید بیشتر از صفر باشد.");
-      return;
-    }
-
-    if (paidAmount <= 0) {
-      alert("مبلغ پرداختی معتبر نیست.");
-      return;
-    }
-
-    /*
-      بررسی موجودی مشتری.
-
-      مشتری باید بتواند ارز دریافتی را پرداخت کند.
-    */
-    if (
-      !hasEnoughBalance(
-        exCustomer,
-        exReceivedCurrency,
-        receivedAmount
-      )
-    ) {
-      alert(
-        `موجودی مشتری در ${currencyLabels[exReceivedCurrency]} کافی نیست.`
-      );
-      return;
-    }
-
-    const tx: ExchangeTransaction = {
-      id: docId,
-      type: "صرافی-مشتری",
+    const tx: Transaction = {
+      id: newId(),
+      type: "exchange",
       date: new Date().toISOString(),
-
-      customerId: exCustomer,
-
-      receivedCurrency: exReceivedCurrency,
-      receivedAmount,
-
-      paidCurrency: exPaidCurrency,
-      paidAmount,
-
-      rate,
-
-      profit,
-      profitCurrency: exProfitCurrency,
-
-      terms,
-      note,
+      customerId: customer,
+      fromCurrency: receivedCurrency,
+      fromAmount: Number(receivedAmount),
+      toCurrency: paidCurrency,
+      toAmount: Number(paidAmount),
+      rate: Number(rate),
       status: "active",
     };
 
-    setTransactions((previous) => [
-      tx,
-      ...previous,
-    ]);
+    setTransactions((x) => [tx, ...x]);
 
-    resetForm();
-  };
+    setCustomer("");
+    setReceivedAmount("");
+    setPaidAmount("");
+    setRate("");
+  }
 
-  /* =====================================================
-     Submit Transfer
-  ===================================================== */
+  /* ---------------- Submit Transfer ---------------- */
 
-  const submitTransfer = () => {
-    if (!trSender) {
-      alert("لطفاً فرستنده را انتخاب کنید.");
-      return;
-    }
-
-    if (!trReceiver) {
-      alert("لطفاً گیرنده را انتخاب کنید.");
-      return;
-    }
-
-    if (trSender === trReceiver) {
-      alert(
-        "فرستنده و گیرنده نمی‌توانند یک مشتری باشند."
-      );
-      return;
-    }
-
-    const senderAmount =
-      parseNumber(trSenderAmount);
-
-    const receiverAmount =
-      parseNumber(trReceiverAmount);
-
-    const rate =
-      parseNumber(trRate);
-
-    const commission =
-      parseNumber(trCommission);
-
-    if (senderAmount <= 0) {
-      alert("مبلغ فرستنده باید بیشتر از صفر باشد.");
-      return;
-    }
-
-    if (rate <= 0) {
-      alert("نرخ تبدیل باید بیشتر از صفر باشد.");
-      return;
-    }
-
-    if (receiverAmount <= 0) {
-      alert("مبلغ گیرنده معتبر نیست.");
-      return;
-    }
-
-    /*
-      محاسبه مقدار مورد نیاز از ارز فرستنده.
-
-      اگر کمیسیون همان ارز فرستنده باشد،
-      هر دو مقدار باید در موجودی موجود باشد.
-    */
-    const commissionSameCurrency =
-      trCommission > 0 &&
-      trCommissionCurrency === trSenderCurrency;
-
-    const requiredSenderBalance =
-      senderAmount +
-      (commissionSameCurrency
-        ? commission
-        : 0);
-
+  function submitTransfer() {
     if (
-      !hasEnoughBalance(
-        trSender,
-        trSenderCurrency,
-        requiredSenderBalance
-      )
-    ) {
-      alert(
-        `موجودی فرستنده در ${currencyLabels[trSenderCurrency]} کافی نیست.`
-      );
+      !sender ||
+      !receiver ||
+      sender === receiver ||
+      !senderAmount ||
+      !transferRate
+    )
       return;
-    }
 
-    /*
-      اگر کمیسیون ارز دیگری باشد،
-      موجودی آن نیز باید بررسی شود.
-    */
-    if (
-      commission > 0 &&
-      trCommissionCurrency !== trSenderCurrency
-    ) {
+    const tx: Transaction = {
+      id: newId(),
+      type: "transfer",
+      date: new Date().toISOString(),
+      senderId: sender,
+      receiverId: receiver,
+      fromCurrency: senderCurrency,
+      fromAmount: Number(senderAmount),
+      toCurrency: receiverCurrency,
+      toAmount: Number(receiverAmount),
+      rate: Number(transferRate),
+      commission: Number(commission) || 0,
+      commissionCurrency: senderCurrency,
+      status: "active",
+    };
+
+    setTransactions((x) => [tx, ...x]);
+
+    setSender("");
+    setReceiver("");
+    setSenderAmount("");
+    setReceiverAmount("");
+    setTransferRate("");
+    setCommission("0");
+  }
+
+  /* ---------------- Balance ---------------- */
+
+  function balances() {
+    const result: Record<string, Record<string, number>> = {};
+
+    customers.forEach((c) => {
+      result[c.id] = { ...c.balances };
+    });
+
+    transactions.forEach((tx) => {
+      if (tx.status === "voided") return;
+
+      if (tx.type === "exchange" && tx.customerId) {
+        const b = result[tx.customerId];
+        if (!b) return;
+
+        b[tx.fromCurrency] =
+          (b[tx.fromCurrency] || 0) - tx.fromAmount;
+
+        b[tx.toCurrency] =
+          (b[tx.toCurrency] || 0) + tx.toAmount;
+      }
+
       if (
-        !hasEnoughBalance(
-          trSender,
-          trCommissionCurrency,
-          commission
-        )
+        tx.type === "transfer" &&
+        tx.senderId &&
+        tx.receiverId
       ) {
-        alert(
-          `موجودی فرستنده برای پرداخت کمیسیون در ${currencyLabels[trCommissionCurrency]} کافی نیست.`
-        );
-        return;
+        const s = result[tx.senderId];
+        const r = result[tx.receiverId];
+
+        if (s) {
+          s[tx.fromCurrency] =
+            (s[tx.fromCurrency] || 0) - tx.fromAmount;
+
+          if (tx.commission) {
+            s[tx.fromCurrency] =
+              (s[tx.fromCurrency] || 0) - tx.commission;
+          }
+        }
+
+        if (r) {
+          r[tx.toCurrency] =
+            (r[tx.toCurrency] || 0) + tx.toAmount;
+        }
       }
-    }
+    });
 
-    const tx: TransferTransaction = {
-      id: docId,
-      type: "بین-مشتریان",
-      date: new Date().toISOString(),
+    return result;
+  }
 
-      senderId: trSender,
-      receiverId: trReceiver,
+  const currentBalances = balances();
 
-      senderCurrency: trSenderCurrency,
-      senderAmount,
+  function customerName(id?: string) {
+    return customers.find((c) => c.id === id)?.name || "-";
+  }
 
-      receiverCurrency: trReceiverCurrency,
-      receiverAmount,
-
-      rate,
-
-      commission,
-      commissionCurrency: trCommissionCurrency,
-
-      terms,
-      note,
-      status: "active",
-    };
-
-    setTransactions((previous) => [
-      tx,
-      ...previous,
-    ]);
-
-    resetForm();
-  };
-
-  /* =====================================================
-     Void Transaction
-  ===================================================== */
-
-  const voidTransaction = (id: string) => {
-    if (
-      !confirm(
-        "آیا از ابطال این معامله اطمینان دارید؟"
-      )
-    ) {
-      return;
-    }
-
-    setTransactions((previous) =>
-      previous.map((tx) =>
-        tx.id === id
-          ? {
-              ...tx,
-              status: "voided",
-            }
-          : tx
-      )
-    );
-
-    setOpenMenu(null);
-  };
-
-  /* =====================================================
-     Edit Transaction
-  ===================================================== */
-
-  const saveEdit = () => {
-    if (!editingTx) return;
-
-    /*
-      برای معامله صرافی مشتری
-      مبلغ مقابل از نرخ جدید محاسبه می‌شود.
-    */
-    if (
-      editingTx.type === "صرافی-مشتری"
-    ) {
-      const calculatedPaid =
-        convertCurrency(
-          editingTx.receivedAmount,
-          editingTx.receivedCurrency,
-          editingTx.paidCurrency,
-          editingTx.rate
-        );
-
-      editingTx = {
-        ...editingTx,
-        paidAmount: calculatedPaid,
-      };
-    }
-
-    /*
-      برای انتقال بین مشتریان
-      مبلغ گیرنده نیز از نرخ جدید محاسبه می‌شود.
-    */
-    if (
-      editingTx.type === "بین-مشتریان"
-    ) {
-      const calculatedReceiver =
-        convertCurrency(
-          editingTx.senderAmount,
-          editingTx.senderCurrency,
-          editingTx.receiverCurrency,
-          editingTx.rate
-        );
-
-      editingTx = {
-        ...editingTx,
-        receiverAmount: calculatedReceiver,
-      };
-    }
-
-    setTransactions((previous) =>
-      previous.map((tx) =>
-        tx.id === editingTx!.id
-          ? editingTx!
-          : tx
-      )
-    );
-
-    setEditingTx(null);
-    setOpenMenu(null);
-  };
-
-  /* =====================================================
-     Customer Name
-  ===================================================== */
-
-  const customerName = (id: string) =>
-    customers.find(
-      (customer) => customer.id === id
-    )?.name || id;
-
-  /* =====================================================
-     Rate Text
-  ===================================================== */
-
-  const rateText = (tx: Transaction) => {
-    if (tx.type === "صرافی-مشتری") {
-      return getRateDisplay(
-        tx.receivedCurrency,
-        tx.paidCurrency,
-        tx.rate
-      );
-    }
-
-    return getRateDisplay(
-      tx.senderCurrency,
-      tx.receiverCurrency,
-      tx.rate
-    );
-  };
-
-  /* =====================================================
-     Print Receipt
-  ===================================================== */
-
-  const printReceipt = (tx: Transaction) => {
-    const w = window.open("", "_blank");
-
-    if (!w) {
-      alert("امکان باز کردن صفحه چاپ وجود ندارد.");
-      return;
-    }
-
-    const customer = (id: string) =>
-      customers.find(
-        (c) => c.id === id
-      )?.name || id;
-
-    const content =
-      tx.type === "صرافی-مشتری"
-        ? `
-          <div dir="rtl" style="font-family:Tahoma;padding:25px;line-height:2">
-            <h2>رسید معامله صرافی</h2>
-
-            <hr/>
-
-            <p><strong>شماره رسید:</strong> ${tx.id}</p>
-            <p><strong>تاریخ:</strong> ${new Date(
-              tx.date
-            ).toLocaleString("fa-IR")}</p>
-
-            <p><strong>نوع معامله:</strong> ${
-              tx.type
-            }</p>
-
-            <p><strong>مشتری:</strong> ${customer(
-              tx.customerId
-            )}</p>
-
-            <hr/>
-
-            <p>
-              <strong>دریافت از مشتری:</strong>
-              ${formatNumber(tx.receivedAmount)}
-              ${currencyLabels[tx.receivedCurrency]}
-            </p>
-
-            <p>
-              <strong>پرداخت به مشتری:</strong>
-              ${formatNumber(tx.paidAmount)}
-              ${currencyLabels[tx.paidCurrency]}
-            </p>
-
-            <p>
-              <strong>نرخ:</strong>
-              ${rateText(tx)}
-            </p>
-
-            <p>
-              <strong>مفاد:</strong>
-              ${formatNumber(tx.profit)}
-              ${currencyLabels[tx.profitCurrency]}
-            </p>
-
-            <p>
-              <strong>شرایط:</strong>
-              ${tx.terms || "-"}
-            </p>
-
-            <p>
-              <strong>یادداشت:</strong>
-              ${tx.note || "-"}
-            </p>
-
-            <hr/>
-
-            <p>وضعیت: ${
-              tx.status === "voided"
-                ? "ابطال شده"
-                : "فعال"
-            }</p>
-          </div>
-        `
-        : `
-          <div dir="rtl" style="font-family:Tahoma;padding:25px;line-height:2">
-            <h2>رسید انتقال بین مشتریان</h2>
-
-            <hr/>
-
-            <p><strong>شماره رسید:</strong> ${tx.id}</p>
-            <p><strong>تاریخ:</strong> ${new Date(
-              tx.date
-            ).toLocaleString("fa-IR")}</p>
-
-            <p><strong>فرستنده:</strong> ${customer(
-              tx.senderId
-            )}</p>
-
-            <p><strong>گیرنده:</strong> ${customer(
-              tx.receiverId
-            )}</p>
-
-            <hr/>
-
-            <p>
-              <strong>ارسال:</strong>
-              ${formatNumber(tx.senderAmount)}
-              ${currencyLabels[tx.senderCurrency]}
-            </p>
-
-            <p>
-              <strong>دریافت:</strong>
-              ${formatNumber(tx.receiverAmount)}
-              ${currencyLabels[tx.receiverCurrency]}
-            </p>
-
-            <p>
-              <strong>نرخ:</strong>
-              ${rateText(tx)}
-            </p>
-
-            <p>
-              <strong>کمیشن:</strong>
-              ${formatNumber(tx.commission)}
-              ${currencyLabels[tx.commissionCurrency]}
-            </p>
-
-            <p>
-              <strong>شرایط:</strong>
-              ${tx.terms || "-"}
-            </p>
-
-            <p>
-              <strong>یادداشت:</strong>
-              ${tx.note || "-"}
-            </p>
-
-            <hr/>
-
-            <p>وضعیت: ${
-              tx.status === "voided"
-                ? "ابطال شده"
-                : "فعال"
-            }</p>
-          </div>
-        `;
-
-    w.document.write(content);
-    w.document.close();
-    w.print();
-
-    setOpenMenu(null);
-  };
-
-  /* =====================================================
-     Currency Select
-  ===================================================== */
-
-  const currencySelect = (
+  function currencySelect(
     value: Currency,
-    onChange: (value: Currency) => void
-  ) => (
-    <select
-      value={value}
-      onChange={(e) =>
-        onChange(e.target.value as Currency)
-      }
-      className="h-14 rounded-[14px] w-full px-4 border border-gray-200 bg-white text-gray-800 text-sm"
-    >
-      {currencies.map((currency) => (
-        <option
-          key={currency}
-          value={currency}
-        >
-          {currencyLabels[currency]} ({currency})
-        </option>
-      ))}
-    </select>
-  );
-
-  /* =====================================================
-     Current Rate Explanation
-  ===================================================== */
-
-  const exchangeRatePreview =
-    exReceivedCurrency !== exPaidCurrency &&
-    parseNumber(exRate) > 0
-      ? getRateDisplay(
-          exReceivedCurrency,
-          exPaidCurrency,
-          parseNumber(exRate)
-        )
-      : "";
-
-  const transferRatePreview =
-    trSenderCurrency !== trReceiverCurrency &&
-    parseNumber(trRate) > 0
-      ? getRateDisplay(
-          trSenderCurrency,
-          trReceiverCurrency,
-          parseNumber(trRate)
-        )
-      : "";
-
-  /* =====================================================
-     Render
-  ===================================================== */
+    change: (v: Currency) => void
+  ) {
+    return (
+      <select
+        value={value}
+        onChange={(e) =>
+          change(e.target.value as Currency)
+        }
+        className="h-12 w-full rounded-xl border px-3"
+      >
+        {currencies.map((c) => (
+          <option key={c} value={c}>
+            {labels[c]}
+          </option>
+        ))}
+      </select>
+    );
+  }
 
   return (
-    <div
-      dir="rtl"
-      className="space-y-6 p-4 md:p-6 bg-gray-50 min-h-screen"
-    >
-      {/* =================================================
-          Header
-      ================================================= */}
+    <div dir="rtl" className="p-5 space-y-5 bg-gray-50 min-h-screen">
 
-      <div>
-        <h1 className="text-2xl font-bold text-gray-800">
-          معاملات ارزی
-        </h1>
+      <h1 className="text-2xl font-bold">
+        معاملات ارزی
+      </h1>
 
-        <p className="text-sm text-gray-500 mt-1">
-          ثبت و مدیریت معاملات ارز و انتقال بین مشتریان
-        </p>
-      </div>
+      {/* Tabs */}
 
-      {/* =================================================
-          Tabs
-      ================================================= */}
-
-      <div className="flex gap-2 border-b pb-2">
+      <div className="flex gap-2">
         <button
-          onClick={() =>
-            setActiveTab("صرافی-مشتری")
-          }
-          className={`px-4 py-2 rounded-t-lg text-sm font-medium ${
-            activeTab === "صرافی-مشتری"
+          onClick={() => setTab("exchange")}
+          className={`px-5 py-3 rounded-xl ${
+            tab === "exchange"
               ? "bg-cyan-600 text-white"
-              : "bg-gray-100 text-gray-600"
+              : "bg-white"
           }`}
         >
-          تبادل ارز (صرافی با مشتری)
+          تبادل ارز
         </button>
 
         <button
-          onClick={() =>
-            setActiveTab("بین-مشتریان")
-          }
-          className={`px-4 py-2 rounded-t-lg text-sm font-medium ${
-            activeTab === "بین-مشتریان"
+          onClick={() => setTab("transfer")}
+          className={`px-5 py-3 rounded-xl ${
+            tab === "transfer"
               ? "bg-purple-600 text-white"
-              : "bg-gray-100 text-gray-600"
+              : "bg-white"
           }`}
         >
-          تبادل بین حساب مشتریان
+          تبادل بین مشتریان
         </button>
       </div>
 
-      {/* =================================================
-          Exchange Tab
-      ================================================= */}
+      {/* Exchange */}
 
-      {activeTab === "صرافی-مشتری" ? (
-        <div className="bg-white rounded-2xl shadow-sm border p-6">
-          <h2 className="text-lg font-semibold mb-6">
-            تبادل ارز
+      {tab === "exchange" && (
+        <div className="bg-white rounded-2xl p-5 space-y-5">
+
+          <h2 className="font-bold text-lg">
+            تبادل ارز صرافی با مشتری
           </h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            {/* Received */}
-            <div className="bg-gray-50 rounded-xl p-5">
-              <h3 className="font-bold text-gray-500 mb-4">
-                اطلاعات دریافتی از مشتری
-              </h3>
+          <select
+            value={customer}
+            onChange={(e) => setCustomer(e.target.value)}
+            className="h-12 w-full rounded-xl border px-3"
+          >
+            <option value="">انتخاب مشتری</option>
+            {customers.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
 
-              <div className="space-y-4">
-                <select
-                  value={exCustomer}
-                  onChange={(e) =>
-                    setExCustomer(e.target.value)
-                  }
-                  className="h-14 rounded-[14px] w-full px-4 border"
-                >
-                  <option value="">
-                    انتخاب مشتری
-                  </option>
+          <div className="grid md:grid-cols-2 gap-4">
 
-                  {customers.map(
-                    (customer, index) => (
-                      <option
-                        key={customer.id}
-                        value={customer.id}
-                      >
-                        {index + 1}.{" "}
-                        {customer.name}
-                      </option>
-                    )
-                  )}
-                </select>
-
-                {currencySelect(
-                  exReceivedCurrency,
-                  setExReceivedCurrency
-                )}
-
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
-                  placeholder="مبلغ دریافتی"
-                  value={exReceivedAmount}
-                  onChange={(e) =>
-                    setExReceivedAmount(
-                      e.target.value
-                    )
-                  }
-                  className="h-14 rounded-[14px] w-full px-4 border"
-                />
-              </div>
-            </div>
-
-            {/* Paid */}
-            <div className="bg-gray-50 rounded-xl p-5">
-              <h3 className="font-bold text-gray-500 mb-4">
-                اطلاعات پرداختی به مشتری
-              </h3>
-
-              <div className="space-y-4">
-                {currencySelect(
-                  exPaidCurrency,
-                  setExPaidCurrency
-                )}
-
-                <input
-                  readOnly
-                  value={exPaidAmount}
-                  placeholder="مبلغ پرداختی محاسبه می‌شود"
-                  className="h-14 rounded-[14px] w-full px-4 border bg-gray-100"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Rate */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-6">
-            <div>
-              <label className="block font-bold mb-2">
-                نرخ تبدیل
-              </label>
-
-              <input
-                type="number"
-                min="0"
-                step="any"
-                value={exRate}
-                onChange={(e) =>
-                  setExRate(e.target.value)
-                }
-                placeholder="مثلاً 50"
-                className="h-14 rounded-[14px] w-full px-4 border"
-              />
-
-              {exchangeRatePreview && (
-                <div className="mt-2 text-sm font-medium text-cyan-700 bg-cyan-50 rounded-lg p-3">
-                  {exchangeRatePreview}
-                </div>
-              )}
-            </div>
-
-            <div>
-              <label className="block font-bold mb-2">
-                مفاد تبادل ارز
-              </label>
-
-              <input
-                type="number"
-                min="0"
-                step="any"
-                value={exProfit}
-                onChange={(e) =>
-                  setExProfit(e.target.value)
-                }
-                placeholder="مفاد معامله"
-                className="h-14 rounded-[14px] w-full px-4 border"
-              />
-            </div>
-
-            <div>
-              <label className="block font-bold mb-2">
-                ارز مفاد
-              </label>
+            <div className="space-y-3">
+              <b>دریافت از مشتری</b>
 
               {currencySelect(
-                exProfitCurrency,
-                setExProfitCurrency
+                receivedCurrency,
+                setReceivedCurrency
               )}
+
+              <input
+                type="number"
+                value={receivedAmount}
+                onChange={(e) =>
+                  setReceivedAmount(e.target.value)
+                }
+                placeholder="مبلغ دریافتی"
+                className="h-12 w-full rounded-xl border px-3"
+              />
             </div>
+
+            <div className="space-y-3">
+              <b>پرداخت به مشتری</b>
+
+              {currencySelect(
+                paidCurrency,
+                setPaidCurrency
+              )}
+
+              <input
+                readOnly
+                value={paidAmount}
+                placeholder="مبلغ پرداختی"
+                className="h-12 w-full rounded-xl border px-3 bg-gray-100"
+              />
+            </div>
+
           </div>
 
-          {/* Terms */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-6">
-            <input
-              value={terms}
-              onChange={(e) =>
-                setTerms(e.target.value)
-              }
-              placeholder="شرایط معامله"
-              className="h-14 rounded-[14px] w-full px-4 border"
-            />
+          <div className="bg-blue-50 rounded-xl p-4 space-y-3">
 
-            <input
-              value={note}
-              onChange={(e) =>
-                setNote(e.target.value)
-              }
-              placeholder="یادداشت"
-              className="h-14 rounded-[14px] w-full px-4 border"
-            />
+            <b>نرخ دستی</b>
+
+            <div className="grid md:grid-cols-2 gap-3">
+
+              {currencySelect(
+                rateFrom,
+                setRateFrom
+              )}
+
+              <input
+                type="number"
+                step="any"
+                value={rate}
+                onChange={(e) =>
+                  setRate(e.target.value)
+                }
+                placeholder="نرخ"
+                className="h-12 rounded-xl border px-3"
+              />
+
+            </div>
+
+            {rate && (
+              <div className="font-bold text-blue-700">
+                نرخ ثبت‌شده:{" "}
+                {rateDescription(
+                  Number(rate),
+                  rateFrom,
+                  rateFrom === receivedCurrency
+                    ? paidCurrency
+                    : receivedCurrency
+                )}
+              </div>
+            )}
+
+            {paidAmount && (
+              <div className="text-green-700 font-bold">
+                نتیجه: {paidAmount}{" "}
+                {labels[paidCurrency]}
+              </div>
+            )}
+
           </div>
 
           <button
             onClick={submitExchange}
-            className="w-full h-14 rounded-2xl bg-[#092F3A] text-white font-medium"
+            className="w-full h-12 rounded-xl bg-[#092F3A] text-white"
           >
             ثبت معامله
           </button>
-        </div>
-      ) : (
-        /* =================================================
-           Transfer Tab
-        ================================================= */
-        <div className="bg-white rounded-2xl shadow-sm border p-6">
-          <h2 className="text-lg font-semibold mb-6">
-            تبادل بین حساب مشتریان
-          </h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            {/* Sender */}
-            <div className="bg-blue-50/50 rounded-xl p-5">
-              <h3 className="font-bold text-blue-700 mb-4">
-                فرستنده
-              </h3>
-
-              <div className="space-y-4">
-                <select
-                  value={trSender}
-                  onChange={(e) =>
-                    setTrSender(e.target.value)
-                  }
-                  className="h-14 rounded-[14px] w-full px-4 border"
-                >
-                  <option value="">
-                    انتخاب مشتری
-                  </option>
-
-                  {customers.map(
-                    (customer, index) => (
-                      <option
-                        key={customer.id}
-                        value={customer.id}
-                      >
-                        {index + 1}.{" "}
-                        {customer.name}
-                      </option>
-                    )
-                  )}
-                </select>
-
-                {currencySelect(
-                  trSenderCurrency,
-                  setTrSenderCurrency
-                )}
-
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
-                  value={trSenderAmount}
-                  onChange={(e) =>
-                    setTrSenderAmount(
-                      e.target.value
-                    )
-                  }
-                  placeholder="مبلغ فرستنده"
-                  className="h-14 rounded-[14px] w-full px-4 border"
-                />
-              </div>
-            </div>
-
-            {/* Receiver */}
-            <div className="bg-green-50/50 rounded-xl p-5">
-              <h3 className="font-bold text-green-700 mb-4">
-                گیرنده
-              </h3>
-
-              <div className="space-y-4">
-                <select
-                  value={trReceiver}
-                  onChange={(e) =>
-                    setTrReceiver(e.target.value)
-                  }
-                  className="h-14 rounded-[14px] w-full px-4 border"
-                >
-                  <option value="">
-                    انتخاب مشتری
-                  </option>
-
-                  {customers.map(
-                    (customer, index) => (
-                      <option
-                        key={customer.id}
-                        value={customer.id}
-                      >
-                        {index + 1}.{" "}
-                        {customer.name}
-                      </option>
-                    )
-                  )}
-                </select>
-
-                {currencySelect(
-                  trReceiverCurrency,
-                  setTrReceiverCurrency
-                )}
-
-                <input
-                  readOnly
-                  value={trReceiverAmount}
-                  placeholder="مبلغ گیرنده محاسبه می‌شود"
-                  className="h-14 rounded-[14px] w-full px-4 border bg-gray-100"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Transfer Rate */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-6">
-            <div>
-              <label className="block font-bold mb-2">
-                نرخ تبدیل
-              </label>
-
-              <input
-                type="number"
-                min="0"
-                step="any"
-                value={trRate}
-                onChange={(e) =>
-                  setTrRate(e.target.value)
-                }
-                className="h-14 rounded-[14px] w-full px-4 border"
-              />
-
-              {transferRatePreview && (
-                <div className="mt-2 text-sm font-medium text-purple-700 bg-purple-50 rounded-lg p-3">
-                  {transferRatePreview}
-                </div>
-              )}
-            </div>
-
-            <div>
-              <label className="block font-bold mb-2">
-                کمیشن
-              </label>
-
-              <input
-                type="number"
-                min="0"
-                step="any"
-                value={trCommission}
-                onChange={(e) =>
-                  setTrCommission(
-                    e.target.value
-                  )
-                }
-                className="h-14 rounded-[14px] w-full px-4 border"
-              />
-            </div>
-
-            <div>
-              <label className="block font-bold mb-2">
-                ارز کمیشن
-              </label>
-
-              {currencySelect(
-                trCommissionCurrency,
-                setTrCommissionCurrency
-              )}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-6">
-            <input
-              value={terms}
-              onChange={(e) =>
-                setTerms(e.target.value)
-              }
-              placeholder="شرایط معامله"
-              className="h-14 rounded-[14px] w-full px-4 border"
-            />
-
-            <input
-              value={note}
-              onChange={(e) =>
-                setNote(e.target.value)
-              }
-              placeholder="یادداشت"
-              className="h-14 rounded-[14px] w-full px-4 border"
-            />
-          </div>
-
-          <button
-            onClick={submitTransfer}
-            className="w-full h-14 rounded-2xl bg-[#092F3A] text-white font-medium"
-          >
-            ثبت انتقال
-          </button>
         </div>
       )}
 
-      {/* =================================================
-          Customer Balances
-      ================================================= */}
+      {/* Transfer */}
 
-      <div className="bg-white rounded-xl shadow p-5 overflow-x-auto">
-        <h2 className="text-lg font-semibold text-gray-700 mb-3">
-          موجودی فعلی مشتریان
+      {tab === "transfer" && (
+        <div className="bg-white rounded-2xl p-5 space-y-5">
+
+          <h2 className="font-bold text-lg">
+            تبادل بین حساب مشتریان
+          </h2>
+
+          <div className="grid md:grid-cols-2 gap-4">
+
+            <div className="space-y-3">
+              <b>فرستنده</b>
+
+              <select
+                value={sender}
+                onChange={(e) =>
+                  setSender(e.target.value)
+                }
+                className="h-12 w-full rounded-xl border px-3"
+              >
+                <option value="">انتخاب مشتری</option>
+                {customers.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+
+              {currencySelect(
+                senderCurrency,
+                setSenderCurrency
+              )}
+
+              <input
+                type="number"
+                value={senderAmount}
+                onChange={(e) =>
+                  setSenderAmount(e.target.value)
+                }
+                placeholder="مبلغ فرستنده"
+                className="h-12 w-full rounded-xl border px-3"
+              />
+            </div>
+
+            <div className="space-y-3">
+              <b>گیرنده</b>
+
+              <select
+                value={receiver}
+                onChange={(e) =>
+                  setReceiver(e.target.value)
+                }
+                className="h-12 w-full rounded-xl border px-3"
+              >
+                <option value="">انتخاب مشتری</option>
+                {customers.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+
+              {currencySelect(
+                receiverCurrency,
+                setReceiverCurrency
+              )}
+
+              <input
+                readOnly
+                value={receiverAmount}
+                placeholder="مبلغ گیرنده"
+                className="h-12 w-full rounded-xl border px-3 bg-gray-100"
+              />
+            </div>
+
+          </div>
+
+          <div className="bg-purple-50 rounded-xl p-4 space-y-3">
+
+            <b>نرخ دستی</b>
+
+            <div className="grid md:grid-cols-2 gap-3">
+
+              {currencySelect(
+                transferRateFrom,
+                setTransferRateFrom
+              )}
+
+              <input
+                type="number"
+                step="any"
+                value={transferRate}
+                onChange={(e) =>
+                  setTransferRate(e.target.value)
+                }
+                placeholder="نرخ"
+                className="h-12 rounded-xl border px-3"
+              />
+
+            </div>
+
+            {transferRate && (
+              <div className="font-bold text-purple-700">
+                نرخ:{" "}
+                {rateDescription(
+                  Number(transferRate),
+                  transferRateFrom,
+                  transferRateFrom === senderCurrency
+                    ? receiverCurrency
+                    : senderCurrency
+                )}
+              </div>
+            )}
+
+          </div>
+
+          <input
+            type="number"
+            value={commission}
+            onChange={(e) =>
+              setCommission(e.target.value)
+            }
+            placeholder="کمیشن"
+            className="h-12 w-full rounded-xl border px-3"
+          />
+
+          <button
+            onClick={submitTransfer}
+            className="w-full h-12 rounded-xl bg-[#092F3A] text-white"
+          >
+            ثبت انتقال
+          </button>
+
+        </div>
+      )}
+
+      {/* Balances */}
+
+      <div className="bg-white rounded-2xl p-5 overflow-x-auto">
+
+        <h2 className="font-bold text-lg mb-4">
+          موجودی مشتریان
         </h2>
 
-        <table className="min-w-full text-sm">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="p-2 text-right">
+        <table className="w-full text-sm">
+
+          <thead>
+            <tr className="bg-gray-50">
+              <th className="p-3 text-right">
                 مشتری
               </th>
 
-              {currencies.map((currency) => (
-                <th
-                  key={currency}
-                  className="p-2 text-right"
-                >
-                  {currencyLabels[currency]}
+              {currencies.map((c) => (
+                <th key={c} className="p-3 text-right">
+                  {labels[c]}
                 </th>
               ))}
             </tr>
           </thead>
 
-          <tbody className="divide-y">
-            {customers.map((customer) => {
-              const balance =
-                liveBalances[customer.id] ||
-                customer.balances;
+          <tbody>
+
+            {customers.map((c) => {
+              const b =
+                currentBalances[c.id] || c.balances;
 
               return (
-                <tr key={customer.id}>
-                  <td className="p-2 font-medium">
-                    {customer.name}
+                <tr key={c.id} className="border-t">
+
+                  <td className="p-3">
+                    {c.name}
                   </td>
 
-                  {currencies.map(
-                    (currency) => (
-                      <td
-                        key={currency}
-                        className="p-2"
-                      >
-                        {formatNumber(
-                          balance[currency] || 0
-                        )}
-                      </td>
-                    )
-                  )}
+                  {currencies.map((cur) => (
+                    <td key={cur} className="p-3">
+                      {fmt(b[cur] || 0)}
+                    </td>
+                  ))}
+
                 </tr>
               );
             })}
+
           </tbody>
+
         </table>
+
       </div>
 
-      {/* =================================================
-          Transactions
-      ================================================= */}
+      {/* Transactions */}
 
-      <div className="bg-white rounded-xl shadow overflow-x-auto">
-        <h2 className="text-lg font-semibold text-gray-700 p-5 pb-2">
+      <div className="bg-white rounded-2xl p-5 overflow-x-auto">
+
+        <h2 className="font-bold text-lg mb-4">
           آخرین معاملات
         </h2>
 
-        <table className="min-w-full text-sm">
-          <thead className="bg-gray-50">
-            <tr>
+        <table className="w-full text-sm">
+
+          <thead>
+            <tr className="bg-gray-50">
+
               <th className="p-3 text-right">
                 سند
               </th>
 
               <th className="p-3 text-right">
-                تاریخ
+                نوع
               </th>
 
               <th className="p-3 text-right">
-                نوع معامله
+                مشتری
               </th>
 
               <th className="p-3 text-right">
-                مشتری/فرستنده
+                دریافت / ارسال
               </th>
 
               <th className="p-3 text-right">
-                دریافت
-              </th>
-
-              <th className="p-3 text-right">
-                پرداخت
+                پرداخت / دریافت
               </th>
 
               <th className="p-3 text-right">
                 نرخ
               </th>
 
-              <th className="p-3 text-right">
-                مفاد/کمیشن
-              </th>
-
-              <th className="p-3 text-right">
-                عملیات
-              </th>
             </tr>
           </thead>
 
-          <tbody className="divide-y">
-            {transactions.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={9}
-                  className="text-center py-8 text-gray-400"
-                >
-                  هیچ معامله‌ای ثبت نشده است
+          <tbody>
+
+            {transactions.map((tx) => (
+
+              <tr
+                key={tx.id}
+                className="border-t"
+              >
+
+                <td className="p-3">
+                  {tx.id}
                 </td>
+
+                <td className="p-3">
+                  {tx.type === "exchange"
+                    ? "صرافی با مشتری"
+                    : "بین مشتریان"}
+                </td>
+
+                <td className="p-3">
+                  {customerName(
+                    tx.customerId || tx.senderId
+                  )}
+                </td>
+
+                <td className="p-3">
+                  {fmt(tx.fromAmount)}{" "}
+                  {labels[tx.fromCurrency]}
+                </td>
+
+                <td className="p-3">
+                  {fmt(tx.toAmount)}{" "}
+                  {labels[tx.toCurrency]}
+                </td>
+
+                <td className="p-3">
+                  {fmt(tx.rate)}
+                </td>
+
               </tr>
-            ) : (
-              transactions.map((tx) => {
-                const voided =
-                  tx.status === "voided";
 
-                return (
-                  <tr
-                    key={tx.id}
-                    className={
-                      voided
-                        ? "opacity-50 line-through"
-                        : ""
-                    }
-                  >
-                    <td className="p-3 font-mono text-xs">
-                      {tx.id}
-                    </td>
+            ))}
 
-                    <td className="p-3 text-xs">
-                      {new Date(
-                        tx.date
-                      ).toLocaleString("fa-IR")}
-                    </td>
-
-                    <td className="p-3">
-                      {tx.type}
-                    </td>
-
-                    <td className="p-3">
-                      {tx.type ===
-                      "صرافی-مشتری"
-                        ? customerName(
-                            tx.customerId
-                          )
-                        : customerName(
-                            tx.senderId
-                          )}
-                    </td>
-
-                    <td className="p-3">
-                      {tx.type ===
-                      "صرافی-مشتری"
-                        ? `${formatNumber(
-                            tx.receivedAmount
-                          )} ${
-                            currencyLabels[
-                              tx.receivedCurrency
-                            ]
-                          }`
-                        : `${formatNumber(
-                            tx.receiverAmount
-                          )} ${
-                            currencyLabels[
-                              tx.receiverCurrency
-                            ]
-                          }`}
-                    </td>
-
-                    <td className="p-3">
-                      {tx.type ===
-                      "صرافی-مشتری"
-                        ? `${formatNumber(
-                            tx.paidAmount
-                          )} ${
-                            currencyLabels[
-                              tx.paidCurrency
-                            ]
-                          }`
-                        : `${formatNumber(
-                            tx.senderAmount
-                          )} ${
-                            currencyLabels[
-                              tx.senderCurrency
-                            ]
-                          }`}
-                    </td>
-
-                    <td className="p-3 text-xs">
-                      {rateText(tx)}
-                    </td>
-
-                    <td className="p-3">
-                      {tx.type ===
-                      "صرافی-مشتری"
-                        ? `${formatNumber(
-                            tx.profit
-                          )} ${
-                            currencyLabels[
-                              tx.profitCurrency
-                            ]
-                          }`
-                        : `${formatNumber(
-                            tx.commission
-                          )} ${
-                            currencyLabels[
-                              tx.commissionCurrency
-                            ]
-                          }`}
-                    </td>
-
-                    <td className="p-3 relative">
-                      <button
-                        onClick={() =>
-                          setOpenMenu(
-                            openMenu === tx.id
-                              ? null
-                              : tx.id
-                          )
-                        }
-                        className="px-3 py-2 rounded-lg bg-gray-100"
-                      >
-                        عملیات ▾
-                      </button>
-
-                      {openMenu === tx.id && (
-                        <div className="absolute z-20 left-2 top-12 w-32 rounded-lg border bg-white shadow-lg p-1">
-                          <button
-                            onClick={() => {
-                              setViewTx(tx);
-                              setOpenMenu(null);
-                            }}
-                            className="block w-full text-right px-3 py-2 hover:bg-gray-50"
-                          >
-                            مشاهده
-                          </button>
-
-                          {!voided && (
-                            <button
-                              onClick={() => {
-                                setEditingTx({
-                                  ...tx,
-                                });
-                                setOpenMenu(null);
-                              }}
-                              className="block w-full text-right px-3 py-2 hover:bg-gray-50"
-                            >
-                              ویرایش
-                            </button>
-                          )}
-
-                          <button
-                            onClick={() =>
-                              printReceipt(tx)
-                            }
-                            className="block w-full text-right px-3 py-2 hover:bg-gray-50"
-                          >
-                            چاپ
-                          </button>
-
-                          {!voided && (
-                            <button
-                              onClick={() =>
-                                voidTransaction(
-                                  tx.id
-                                )
-                              }
-                              className="block w-full text-right px-3 py-2 text-red-600 hover:bg-red-50"
-                            >
-                              ابطال
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })
-            )}
           </tbody>
+
         </table>
+
       </div>
 
-      {/* =================================================
-          View Transaction Modal
-      ================================================= */}
-
-      {viewTx && (
-        <div
-          className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4"
-          onClick={() =>
-            setViewTx(null)
-          }
-        >
-          <div
-            className="bg-white rounded-xl p-6 max-w-md w-full"
-            onClick={(event) =>
-              event.stopPropagation()
-            }
-          >
-            <h2 className="text-lg font-bold mb-4">
-              جزئیات معامله
-            </h2>
-
-            <div className="space-y-2 text-sm">
-              <p>
-                شماره: {viewTx.id}
-              </p>
-
-              <p>
-                تاریخ:{" "}
-                {new Date(
-                  viewTx.date
-                ).toLocaleString("fa-IR")}
-              </p>
-
-              <p>
-                نوع: {viewTx.type}
-              </p>
-
-              {viewTx.type ===
-              "صرافی-مشتری" ? (
-                <>
-                  <p>
-                    مشتری:{" "}
-                    {customerName(
-                      viewTx.customerId
-                    )}
-                  </p>
-
-                  <p>
-                    دریافت:{" "}
-                    {formatNumber(
-                      viewTx.receivedAmount
-                    )}{" "}
-                    {
-                      currencyLabels[
-                        viewTx.receivedCurrency
-                      ]
-                    }
-                  </p>
-
-                  <p>
-                    پرداخت:{" "}
-                    {formatNumber(
-                      viewTx.paidAmount
-                    )}{" "}
-                    {
-                      currencyLabels[
-                        viewTx.paidCurrency
-                      ]
-                    }
-                  </p>
-
-                  <p>
-                    نرخ: {rateText(viewTx)}
-                  </p>
-
-                  <p>
-                    مفاد:{" "}
-                    {formatNumber(
-                      viewTx.profit
-                    )}{" "}
-                    {
-                      currencyLabels[
-                        viewTx.profitCurrency
-                      ]
-                    }
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p>
-                    فرستنده:{" "}
-                    {customerName(
-                      viewTx.senderId
-                    )}
-                  </p>
-
-                  <p>
-                    گیرنده:{" "}
-                    {customerName(
-                      viewTx.receiverId
-                    )}
-                  </p>
-
-                  <p>
-                    ارسال:{" "}
-                    {formatNumber(
-                      viewTx.senderAmount
-                    )}{" "}
-                    {
-                      currencyLabels[
-                        viewTx.senderCurrency
-                      ]
-                    }
-                  </p>
-
-                  <p>
-                    دریافت:{" "}
-                    {formatNumber(
-                      viewTx.receiverAmount
-                    )}{" "}
-                    {
-                      currencyLabels[
-                        viewTx.receiverCurrency
-                      ]
-                    }
-                  </p>
-
-                  <p>
-                    نرخ: {rateText(viewTx)}
-                  </p>
-
-                  <p>
-                    کمیشن:{" "}
-                    {formatNumber(
-                      viewTx.commission
-                    )}{" "}
-                    {
-                      currencyLabels[
-                        viewTx.commissionCurrency
-                      ]
-                    }
-                  </p>
-                </>
-              )}
-
-              <p>
-                یادداشت:{" "}
-                {viewTx.note || "-"}
-              </p>
-
-              <p>
-                شرایط:{" "}
-                {viewTx.terms || "-"}
-              </p>
-
-              <p>
-                وضعیت:{" "}
-                {viewTx.status ===
-                "voided"
-                  ? "ابطال شده"
-                  : "فعال"}
-              </p>
-            </div>
-
-            <button
-              onClick={() =>
-                setViewTx(null)
-              }
-              className="mt-5 px-4 py-2 bg-gray-200 rounded-lg"
-            >
-              بستن
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* =================================================
-          Edit Modal
-      ================================================= */}
-
-      {editingTx && (
-        <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
-            <h2 className="text-lg font-bold mb-5">
-              ویرایش معامله
-            </h2>
-
-            {editingTx.type ===
-            "صرافی-مشتری" ? (
-              <div className="grid grid-cols-2 gap-3">
-                <label className="text-sm">
-                  ارز دریافتی
-
-                  <select
-                    className="w-full border rounded p-2 mt-1"
-                    value={
-                      editingTx.receivedCurrency
-                    }
-                    onChange={(e) =>
-                      setEditingTx({
-                        ...editingTx,
-                        receivedCurrency:
-                          e.target
-                            .value as Currency,
-                      })
-                    }
-                  >
-                    {currencies.map(
-                      (currency) => (
-                        <option
-                          key={currency}
-                          value={currency}
-                        >
-                          {
-                            currencyLabels[
-                              currency
-                            ]
-                          }
-                        </option>
-                      )
-                    )}
-                  </select>
-                </label>
-
-                <label className="text-sm">
-                  مبلغ دریافتی
-
-                  <input
-                    className="w-full border rounded p-2 mt-1"
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={
-                      editingTx.receivedAmount
-                    }
-                    onChange={(e) =>
-                      setEditingTx({
-                        ...editingTx,
-                        receivedAmount:
-                          parseNumber(
-                            e.target.value
-                          ),
-                      })
-                    }
-                  />
-                </label>
-
-                <label className="text-sm">
-                  ارز پرداختی
-
-                  <select
-                    className="w-full border rounded p-2 mt-1"
-                    value={
-                      editingTx.paidCurrency
-                    }
-                    onChange={(e) =>
-                      setEditingTx({
-                        ...editingTx,
-                        paidCurrency:
-                          e.target
-                            .value as Currency,
-                      })
-                    }
-                  >
-                    {currencies.map(
-                      (currency) => (
-                        <option
-                          key={currency}
-                          value={currency}
-                        >
-                          {
-                            currencyLabels[
-                              currency
-                            ]
-                          }
-                        </option>
-                      )
-                    )}
-                  </select>
-                </label>
-
-                <label className="text-sm">
-                  نرخ تبدیل
-
-                  <input
-                    className="w-full border rounded p-2 mt-1"
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={
-                      editingTx.rate
-                    }
-                    onChange={(e) =>
-                      setEditingTx({
-                        ...editingTx,
-                        rate: parseNumber(
-                          e.target.value
-                        ),
-                      })
-                    }
-                  />
-                </label>
-
-                <div className="col-span-2 rounded-lg bg-gray-50 p-3 text-sm">
-                  مبلغ پرداختی پس از ذخیره
-                  بر اساس نرخ جدید محاسبه
-                  خواهد شد.
-                </div>
-
-                <label className="text-sm">
-                  مفاد
-
-                  <input
-                    className="w-full border rounded p-2 mt-1"
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={
-                      editingTx.profit
-                    }
-                    onChange={(e) =>
-                      setEditingTx({
-                        ...editingTx,
-                        profit:
-                          parseNumber(
-                            e.target.value
-                          ),
-                      })
-                    }
-                  />
-                </label>
-
-                <label className="text-sm">
-                  ارز مفاد
-
-                  <select
-                    className="w-full border rounded p-2 mt-1"
-                    value={
-                      editingTx.profitCurrency
-                    }
-                    onChange={(e) =>
-                      setEditingTx({
-                        ...editingTx,
-                        profitCurrency:
-                          e.target
-                            .value as Currency,
-                      })
-                    }
-                  >
-                    {currencies.map(
-                      (currency) => (
-                        <option
-                          key={currency}
-                          value={currency}
-                        >
-                          {
-                            currencyLabels[
-                              currency
-                            ]
-                          }
-                        </option>
-                      )
-                    )}
-                  </select>
-                </label>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-3">
-                <label className="text-sm">
-                  ارز فرستنده
-
-                  <select
-                    className="w-full border rounded p-2 mt-1"
-                    value={
-                      editingTx.senderCurrency
-                    }
-                    onChange={(e) =>
-                      setEditingTx({
-                        ...editingTx,
-                        senderCurrency:
-                          e.target
-                            .value as Currency,
-                      })
-                    }
-                  >
-                    {currencies.map(
-                      (currency) => (
-                        <option
-                          key={currency}
-                          value={currency}
-                        >
-                          {
-                            currencyLabels[
-                              currency
-                            ]
-                          }
-                        </option>
-                      )
-                    )}
-                  </select>
-                </label>
-
-                <label className="text-sm">
-                  مبلغ فرستنده
-
-                  <input
-                    className="w-full border rounded p-2 mt-1"
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={
-                      editingTx.senderAmount
-                    }
-                    onChange={(e) =>
-                      setEditingTx({
-                        ...editingTx,
-                        senderAmount:
-                          parseNumber(
-                            e.target.value
-                          ),
-                      })
-                    }
-                  />
-                </label>
-
-                <label className="text-sm">
-                  ارز گیرنده
-
-                  <select
-                    className="w-full border rounded p-2 mt-1"
-                    value={
-                      editingTx.receiverCurrency
-                    }
-                    onChange={(e) =>
-                      setEditingTx({
-                        ...editingTx,
-                        receiverCurrency:
-                          e.target
-                            .value as Currency,
-                      })
-                    }
-                  >
-                    {currencies.map(
-                      (currency) => (
-                        <option
-                          key={currency}
-                          value={currency}
-                        >
-                          {
-                            currencyLabels[
-                              currency
-                            ]
-                          }
-                        </option>
-                      )
-                    )}
-                  </select>
-                </label>
-
-                <label className="text-sm">
-                  نرخ تبدیل
-
-                  <input
-                    className="w-full border rounded p-2 mt-1"
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={
-                      editingTx.rate
-                    }
-                    onChange={(e) =>
-                      setEditingTx({
-                        ...editingTx,
-                        rate: parseNumber(
-                          e.target.value
-                        ),
-                      })
-                    }
-                  />
-                </label>
-
-                <div className="col-span-2 rounded-lg bg-gray-50 p-3 text-sm">
-                  مبلغ گیرنده پس از ذخیره
-                  بر اساس نرخ جدید محاسبه
-                  خواهد شد.
-                </div>
-
-                <label className="text-sm">
-                  کمیشن
-
-                  <input
-                    className="w-full border rounded p-2 mt-1"
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={
-                      editingTx.commission
-                    }
-                    onChange={(e) =>
-                      setEditingTx({
-                        ...editingTx,
-                        commission:
-                          parseNumber(
-                            e.target.value
-                          ),
-                      })
-                    }
-                  />
-                </label>
-
-                <label className="text-sm">
-                  ارز کمیشن
-
-                  <select
-                    className="w-full border rounded p-2 mt-1"
-                    value={
-                      editingTx.commissionCurrency
-                    }
-                    onChange={(e) =>
-                      setEditingTx({
-                        ...editingTx,
-                        commissionCurrency:
-                          e.target
-                            .value as Currency,
-                      })
-                    }
-                  >
-                    {currencies.map(
-                      (currency) => (
-                        <option
-                          key={currency}
-                          value={currency}
-                        >
-                          {
-                            currencyLabels[
-                              currency
-                            ]
-                          }
-                        </option>
-                      )
-                    )}
-                  </select>
-                </label>
-              </div>
-            )}
-
-            <div className="flex justify-end gap-2 mt-6">
-              <button
-                onClick={() =>
-                  setEditingTx(null)
-                }
-                className="px-4 py-2 bg-gray-200 rounded-lg"
-              >
-                انصراف
-              </button>
-
-              <button
-                onClick={saveEdit}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg"
-              >
-                ذخیره تغییرات
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
