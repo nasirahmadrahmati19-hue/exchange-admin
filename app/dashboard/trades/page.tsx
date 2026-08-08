@@ -20,7 +20,7 @@ interface ExchangeTransaction extends BaseTransaction {
   receivedAmount: number;
   paidCurrency: string;
   paidAmount: number;
-  rate: number;
+  rate: number; // 1 baseUnit(receivedCurrency) = rate paidCurrency
 }
 
 interface TransferTransaction extends BaseTransaction {
@@ -31,7 +31,7 @@ interface TransferTransaction extends BaseTransaction {
   senderAmount: number;
   receiverCurrency: string;
   receiverAmount: number;
-  rate: number;
+  rate: number; // 1 baseUnit(receiverCurrency) = rate senderCurrency
   commission: number;
   commissionCurrency: string;
 }
@@ -56,7 +56,7 @@ function formatNumber(n: number): string {
   return n % 1 === 0 ? n.toString() : n.toFixed(2);
 }
 
-// ---------- موتور تبدیل مشترک (بدون تغییر) ----------
+// ---------- موتور تبدیل مشترک ----------
 function convertCurrency(
   amount: number,
   fromCurrency: string,
@@ -72,13 +72,15 @@ function convertCurrency(
   const baseReceiver = baseUnits[receiverCurrency] || 1;
 
   if (isFromReceiver) {
+    // از ارز گیرنده (پایه نرخ) به ارز فرستنده
     return (amount * rate) / baseReceiver;
   } else {
+    // از ارز فرستنده به ارز گیرنده (پایه نرخ)
     return (amount / rate) * baseReceiver;
   }
 }
 
-// ---------- Initial Data (بدون تغییر) ----------
+// ---------- Initial Data ----------
 const initialCustomers: Customer[] = [
   { id: "c1", name: "احمد رحیمی", balances: { AFN: 500000, USD: 10000, IRR: 0, PKR: 0 } },
   { id: "c2", name: "محمد ظاهر", balances: { AFN: 200000, USD: 5000, IRR: 0, PKR: 0 } },
@@ -99,7 +101,7 @@ const generateDocId = () => {
   return `EX-${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, "0")}${now.getDate().toString().padStart(2, "0")}-${Math.floor(Math.random() * 10000).toString().padStart(4, "0")}`;
 };
 
-// ---------- Balance calculation (بدون تغییر) ----------
+// ---------- Balance calculation ----------
 function computeBalances(customers: Customer[], transactions: Transaction[]) {
   const balances: Record<string, Record<string, number>> = {};
   customers.forEach((c) => {
@@ -144,7 +146,7 @@ export default function CurrencyExchangePage() {
     [customers, transactions]
   );
 
-  // ---------- Form States (بدون تغییر) ----------
+  // ---------- Form States ----------
   const [docId, setDocId] = useState(generateDocId());
   const [note, setNote] = useState("");
   const [terms, setTerms] = useState("نقدی");
@@ -172,19 +174,21 @@ export default function CurrencyExchangePage() {
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [viewTx, setViewTx] = useState<Transaction | null>(null);
 
-  // ---------- محاسبات (دقیقاً مثل قبل) ----------
+  // ---------- محاسبه تبادل صرافی-مشتری (اصلاح جهت تبدیل) ----------
   const computeExchangePaid = () => {
     if (!exRate || !exReceivedAmount) return;
     const received = parseFloat(exReceivedAmount);
     const rate = parseFloat(exRate);
     if (isNaN(received) || isNaN(rate) || rate === 0) return;
 
-    const paid = convertCurrency(received, exReceivedCurrency, exPaidCurrency, rate, false);
+    // exReceivedCurrency ارز پایه نرخ است (گیرنده)، پس isFromReceiver = true
+    const paid = convertCurrency(received, exReceivedCurrency, exPaidCurrency, rate, true);
     setExPaidAmount(formatNumber(paid));
   };
 
   useMemo(() => computeExchangePaid(), [exReceivedAmount, exRate, exReceivedCurrency, exPaidCurrency]);
 
+  // ---------- محاسبه تبادل بین مشتریان (بدون تغییر، false) ----------
   const computeTransferReceiver = () => {
     if (!trRate || !trSenderAmount) return;
     const senderAmt = parseFloat(trSenderAmount);
@@ -361,14 +365,12 @@ export default function CurrencyExchangePage() {
         </button>
       </div>
 
-      {/* تب صرافی-مشتری با چیدمان دوستونه‌ای جدید */}
+      {/* تب صرافی-مشتری */}
       {activeTab === "صرافی-مشتری" ? (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-lg font-semibold text-gray-800 mb-6">تبادل ارز</h2>
           
-          {/* ستون‌های دو طرف معامله */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            {/* سمت راست (RTL): چیزی که مشتری به صرافی می‌دهد */}
             <div className="bg-gray-50 rounded-xl p-5 border border-gray-100">
               <h3 className="text-sm font-bold text-gray-500 mb-4 uppercase tracking-wide">اطلاعات مشتری و دریافتی</h3>
               <div className="space-y-4">
@@ -407,7 +409,6 @@ export default function CurrencyExchangePage() {
               </div>
             </div>
 
-            {/* سمت چپ (RTL): چیزی که صرافی به مشتری می‌دهد */}
             <div className="bg-gray-50 rounded-xl p-5 border border-gray-100">
               <h3 className="text-sm font-bold text-gray-500 mb-4 uppercase tracking-wide">اطلاعات پرداختی</h3>
               <div className="space-y-4">
@@ -434,7 +435,6 @@ export default function CurrencyExchangePage() {
             </div>
           </div>
 
-          {/* نرخ تبدیل (مرکزی) */}
           <div className="mb-6">
             <label className="block text-sm font-bold text-gray-700 mb-2">نرخ تبدیل</label>
             <input
@@ -447,7 +447,6 @@ export default function CurrencyExchangePage() {
             />
           </div>
 
-          {/* بخش پایینی فرم */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-6">
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">مفاد معامله</label>
@@ -475,13 +474,11 @@ export default function CurrencyExchangePage() {
           </button>
         </div>
       ) : (
-        /* تب تبادل بین مشتریان با چیدمان دوستونه‌ای جدید */
+        /* تب تبادل بین مشتریان */
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-lg font-semibold text-gray-800 mb-6">تبادل بین حساب مشتریان</h2>
           
-          {/* ستون‌های دو طرف معامله */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            {/* سمت راست (RTL): اطلاعات فرستنده */}
             <div className="bg-blue-50/50 rounded-xl p-5 border border-blue-100">
               <h3 className="text-sm font-bold text-blue-700 mb-4 uppercase tracking-wide">اطلاعات فرستنده</h3>
               <div className="space-y-4">
@@ -520,7 +517,6 @@ export default function CurrencyExchangePage() {
               </div>
             </div>
 
-            {/* سمت چپ (RTL): اطلاعات گیرنده */}
             <div className="bg-green-50/50 rounded-xl p-5 border border-green-100">
               <h3 className="text-sm font-bold text-green-700 mb-4 uppercase tracking-wide">اطلاعات گیرنده</h3>
               <div className="space-y-4">
@@ -560,7 +556,6 @@ export default function CurrencyExchangePage() {
             </div>
           </div>
 
-          {/* نرخ تبدیل (مرکزی) */}
           <div className="mb-6">
             <label className="block text-sm font-bold text-gray-700 mb-2">نرخ تبدیل</label>
             <input
@@ -573,7 +568,6 @@ export default function CurrencyExchangePage() {
             />
           </div>
 
-          {/* بخش پایینی فرم */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mb-6">
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">کارمزد (اختیاری)</label>
@@ -613,7 +607,6 @@ export default function CurrencyExchangePage() {
         </div>
       )}
 
-      {/* جداول و مودال‌ها (بدون تغییر) */}
       {/* Customer Balances */}
       <div className="bg-white rounded-xl shadow p-5">
         <h2 className="text-lg font-semibold text-gray-700 mb-3">موجودی فعلی مشتریان</h2>
