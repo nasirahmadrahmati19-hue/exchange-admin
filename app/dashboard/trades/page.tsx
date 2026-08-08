@@ -48,8 +48,8 @@ interface Customer {
   balances: Record<string, number>; // AFN, USD, IRR, PKR
 }
 
-// ---------- Universal conversion engine ----------
-function convert(
+// ---------- Conversion function used only for Exchange (صرافی-مشتری) ----------
+function convertForExchange(
   fromCurrency: string,
   fromAmount: number,
   toCurrency: string,
@@ -61,9 +61,8 @@ function convert(
     return (fromAmount * rate) / rateUnit;
   } else if (rateBaseCurrency === toCurrency) {
     return (fromAmount * rateUnit) / rate;
-  } else {
-    return 0;
   }
+  return 0;
 }
 
 function formatNumber(n: number): string {
@@ -111,7 +110,9 @@ function computeBalances(customers: Customer[], transactions: Transaction[]) {
       const sender = balances[tx.senderId];
       const receiver = balances[tx.receiverId];
       if (sender) {
+        // Deduct transfer amount
         sender[tx.senderCurrency] = (sender[tx.senderCurrency] || 0) - tx.senderAmount;
+        // Deduct commission separately
         if (tx.commission > 0 && tx.commissionCurrency) {
           sender[tx.commissionCurrency] = (sender[tx.commissionCurrency] || 0) - tx.commission;
         }
@@ -137,7 +138,6 @@ export default function CurrencyExchangePage() {
   );
 
   // ---------- Form States ----------
-  // Common
   const [docId, setDocId] = useState(generateDocId());
   const [note, setNote] = useState("");
   const [terms, setTerms] = useState("نقدی");
@@ -160,7 +160,6 @@ export default function CurrencyExchangePage() {
   const [trReceiverCurrency, setTrReceiverCurrency] = useState("AFN");
   const [trReceiverAmount, setTrReceiverAmount] = useState("");
   const [trRate, setTrRate] = useState("1");
-  const [trRateBaseCurrency, setTrRateBaseCurrency] = useState("AFN");
   const [trRateUnit, setTrRateUnit] = useState("1");
   const [trCommission, setTrCommission] = useState("0");
   const [trCommissionCurrency, setTrCommissionCurrency] = useState("AFN");
@@ -170,7 +169,7 @@ export default function CurrencyExchangePage() {
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [viewTx, setViewTx] = useState<Transaction | null>(null);
 
-  // ---------- Auto-calculation: Exchange ----------
+  // ---------- Auto-calculation: Exchange (unchanged) ----------
   const computeExchangePaid = () => {
     if (!exRate || !exReceivedAmount || !exRateUnit) return;
     const received = parseFloat(exReceivedAmount);
@@ -178,7 +177,7 @@ export default function CurrencyExchangePage() {
     const unit = parseFloat(exRateUnit);
     if (isNaN(received) || isNaN(rate) || isNaN(unit) || rate === 0) return;
 
-    const paid = convert(
+    const paid = convertForExchange(
       exReceivedCurrency,
       received,
       exPaidCurrency,
@@ -191,7 +190,7 @@ export default function CurrencyExchangePage() {
 
   useMemo(() => computeExchangePaid(), [exReceivedAmount, exRate, exRateBaseCurrency, exRateUnit, exReceivedCurrency, exPaidCurrency]);
 
-  // ---------- Auto-calculation: Transfer ----------
+  // ---------- NEW: Transfer calculation based on requested formula ----------
   const computeTransferReceiver = () => {
     if (!trRate || !trSenderAmount || !trRateUnit) return;
     const senderAmt = parseFloat(trSenderAmount);
@@ -199,18 +198,12 @@ export default function CurrencyExchangePage() {
     const unit = parseFloat(trRateUnit);
     if (isNaN(senderAmt) || isNaN(rate) || isNaN(unit) || rate === 0) return;
 
-    const receiver = convert(
-      trSenderCurrency,
-      senderAmt,
-      trReceiverCurrency,
-      rate,
-      trRateBaseCurrency,
-      unit
-    );
+    // Formula: receiverAmount = (senderAmount / rateUnit) * rate
+    const receiver = (senderAmt / unit) * rate;
     setTrReceiverAmount(formatNumber(receiver));
   };
 
-  useMemo(() => computeTransferReceiver(), [trSenderAmount, trRate, trRateBaseCurrency, trRateUnit, trSenderCurrency, trReceiverCurrency]);
+  useMemo(() => computeTransferReceiver(), [trSenderAmount, trRate, trRateUnit]);
 
   // ---------- Reset Form ----------
   const resetForm = () => {
@@ -232,13 +225,12 @@ export default function CurrencyExchangePage() {
     setTrReceiverCurrency("AFN");
     setTrReceiverAmount("");
     setTrRate("1");
-    setTrRateBaseCurrency("AFN");
     setTrRateUnit("1");
     setTrCommission("0");
     setTrCommissionCurrency("AFN");
   };
 
-  // ---------- Submit Exchange ----------
+  // ---------- Submit Exchange (unchanged) ----------
   const submitExchange = () => {
     if (!exCustomer || !exReceivedAmount || !exPaidAmount || !exRate || !exRateUnit) return;
     const tx: ExchangeTransaction = {
@@ -263,11 +255,20 @@ export default function CurrencyExchangePage() {
 
   // ---------- Submit Transfer ----------
   const submitTransfer = () => {
-    if (!trSender || !trReceiver || !trSenderAmount || !trReceiverAmount || !trRate || !trRateUnit) return;
+    if (!trSender || !trReceiver || !trSenderAmount || !trRate || !trRateUnit) return;
     if (trSender === trReceiver) {
       alert("فرستنده و گیرنده نمی‌توانند یکسان باشند");
       return;
     }
+
+    const senderAmountNum = parseFloat(trSenderAmount);
+    const rateNum = parseFloat(trRate);
+    const unitNum = parseFloat(trRateUnit);
+    const commissionNum = parseFloat(trCommission) || 0;
+
+    // Recalculate receiver amount using the exact formula
+    const receiverAmountNum = (senderAmountNum / unitNum) * rateNum;
+
     const tx: TransferTransaction = {
       id: docId,
       type: "بین-مشتریان",
@@ -275,13 +276,13 @@ export default function CurrencyExchangePage() {
       senderId: trSender,
       receiverId: trReceiver,
       senderCurrency: trSenderCurrency,
-      senderAmount: parseFloat(trSenderAmount),
+      senderAmount: senderAmountNum,
       receiverCurrency: trReceiverCurrency,
-      receiverAmount: parseFloat(trReceiverAmount),
-      rate: parseFloat(trRate),
-      rateBaseCurrency: trRateBaseCurrency,
-      rateUnit: parseFloat(trRateUnit),
-      commission: parseFloat(trCommission) || 0,
+      receiverAmount: receiverAmountNum,
+      rate: rateNum,
+      rateBaseCurrency: trSenderCurrency,  // Not used in calculation but stored as sender currency for reference
+      rateUnit: unitNum,
+      commission: commissionNum,
       commissionCurrency: trCommissionCurrency,
       note,
       terms,
@@ -332,7 +333,7 @@ export default function CurrencyExchangePage() {
       const receiver = customers.find((c) => c.id === tx.receiverId);
       content += `<p><strong>فرستنده:</strong> ${sender?.name} | ${tx.senderAmount} ${currencyLabels[tx.senderCurrency]}</p>`;
       content += `<p><strong>گیرنده:</strong> ${receiver?.name} | ${tx.receiverAmount} ${currencyLabels[tx.receiverCurrency]}</p>`;
-      content += `<p><strong>نرخ:</strong> ${tx.rateUnit} ${currencyLabels[tx.rateBaseCurrency]} = ${tx.rate} ${currencyLabels[tx.rateBaseCurrency === tx.senderCurrency ? tx.receiverCurrency : tx.senderCurrency]}</p>`;
+      content += `<p><strong>نرخ:</strong> ${tx.rateUnit} ${currencyLabels[tx.senderCurrency]} = ${tx.rate} ${currencyLabels[tx.receiverCurrency]}</p>`;
       if (tx.commission > 0) {
         content += `<p><strong>کارمزد:</strong> ${tx.commission} ${currencyLabels[tx.commissionCurrency]}</p>`;
       }
@@ -346,14 +347,12 @@ export default function CurrencyExchangePage() {
     w.print();
   };
 
-  // ---------- Render helpers ----------
   const customerName = (id: string) => customers.find((c) => c.id === id)?.name || id;
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-800">معاملات ارزی</h1>
 
-      {/* Tab buttons */}
       <div className="flex gap-2 border-b pb-2">
         <button
           onClick={() => setActiveTab("صرافی-مشتری")}
@@ -377,7 +376,7 @@ export default function CurrencyExchangePage() {
         </button>
       </div>
 
-      {/* Exchange Form */}
+      {/* Exchange Form (unchanged) */}
       {activeTab === "صرافی-مشتری" ? (
         <div className="bg-white rounded-xl shadow p-5">
           <h2 className="text-lg font-semibold text-gray-700 mb-4">تبادل ارز</h2>
@@ -452,7 +451,7 @@ export default function CurrencyExchangePage() {
           </div>
         </div>
       ) : (
-        /* Transfer Form */
+        /* Transfer Form with new formula */
         <div className="bg-white rounded-xl shadow p-5">
           <h2 className="text-lg font-semibold text-gray-700 mb-4">تبادل بین حساب مشتریان</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -509,13 +508,6 @@ export default function CurrencyExchangePage() {
             <div>
               <label className="text-sm text-gray-600 font-bold">نرخ تبدیل</label>
               <input type="number" step="any" value={trRate} onChange={(e) => setTrRate(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" />
-            </div>
-            <div>
-              <label className="text-sm text-gray-600 font-bold">مبنای نرخ (ارز پایه)</label>
-              <select value={trRateBaseCurrency} onChange={(e) => setTrRateBaseCurrency(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
-                <option value={trSenderCurrency}>{currencyLabels[trSenderCurrency]} (فرستنده)</option>
-                <option value={trReceiverCurrency}>{currencyLabels[trReceiverCurrency]} (گیرنده)</option>
-              </select>
             </div>
             <div>
               <label className="text-sm text-gray-600 font-bold">واحد نرخ (مثلاً 1، 100، 1000)</label>
@@ -626,17 +618,10 @@ export default function CurrencyExchangePage() {
                     }
                   </td>
                   <td className="py-3 px-2 text-xs">
-                    {`${tx.rateUnit} ${currencyLabels[tx.rateBaseCurrency]} = ${tx.rate} ${
-                      tx.rateBaseCurrency ===
-                        (tx.type === "صرافی-مشتری" ? tx.receivedCurrency : tx.senderCurrency)
-                        ? (tx.type === "صرافی-مشتری" ? tx.paidCurrency : tx.receiverCurrency)
-                        : (tx.type === "صرافی-مشتری" ? tx.receivedCurrency : tx.senderCurrency)
-                    } ${currencyLabels[
-                      tx.rateBaseCurrency ===
-                        (tx.type === "صرافی-مشتری" ? tx.receivedCurrency : tx.senderCurrency)
-                        ? (tx.type === "صرافی-مشتری" ? tx.paidCurrency : tx.receiverCurrency)
-                        : (tx.type === "صرافی-مشتری" ? tx.receivedCurrency : tx.senderCurrency)
-                    ]}`}
+                    {tx.type === "صرافی-مشتری"
+                      ? `${tx.rateUnit} ${currencyLabels[tx.rateBaseCurrency]} = ${tx.rate} ${currencyLabels[tx.rateBaseCurrency === tx.receivedCurrency ? tx.paidCurrency : tx.receivedCurrency]}`
+                      : `${tx.rateUnit} ${currencyLabels[tx.senderCurrency]} = ${tx.rate} ${currencyLabels[tx.receiverCurrency]}`
+                    }
                   </td>
                   <td className="py-3 px-2 text-xs">{tx.terms}</td>
                   <td className="py-3 px-2">
@@ -679,8 +664,8 @@ export default function CurrencyExchangePage() {
                 <>
                   <p><strong>فرستنده:</strong> {customerName(viewTx.senderId)} | {viewTx.senderAmount} {currencyLabels[viewTx.senderCurrency]}</p>
                   <p><strong>گیرنده:</strong> {customerName(viewTx.receiverId)} | {viewTx.receiverAmount} {currencyLabels[viewTx.receiverCurrency]}</p>
+                  <p><strong>نرخ:</strong> {viewTx.rateUnit} {currencyLabels[viewTx.senderCurrency]} = {viewTx.rate} {currencyLabels[viewTx.receiverCurrency]}</p>
                   {viewTx.commission > 0 && <p><strong>کارمزد:</strong> {viewTx.commission} {currencyLabels[viewTx.commissionCurrency]}</p>}
-                  <p><strong>نرخ:</strong> {viewTx.rateUnit} {currencyLabels[viewTx.rateBaseCurrency]} = {viewTx.rate} {currencyLabels[viewTx.rateBaseCurrency === viewTx.senderCurrency ? viewTx.receiverCurrency : viewTx.senderCurrency]}</p>
                 </>
               )}
               <p><strong>مفاد:</strong> {viewTx.terms}</p>
@@ -692,7 +677,7 @@ export default function CurrencyExchangePage() {
         </div>
       )}
 
-      {/* Edit Modal */}
+      {/* Edit Modal (simplified, doesn't recalculate formula) */}
       {editMode && editingTx && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl p-6 max-w-lg w-full shadow-2xl">
@@ -868,17 +853,6 @@ export default function CurrencyExchangePage() {
                     onChange={(e) => setEditingTx({ ...editingTx, rate: +e.target.value } as TransferTransaction)}
                     className="w-full border rounded p-1"
                   />
-                </div>
-                <div>
-                  <label className="font-bold">مبنای نرخ</label>
-                  <select
-                    value={(editingTx as TransferTransaction).rateBaseCurrency}
-                    onChange={(e) => setEditingTx({ ...editingTx, rateBaseCurrency: e.target.value } as TransferTransaction)}
-                    className="w-full border rounded p-1"
-                  >
-                    <option value={(editingTx as TransferTransaction).senderCurrency}>{(editingTx as TransferTransaction).senderCurrency}</option>
-                    <option value={(editingTx as TransferTransaction).receiverCurrency}>{(editingTx as TransferTransaction).receiverCurrency}</option>
-                  </select>
                 </div>
                 <div>
                   <label className="font-bold">واحد نرخ</label>
