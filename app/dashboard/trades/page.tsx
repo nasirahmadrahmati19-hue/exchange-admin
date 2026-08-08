@@ -53,7 +53,9 @@ interface Customer {
 // IRR = 1000 تومان
 // PKR = 1 کلدار
 //
+// نکته:
 // واحد 1000 برای تومان فقط در موتور محاسبه داخلی استفاده می‌شود.
+// در رابط کاربری نمایش داده نمی‌شود.
 // ============================================================
 
 const baseUnits: Record<string, number> = {
@@ -116,7 +118,9 @@ function getCanonicalPair(
 // موتور اصلی تبدیل ارز
 // ============================================================
 //
-// منطق اصلی بدون تغییر:
+// منطق:
+//
+// نرخ برای جفت ارز ثابت است و با تغییر جهت معامله معکوس نمی‌شود.
 //
 // مثال دالر:
 //
@@ -160,18 +164,28 @@ function convertAmount(
   const base2 = baseUnits[currency2] || 1;
 
   // currency1 -> currency2
-  if (
-    fromCurrency === currency1 &&
-    toCurrency === currency2
-  ) {
+  //
+  // مثال:
+  // AFN -> USD
+  // 65000 / 65 * 1 = 1000
+  //
+  // AFN -> IRR
+  // 15200 / 0.38 * 1000 = 40,000,000
+
+  if (fromCurrency === currency1 && toCurrency === currency2) {
     return (amount / rate) * base2;
   }
 
   // currency2 -> currency1
-  if (
-    fromCurrency === currency2 &&
-    toCurrency === currency1
-  ) {
+  //
+  // مثال:
+  // USD -> AFN
+  // 1000 / 1 * 65 = 65000
+  //
+  // IRR -> AFN
+  // 40,000,000 / 1000 * 0.38 = 15,200
+
+  if (fromCurrency === currency2 && toCurrency === currency1) {
     return (amount / base2) * rate;
   }
 
@@ -198,11 +212,9 @@ function formatRateQuote(
 
   const base2 = baseUnits[currency2] || 1;
 
-  return `${base2.toLocaleString()} ${
-    currencyLabels[currency2]
-  } = ${formatNumber(rate)} ${
-    currencyLabels[currency1]
-  }`;
+  return `${base2.toLocaleString()} ${currencyLabels[currency2]} = ${formatNumber(
+    rate
+  )} ${currencyLabels[currency1]}`;
 }
 
 // ============================================================
@@ -253,7 +265,7 @@ const initialCustomers: Customer[] = [
 ];
 
 // ============================================================
-// ساخت شماره سند داخلی
+// ساخت شماره سند
 // ============================================================
 
 const generateDocId = () => {
@@ -279,10 +291,7 @@ function computeBalances(
   customers: Customer[],
   transactions: Transaction[]
 ) {
-  const balances: Record<
-    string,
-    Record<string, number>
-  > = {};
+  const balances: Record<string, Record<string, number>> = {};
 
   customers.forEach((customer) => {
     balances[customer.id] = {
@@ -298,8 +307,7 @@ function computeBalances(
     // ----------------------------------------------------------
 
     if (tx.type === "صرافی-مشتری") {
-      const customerBalance =
-        balances[tx.customerId];
+      const customerBalance = balances[tx.customerId];
 
       if (!customerBalance) return;
 
@@ -321,11 +329,8 @@ function computeBalances(
     // ----------------------------------------------------------
 
     if (tx.type === "بین-مشتریان") {
-      const senderBalance =
-        balances[tx.senderId];
-
-      const receiverBalance =
-        balances[tx.receiverId];
+      const senderBalance = balances[tx.senderId];
+      const receiverBalance = balances[tx.receiverId];
 
       // کسر مبلغ اصلی از فرستنده
       if (senderBalance) {
@@ -338,21 +343,17 @@ function computeBalances(
           tx.commission > 0 &&
           tx.commissionCurrency
         ) {
-          senderBalance[
-            tx.commissionCurrency
-          ] =
-            (senderBalance[
-              tx.commissionCurrency
-            ] || 0) - tx.commission;
+          senderBalance[tx.commissionCurrency] =
+            (senderBalance[tx.commissionCurrency] || 0) -
+            tx.commission;
         }
       }
 
       // اضافه کردن مبلغ به حساب گیرنده
       if (receiverBalance) {
         receiverBalance[tx.receiverCurrency] =
-          (receiverBalance[
-            tx.receiverCurrency
-          ] || 0) + tx.receiverAmount;
+          (receiverBalance[tx.receiverCurrency] || 0) +
+          tx.receiverAmount;
       }
     }
   });
@@ -365,23 +366,20 @@ function computeBalances(
 // ============================================================
 
 export default function CurrencyExchangePage() {
-  const [customers] =
-    useState<Customer[]>(initialCustomers);
+  const [customers] = useState<Customer[]>(
+    initialCustomers
+  );
 
-  const [transactions, setTransactions] =
-    useState<Transaction[]>([]);
+  const [transactions, setTransactions] = useState<
+    Transaction[]
+  >([]);
 
-  const [activeTab, setActiveTab] =
-    useState<
-      "صرافی-مشتری" | "بین-مشتریان"
-    >("صرافی-مشتری");
+  const [activeTab, setActiveTab] = useState<
+    "صرافی-مشتری" | "بین-مشتریان"
+  >("صرافی-مشتری");
 
   const liveBalances = useMemo(
-    () =>
-      computeBalances(
-        customers,
-        transactions
-      ),
+    () => computeBalances(customers, transactions),
     [customers, transactions]
   );
 
@@ -389,106 +387,69 @@ export default function CurrencyExchangePage() {
   // Form States
   // ==========================================================
 
-  const [docId, setDocId] =
-    useState(generateDocId());
-
+  const [docId, setDocId] = useState(generateDocId());
   const [note, setNote] = useState("");
-
-  const [terms, setTerms] =
-    useState("نقدی");
+  const [terms, setTerms] = useState("نقدی");
 
   // ==========================================================
   // Exchange form
   // ==========================================================
 
-  const [exCustomer, setExCustomer] =
+  const [exCustomer, setExCustomer] = useState("");
+
+  const [exReceivedCurrency, setExReceivedCurrency] =
+    useState("AFN");
+
+  const [exReceivedAmount, setExReceivedAmount] =
     useState("");
 
-  const [
-    exReceivedCurrency,
-    setExReceivedCurrency,
-  ] = useState("AFN");
+  const [exPaidCurrency, setExPaidCurrency] =
+    useState("USD");
 
-  const [
-    exReceivedAmount,
-    setExReceivedAmount,
-  ] = useState("");
-
-  const [
-    exPaidCurrency,
-    setExPaidCurrency,
-  ] = useState("USD");
-
-  const [
-    exPaidAmount,
-    setExPaidAmount,
-  ] = useState("");
-
-  const [exRate, setExRate] =
+  const [exPaidAmount, setExPaidAmount] =
     useState("");
+
+  const [exRate, setExRate] = useState("");
 
   // ==========================================================
   // Transfer form
   // ==========================================================
 
-  const [trSender, setTrSender] =
+  const [trSender, setTrSender] = useState("");
+
+  const [trSenderCurrency, setTrSenderCurrency] =
+    useState("AFN");
+
+  const [trSenderAmount, setTrSenderAmount] =
     useState("");
 
-  const [
-    trSenderCurrency,
-    setTrSenderCurrency,
-  ] = useState("AFN");
+  const [trReceiver, setTrReceiver] = useState("");
 
-  const [
-    trSenderAmount,
-    setTrSenderAmount,
-  ] = useState("");
+  const [trReceiverCurrency, setTrReceiverCurrency] =
+    useState("AFN");
 
-  const [trReceiver, setTrReceiver] =
+  const [trReceiverAmount, setTrReceiverAmount] =
     useState("");
 
-  const [
-    trReceiverCurrency,
-    setTrReceiverCurrency,
-  ] = useState("AFN");
+  const [trRate, setTrRate] = useState("");
 
-  const [
-    trReceiverAmount,
-    setTrReceiverAmount,
-  ] = useState("");
+  const [trCommission, setTrCommission] =
+    useState("0");
 
-  const [trRate, setTrRate] =
-    useState("");
-
-  const [
-    trCommission,
-    setTrCommission,
-  ] = useState("0");
-
-  const [
-    trCommissionCurrency,
-    setTrCommissionCurrency,
-  ] = useState("AFN");
+  const [trCommissionCurrency, setTrCommissionCurrency] =
+    useState("AFN");
 
   // ==========================================================
   // Edit / View
   // ==========================================================
 
-  const [editMode, setEditMode] =
-    useState(false);
+  const [editMode, setEditMode] = useState(false);
 
   const [editingTx, setEditingTx] =
     useState<Transaction | null>(null);
 
   const [viewTx, setViewTx] =
     useState<Transaction | null>(null);
-
-  // ==========================================================
-  // منوی عملیات
-  // ==========================================================
-
-  const [openOperationId, setOpenOperationId] =
-    useState<string | null>(null);
 
   // ==========================================================
   // محاسبه تبادل صرافی با مشتری
@@ -500,9 +461,7 @@ export default function CurrencyExchangePage() {
       return;
     }
 
-    const received =
-      parseFloat(exReceivedAmount);
-
+    const received = parseFloat(exReceivedAmount);
     const rate = parseFloat(exRate);
 
     if (
@@ -521,9 +480,7 @@ export default function CurrencyExchangePage() {
       rate
     );
 
-    setExPaidAmount(
-      formatNumber(paid)
-    );
+    setExPaidAmount(formatNumber(paid));
   };
 
   useEffect(() => {
@@ -545,9 +502,7 @@ export default function CurrencyExchangePage() {
       return;
     }
 
-    const senderAmount =
-      parseFloat(trSenderAmount);
-
+    const senderAmount = parseFloat(trSenderAmount);
     const rate = parseFloat(trRate);
 
     if (
@@ -559,13 +514,12 @@ export default function CurrencyExchangePage() {
       return;
     }
 
-    const receiverAmount =
-      convertAmount(
-        senderAmount,
-        trSenderCurrency,
-        trReceiverCurrency,
-        rate
-      );
+    const receiverAmount = convertAmount(
+      senderAmount,
+      trSenderCurrency,
+      trReceiverCurrency,
+      rate
+    );
 
     setTrReceiverAmount(
       formatNumber(receiverAmount)
@@ -627,11 +581,11 @@ export default function CurrencyExchangePage() {
       return;
     }
 
-    const receivedAmount =
-      parseFloat(exReceivedAmount);
+    const receivedAmount = parseFloat(
+      exReceivedAmount
+    );
 
-    const paidAmount =
-      parseFloat(exPaidAmount);
+    const paidAmount = parseFloat(exPaidAmount);
 
     const rate = parseFloat(exRate);
 
@@ -700,16 +654,13 @@ export default function CurrencyExchangePage() {
     const senderAmountNum =
       parseFloat(trSenderAmount);
 
-    const rateNum =
-      parseFloat(trRate);
+    const rateNum = parseFloat(trRate);
 
     const commissionNum =
       parseFloat(trCommission) || 0;
 
     if (
-      !Number.isFinite(
-        senderAmountNum
-      ) ||
+      !Number.isFinite(senderAmountNum) ||
       !Number.isFinite(rateNum) ||
       rateNum <= 0
     ) {
@@ -717,9 +668,7 @@ export default function CurrencyExchangePage() {
     }
 
     if (
-      !Number.isFinite(
-        commissionNum
-      ) ||
+      !Number.isFinite(commissionNum) ||
       commissionNum < 0
     ) {
       return;
@@ -782,15 +731,7 @@ export default function CurrencyExchangePage() {
   // ابطال معامله
   // ==========================================================
 
-  const voidTransaction = (
-    id: string
-  ) => {
-    const confirmed = window.confirm(
-      "آیا از ابطال این معامله اطمینان دارید؟"
-    );
-
-    if (!confirmed) return;
-
+  const voidTransaction = (id: string) => {
     setTransactions((prev) =>
       prev.map((tx) =>
         tx.id === id
@@ -801,23 +742,18 @@ export default function CurrencyExchangePage() {
           : tx
       )
     );
-
-    setOpenOperationId(null);
   };
 
   // ==========================================================
   // ویرایش
   // ==========================================================
 
-  const startEdit = (
-    tx: Transaction
-  ) => {
+  const startEdit = (tx: Transaction) => {
     setEditingTx({
       ...tx,
     });
 
     setEditMode(true);
-    setOpenOperationId(null);
   };
 
   const saveEdit = () => {
@@ -841,51 +777,27 @@ export default function CurrencyExchangePage() {
   // چاپ رسید
   // ==========================================================
 
-  const printReceipt = (
-    tx: Transaction
-  ) => {
-    setOpenOperationId(null);
-
-    const w = window.open(
-      "",
-      "_blank"
-    );
+  const printReceipt = (tx: Transaction) => {
+    const w = window.open("", "_blank");
 
     if (!w) return;
 
     let content = `
       <div style="
         direction:rtl;
-        font-family:Tahoma, Arial, sans-serif;
-        padding:30px;
-        max-width:700px;
-        margin:auto;
+        font-family:Tahoma;
+        padding:20px;
       ">
     `;
 
-    content += `
-      <h2 style="text-align:center;">
-        رسید معامله
-      </h2>
-    `;
-
-    content += `
-      <hr />
-    `;
-
-    content += `
-      <p>
-        <strong>شماره:</strong>
-        ${tx.id}
-      </p>
-    `;
+    content += `<h2>رسید معامله - ${tx.id}</h2>`;
 
     content += `
       <p>
         <strong>تاریخ:</strong>
-        ${new Date(
-          tx.date
-        ).toLocaleString("fa-IR")}
+        ${new Date(tx.date).toLocaleString(
+          "fa-IR"
+        )}
       </p>
     `;
 
@@ -900,50 +812,31 @@ export default function CurrencyExchangePage() {
     // صرافی با مشتری
     // --------------------------------------------------------
 
-    if (
-      tx.type ===
-      "صرافی-مشتری"
-    ) {
-      const customer =
-        customers.find(
-          (c) =>
-            c.id ===
-            tx.customerId
-        );
+    if (tx.type === "صرافی-مشتری") {
+      const customer = customers.find(
+        (c) => c.id === tx.customerId
+      );
 
       content += `
         <p>
           <strong>مشتری:</strong>
-          ${customer?.name ||
-          tx.customerId}
+          ${customer?.name || tx.customerId}
         </p>
       `;
 
       content += `
         <p>
           <strong>دریافت:</strong>
-          ${formatNumber(
-            tx.receivedAmount
-          )}
-          ${
-            currencyLabels[
-              tx.receivedCurrency
-            ]
-          }
+          ${formatNumber(tx.receivedAmount)}
+          ${currencyLabels[tx.receivedCurrency]}
         </p>
       `;
 
       content += `
         <p>
           <strong>پرداخت:</strong>
-          ${formatNumber(
-            tx.paidAmount
-          )}
-          ${
-            currencyLabels[
-              tx.paidCurrency
-            ]
-          }
+          ${formatNumber(tx.paidAmount)}
+          ${currencyLabels[tx.paidCurrency]}
         </p>
       `;
 
@@ -964,51 +857,31 @@ export default function CurrencyExchangePage() {
     // --------------------------------------------------------
 
     else {
-      const sender =
-        customers.find(
-          (c) =>
-            c.id ===
-            tx.senderId
-        );
+      const sender = customers.find(
+        (c) => c.id === tx.senderId
+      );
 
-      const receiver =
-        customers.find(
-          (c) =>
-            c.id ===
-            tx.receiverId
-        );
+      const receiver = customers.find(
+        (c) => c.id === tx.receiverId
+      );
 
       content += `
         <p>
           <strong>فرستنده:</strong>
-          ${sender?.name ||
-          tx.senderId}
+          ${sender?.name || tx.senderId}
           |
-          ${formatNumber(
-            tx.senderAmount
-          )}
-          ${
-            currencyLabels[
-              tx.senderCurrency
-            ]
-          }
+          ${formatNumber(tx.senderAmount)}
+          ${currencyLabels[tx.senderCurrency]}
         </p>
       `;
 
       content += `
         <p>
           <strong>گیرنده:</strong>
-          ${receiver?.name ||
-          tx.receiverId}
+          ${receiver?.name || tx.receiverId}
           |
-          ${formatNumber(
-            tx.receiverAmount
-          )}
-          ${
-            currencyLabels[
-              tx.receiverCurrency
-            ]
-          }
+          ${formatNumber(tx.receiverAmount)}
+          ${currencyLabels[tx.receiverCurrency]}
         </p>
       `;
 
@@ -1027,14 +900,8 @@ export default function CurrencyExchangePage() {
         content += `
           <p>
             <strong>کارمزد:</strong>
-            ${formatNumber(
-              tx.commission
-            )}
-            ${
-              currencyLabels[
-                tx.commissionCurrency
-              ]
-            }
+            ${formatNumber(tx.commission)}
+            ${currencyLabels[tx.commissionCurrency]}
           </p>
         `;
       }
@@ -1058,38 +925,21 @@ export default function CurrencyExchangePage() {
       <p>
         <strong>وضعیت:</strong>
         ${
-          tx.status ===
-          "voided"
+          tx.status === "voided"
             ? "ابطال شده"
             : "فعال"
         }
       </p>
     `;
 
-    content += `
-      <hr />
-      <p style="text-align:center;">
-        با تشکر
-      </p>
-      </div>
-    `;
+    content += `</div>`;
 
-    w.document.write(
-      content
-    );
-
+    w.document.write(content);
     w.document.close();
-
-    w.focus();
-
-    setTimeout(() => {
-      w.print();
-    }, 300);
+    w.print();
   };
 
-  const customerName = (
-    id: string
-  ) =>
+  const customerName = (id: string) =>
     customers.find(
       (c) => c.id === id
     )?.name || id;
@@ -1100,22 +950,12 @@ export default function CurrencyExchangePage() {
 
   return (
     <div
-      dir="rtl"
       className="space-y-6"
+      dir="rtl"
     >
-      {/* ======================================================
-          عنوان
-      ====================================================== */}
-
-      <div>
-        <h1 className="text-2xl font-bold text-gray-800">
-          معاملات ارزی
-        </h1>
-
-        <p className="text-sm text-gray-500 mt-1">
-          مدیریت تبادل ارز و انتقال بین حساب مشتریان
-        </p>
-      </div>
+      <h1 className="text-2xl font-bold text-gray-800">
+        معاملات ارزی
+      </h1>
 
       {/* ======================================================
           Tabs
@@ -1124,13 +964,10 @@ export default function CurrencyExchangePage() {
       <div className="flex gap-2 border-b pb-2">
         <button
           onClick={() =>
-            setActiveTab(
-              "صرافی-مشتری"
-            )
+            setActiveTab("صرافی-مشتری")
           }
           className={`px-4 py-2 rounded-t-lg text-sm font-medium transition ${
-            activeTab ===
-            "صرافی-مشتری"
+            activeTab === "صرافی-مشتری"
               ? "bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow"
               : "bg-gray-100 text-gray-600 hover:bg-gray-200"
           }`}
@@ -1140,13 +977,10 @@ export default function CurrencyExchangePage() {
 
         <button
           onClick={() =>
-            setActiveTab(
-              "بین-مشتریان"
-            )
+            setActiveTab("بین-مشتریان")
           }
           className={`px-4 py-2 rounded-t-lg text-sm font-medium transition ${
-            activeTab ===
-            "بین-مشتریان"
+            activeTab === "بین-مشتریان"
               ? "bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow"
               : "bg-gray-100 text-gray-600 hover:bg-gray-200"
           }`}
@@ -1159,14 +993,14 @@ export default function CurrencyExchangePage() {
           تب صرافی با مشتری
       ====================================================== */}
 
-      {activeTab ===
-      "صرافی-مشتری" ? (
+      {activeTab === "صرافی-مشتری" ? (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-lg font-semibold text-gray-800 mb-6">
             تبادل ارز
           </h2>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+
             {/* اطلاعات مشتری و دریافتی */}
 
             <div className="bg-gray-50 rounded-xl p-5 border border-gray-100">
@@ -1175,15 +1009,14 @@ export default function CurrencyExchangePage() {
               </h3>
 
               <div className="space-y-4">
+
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">
                     مشتری
                   </label>
 
                   <select
-                    value={
-                      exCustomer
-                    }
+                    value={exCustomer}
                     onChange={(e) =>
                       setExCustomer(
                         e.target.value
@@ -1196,22 +1029,13 @@ export default function CurrencyExchangePage() {
                     </option>
 
                     {customers.map(
-                      (
-                        customer,
-                        index
-                      ) => (
+                      (customer, index) => (
                         <option
-                          key={
-                            customer.id
-                          }
-                          value={
-                            customer.id
-                          }
+                          key={customer.id}
+                          value={customer.id}
                         >
                           {index + 1}.{" "}
-                          {
-                            customer.name
-                          }
+                          {customer.name}
                         </option>
                       )
                     )}
@@ -1235,16 +1059,10 @@ export default function CurrencyExchangePage() {
                     className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm"
                   >
                     {currencies.map(
-                      (
-                        currency
-                      ) => (
+                      (currency) => (
                         <option
-                          key={
-                            currency
-                          }
-                          value={
-                            currency
-                          }
+                          key={currency}
+                          value={currency}
                         >
                           {
                             currencyLabels[
@@ -1275,6 +1093,7 @@ export default function CurrencyExchangePage() {
                     className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm"
                   />
                 </div>
+
               </div>
             </div>
 
@@ -1286,15 +1105,14 @@ export default function CurrencyExchangePage() {
               </h3>
 
               <div className="space-y-4">
+
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">
                     ارز پرداختی
                   </label>
 
                   <select
-                    value={
-                      exPaidCurrency
-                    }
+                    value={exPaidCurrency}
                     onChange={(e) =>
                       setExPaidCurrency(
                         e.target.value
@@ -1303,16 +1121,10 @@ export default function CurrencyExchangePage() {
                     className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm"
                   >
                     {currencies.map(
-                      (
-                        currency
-                      ) => (
+                      (currency) => (
                         <option
-                          key={
-                            currency
-                          }
-                          value={
-                            currency
-                          }
+                          key={currency}
+                          value={currency}
                         >
                           {
                             currencyLabels[
@@ -1332,13 +1144,12 @@ export default function CurrencyExchangePage() {
 
                   <input
                     type="text"
-                    value={
-                      exPaidAmount
-                    }
+                    value={exPaidAmount}
                     readOnly
                     className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-gray-100 text-gray-800 text-sm"
                   />
                 </div>
+
               </div>
             </div>
           </div>
@@ -1355,9 +1166,7 @@ export default function CurrencyExchangePage() {
               step="any"
               value={exRate}
               onChange={(e) =>
-                setExRate(
-                  e.target.value
-                )
+                setExRate(e.target.value)
               }
               placeholder={
                 exReceivedCurrency ===
@@ -1370,6 +1179,7 @@ export default function CurrencyExchangePage() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-6">
+
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">
                 مفاد معامله
@@ -1378,9 +1188,7 @@ export default function CurrencyExchangePage() {
               <input
                 value={terms}
                 onChange={(e) =>
-                  setTerms(
-                    e.target.value
-                  )
+                  setTerms(e.target.value)
                 }
                 className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm"
               />
@@ -1394,52 +1202,52 @@ export default function CurrencyExchangePage() {
               <input
                 value={note}
                 onChange={(e) =>
-                  setNote(
-                    e.target.value
-                  )
+                  setNote(e.target.value)
                 }
                 className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm"
               />
             </div>
+
           </div>
 
           <button
-            onClick={
-              submitExchange
-            }
+            onClick={submitExchange}
             className="w-full h-14 rounded-2xl bg-[#092F3A] text-white font-medium hover:bg-[#0a3f4a]"
           >
             ثبت معامله
           </button>
         </div>
       ) : (
+
         /* ====================================================
            تب بین مشتریان
         ==================================================== */
 
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+
           <h2 className="text-lg font-semibold text-gray-800 mb-6">
             تبادل بین حساب مشتریان
           </h2>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+
             {/* فرستنده */}
 
             <div className="bg-blue-50/50 rounded-xl p-5 border border-blue-100">
+
               <h3 className="text-sm font-bold text-blue-700 mb-4">
                 اطلاعات فرستنده
               </h3>
 
               <div className="space-y-4">
+
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">
                     مشتری فرستنده
                   </label>
 
                   <select
-                    value={
-                      trSender
-                    }
+                    value={trSender}
                     onChange={(e) =>
                       setTrSender(
                         e.target.value
@@ -1452,22 +1260,13 @@ export default function CurrencyExchangePage() {
                     </option>
 
                     {customers.map(
-                      (
-                        customer,
-                        index
-                      ) => (
+                      (customer, index) => (
                         <option
-                          key={
-                            customer.id
-                          }
-                          value={
-                            customer.id
-                          }
+                          key={customer.id}
+                          value={customer.id}
                         >
                           {index + 1}.{" "}
-                          {
-                            customer.name
-                          }
+                          {customer.name}
                         </option>
                       )
                     )}
@@ -1480,9 +1279,7 @@ export default function CurrencyExchangePage() {
                   </label>
 
                   <select
-                    value={
-                      trSenderCurrency
-                    }
+                    value={trSenderCurrency}
                     onChange={(e) =>
                       setTrSenderCurrency(
                         e.target.value
@@ -1491,16 +1288,10 @@ export default function CurrencyExchangePage() {
                     className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm"
                   >
                     {currencies.map(
-                      (
-                        currency
-                      ) => (
+                      (currency) => (
                         <option
-                          key={
-                            currency
-                          }
-                          value={
-                            currency
-                          }
+                          key={currency}
+                          value={currency}
                         >
                           {
                             currencyLabels[
@@ -1520,9 +1311,7 @@ export default function CurrencyExchangePage() {
 
                   <input
                     type="number"
-                    value={
-                      trSenderAmount
-                    }
+                    value={trSenderAmount}
                     onChange={(e) =>
                       setTrSenderAmount(
                         e.target.value
@@ -1531,26 +1320,27 @@ export default function CurrencyExchangePage() {
                     className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm"
                   />
                 </div>
+
               </div>
             </div>
 
             {/* گیرنده */}
 
             <div className="bg-green-50/50 rounded-xl p-5 border border-green-100">
+
               <h3 className="text-sm font-bold text-green-700 mb-4">
                 اطلاعات گیرنده
               </h3>
 
               <div className="space-y-4">
+
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">
                     مشتری گیرنده
                   </label>
 
                   <select
-                    value={
-                      trReceiver
-                    }
+                    value={trReceiver}
                     onChange={(e) =>
                       setTrReceiver(
                         e.target.value
@@ -1563,22 +1353,13 @@ export default function CurrencyExchangePage() {
                     </option>
 
                     {customers.map(
-                      (
-                        customer,
-                        index
-                      ) => (
+                      (customer, index) => (
                         <option
-                          key={
-                            customer.id
-                          }
-                          value={
-                            customer.id
-                          }
+                          key={customer.id}
+                          value={customer.id}
                         >
                           {index + 1}.{" "}
-                          {
-                            customer.name
-                          }
+                          {customer.name}
                         </option>
                       )
                     )}
@@ -1602,16 +1383,10 @@ export default function CurrencyExchangePage() {
                     className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm"
                   >
                     {currencies.map(
-                      (
-                        currency
-                      ) => (
+                      (currency) => (
                         <option
-                          key={
-                            currency
-                          }
-                          value={
-                            currency
-                          }
+                          key={currency}
+                          value={currency}
                         >
                           {
                             currencyLabels[
@@ -1638,6 +1413,7 @@ export default function CurrencyExchangePage() {
                     className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-gray-100 text-gray-800 text-sm"
                   />
                 </div>
+
               </div>
             </div>
           </div>
@@ -1645,6 +1421,7 @@ export default function CurrencyExchangePage() {
           {/* نرخ */}
 
           <div className="mb-6">
+
             <label className="block text-sm font-bold text-gray-700 mb-2">
               نرخ تبدیل
             </label>
@@ -1654,9 +1431,7 @@ export default function CurrencyExchangePage() {
               step="any"
               value={trRate}
               onChange={(e) =>
-                setTrRate(
-                  e.target.value
-                )
+                setTrRate(e.target.value)
               }
               placeholder={
                 trSenderCurrency ===
@@ -1671,6 +1446,7 @@ export default function CurrencyExchangePage() {
           {/* کارمزد و یادداشت */}
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mb-6">
+
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">
                 کارمزد (اختیاری)
@@ -1678,9 +1454,7 @@ export default function CurrencyExchangePage() {
 
               <input
                 type="number"
-                value={
-                  trCommission
-                }
+                value={trCommission}
                 onChange={(e) =>
                   setTrCommission(
                     e.target.value
@@ -1731,19 +1505,16 @@ export default function CurrencyExchangePage() {
               <input
                 value={note}
                 onChange={(e) =>
-                  setNote(
-                    e.target.value
-                  )
+                  setNote(e.target.value)
                 }
                 className="h-14 rounded-[14px] w-full px-4 py-2 border border-gray-200 bg-white text-gray-800 text-sm"
               />
             </div>
+
           </div>
 
           <button
-            onClick={
-              submitTransfer
-            }
+            onClick={submitTransfer}
             className="w-full h-14 rounded-2xl bg-[#092F3A] text-white font-medium hover:bg-[#0a3f4a]"
           >
             ثبت معامله
@@ -1756,14 +1527,19 @@ export default function CurrencyExchangePage() {
       ====================================================== */}
 
       <div className="bg-white rounded-xl shadow p-5">
+
         <h2 className="text-lg font-semibold text-gray-700 mb-3">
           موجودی فعلی مشتریان
         </h2>
 
         <div className="overflow-x-auto">
+
           <table className="min-w-full text-sm">
+
             <thead className="bg-gray-50 text-gray-600">
+
               <tr>
+
                 <th className="py-2 px-3 text-right font-bold">
                   مشتری
                 </th>
@@ -1782,10 +1558,13 @@ export default function CurrencyExchangePage() {
                     </th>
                   )
                 )}
+
               </tr>
+
             </thead>
 
             <tbody className="divide-y divide-gray-100">
+
               {customers.map(
                 (customer) => {
                   const balance =
@@ -1796,25 +1575,18 @@ export default function CurrencyExchangePage() {
 
                   return (
                     <tr
-                      key={
-                        customer.id
-                      }
+                      key={customer.id}
                       className="hover:bg-gray-50"
                     >
+
                       <td className="py-2 px-3 font-medium">
-                        {
-                          customer.name
-                        }
+                        {customer.name}
                       </td>
 
                       {currencies.map(
-                        (
-                          currency
-                        ) => (
+                        (currency) => (
                           <td
-                            key={
-                              currency
-                            }
+                            key={currency}
                             className="py-2 px-3"
                           >
                             {formatNumber(
@@ -1825,12 +1597,16 @@ export default function CurrencyExchangePage() {
                           </td>
                         )
                       )}
+
                     </tr>
                   );
                 }
               )}
+
             </tbody>
+
           </table>
+
         </div>
       </div>
 
@@ -1838,308 +1614,251 @@ export default function CurrencyExchangePage() {
           آخرین معاملات
       ====================================================== */}
 
-      <div className="bg-white rounded-xl shadow overflow-visible">
+      <div className="bg-white rounded-xl shadow overflow-x-auto">
+
         <h2 className="text-lg font-semibold text-gray-700 p-5 pb-2">
           آخرین معاملات
         </h2>
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead className="bg-gray-50 text-gray-600">
+        <table className="min-w-full text-sm">
+
+          <thead className="bg-gray-50 text-gray-600">
+
+            <tr>
+
+              <th className="py-3 px-2 text-right font-bold">
+                سند
+              </th>
+
+              <th className="py-3 px-2 text-right font-bold">
+                تاریخ
+              </th>
+
+              <th className="py-3 px-2 text-right font-bold">
+                نوع معامله
+              </th>
+
+              <th className="py-3 px-2 text-right font-bold">
+                مشتری/فرستنده
+              </th>
+
+              <th className="py-3 px-2 text-right font-bold">
+                دریافت
+              </th>
+
+              <th className="py-3 px-2 text-right font-bold">
+                پرداخت
+              </th>
+
+              <th className="py-3 px-2 text-right font-bold">
+                نرخ
+              </th>
+
+              <th className="py-3 px-2 text-right font-bold">
+                مفاد
+              </th>
+
+              <th className="py-3 px-2 text-right font-bold">
+                عملیات
+              </th>
+
+            </tr>
+
+          </thead>
+
+          <tbody className="divide-y divide-gray-100">
+
+            {transactions.length === 0 && (
               <tr>
-                {/* ستون شماره به جای سند */}
-                <th className="py-3 px-3 text-right font-bold">
-                  شماره
-                </th>
-
-                <th className="py-3 px-3 text-right font-bold">
-                  تاریخ
-                </th>
-
-                <th className="py-3 px-3 text-right font-bold">
-                  نوع معامله
-                </th>
-
-                <th className="py-3 px-3 text-right font-bold">
-                  مشتری/فرستنده
-                </th>
-
-                <th className="py-3 px-3 text-right font-bold">
-                  دریافت
-                </th>
-
-                <th className="py-3 px-3 text-right font-bold">
-                  پرداخت
-                </th>
-
-                <th className="py-3 px-3 text-right font-bold">
-                  نرخ
-                </th>
-
-                <th className="py-3 px-3 text-right font-bold">
-                  مفاد
-                </th>
-
-                <th className="py-3 px-3 text-right font-bold">
-                  عملیات
-                </th>
+                <td
+                  colSpan={9}
+                  className="text-center py-8 text-gray-400"
+                >
+                  هیچ معامله‌ای ثبت نشده است
+                </td>
               </tr>
-            </thead>
+            )}
 
-            <tbody className="divide-y divide-gray-100">
-              {transactions.length ===
-                0 && (
-                <tr>
-                  <td
-                    colSpan={9}
-                    className="text-center py-8 text-gray-400"
+            {transactions.map(
+              (tx) => {
+                const isVoided =
+                  tx.status === "voided";
+
+                return (
+                  <tr
+                    key={tx.id}
+                    className={`hover:bg-gray-50 ${
+                      isVoided
+                        ? "opacity-60 line-through"
+                        : ""
+                    }`}
                   >
-                    هیچ معامله‌ای ثبت نشده است
-                  </td>
-                </tr>
-              )}
 
-              {transactions.map(
-                (tx, index) => {
-                  const isVoided =
-                    tx.status ===
-                    "voided";
+                    <td className="py-3 px-2 font-mono text-xs">
+                      {tx.id}
+                    </td>
 
-                  return (
-                    <tr
-                      key={tx.id}
-                      className={`hover:bg-gray-50 ${
-                        isVoided
-                          ? "opacity-60"
-                          : ""
-                      }`}
-                    >
-                      {/* شماره */}
-                      <td
-                        className={`py-3 px-3 font-bold ${
-                          isVoided
-                            ? "line-through"
-                            : ""
+                    <td className="py-3 px-2 text-xs">
+                      {new Date(
+                        tx.date
+                      ).toLocaleString(
+                        "fa-IR"
+                      )}
+                    </td>
+
+                    <td className="py-3 px-2">
+
+                      <span
+                        className={`px-2 py-0.5 rounded text-xs ${
+                          tx.type ===
+                          "صرافی-مشتری"
+                            ? "bg-blue-100 text-blue-700"
+                            : "bg-purple-100 text-purple-700"
                         }`}
                       >
-                        {index + 1}
-                      </td>
-
-                      {/* تاریخ */}
-                      <td className="py-3 px-3 text-xs">
-                        {new Date(
-                          tx.date
-                        ).toLocaleString(
-                          "fa-IR"
-                        )}
-                      </td>
-
-                      {/* نوع */}
-                      <td className="py-3 px-3">
-                        <span
-                          className={`px-2 py-1 rounded text-xs whitespace-nowrap ${
-                            tx.type ===
-                            "صرافی-مشتری"
-                              ? "bg-blue-100 text-blue-700"
-                              : "bg-purple-100 text-purple-700"
-                          }`}
-                        >
-                          {tx.type ===
-                          "صرافی-مشتری"
-                            ? "صرافی-مشتری"
-                            : "بین مشتریان"}
-                        </span>
-                      </td>
-
-                      {/* مشتری / فرستنده */}
-                      <td className="py-3 px-3">
                         {tx.type ===
                         "صرافی-مشتری"
-                          ? customerName(
-                              tx.customerId
-                            )
-                          : customerName(
-                              tx.senderId
-                            )}
-                      </td>
+                          ? "صرافی-مشتری"
+                          : "بین مشتریان"}
+                      </span>
 
-                      {/* دریافت */}
-                      <td className="py-3 px-3 whitespace-nowrap">
-                        {tx.type ===
-                        "صرافی-مشتری"
-                          ? `${formatNumber(
-                              tx.receivedAmount
-                            )} ${
-                              currencyLabels[
-                                tx.receivedCurrency
-                              ]
-                            }`
-                          : `${formatNumber(
-                              tx.receiverAmount
-                            )} ${
-                              currencyLabels[
-                                tx.receiverCurrency
-                              ]
-                            }`}
-                      </td>
+                    </td>
 
-                      {/* پرداخت */}
-                      <td className="py-3 px-3 whitespace-nowrap">
-                        {tx.type ===
-                        "صرافی-مشتری"
-                          ? `${formatNumber(
-                              tx.paidAmount
-                            )} ${
-                              currencyLabels[
-                                tx.paidCurrency
-                              ]
-                            }`
-                          : `${formatNumber(
-                              tx.senderAmount
-                            )} ${
-                              currencyLabels[
-                                tx.senderCurrency
-                              ]
-                            }`}
-                      </td>
+                    <td className="py-3 px-2">
 
-                      {/* نرخ */}
-                      <td className="py-3 px-3 text-xs whitespace-nowrap">
-                        {tx.type ===
-                        "صرافی-مشتری"
-                          ? formatRateQuote(
-                              tx.receivedCurrency,
-                              tx.paidCurrency,
-                              tx.rate
-                            )
-                          : formatRateQuote(
-                              tx.senderCurrency,
-                              tx.receiverCurrency,
-                              tx.rate
-                            )}
-                      </td>
-
-                      {/* مفاد */}
-                      <td className="py-3 px-3 text-xs">
-                        {tx.terms}
-                      </td>
-
-                      {/* عملیات */}
-                      <td className="py-3 px-3 relative">
-                        <div className="relative inline-block">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setOpenOperationId(
-                                openOperationId ===
-                                  tx.id
-                                  ? null
-                                  : tx.id
-                              )
-                            }
-                            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium whitespace-nowrap"
-                          >
-                            <span>
-                              ⋮
-                            </span>
-                            <span>
-                              عملیات
-                            </span>
-                            <span className="text-[10px]">
-                              ▼
-                            </span>
-                          </button>
-
-                          {openOperationId ===
-                            tx.id && (
-                            <>
-                              <div
-                                className="fixed inset-0 z-40"
-                                onClick={() =>
-                                  setOpenOperationId(
-                                    null
-                                  )
-                                }
-                              />
-
-                              <div className="absolute left-0 top-full mt-2 w-36 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden">
-                                {/* مشاهده */}
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setViewTx(
-                                      tx
-                                    );
-                                    setOpenOperationId(
-                                      null
-                                    );
-                                  }}
-                                  className="w-full text-right px-4 py-3 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700"
-                                >
-                                  👁 مشاهده
-                                </button>
-
-                                {/* ویرایش */}
-                                {!isVoided && (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      startEdit(
-                                        tx
-                                      )
-                                    }
-                                    className="w-full text-right px-4 py-3 text-sm text-gray-700 hover:bg-yellow-50 hover:text-yellow-700"
-                                  >
-                                    ✏️ ویرایش
-                                  </button>
-                                )}
-
-                                {/* چاپ */}
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    printReceipt(
-                                      tx
-                                    )
-                                  }
-                                  className="w-full text-right px-4 py-3 text-sm text-gray-700 hover:bg-gray-100"
-                                >
-                                  🖨 چاپ
-                                </button>
-
-                                {/* ابطال */}
-                                {!isVoided && (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      voidTransaction(
-                                        tx.id
-                                      )
-                                    }
-                                    className="w-full text-right px-4 py-3 text-sm text-red-600 hover:bg-red-50 border-t border-gray-100"
-                                  >
-                                    ⛔ ابطال
-                                  </button>
-                                )}
-
-                                {/* وضعیت ابطال */}
-                                {isVoided && (
-                                  <div className="px-4 py-3 text-xs text-red-500 border-t border-gray-100">
-                                    ابطال شده
-                                  </div>
-                                )}
-                              </div>
-                            </>
+                      {tx.type ===
+                      "صرافی-مشتری"
+                        ? customerName(
+                            tx.customerId
+                          )
+                        : customerName(
+                            tx.senderId
                           )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                }
-              )}
-            </tbody>
-          </table>
-        </div>
+
+                    </td>
+
+                    <td className="py-3 px-2">
+
+                      {tx.type ===
+                      "صرافی-مشتری"
+                        ? `${formatNumber(
+                            tx.receivedAmount
+                          )} ${
+                            currencyLabels[
+                              tx.receivedCurrency
+                            ]
+                          }`
+                        : `${formatNumber(
+                            tx.receiverAmount
+                          )} ${
+                            currencyLabels[
+                              tx.receiverCurrency
+                            ]
+                          }`}
+
+                    </td>
+
+                    <td className="py-3 px-2">
+
+                      {tx.type ===
+                      "صرافی-مشتری"
+                        ? `${formatNumber(
+                            tx.paidAmount
+                          )} ${
+                            currencyLabels[
+                              tx.paidCurrency
+                            ]
+                          }`
+                        : `${formatNumber(
+                            tx.senderAmount
+                          )} ${
+                            currencyLabels[
+                              tx.senderCurrency
+                            ]
+                          }`}
+
+                    </td>
+
+                    <td className="py-3 px-2 text-xs">
+
+                      {tx.type ===
+                      "صرافی-مشتری"
+                        ? formatRateQuote(
+                            tx.receivedCurrency,
+                            tx.paidCurrency,
+                            tx.rate
+                          )
+                        : formatRateQuote(
+                            tx.senderCurrency,
+                            tx.receiverCurrency,
+                            tx.rate
+                          )}
+
+                    </td>
+
+                    <td className="py-3 px-2 text-xs">
+                      {tx.terms}
+                    </td>
+
+                    <td className="py-3 px-2">
+
+                      <div className="flex gap-1 flex-wrap">
+
+                        <button
+                          onClick={() =>
+                            setViewTx(tx)
+                          }
+                          className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded"
+                        >
+                          مشاهده
+                        </button>
+
+                        <button
+                          onClick={() =>
+                            printReceipt(tx)
+                          }
+                          className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded"
+                        >
+                          چاپ
+                        </button>
+
+                        {!isVoided && (
+                          <>
+                            <button
+                              onClick={() =>
+                                startEdit(tx)
+                              }
+                              className="px-2 py-1 text-xs bg-yellow-50 text-yellow-700 rounded"
+                            >
+                              ویرایش
+                            </button>
+
+                            <button
+                              onClick={() =>
+                                voidTransaction(
+                                  tx.id
+                                )
+                              }
+                              className="px-2 py-1 text-xs bg-red-50 text-red-600 rounded"
+                            >
+                              ابطال
+                            </button>
+                          </>
+                        )}
+
+                      </div>
+
+                    </td>
+
+                  </tr>
+                );
+              }
+            )}
+
+          </tbody>
+
+        </table>
+
       </div>
 
       {/* ======================================================
@@ -2148,33 +1867,32 @@ export default function CurrencyExchangePage() {
 
       {viewTx && (
         <div
-          className="fixed inset-0 bg-black/30 flex items-center justify-center z-[100] p-4"
+          className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4"
           onClick={() =>
             setViewTx(null)
           }
         >
+
           <div
             className="bg-white rounded-xl p-6 max-w-md w-full shadow-2xl"
             onClick={(e) =>
               e.stopPropagation()
             }
           >
+
             <h2 className="text-lg font-semibold text-gray-800 mb-4">
               جزئیات معامله
             </h2>
 
-            <div className="space-y-3 text-sm">
+            <div className="space-y-2 text-sm">
+
               <p>
-                <strong>
-                  شماره:
-                </strong>{" "}
+                <strong>شماره:</strong>{" "}
                 {viewTx.id}
               </p>
 
               <p>
-                <strong>
-                  تاریخ:
-                </strong>{" "}
+                <strong>تاریخ:</strong>{" "}
                 {new Date(
                   viewTx.date
                 ).toLocaleString(
@@ -2183,9 +1901,7 @@ export default function CurrencyExchangePage() {
               </p>
 
               <p>
-                <strong>
-                  نوع:
-                </strong>{" "}
+                <strong>نوع:</strong>{" "}
                 {viewTx.type}
               </p>
 
@@ -2193,18 +1909,14 @@ export default function CurrencyExchangePage() {
                 "صرافی-مشتری" && (
                 <>
                   <p>
-                    <strong>
-                      مشتری:
-                    </strong>{" "}
+                    <strong>مشتری:</strong>{" "}
                     {customerName(
                       viewTx.customerId
                     )}
                   </p>
 
                   <p>
-                    <strong>
-                      دریافت:
-                    </strong>{" "}
+                    <strong>دریافت:</strong>{" "}
                     {formatNumber(
                       viewTx.receivedAmount
                     )}{" "}
@@ -2216,9 +1928,7 @@ export default function CurrencyExchangePage() {
                   </p>
 
                   <p>
-                    <strong>
-                      پرداخت:
-                    </strong>{" "}
+                    <strong>پرداخت:</strong>{" "}
                     {formatNumber(
                       viewTx.paidAmount
                     )}{" "}
@@ -2230,9 +1940,7 @@ export default function CurrencyExchangePage() {
                   </p>
 
                   <p>
-                    <strong>
-                      نرخ:
-                    </strong>{" "}
+                    <strong>نرخ:</strong>{" "}
                     {formatRateQuote(
                       viewTx.receivedCurrency,
                       viewTx.paidCurrency,
@@ -2282,9 +1990,7 @@ export default function CurrencyExchangePage() {
                   </p>
 
                   <p>
-                    <strong>
-                      نرخ:
-                    </strong>{" "}
+                    <strong>نرخ:</strong>{" "}
                     {formatRateQuote(
                       viewTx.senderCurrency,
                       viewTx.receiverCurrency,
@@ -2312,39 +2018,36 @@ export default function CurrencyExchangePage() {
               )}
 
               <p>
-                <strong>
-                  مفاد:
-                </strong>{" "}
+                <strong>مفاد:</strong>{" "}
                 {viewTx.terms}
               </p>
 
               <p>
-                <strong>
-                  یادداشت:
-                </strong>{" "}
+                <strong>یادداشت:</strong>{" "}
                 {viewTx.note || "-"}
               </p>
 
               <p>
-                <strong>
-                  وضعیت:
-                </strong>{" "}
+                <strong>وضعیت:</strong>{" "}
                 {viewTx.status ===
                 "voided"
                   ? "ابطال شده"
                   : "فعال"}
               </p>
+
             </div>
 
             <button
               onClick={() =>
                 setViewTx(null)
               }
-              className="mt-5 px-5 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg"
+              className="mt-4 px-4 py-2 bg-gray-200 rounded-lg"
             >
               بستن
             </button>
+
           </div>
+
         </div>
       )}
 
@@ -2354,9 +2057,11 @@ export default function CurrencyExchangePage() {
 
       {editMode &&
         editingTx && (
-          <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-[100] p-4 overflow-y-auto">
-            <div className="bg-white rounded-xl p-6 max-w-2xl w-full shadow-2xl my-8">
-              <h2 className="text-lg font-semibold text-gray-800 mb-5">
+          <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+
+            <div className="bg-white rounded-xl p-6 max-w-lg w-full shadow-2xl">
+
+              <h2 className="text-lg font-semibold text-gray-800 mb-4">
                 ویرایش معامله
               </h2>
 
@@ -2364,9 +2069,10 @@ export default function CurrencyExchangePage() {
 
               {editingTx.type ===
                 "صرافی-مشتری" && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-4">
+
                   <div>
-                    <label className="font-bold text-sm">
+                    <label className="font-bold">
                       مشتری
                     </label>
 
@@ -2374,18 +2080,16 @@ export default function CurrencyExchangePage() {
                       value={
                         (
                           editingTx as ExchangeTransaction
-                        )
-                          .customerId
+                        ).customerId
                       }
                       onChange={(e) =>
                         setEditingTx({
                           ...editingTx,
                           customerId:
-                            e.target
-                              .value,
+                            e.target.value,
                         } as ExchangeTransaction)
                       }
-                      className="w-full border rounded-lg p-3 mt-1"
+                      className="w-full border rounded p-1"
                     >
                       {customers.map(
                         (
@@ -2400,9 +2104,7 @@ export default function CurrencyExchangePage() {
                               customer.id
                             }
                           >
-                            {index +
-                              1}
-                            .{" "}
+                            {index + 1}.{" "}
                             {
                               customer.name
                             }
@@ -2413,7 +2115,7 @@ export default function CurrencyExchangePage() {
                   </div>
 
                   <div>
-                    <label className="font-bold text-sm">
+                    <label className="font-bold">
                       ارز دریافتی
                     </label>
 
@@ -2428,23 +2130,16 @@ export default function CurrencyExchangePage() {
                         setEditingTx({
                           ...editingTx,
                           receivedCurrency:
-                            e.target
-                              .value,
+                            e.target.value,
                         } as ExchangeTransaction)
                       }
-                      className="w-full border rounded-lg p-3 mt-1"
+                      className="w-full border rounded p-1"
                     >
                       {currencies.map(
-                        (
-                          currency
-                        ) => (
+                        (currency) => (
                           <option
-                            key={
-                              currency
-                            }
-                            value={
-                              currency
-                            }
+                            key={currency}
+                            value={currency}
                           >
                             {
                               currencyLabels[
@@ -2458,7 +2153,7 @@ export default function CurrencyExchangePage() {
                   </div>
 
                   <div>
-                    <label className="font-bold text-sm">
+                    <label className="font-bold">
                       مبلغ دریافتی
                     </label>
 
@@ -2474,18 +2169,15 @@ export default function CurrencyExchangePage() {
                         setEditingTx({
                           ...editingTx,
                           receivedAmount:
-                            Number(
-                              e.target
-                                .value
-                            ),
+                            +e.target.value,
                         } as ExchangeTransaction)
                       }
-                      className="w-full border rounded-lg p-3 mt-1"
+                      className="w-full border rounded p-1"
                     />
                   </div>
 
                   <div>
-                    <label className="font-bold text-sm">
+                    <label className="font-bold">
                       ارز پرداختی
                     </label>
 
@@ -2500,23 +2192,16 @@ export default function CurrencyExchangePage() {
                         setEditingTx({
                           ...editingTx,
                           paidCurrency:
-                            e.target
-                              .value,
+                            e.target.value,
                         } as ExchangeTransaction)
                       }
-                      className="w-full border rounded-lg p-3 mt-1"
+                      className="w-full border rounded p-1"
                     >
                       {currencies.map(
-                        (
-                          currency
-                        ) => (
+                        (currency) => (
                           <option
-                            key={
-                              currency
-                            }
-                            value={
-                              currency
-                            }
+                            key={currency}
+                            value={currency}
                           >
                             {
                               currencyLabels[
@@ -2530,7 +2215,7 @@ export default function CurrencyExchangePage() {
                   </div>
 
                   <div>
-                    <label className="font-bold text-sm">
+                    <label className="font-bold">
                       مبلغ پرداختی
                     </label>
 
@@ -2546,18 +2231,15 @@ export default function CurrencyExchangePage() {
                         setEditingTx({
                           ...editingTx,
                           paidAmount:
-                            Number(
-                              e.target
-                                .value
-                            ),
+                            +e.target.value,
                         } as ExchangeTransaction)
                       }
-                      className="w-full border rounded-lg p-3 mt-1"
+                      className="w-full border rounded p-1"
                     />
                   </div>
 
                   <div>
-                    <label className="font-bold text-sm">
+                    <label className="font-bold">
                       نرخ
                     </label>
 
@@ -2572,18 +2254,16 @@ export default function CurrencyExchangePage() {
                       onChange={(e) =>
                         setEditingTx({
                           ...editingTx,
-                          rate: Number(
-                            e.target
-                              .value
-                          ),
+                          rate:
+                            +e.target.value,
                         } as ExchangeTransaction)
                       }
-                      className="w-full border rounded-lg p-3 mt-1"
+                      className="w-full border rounded p-1"
                     />
                   </div>
 
                   <div>
-                    <label className="font-bold text-sm">
+                    <label className="font-bold">
                       مفاد
                     </label>
 
@@ -2595,16 +2275,15 @@ export default function CurrencyExchangePage() {
                         setEditingTx({
                           ...editingTx,
                           terms:
-                            e.target
-                              .value,
+                            e.target.value,
                         })
                       }
-                      className="w-full border rounded-lg p-3 mt-1"
+                      className="w-full border rounded p-1"
                     />
                   </div>
 
                   <div>
-                    <label className="font-bold text-sm">
+                    <label className="font-bold">
                       یادداشت
                     </label>
 
@@ -2616,13 +2295,13 @@ export default function CurrencyExchangePage() {
                         setEditingTx({
                           ...editingTx,
                           note:
-                            e.target
-                              .value,
+                            e.target.value,
                         })
                       }
-                      className="w-full border rounded-lg p-3 mt-1"
+                      className="w-full border rounded p-1"
                     />
                   </div>
+
                 </div>
               )}
 
@@ -2630,9 +2309,10 @@ export default function CurrencyExchangePage() {
 
               {editingTx.type ===
                 "بین-مشتریان" && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-4">
+
                   <div>
-                    <label className="font-bold text-sm">
+                    <label className="font-bold">
                       فرستنده
                     </label>
 
@@ -2646,11 +2326,10 @@ export default function CurrencyExchangePage() {
                         setEditingTx({
                           ...editingTx,
                           senderId:
-                            e.target
-                              .value,
+                            e.target.value,
                         } as TransferTransaction)
                       }
-                      className="w-full border rounded-lg p-3 mt-1"
+                      className="w-full border rounded p-1"
                     >
                       {customers.map(
                         (
@@ -2665,9 +2344,7 @@ export default function CurrencyExchangePage() {
                               customer.id
                             }
                           >
-                            {index +
-                              1}
-                            .{" "}
+                            {index + 1}.{" "}
                             {
                               customer.name
                             }
@@ -2678,7 +2355,7 @@ export default function CurrencyExchangePage() {
                   </div>
 
                   <div>
-                    <label className="font-bold text-sm">
+                    <label className="font-bold">
                       گیرنده
                     </label>
 
@@ -2692,11 +2369,10 @@ export default function CurrencyExchangePage() {
                         setEditingTx({
                           ...editingTx,
                           receiverId:
-                            e.target
-                              .value,
+                            e.target.value,
                         } as TransferTransaction)
                       }
-                      className="w-full border rounded-lg p-3 mt-1"
+                      className="w-full border rounded p-1"
                     >
                       {customers.map(
                         (
@@ -2711,9 +2387,7 @@ export default function CurrencyExchangePage() {
                               customer.id
                             }
                           >
-                            {index +
-                              1}
-                            .{" "}
+                            {index + 1}.{" "}
                             {
                               customer.name
                             }
@@ -2724,7 +2398,7 @@ export default function CurrencyExchangePage() {
                   </div>
 
                   <div>
-                    <label className="font-bold text-sm">
+                    <label className="font-bold">
                       ارز فرستنده
                     </label>
 
@@ -2732,30 +2406,22 @@ export default function CurrencyExchangePage() {
                       value={
                         (
                           editingTx as TransferTransaction
-                        )
-                          .senderCurrency
+                        ).senderCurrency
                       }
                       onChange={(e) =>
                         setEditingTx({
                           ...editingTx,
                           senderCurrency:
-                            e.target
-                              .value,
+                            e.target.value,
                         } as TransferTransaction)
                       }
-                      className="w-full border rounded-lg p-3 mt-1"
+                      className="w-full border rounded p-1"
                     >
                       {currencies.map(
-                        (
-                          currency
-                        ) => (
+                        (currency) => (
                           <option
-                            key={
-                              currency
-                            }
-                            value={
-                              currency
-                            }
+                            key={currency}
+                            value={currency}
                           >
                             {
                               currencyLabels[
@@ -2769,7 +2435,7 @@ export default function CurrencyExchangePage() {
                   </div>
 
                   <div>
-                    <label className="font-bold text-sm">
+                    <label className="font-bold">
                       مبلغ فرستنده
                     </label>
 
@@ -2778,25 +2444,21 @@ export default function CurrencyExchangePage() {
                       value={
                         (
                           editingTx as TransferTransaction
-                        )
-                          .senderAmount
+                        ).senderAmount
                       }
                       onChange={(e) =>
                         setEditingTx({
                           ...editingTx,
                           senderAmount:
-                            Number(
-                              e.target
-                                .value
-                            ),
+                            +e.target.value,
                         } as TransferTransaction)
                       }
-                      className="w-full border rounded-lg p-3 mt-1"
+                      className="w-full border rounded p-1"
                     />
                   </div>
 
                   <div>
-                    <label className="font-bold text-sm">
+                    <label className="font-bold">
                       ارز گیرنده
                     </label>
 
@@ -2804,30 +2466,22 @@ export default function CurrencyExchangePage() {
                       value={
                         (
                           editingTx as TransferTransaction
-                        )
-                          .receiverCurrency
+                        ).receiverCurrency
                       }
                       onChange={(e) =>
                         setEditingTx({
                           ...editingTx,
                           receiverCurrency:
-                            e.target
-                              .value,
+                            e.target.value,
                         } as TransferTransaction)
                       }
-                      className="w-full border rounded-lg p-3 mt-1"
+                      className="w-full border rounded p-1"
                     >
                       {currencies.map(
-                        (
-                          currency
-                        ) => (
+                        (currency) => (
                           <option
-                            key={
-                              currency
-                            }
-                            value={
-                              currency
-                            }
+                            key={currency}
+                            value={currency}
                           >
                             {
                               currencyLabels[
@@ -2841,7 +2495,7 @@ export default function CurrencyExchangePage() {
                   </div>
 
                   <div>
-                    <label className="font-bold text-sm">
+                    <label className="font-bold">
                       مبلغ گیرنده
                     </label>
 
@@ -2850,25 +2504,21 @@ export default function CurrencyExchangePage() {
                       value={
                         (
                           editingTx as TransferTransaction
-                        )
-                          .receiverAmount
+                        ).receiverAmount
                       }
                       onChange={(e) =>
                         setEditingTx({
                           ...editingTx,
                           receiverAmount:
-                            Number(
-                              e.target
-                                .value
-                            ),
+                            +e.target.value,
                         } as TransferTransaction)
                       }
-                      className="w-full border rounded-lg p-3 mt-1"
+                      className="w-full border rounded p-1"
                     />
                   </div>
 
                   <div>
-                    <label className="font-bold text-sm">
+                    <label className="font-bold">
                       نرخ
                     </label>
 
@@ -2883,18 +2533,16 @@ export default function CurrencyExchangePage() {
                       onChange={(e) =>
                         setEditingTx({
                           ...editingTx,
-                          rate: Number(
-                            e.target
-                              .value
-                          ),
+                          rate:
+                            +e.target.value,
                         } as TransferTransaction)
                       }
-                      className="w-full border rounded-lg p-3 mt-1"
+                      className="w-full border rounded p-1"
                     />
                   </div>
 
                   <div>
-                    <label className="font-bold text-sm">
+                    <label className="font-bold">
                       کارمزد
                     </label>
 
@@ -2903,25 +2551,21 @@ export default function CurrencyExchangePage() {
                       value={
                         (
                           editingTx as TransferTransaction
-                        )
-                          .commission
+                        ).commission
                       }
                       onChange={(e) =>
                         setEditingTx({
                           ...editingTx,
                           commission:
-                            Number(
-                              e.target
-                                .value
-                            ),
+                            +e.target.value,
                         } as TransferTransaction)
                       }
-                      className="w-full border rounded-lg p-3 mt-1"
+                      className="w-full border rounded p-1"
                     />
                   </div>
 
                   <div>
-                    <label className="font-bold text-sm">
+                    <label className="font-bold">
                       ارز کارمزد
                     </label>
 
@@ -2936,23 +2580,16 @@ export default function CurrencyExchangePage() {
                         setEditingTx({
                           ...editingTx,
                           commissionCurrency:
-                            e.target
-                              .value,
+                            e.target.value,
                         } as TransferTransaction)
                       }
-                      className="w-full border rounded-lg p-3 mt-1"
+                      className="w-full border rounded p-1"
                     >
                       {currencies.map(
-                        (
-                          currency
-                        ) => (
+                        (currency) => (
                           <option
-                            key={
-                              currency
-                            }
-                            value={
-                              currency
-                            }
+                            key={currency}
+                            value={currency}
                           >
                             {
                               currencyLabels[
@@ -2966,28 +2603,7 @@ export default function CurrencyExchangePage() {
                   </div>
 
                   <div>
-                    <label className="font-bold text-sm">
-                      مفاد
-                    </label>
-
-                    <input
-                      value={
-                        editingTx.terms
-                      }
-                      onChange={(e) =>
-                        setEditingTx({
-                          ...editingTx,
-                          terms:
-                            e.target
-                              .value,
-                        })
-                      }
-                      className="w-full border rounded-lg p-3 mt-1"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="font-bold text-sm">
+                    <label className="font-bold">
                       یادداشت
                     </label>
 
@@ -2999,41 +2615,39 @@ export default function CurrencyExchangePage() {
                         setEditingTx({
                           ...editingTx,
                           note:
-                            e.target
-                              .value,
+                            e.target.value,
                         })
                       }
-                      className="w-full border rounded-lg p-3 mt-1"
+                      className="w-full border rounded p-1"
                     />
                   </div>
+
                 </div>
               )}
 
               <div className="flex justify-end gap-2 mt-6">
+
                 <button
                   onClick={() => {
-                    setEditMode(
-                      false
-                    );
-                    setEditingTx(
-                      null
-                    );
+                    setEditMode(false);
+                    setEditingTx(null);
                   }}
-                  className="px-5 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg"
+                  className="px-4 py-2 bg-gray-200 rounded-lg"
                 >
                   انصراف
                 </button>
 
                 <button
-                  onClick={
-                    saveEdit
-                  }
-                  className="px-5 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg"
+                  onClick={saveEdit}
+                  className="px-4 py-2 bg-blue-500 text-white rounded-lg"
                 >
-                  ذخیره تغییرات
+                  ذخیره
                 </button>
+
               </div>
+
             </div>
+
           </div>
         )}
     </div>
