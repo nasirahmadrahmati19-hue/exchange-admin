@@ -1,704 +1,1930 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useStored, Field, SelectField, ErrorBox, Modal } from "../lib/ui";
-import {
-  loadRates, toAFN, fromAFN, fa, todayFa, checkRequired, requiredMessage,
-  CURRENCIES, CITIES,
-} from "../lib/helpers";
+import { useMemo, useState } from "react";
 
-interface Hawala {
-  id: number;
-  sender: string;
-  receiver: string;
+// =====================================================
+// Types
+// =====================================================
+
+type RemittanceType = "ارسال" | "دریافت" | "حساب به حساب";
+
+type RemittanceStatus =
+  | "در انتظار"
+  | "در حال پردازش"
+  | "آماده پرداخت"
+  | "پرداخت شد"
+  | "لغو شد"
+  | "برگشت داده شد";
+
+type Currency = "AFN" | "USD" | "IRR" | "PKR";
+
+interface Customer {
+  id: string;
+  name: string;
   phone: string;
-  fromCity: string;
-  toCity: string;
-  payCur: string;
-  getCur: string;
-  amount: string;
-  result: string;
-  fee: string;
-  date: string;
-  status: string;
-  trackCode?: string;
-  manualRate?: string;
+  whatsapp: string;
+  telegramChatId: string;
+  balances: Record<Currency, number>;
 }
 
-const emptyForm = {
-  sender: "", receiver: "", phone: "", fromCity: "هرات", toCity: "مشهد",
-  payCur: "افغانی", getCur: "تومان", amount: "", fee: "0", manualRate: "",
+interface Remittance {
+  id: string;
+  date: string;
+
+  type: RemittanceType;
+  status: RemittanceStatus;
+
+  senderId: string;
+  senderPhone: string;
+
+  receiverName: string;
+  receiverPhone: string;
+
+  receiverCountry: string;
+  receiverCity: string;
+
+  currency: Currency;
+  amount: number;
+
+  commission: number;
+  commissionCurrency: Currency;
+
+  totalReceived: number;
+
+  paymentMethod: "نقدی" | "حساب مشتری" | "بانکی";
+
+  paidAmount: number;
+  paidCurrency: Currency;
+
+  paymentMethodAtDestination:
+    | "نقدی"
+    | "حساب مشتری"
+    | "بانکی"
+    | "";
+
+  paymentDate: string;
+  paymentNote: string;
+
+  note: string;
+}
+
+// =====================================================
+// Currency
+// =====================================================
+
+const currencies: Currency[] = ["AFN", "USD", "IRR", "PKR"];
+
+const currencyLabels: Record<Currency, string> = {
+  AFN: "افغانی",
+  USD: "دالر",
+  IRR: "تومان",
+  PKR: "کلدار",
 };
 
-const generateTrackCode = () => "HW-" + Math.random().toString(36).substring(2, 8).toUpperCase();
+// =====================================================
+// Initial Customers
+// =====================================================
 
-const statusStyle = (status: string) => {
-  if (status === "در حال انتظار") return "bg-amber-50 text-amber-700 border-amber-200";
-  if (status === "پرداخت شد") return "bg-emerald-50 text-emerald-700 border-emerald-200";
-  if (status === "لغو شد") return "bg-red-50 text-red-700 border-red-200";
-  return "bg-slate-50 text-slate-700 border-slate-200";
-};
+const initialCustomers: Customer[] = [
+  {
+    id: "c1",
+    name: "احمد رحیمی",
+    phone: "0700000001",
+    whatsapp: "0700000001",
+    telegramChatId: "",
+    balances: {
+      AFN: 500000,
+      USD: 10000,
+      IRR: 0,
+      PKR: 0,
+    },
+  },
+  {
+    id: "c2",
+    name: "محمد ظاهر",
+    phone: "0700000002",
+    whatsapp: "0700000002",
+    telegramChatId: "",
+    balances: {
+      AFN: 200000,
+      USD: 5000,
+      IRR: 0,
+      PKR: 0,
+    },
+  },
+  {
+    id: "c3",
+    name: "فاطمه حسینی",
+    phone: "0700000003",
+    whatsapp: "0700000003",
+    telegramChatId: "",
+    balances: {
+      AFN: 0,
+      USD: 0,
+      IRR: 50000000,
+      PKR: 0,
+    },
+  },
+  {
+    id: "c4",
+    name: "علی کریمی",
+    phone: "0700000004",
+    whatsapp: "0700000004",
+    telegramChatId: "",
+    balances: {
+      AFN: 0,
+      USD: 0,
+      IRR: 0,
+      PKR: 200000,
+    },
+  },
+];
 
-export default function HawalaPage() {
-  const [list, setList] = useStored<Hawala[]>("db_hawala", []);
-  const [rates] = useState(loadRates());
-  const [subTab, setSubTab] = useState("register");
+// =====================================================
+// Helpers
+// =====================================================
 
-  const [form, setForm] = useState(emptyForm);
-  const [missing, setMissing] = useState<string[]>([]);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-  const [lastTrackCode, setLastTrackCode] = useState("");
+function generateRemittanceId() {
+  const now = new Date();
 
-  const [historyFilter, setHistoryFilter] = useState("همه");
-  const [historySearch, setHistorySearch] = useState("");
+  return `RM-${now.getFullYear()}${String(
+    now.getMonth() + 1
+  ).padStart(2, "0")}${String(now.getDate()).padStart(
+    2,
+    "0"
+  )}-${Math.floor(Math.random() * 10000)
+    .toString()
+    .padStart(4, "0")}`;
+}
 
-  const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null);
+function formatNumber(value: number) {
+  return value.toLocaleString("en-US", {
+    maximumFractionDigits: 2,
+  });
+}
 
-  const set = (patch: any) => { setForm({ ...form, ...patch }); setMissing([]); setError(""); };
-  
-  const needsRate = form.payCur !== form.getCur;
-  const effectiveRate = form.manualRate && !isNaN(Number(form.manualRate)) ? Number(form.manualRate) : 0;
-  
-  const calcResult = () => {
-    const amountNum = Number(form.amount || 0);
-    const feeNum = Number(form.fee || 0);
-    if (amountNum <= 0) return 0;
-    
-    if (!needsRate) {
-      return Math.max(amountNum - feeNum, 0);
-    }
-    
-    if (effectiveRate > 0) {
-      return Math.max(amountNum * effectiveRate - feeNum, 0);
-    }
-    
-    return fromAFN(Math.max(toAFN(amountNum, form.payCur, rates) - feeNum, 0), form.getCur, rates);
-  };
-  
-  const result = calcResult();
+function getCustomerName(
+  customers: Customer[],
+  id: string
+) {
+  return customers.find((c) => c.id === id)?.name || id;
+}
 
-  const pendingList = list.filter(h => h.status === "در حال انتظار");
-  const paidList = list.filter(h => h.status === "پرداخت شد");
-  const cancelledList = list.filter(h => h.status === "لغو شد");
+// =====================================================
+// Main Component
+// =====================================================
 
-  const stats = useMemo(() => {
-    let totalAmount = 0, totalFee = 0;
-    const customers: Record<string, { count: number; volume: number; type: string; transactions: Hawala[] }> = {};
+export default function RemittancePage() {
+  const [customers] = useState<Customer[]>(initialCustomers);
 
-    list.forEach(h => {
-      totalAmount += Number(h.amount || 0);
-      totalFee += Number(h.fee || 0);
+  const [remittances, setRemittances] = useState<Remittance[]>(
+    []
+  );
 
-      if (h.sender) {
-        if (!customers[h.sender]) customers[h.sender] = { count: 0, volume: 0, type: "فرستنده", transactions: [] };
-        customers[h.sender].count++;
-        customers[h.sender].volume += Number(h.amount || 0);
-        customers[h.sender].transactions.push(h);
+  const [activeStatus, setActiveStatus] = useState<
+    "همه" | RemittanceStatus
+  >("همه");
+
+  const [search, setSearch] = useState("");
+
+  const [viewRemittance, setViewRemittance] =
+    useState<Remittance | null>(null);
+
+  // ===================================================
+  // Form
+  // ===================================================
+
+  const [remittanceType, setRemittanceType] =
+    useState<RemittanceType>("ارسال");
+
+  const [senderId, setSenderId] = useState("");
+
+  const [receiverName, setReceiverName] = useState("");
+  const [receiverPhone, setReceiverPhone] = useState("");
+
+  const [receiverCountry, setReceiverCountry] =
+    useState("");
+
+  const [receiverCity, setReceiverCity] =
+    useState("");
+
+  const [currency, setCurrency] =
+    useState<Currency>("AFN");
+
+  const [amount, setAmount] = useState("");
+
+  const [commission, setCommission] =
+    useState("0");
+
+  const [commissionCurrency, setCommissionCurrency] =
+    useState<Currency>("AFN");
+
+  const [paymentMethod, setPaymentMethod] =
+    useState<
+      "نقدی" | "حساب مشتری" | "بانکی"
+    >("نقدی");
+
+  const [paidAmount, setPaidAmount] = useState("");
+
+  const [paidCurrency, setPaidCurrency] =
+    useState<Currency>("AFN");
+
+  const [paymentMethodAtDestination, setPaymentMethodAtDestination] =
+    useState<
+      "نقدی" | "حساب مشتری" | "بانکی" | ""
+    >("");
+
+  const [paymentNote, setPaymentNote] =
+    useState("");
+
+  const [note, setNote] = useState("");
+
+  // ===================================================
+  // Calculations
+  // ===================================================
+
+  const amountNumber = Number(amount) || 0;
+  const commissionNumber = Number(commission) || 0;
+
+  const totalReceived =
+    amountNumber + commissionNumber;
+
+  // ===================================================
+  // Customer balances
+  // ===================================================
+
+  const liveBalances = useMemo(() => {
+    const balances: Record<
+      string,
+      Record<Currency, number>
+    > = {};
+
+    customers.forEach((customer) => {
+      balances[customer.id] = {
+        ...customer.balances,
+      };
+    });
+
+    remittances.forEach((tx) => {
+      if (
+        tx.status === "لغو شد" ||
+        tx.status === "برگشت داده شد"
+      ) {
+        return;
       }
-      if (h.receiver) {
-        if (!customers[h.receiver]) customers[h.receiver] = { count: 0, volume: 0, type: "گیرنده", transactions: [] };
-        customers[h.receiver].count++;
-        customers[h.receiver].volume += Number(h.result || 0);
-        customers[h.receiver].transactions.push(h);
+
+      // فقط زمانی که مبلغ حواله از حساب مشتری برداشت شود
+      if (
+        tx.paymentMethod === "حساب مشتری" &&
+        tx.senderId
+      ) {
+        const customer =
+          balances[tx.senderId];
+
+        if (customer) {
+          customer[tx.currency] =
+            (customer[tx.currency] || 0) -
+            tx.totalReceived;
+        }
       }
     });
 
-    return { totalAmount, totalFee, customers };
-  }, [list]);
+    return balances;
+  }, [customers, remittances]);
 
-  const add = () => {
-    const required: { key: string; label: string }[] = [
-      { key: "sender", label: "نام فرستنده" },
-      { key: "receiver", label: "نام گیرنده" },
-      { key: "amount", label: "مبلغ" },
-    ];
-    
-    if (form.payCur !== form.getCur) {
-      required.push({ key: "manualRate", label: "نرخ توافقی" });
-    }
-    
-    const m = checkRequired(form, required);
-    
-    if (form.payCur !== form.getCur && form.manualRate && (isNaN(Number(form.manualRate)) || Number(form.manualRate) <= 0)) {
-      setError("نرخ توافقی باید یک عدد معتبر و بزرگتر از صفر باشد");
+  // ===================================================
+  // Reset
+  // ===================================================
+
+  function resetForm() {
+    setRemittanceType("ارسال");
+
+    setSenderId("");
+
+    setReceiverName("");
+    setReceiverPhone("");
+
+    setReceiverCountry("");
+    setReceiverCity("");
+
+    setCurrency("AFN");
+
+    setAmount("");
+    setCommission("0");
+
+    setCommissionCurrency("AFN");
+
+    setPaymentMethod("نقدی");
+
+    setPaidAmount("");
+    setPaidCurrency("AFN");
+
+    setPaymentMethodAtDestination("");
+
+    setPaymentNote("");
+    setNote("");
+  }
+
+  // ===================================================
+  // Submit
+  // ===================================================
+
+  function submitRemittance() {
+    if (!senderId) {
+      alert("لطفاً مشتری فرستنده را انتخاب کنید.");
       return;
     }
-    
-    if (m.length) { setMissing(m); setError(requiredMessage(m)); return; }
 
-    const trackCode = generateTrackCode();
-    const newHawala: Hawala = {
-      id: Date.now(),
-      ...form,
-      result: result.toFixed(0),
-      date: todayFa(),
-      status: "در حال انتظار",
-      trackCode,
+    if (!receiverName.trim()) {
+      alert("لطفاً نام گیرنده را وارد کنید.");
+      return;
+    }
+
+    if (!amount || amountNumber <= 0) {
+      alert("لطفاً مبلغ حواله را وارد کنید.");
+      return;
+    }
+
+    if (remittanceType === "حساب به حساب") {
+      if (!receiverPhone.trim()) {
+        alert("لطفاً شماره تماس گیرنده را وارد کنید.");
+        return;
+      }
+    }
+
+    const sender =
+      customers.find((c) => c.id === senderId);
+
+    if (!sender) {
+      alert("مشتری فرستنده پیدا نشد.");
+      return;
+    }
+
+    // بررسی موجودی فقط زمانی که از حساب مشتری برداشت می‌شود
+    if (paymentMethod === "حساب مشتری") {
+      const balance =
+        sender.balances[currency] || 0;
+
+      if (balance < totalReceived) {
+        alert(
+          `موجودی ${currencyLabels[currency]} مشتری کافی نیست.`
+        );
+        return;
+      }
+    }
+
+    const newRemittance: Remittance = {
+      id: generateRemittanceId(),
+
+      date: new Date().toISOString(),
+
+      type: remittanceType,
+
+      status: "در انتظار",
+
+      senderId,
+
+      senderPhone:
+        sender.phone || "",
+
+      receiverName:
+        receiverName.trim(),
+
+      receiverPhone:
+        receiverPhone.trim(),
+
+      receiverCountry:
+        receiverCountry.trim(),
+
+      receiverCity:
+        receiverCity.trim(),
+
+      currency,
+
+      amount: amountNumber,
+
+      commission: commissionNumber,
+
+      commissionCurrency,
+
+      totalReceived,
+
+      paymentMethod,
+
+      paidAmount:
+        Number(paidAmount) || 0,
+
+      paidCurrency,
+
+      paymentMethodAtDestination,
+
+      paymentDate: "",
+
+      paymentNote,
+
+      note,
     };
-    setList([newHawala, ...list]);
-    setForm({ ...emptyForm });
-    setLastTrackCode(trackCode);
-    setSuccess(`✨ حواله ثبت شد | کد پیگیری: ${trackCode}`);
-    setTimeout(() => setSuccess(""), 5000);
-  };
 
-  const updateStatus = (id: number, status: string) => {
-    setList(list.map(h => h.id === id ? { ...h, status } : h));
-    setSuccess(`✨ وضعیت به «${status}» تغییر کرد`);
-    setTimeout(() => setSuccess(""), 2000);
-  };
+    setRemittances((prev) => [
+      newRemittance,
+      ...prev,
+    ]);
 
-  const wa = (h: Hawala) => {
-    const msg = encodeURIComponent(
-      `صرافی برادران نورزاد هرات\n` +
-      `کد پیگیری: ${h.trackCode || "-"}\n` +
-      `حواله از ${h.fromCity} به ${h.toCity}\n` +
-      `گیرنده: ${h.receiver}\n` +
-      `مبلغ قابل دریافت: ${fa(Number(h.result))} ${h.getCur}\n` +
-      `فرستنده: ${h.sender}` +
-      (h.manualRate ? `\nنرخ: ${h.manualRate}` : "")
+    alert(
+      `حواله با شماره ${newRemittance.id} ثبت شد.`
     );
-    return `https://wa.me/${h.phone}?text=${msg}`;
-  };
 
-  const filteredHistory = list.filter(h => {
-    const matchStatus = historyFilter === "همه" || h.status === historyFilter;
-    const matchSearch = h.sender.includes(historySearch) ||
-      h.receiver.includes(historySearch) ||
-      (h.trackCode || "").includes(historySearch.toUpperCase());
-    return matchStatus && matchSearch;
-  });
+    resetForm();
+  }
 
-  const subTabs = [
-    { id: "register", label: "ثبت حواله", icon: "💸" },
-    { id: "history", label: "تاریخچه", icon: "📊" },
-    { id: "reports", label: "گزارشات", icon: "📈" },
-    { id: "customers", label: "مشتریان", icon: "👥" },
-  ];
+  // ===================================================
+  // Change Status
+  // ===================================================
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-extrabold flex items-center gap-3">
-          <span className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center text-2xl shadow-lg">
-            💸
-          </span>
-          حواله‌جات
-        </h1>
-        <div className="flex gap-2 text-sm">
-          <span className="bg-amber-100 text-amber-700 px-3 py-1.5 rounded-full font-bold border border-amber-200">
-            ⏳ {pendingList.length}
-          </span>
-          <span className="bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-full font-bold border border-emerald-200">
-            ✅ {paidList.length}
-          </span>
-          <span className="bg-red-100 text-red-700 px-3 py-1.5 rounded-full font-bold border border-red-200">
-            🚫 {cancelledList.length}
-          </span>
-        </div>
-      </div>
+  function changeStatus(
+    id: string,
+    status: RemittanceStatus
+  ) {
+    setRemittances((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
 
-      {/* Sub Tabs */}
-      <div className="card p-2 flex gap-1 overflow-x-auto sticky top-0 z-10 bg-[#f6f4ee] rounded-2xl shadow-lg">
-        {subTabs.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => { setSubTab(tab.id); setError(""); setSuccess(""); }}
-            className={`px-5 py-3 rounded-xl text-sm font-bold whitespace-nowrap transition-all flex items-center gap-2 ${
-              subTab === tab.id
-                ? "bg-gradient-to-r from-[#0b1f2e] to-[#16374d] text-[#e3b45c] shadow-lg"
-                : "text-slate-600 hover:bg-white hover:shadow-md"
-            }`}
-          >
-            <span className="text-lg">{tab.icon}</span>
-            <span>{tab.label}</span>
-          </button>
-        ))}
-      </div>
+        return {
+          ...item,
+          status,
 
-      {success && (
-        <div className="text-sm rounded-2xl p-4 bg-gradient-to-r from-emerald-50 to-teal-50 text-emerald-700 border-2 border-emerald-200 font-bold shadow-lg">
-          {success}
-        </div>
-      )}
-      {error && (
-        <div className="text-sm rounded-2xl p-4 bg-gradient-to-r from-red-50 to-rose-50 text-red-700 border-2 border-red-200 font-bold shadow-lg">
-          {error}
-        </div>
-      )}
+          paymentDate:
+            status === "پرداخت شد"
+              ? new Date().toISOString()
+              : item.paymentDate,
+        };
+      })
+    );
+  }
 
-      {/* ================================================================ */}
-      {/* 💸 بخش ۱: ثبت حواله */}
-      {/* ================================================================ */}
-      {subTab === "register" && (
-        <div className="space-y-6">
-          <div className="card p-6 rounded-3xl shadow-xl border border-slate-100">
-            <h2 className="text-lg font-extrabold mb-6 flex items-center gap-2">
-              <span className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center text-xl shadow-md">💸</span>
-              ثبت حواله جدید
-            </h2>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-              <div className="space-y-4">
-                <Field label="نام فرستنده" name="نام فرستنده" missing={missing} value={form.sender} onChange={v => set({ sender: v })} placeholder="مثال: احمد ولی" />
-                <Field label="نام گیرنده" name="نام گیرنده" missing={missing} value={form.receiver} onChange={v => set({ receiver: v })} placeholder="مثال: کریم الله" />
-              </div>
-              
-              <div className="space-y-4">
-                <Field label="شماره واتساپ گیرنده" value={form.phone} onChange={v => set({ phone: v })} placeholder="93... یا 989..." />
-                <Field label="مبلغ" name="مبلغ" missing={missing} value={form.amount} onChange={v => set({ amount: v })} placeholder="مبلغ پرداختی" />
-              </div>
+  // ===================================================
+  // Print Receipt
+  // ===================================================
 
-              <div className="space-y-4">
-                <SelectField label="شهر مبدأ" value={form.fromCity} onChange={v => set({ fromCity: v })} options={CITIES} />
-                <SelectField label="شهر مقصد" value={form.toCity} onChange={v => set({ toCity: v })} options={CITIES} />
-              </div>
+  function printReceipt(tx: Remittance) {
+    const senderName =
+      getCustomerName(
+        customers,
+        tx.senderId
+      );
 
-              <div className="space-y-4">
-                <SelectField label="ارز پرداخت" value={form.payCur} onChange={v => set({ payCur: v })} options={CURRENCIES} />
-                <SelectField label="ارز دریافت" value={form.getCur} onChange={v => set({ getCur: v })} options={CURRENCIES} />
-              </div>
+    const html = `
+      <html>
+      <head>
+        <meta charset="UTF-8" />
+        <title>رسید حواله ${tx.id}</title>
 
-              <div className="space-y-4">
-                <Field label="کارمزد (افغانی)" value={form.fee} onChange={v => set({ fee: v })} placeholder="0" />
-              </div>
-              
-              {/* فیلد نرخ توافقی - فقط وقتی ارزها متفاوت هستند */}
-              {form.payCur !== form.getCur && (
-                <div className="sm:col-span-2 lg:col-span-4">
-                  <div className="bg-gradient-to-r from-[#0b1f2e] to-[#16374d] rounded-2xl p-5 shadow-lg">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-[#e3b45c] font-extrabold text-base flex items-center gap-2">
-                        <span className="text-xl">💱</span>
-                        نرخ توافقی
-                      </span>
-                      <button 
-                        onClick={() => set({ manualRate: "" })} 
-                        className="text-xs bg-red-500/20 text-red-200 px-4 py-2 rounded-lg hover:bg-red-500/30 transition-colors font-bold"
-                      >
-                        🗑️ پاک کردن
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-white text-sm whitespace-nowrap font-medium">۱ {form.payCur} =</span>
-                      <input 
-                        type="text"
-                        value={form.manualRate} 
-                        onChange={e => set({ manualRate: e.target.value })}
-                        placeholder="نرخ را وارد کنید"
-                        name="manualRate"
-                        className={`input flex-1 text-center text-[#e3b45c] font-extrabold !border-[#e3b45c]/30 !bg-white/10 !text-white ${missing.includes("نرخ توافقی") ? "!border-red-500" : ""}`}
-                      />
-                      <span className="text-white text-sm whitespace-nowrap font-medium">{form.getCur}</span>
-                    </div>
-                    <p className="text-slate-400 text-xs mt-3">
-                      💡 نرخ توافقی با مشتری را وارد کنید (اجباری)
-                    </p>
-                  </div>
-                </div>
+        <style>
+          body {
+            direction: rtl;
+            font-family: Tahoma, Arial;
+            padding: 30px;
+            line-height: 2;
+          }
+
+          .receipt {
+            max-width: 600px;
+            margin: auto;
+            border: 1px solid #ddd;
+            padding: 25px;
+            border-radius: 12px;
+          }
+
+          h1 {
+            text-align: center;
+            font-size: 22px;
+          }
+
+          .row {
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 1px solid #eee;
+            padding: 7px 0;
+          }
+
+          strong {
+            font-weight: bold;
+          }
+        </style>
+      </head>
+
+      <body>
+        <div class="receipt">
+
+          <h1>رسید حواله</h1>
+
+          <div class="row">
+            <strong>شماره سند</strong>
+            <span>${tx.id}</span>
+          </div>
+
+          <div class="row">
+            <strong>تاریخ</strong>
+            <span>
+              ${new Date(tx.date).toLocaleString(
+                "fa-IR"
               )}
-
-              <div className="sm:col-span-2">
-                <label className="block text-sm font-bold mb-2 invisible">-</label>
-                <div className="flex items-center justify-between bg-gradient-to-r from-[#0b1f2e] to-[#16374d] rounded-2xl px-5 py-4 shadow-lg">
-                  <span className="text-[#e3b45c] text-sm font-extrabold flex items-center gap-2">
-                    <span className="text-xl">💰</span>
-                    قابل دریافت:
-                  </span>
-                  <span className="text-white text-2xl font-black">{fa(result)} {form.getCur}</span>
-                </div>
-              </div>
-
-              <div className="flex items-end">
-                <button className="btn-gold w-full py-4 rounded-2xl text-base font-extrabold shadow-xl hover:shadow-2xl transition-shadow" onClick={add}>
-                  ✨ ثبت حواله
-                </button>
-              </div>
-
-              <div className="lg:col-span-4"><ErrorBox error="" /></div>
-            </div>
-          </div>
-
-          {lastTrackCode && (
-            <div className="card p-6 bg-gradient-to-r from-sky-50 to-blue-50 border-2 border-sky-200 rounded-3xl shadow-xl">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-bold text-sky-700 flex items-center gap-2">
-                    <span className="text-xl">🔍</span>
-                    کد پیگیری حواله:
-                  </p>
-                  <p className="text-2xl font-black text-sky-900 font-mono mt-2">{lastTrackCode}</p>
-                </div>
-                <button
-                  className="px-6 py-3 rounded-xl bg-sky-500 text-white text-sm font-bold hover:bg-sky-600 shadow-lg transition-all hover:scale-105"
-                  onClick={() => {
-                    navigator.clipboard.writeText(lastTrackCode);
-                    setSuccess("📋 کد پیگیری کپی شد");
-                    setTimeout(() => setSuccess(""), 2000);
-                  }}
-                >
-                  📋 کپی
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ================================================================ */}
-      {/* 📊 بخش ۲: تاریخچه */}
-      {/* ================================================================ */}
-      {subTab === "history" && (
-        <div className="space-y-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-xl font-extrabold flex items-center gap-3">
-              <span className="w-10 h-10 bg-gradient-to-br from-purple-500 to-fuchsia-600 rounded-xl flex items-center justify-center text-xl shadow-md">📊</span>
-              تاریخچه حواله‌ها
-            </h2>
-            <div className="flex gap-2">
-              <select
-                className="input !w-auto text-sm rounded-xl"
-                value={historyFilter}
-                onChange={e => setHistoryFilter(e.target.value)}
-              >
-                <option>همه</option>
-                <option>در حال انتظار</option>
-                <option>پرداخت شد</option>
-                <option>لغو شد</option>
-              </select>
-              <input
-                className="input !w-auto text-sm rounded-xl"
-                placeholder="🔎 جستجو: نام یا کد پیگیری..."
-                value={historySearch}
-                onChange={e => setHistorySearch(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="card overflow-x-auto rounded-3xl shadow-xl border border-slate-100">
-            <table className="w-full text-sm">
-              <thead className="bg-gradient-to-r from-[#0b1f2e] to-[#16374d] text-[#e3b45c]">
-                <tr>
-                  <th className="text-center px-4 py-4 font-extrabold w-16">ردیف</th>
-                  <th className="text-right px-4 py-4 font-extrabold">کد پیگیری</th>
-                  <th className="text-right px-4 py-4 font-extrabold">فرستنده</th>
-                  <th className="text-right px-4 py-4 font-extrabold">گیرنده</th>
-                  <th className="text-right px-4 py-4 font-extrabold">مسیر</th>
-                  <th className="text-right px-4 py-4 font-extrabold">مبلغ</th>
-                  <th className="text-right px-4 py-4 font-extrabold">دریافتی</th>
-                  <th className="text-right px-4 py-4 font-extrabold">نرخ</th>
-                  <th className="text-right px-4 py-4 font-extrabold">وضعیت</th>
-                  <th className="text-right px-4 py-4 font-extrabold">تاریخ</th>
-                  <th className="text-right px-4 py-4 font-extrabold">عملیات</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredHistory.length === 0 ? (
-                  <tr><td colSpan={11} className="text-center py-12 text-slate-400">
-                    <p className="text-4xl mb-3">📊</p>
-                    <p className="font-bold">حواله‌ای یافت نشد</p>
-                  </td></tr>
-                ) : (
-                  filteredHistory.map((h, index) => (
-                    <tr key={h.id} className="hover:bg-amber-50/40 transition-colors">
-                      <td className="px-4 py-4 text-center font-mono font-bold text-[#0b1f2e]">
-                        {(index + 1).toLocaleString("en-US")}
-                      </td>
-                      <td className="px-4 py-4">
-                        <span className="font-mono text-xs bg-gradient-to-r from-slate-100 to-slate-200 px-3 py-1.5 rounded-lg font-bold text-slate-700">
-                          {h.trackCode || "-"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4 font-bold">{h.sender}</td>
-                      <td className="px-4 py-4">{h.receiver}</td>
-                      <td className="px-4 py-4 text-slate-500 text-xs font-medium">{h.fromCity} ← {h.toCity}</td>
-                      <td className="px-4 py-4 font-bold">{fa(Number(h.amount))} {h.payCur}</td>
-                      <td className="px-4 py-4 font-extrabold text-[#c98f2d]">{fa(Number(h.result))} {h.getCur}</td>
-                      <td className="px-4 py-4 text-xs">
-                        {h.manualRate ? (
-                          <span className="bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg border border-blue-200 font-bold">
-                            {h.manualRate}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400">سیستم</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-4">
-                        <select
-                          className={`text-xs px-3 py-2 rounded-xl border font-bold ${statusStyle(h.status)}`}
-                          value={h.status}
-                          onChange={e => updateStatus(h.id, e.target.value)}
-                        >
-                          <option>در حال انتظار</option>
-                          <option>پرداخت شد</option>
-                          <option>لغو شد</option>
-                        </select>
-                      </td>
-                      <td className="px-4 py-4 text-xs text-slate-500 font-medium">{h.date}</td>
-                      <td className="px-4 py-4">
-                        <div className="flex gap-2">
-                          <a href={wa(h)} target="_blank" rel="noopener noreferrer"
-                            className="px-3 py-2 rounded-xl bg-emerald-50 text-emerald-600 text-xs font-bold hover:bg-emerald-100 transition-colors border border-emerald-200">
-                            💬 واتساپ
-                          </a>
-                          <button
-                            className="px-3 py-2 rounded-xl bg-red-50 text-red-600 text-xs font-bold hover:bg-red-100 transition-colors border border-red-200"
-                            onClick={() => setList(list.filter(x => x.id !== h.id))}
-                          >
-                            🗑️ حذف
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* ================================================================ */}
-      {/* 📈 بخش ۳: گزارشات */}
-      {/* ================================================================ */}
-      {subTab === "reports" && (
-        <div className="space-y-6">
-          <h2 className="text-xl font-extrabold flex items-center gap-3">
-            <span className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center text-xl shadow-md">📈</span>
-            گزارشات حواله‌جات
-          </h2>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            <div className="card p-6 bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-700 text-white rounded-3xl shadow-xl">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                  <span className="text-2xl">📊</span>
-                </div>
-                <div>
-                  <p className="text-xs opacity-80 font-bold">مجموع حواله‌ها</p>
-                  <p className="text-3xl font-black mt-1">{fa(list.length)}</p>
-                </div>
-              </div>
-              <p className="text-[11px] opacity-70 mt-2">از ابتدای ثبت</p>
-            </div>
-
-            <div className="card p-6 bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-700 text-white rounded-3xl shadow-xl">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                  <span className="text-2xl">💰</span>
-                </div>
-                <div>
-                  <p className="text-xs opacity-80 font-bold">حجم کل</p>
-                  <p className="text-3xl font-black mt-1">{fa(stats.totalAmount)}</p>
-                </div>
-              </div>
-              <p className="text-[11px] opacity-70 mt-2">مجموع مبالغ ارسالی</p>
-            </div>
-
-            <div className="card p-6 bg-gradient-to-br from-amber-500 via-amber-600 to-orange-700 text-white rounded-3xl shadow-xl">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                  <span className="text-2xl">💵</span>
-                </div>
-                <div>
-                  <p className="text-xs opacity-80 font-bold">مجموع کارمزد</p>
-                  <p className="text-3xl font-black mt-1">{fa(stats.totalFee)}</p>
-                </div>
-              </div>
-              <p className="text-[11px] opacity-70 mt-2">افغانی</p>
-            </div>
-
-            <div className="card p-6 bg-gradient-to-br from-purple-500 via-purple-600 to-fuchsia-700 text-white rounded-3xl shadow-xl">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                  <span className="text-2xl">✅</span>
-                </div>
-                <div>
-                  <p className="text-xs opacity-80 font-bold">پرداخت شده</p>
-                  <p className="text-3xl font-black mt-1">{fa(paidList.length)}</p>
-                </div>
-              </div>
-              <p className="text-[11px] opacity-70 mt-2">از {fa(list.length)} حواله</p>
-            </div>
-          </div>
-
-          <div className="card p-6 rounded-3xl shadow-xl border border-slate-100">
-            <h3 className="font-extrabold text-lg mb-5 flex items-center gap-2">
-              <span className="text-xl">📋</span>
-              وضعیت حواله‌ها
-            </h3>
-            <div className="grid grid-cols-3 gap-5">
-              <div className="text-center p-5 rounded-2xl bg-gradient-to-br from-amber-50 to-amber-100 border-2 border-amber-200">
-                <p className="text-3xl font-black text-amber-700">{fa(pendingList.length)}</p>
-                <p className="text-xs text-amber-600 font-bold mt-2 flex items-center justify-center gap-1">
-                  <span>⏳</span> در حال انتظار
-                </p>
-              </div>
-              <div className="text-center p-5 rounded-2xl bg-gradient-to-br from-emerald-50 to-emerald-100 border-2 border-emerald-200">
-                <p className="text-3xl font-black text-emerald-700">{fa(paidList.length)}</p>
-                <p className="text-xs text-emerald-600 font-bold mt-2 flex items-center justify-center gap-1">
-                  <span>✅</span> پرداخت شد
-                </p>
-              </div>
-              <div className="text-center p-5 rounded-2xl bg-gradient-to-br from-red-50 to-red-100 border-2 border-red-200">
-                <p className="text-3xl font-black text-red-700">{fa(cancelledList.length)}</p>
-                <p className="text-xs text-red-600 font-bold mt-2 flex items-center justify-center gap-1">
-                  <span>🚫</span> لغو شد
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ================================================================ */}
-      {/* 👥 بخش ۴: مشتریان */}
-      {/* ================================================================ */}
-      {subTab === "customers" && (
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-extrabold flex items-center gap-3">
-              <span className="w-10 h-10 bg-gradient-to-br from-sky-500 to-blue-600 rounded-xl flex items-center justify-center text-xl shadow-md">👥</span>
-              مشتریان حواله‌جات
-            </h2>
-            <span className="text-sm bg-gradient-to-r from-slate-100 to-slate-200 text-slate-700 px-4 py-2 rounded-xl font-bold border border-slate-200">
-              {Object.keys(stats.customers).length} مشتری
             </span>
           </div>
 
-          {Object.keys(stats.customers).length === 0 ? (
-            <div className="card p-12 text-center text-slate-400 rounded-3xl shadow-xl border border-slate-100">
-              <p className="text-5xl mb-4">👥</p>
-              <p className="font-extrabold text-lg">هنوز مشتری‌ای ثبت نشده است</p>
-              <p className="text-xs mt-2">اولین حواله را ثبت کنید</p>
-            </div>
-          ) : (
-            <div className="card overflow-x-auto rounded-3xl shadow-xl border border-slate-100">
-              <table className="w-full text-sm">
-                <thead className="bg-gradient-to-r from-[#0b1f2e] to-[#16374d] text-[#e3b45c]">
-                  <tr>
-                    <th className="text-center px-4 py-4 font-extrabold w-16">ردیف</th>
-                    <th className="text-right px-4 py-4 font-extrabold">نام</th>
-                    <th className="text-right px-4 py-4 font-extrabold">نوع</th>
-                    <th className="text-right px-4 py-4 font-extrabold">تعداد حواله</th>
-                    <th className="text-right px-4 py-4 font-extrabold">حجم کل</th>
-                    <th className="text-right px-4 py-4 font-extrabold">جزئیات معاملات</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {Object.entries(stats.customers)
-                    .sort((a, b) => b[1].count - a[1].count)
-                    .map(([name, info], index) => (
-                      <tr key={name} className="hover:bg-amber-50/40 transition-colors">
-                        <td className="px-4 py-4 text-center font-mono font-bold text-[#0b1f2e]">
-                          {(index + 1).toLocaleString("en-US")}
-                        </td>
-                        <td className="px-4 py-4 font-bold">{name}</td>
-                        <td className="px-4 py-4">
-                          <span className={`text-xs px-3 py-1.5 rounded-xl border font-bold ${
-                            info.type === "فرستنده"
-                              ? "bg-blue-50 text-blue-700 border-blue-200"
-                              : "bg-emerald-50 text-emerald-700 border-emerald-200"
-                          }`}>
-                            {info.type}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4 font-bold">{fa(info.count)} حواله</td>
-                        <td className="px-4 py-4 font-extrabold text-[#c98f2d]">{fa(info.volume)}</td>
-                        <td className="px-4 py-4">
-                          <button
-                            className="px-4 py-2 rounded-xl bg-sky-50 text-sky-600 text-xs font-bold hover:bg-sky-100 flex items-center gap-2 transition-colors border border-sky-200"
-                            onClick={() => setSelectedCustomer(name)}
-                          >
-                            <span>🔍</span> جزئیات
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ================================================================ */}
-      {/* مودال جزئیات معاملات مشتری */}
-      {/* ================================================================ */}
-      {selectedCustomer && stats.customers[selectedCustomer] && (
-        <Modal title={`🔍 جزئیات معاملات ${selectedCustomer}`} onClose={() => setSelectedCustomer(null)}>
-          <div className="space-y-4">
-            <div className="bg-gradient-to-r from-slate-50 to-slate-100 rounded-2xl p-5 flex items-center justify-between border border-slate-200">
-              <div>
-                <p className="font-extrabold text-[#0b1f2e] text-lg">{selectedCustomer}</p>
-                <p className="text-xs text-slate-500 mt-1">
-                  {stats.customers[selectedCustomer].type} • {fa(stats.customers[selectedCustomer].count)} حواله
-                </p>
-              </div>
-              <div className="text-left">
-                <p className="text-xs text-slate-500">حجم کل:</p>
-                <p className="font-extrabold text-[#c98f2d] text-lg">{fa(stats.customers[selectedCustomer].volume)}</p>
-              </div>
-            </div>
-
-            <div className="max-h-96 overflow-y-auto space-y-3">
-              {stats.customers[selectedCustomer].transactions.map((h, i) => (
-                <div key={h.id} className="p-4 rounded-2xl border-2 border-slate-200 hover:border-sky-300 transition-colors bg-white">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="font-mono text-xs bg-gradient-to-r from-slate-100 to-slate-200 px-3 py-1.5 rounded-lg font-bold">
-                      {h.trackCode || "-"}
-                    </span>
-                    <span className={`text-xs px-3 py-1.5 rounded-xl border font-bold ${statusStyle(h.status)}`}>
-                      {h.status}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <p className="text-slate-500 font-medium">فرستنده:</p>
-                      <p className="font-bold">{h.sender}</p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 font-medium">گیرنده:</p>
-                      <p className="font-bold">{h.receiver}</p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 font-medium">مسیر:</p>
-                      <p className="font-bold">{h.fromCity} ← {h.toCity}</p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 font-medium">مبلغ:</p>
-                      <p className="font-bold">{fa(Number(h.amount))} {h.payCur}</p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 font-medium">دریافتی:</p>
-                      <p className="font-extrabold text-[#c98f2d]">{fa(Number(h.result))} {h.getCur}</p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 font-medium">تاریخ:</p>
-                      <p className="font-bold">{h.date}</p>
-                    </div>
-                    {h.manualRate && (
-                      <div className="col-span-2">
-                        <p className="text-slate-500 font-medium">نرخ توافقی:</p>
-                        <p className="font-extrabold text-blue-600">{h.manualRate}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <button
-              className="w-full rounded-2xl border-2 border-slate-200 py-3 text-sm font-bold hover:bg-slate-50 transition-colors"
-              onClick={() => setSelectedCustomer(null)}
-            >
-              بستن
-            </button>
+          <div class="row">
+            <strong>نوع حواله</strong>
+            <span>${tx.type}</span>
           </div>
-        </Modal>
+
+          <div class="row">
+            <strong>فرستنده</strong>
+            <span>${senderName}</span>
+          </div>
+
+          <div class="row">
+            <strong>گیرنده</strong>
+            <span>${tx.receiverName}</span>
+          </div>
+
+          <div class="row">
+            <strong>مبلغ حواله</strong>
+            <span>
+              ${formatNumber(tx.amount)}
+              ${currencyLabels[tx.currency]}
+            </span>
+          </div>
+
+          <div class="row">
+            <strong>کارمزد</strong>
+            <span>
+              ${formatNumber(tx.commission)}
+              ${currencyLabels[tx.commissionCurrency]}
+            </span>
+          </div>
+
+          <div class="row">
+            <strong>مبلغ کل</strong>
+            <span>
+              ${formatNumber(tx.totalReceived)}
+              ${currencyLabels[tx.currency]}
+            </span>
+          </div>
+
+          <div class="row">
+            <strong>وضعیت</strong>
+            <span>${tx.status}</span>
+          </div>
+
+          ${
+            tx.note
+              ? `
+              <div class="row">
+                <strong>یادداشت</strong>
+                <span>${tx.note}</span>
+              </div>
+              `
+              : ""
+          }
+
+        </div>
+      </body>
+      </html>
+    `;
+
+    const win = window.open(
+      "",
+      "_blank"
+    );
+
+    if (!win) {
+      alert("پنجره چاپ باز نشد.");
+      return;
+    }
+
+    win.document.write(html);
+    win.document.close();
+
+    setTimeout(() => {
+      win.print();
+    }, 300);
+  }
+
+  // ===================================================
+  // WhatsApp Receipt
+  // ===================================================
+
+  function sendWhatsAppReceipt(
+    tx: Remittance
+  ) {
+    const sender =
+      customers.find(
+        (c) => c.id === tx.senderId
+      );
+
+    const phone =
+      sender?.whatsapp ||
+      tx.senderPhone;
+
+    if (!phone) {
+      alert(
+        "شماره WhatsApp مشتری ثبت نشده است."
+      );
+      return;
+    }
+
+    const senderName =
+      sender?.name || tx.senderId;
+
+    const message = `
+رسید حواله
+
+صرافی برادران نورزاد
+
+شماره سند: ${tx.id}
+
+نوع حواله: ${tx.type}
+
+فرستنده:
+${senderName}
+
+گیرنده:
+${tx.receiverName}
+
+مبلغ حواله:
+${formatNumber(tx.amount)} ${currencyLabels[tx.currency]}
+
+کارمزد:
+${formatNumber(tx.commission)} ${currencyLabels[tx.commissionCurrency]}
+
+مبلغ کل:
+${formatNumber(tx.totalReceived)} ${currencyLabels[tx.currency]}
+
+وضعیت:
+${tx.status}
+
+تاریخ:
+${new Date(tx.date).toLocaleString(
+      "fa-IR"
+    )}
+    `.trim();
+
+    const cleanPhone =
+      phone.replace(/\D/g, "");
+
+    const url =
+      `https://wa.me/${cleanPhone}` +
+      `?text=${encodeURIComponent(message)}`;
+
+    window.open(
+      url,
+      "_blank"
+    );
+  }
+
+  // ===================================================
+  // Copy Receipt
+  // ===================================================
+
+  async function copyReceipt(
+    tx: Remittance
+  ) {
+    const senderName =
+      getCustomerName(
+        customers,
+        tx.senderId
+      );
+
+    const text = `
+رسید حواله
+
+شماره سند: ${tx.id}
+نوع حواله: ${tx.type}
+
+فرستنده: ${senderName}
+گیرنده: ${tx.receiverName}
+
+مبلغ حواله:
+${formatNumber(tx.amount)} ${currencyLabels[tx.currency]}
+
+کارمزد:
+${formatNumber(tx.commission)} ${currencyLabels[tx.commissionCurrency]}
+
+مبلغ کل:
+${formatNumber(tx.totalReceived)} ${currencyLabels[tx.currency]}
+
+وضعیت: ${tx.status}
+
+تاریخ:
+${new Date(tx.date).toLocaleString(
+      "fa-IR"
+    )}
+    `.trim();
+
+    await navigator.clipboard.writeText(text);
+
+    alert("رسید کپی شد.");
+  }
+
+  // ===================================================
+  // Filter
+  // ===================================================
+
+  const filteredRemittances =
+    remittances.filter((tx) => {
+      const matchesStatus =
+        activeStatus === "همه" ||
+        tx.status === activeStatus;
+
+      const senderName =
+        getCustomerName(
+          customers,
+          tx.senderId
+        );
+
+      const matchesSearch =
+        !search ||
+        tx.id
+          .toLowerCase()
+          .includes(search.toLowerCase()) ||
+        senderName.includes(search) ||
+        tx.receiverName.includes(search);
+
+      return (
+        matchesStatus &&
+        matchesSearch
+      );
+    });
+
+  // ===================================================
+  // Statistics
+  // ===================================================
+
+  const totalCount =
+    remittances.length;
+
+  const pendingCount =
+    remittances.filter(
+      (x) =>
+        x.status === "در انتظار" ||
+        x.status === "در حال پردازش" ||
+        x.status === "آماده پرداخت"
+    ).length;
+
+  const completedCount =
+    remittances.filter(
+      (x) =>
+        x.status === "پرداخت شد"
+    ).length;
+
+  const totalCommission =
+    remittances.reduce(
+      (sum, x) =>
+        sum + x.commission,
+      0
+    );
+
+  // ===================================================
+  // UI
+  // ===================================================
+
+  return (
+    <div
+      dir="rtl"
+      className="space-y-6 p-6 bg-gray-50 min-h-screen"
+    >
+
+      {/* Header */}
+
+      <div>
+        <h1 className="text-2xl font-bold text-gray-800">
+          حواله‌جات
+        </h1>
+
+        <p className="text-sm text-gray-500 mt-1">
+          مدیریت ارسال، دریافت و انتقال حساب به حساب
+        </p>
+      </div>
+
+      {/* Statistics */}
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+
+        <div className="bg-white border rounded-xl p-5 shadow-sm">
+          <p className="text-sm text-gray-500">
+            کل حواله‌ها
+          </p>
+
+          <p className="text-2xl font-bold mt-2">
+            {totalCount}
+          </p>
+        </div>
+
+        <div className="bg-white border rounded-xl p-5 shadow-sm">
+          <p className="text-sm text-gray-500">
+            در انتظار
+          </p>
+
+          <p className="text-2xl font-bold mt-2">
+            {pendingCount}
+          </p>
+        </div>
+
+        <div className="bg-white border rounded-xl p-5 shadow-sm">
+          <p className="text-sm text-gray-500">
+            پرداخت‌شده
+          </p>
+
+          <p className="text-2xl font-bold mt-2">
+            {completedCount}
+          </p>
+        </div>
+
+        <div className="bg-white border rounded-xl p-5 shadow-sm">
+          <p className="text-sm text-gray-500">
+            درآمد کارمزد
+          </p>
+
+          <p className="text-2xl font-bold mt-2">
+            {formatNumber(totalCommission)}
+          </p>
+        </div>
+
+      </div>
+
+      {/* Register New Remittance */}
+
+      <div className="bg-white border rounded-2xl shadow-sm p-6">
+
+        <h2 className="text-xl font-bold text-gray-800 mb-6">
+          ثبت حواله جدید
+        </h2>
+
+        {/* Basic Info */}
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-6">
+
+          <div>
+            <label className="block font-bold text-sm mb-2">
+              شماره سند
+            </label>
+
+            <input
+              value="خودکار هنگام ثبت"
+              readOnly
+              className="w-full h-12 border rounded-xl px-4 bg-gray-100"
+            />
+          </div>
+
+          <div>
+            <label className="block font-bold text-sm mb-2">
+              تاریخ و ساعت
+            </label>
+
+            <input
+              value={new Date().toLocaleString(
+                "fa-IR"
+              )}
+              readOnly
+              className="w-full h-12 border rounded-xl px-4 bg-gray-100"
+            />
+          </div>
+
+          <div>
+            <label className="block font-bold text-sm mb-2">
+              نوع حواله
+            </label>
+
+            <select
+              value={remittanceType}
+              onChange={(e) =>
+                setRemittanceType(
+                  e.target.value as RemittanceType
+                )
+              }
+              className="w-full h-12 border rounded-xl px-4 bg-white"
+            >
+              <option value="ارسال">
+                ارسال حواله
+              </option>
+
+              <option value="دریافت">
+                دریافت حواله
+              </option>
+
+              <option value="حساب به حساب">
+                حساب به حساب
+              </option>
+            </select>
+          </div>
+
+        </div>
+
+        {/* Sender / Receiver */}
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+          {/* Sender */}
+
+          <div className="border rounded-xl p-5">
+
+            <h3 className="font-bold text-lg mb-5">
+              اطلاعات فرستنده
+            </h3>
+
+            <div className="space-y-4">
+
+              <div>
+                <label className="block font-bold text-sm mb-2">
+                  مشتری فرستنده
+                </label>
+
+                <select
+                  value={senderId}
+                  onChange={(e) =>
+                    setSenderId(
+                      e.target.value
+                    )
+                  }
+                  className="w-full h-12 border rounded-xl px-4"
+                >
+                  <option value="">
+                    انتخاب مشتری
+                  </option>
+
+                  {customers.map(
+                    (customer, index) => (
+                      <option
+                        key={customer.id}
+                        value={customer.id}
+                      >
+                        {index + 1}.{" "}
+                        {customer.name}
+                      </option>
+                    )
+                  )}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold text-sm mb-2">
+                  ارز حواله
+                </label>
+
+                <select
+                  value={currency}
+                  onChange={(e) =>
+                    setCurrency(
+                      e.target.value as Currency
+                    )
+                  }
+                  className="w-full h-12 border rounded-xl px-4"
+                >
+                  {currencies.map(
+                    (cur) => (
+                      <option
+                        key={cur}
+                        value={cur}
+                      >
+                        {currencyLabels[cur]}
+                      </option>
+                    )
+                  )}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold text-sm mb-2">
+                  مبلغ حواله
+                </label>
+
+                <input
+                  type="number"
+                  value={amount}
+                  onChange={(e) =>
+                    setAmount(
+                      e.target.value
+                    )
+                  }
+                  className="w-full h-12 border rounded-xl px-4"
+                  placeholder="مبلغ را وارد کنید"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-sm mb-2">
+                  روش پرداخت
+                </label>
+
+                <select
+                  value={paymentMethod}
+                  onChange={(e) =>
+                    setPaymentMethod(
+                      e.target.value as
+                        | "نقدی"
+                        | "حساب مشتری"
+                        | "بانکی"
+                    )
+                  }
+                  className="w-full h-12 border rounded-xl px-4"
+                >
+                  <option value="نقدی">
+                    نقدی
+                  </option>
+
+                  <option value="حساب مشتری">
+                    حساب مشتری
+                  </option>
+
+                  <option value="بانکی">
+                    بانکی
+                  </option>
+                </select>
+              </div>
+
+            </div>
+
+          </div>
+
+          {/* Receiver */}
+
+          <div className="border rounded-xl p-5">
+
+            <h3 className="font-bold text-lg mb-5">
+              اطلاعات گیرنده
+            </h3>
+
+            <div className="space-y-4">
+
+              <div>
+                <label className="block font-bold text-sm mb-2">
+                  نام گیرنده
+                </label>
+
+                <input
+                  value={receiverName}
+                  onChange={(e) =>
+                    setReceiverName(
+                      e.target.value
+                    )
+                  }
+                  className="w-full h-12 border rounded-xl px-4"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-sm mb-2">
+                  شماره تماس گیرنده
+                </label>
+
+                <input
+                  value={receiverPhone}
+                  onChange={(e) =>
+                    setReceiverPhone(
+                      e.target.value
+                    )
+                  }
+                  className="w-full h-12 border rounded-xl px-4"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+
+                <div>
+                  <label className="block font-bold text-sm mb-2">
+                    کشور
+                  </label>
+
+                  <input
+                    value={receiverCountry}
+                    onChange={(e) =>
+                      setReceiverCountry(
+                        e.target.value
+                      )
+                    }
+                    className="w-full h-12 border rounded-xl px-4"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-sm mb-2">
+                    شهر
+                  </label>
+
+                  <input
+                    value={receiverCity}
+                    onChange={(e) =>
+                      setReceiverCity(
+                        e.target.value
+                      )
+                    }
+                    className="w-full h-12 border rounded-xl px-4"
+                  />
+                </div>
+
+              </div>
+
+              <div>
+                <label className="block font-bold text-sm mb-2">
+                  روش دریافت
+                </label>
+
+                <select
+                  value={
+                    paymentMethodAtDestination
+                  }
+                  onChange={(e) =>
+                    setPaymentMethodAtDestination(
+                      e.target.value as
+                        | "نقدی"
+                        | "حساب مشتری"
+                        | "بانکی"
+                        | ""
+                    )
+                  }
+                  className="w-full h-12 border rounded-xl px-4"
+                >
+                  <option value="">
+                    انتخاب روش دریافت
+                  </option>
+
+                  <option value="نقدی">
+                    نقدی
+                  </option>
+
+                  <option value="حساب مشتری">
+                    حساب مشتری
+                  </option>
+
+                  <option value="بانکی">
+                    بانکی
+                  </option>
+                </select>
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        {/* Financial */}
+
+        <div className="border rounded-xl p-5 mt-6">
+
+          <h3 className="font-bold text-lg mb-5">
+            اطلاعات مالی حواله
+          </h3>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+
+            <div>
+              <label className="block font-bold text-sm mb-2">
+                مبلغ اصلی حواله
+              </label>
+
+              <input
+                value={
+                  amountNumber
+                    ? formatNumber(
+                        amountNumber
+                      )
+                    : "0"
+                }
+                readOnly
+                className="w-full h-12 border rounded-xl px-4 bg-gray-100"
+              />
+            </div>
+
+            <div>
+              <label className="block font-bold text-sm mb-2">
+                کارمزد
+              </label>
+
+              <input
+                type="number"
+                value={commission}
+                onChange={(e) =>
+                  setCommission(
+                    e.target.value
+                  )
+                }
+                className="w-full h-12 border rounded-xl px-4"
+              />
+            </div>
+
+            <div>
+              <label className="block font-bold text-sm mb-2">
+                ارز کارمزد
+              </label>
+
+              <select
+                value={commissionCurrency}
+                onChange={(e) =>
+                  setCommissionCurrency(
+                    e.target.value as Currency
+                  )
+                }
+                className="w-full h-12 border rounded-xl px-4"
+              >
+                {currencies.map(
+                  (cur) => (
+                    <option
+                      key={cur}
+                      value={cur}
+                    >
+                      {currencyLabels[cur]}
+                    </option>
+                  )
+                )}
+              </select>
+            </div>
+
+            <div>
+              <label className="block font-bold text-sm mb-2">
+                مبلغ کل دریافتی
+              </label>
+
+              <input
+                value={`${formatNumber(
+                  totalReceived
+                )} ${currencyLabels[currency]}`}
+                readOnly
+                className="w-full h-12 border rounded-xl px-4 bg-gray-100 font-bold"
+              />
+            </div>
+
+          </div>
+
+        </div>
+
+        {/* Payment */}
+
+        <div className="border rounded-xl p-5 mt-6">
+
+          <h3 className="font-bold text-lg mb-5">
+            اطلاعات پرداخت
+          </h3>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+
+            <div>
+              <label className="block font-bold text-sm mb-2">
+                مبلغ پرداخت
+              </label>
+
+              <input
+                type="number"
+                value={paidAmount}
+                onChange={(e) =>
+                  setPaidAmount(
+                    e.target.value
+                  )
+                }
+                className="w-full h-12 border rounded-xl px-4"
+              />
+            </div>
+
+            <div>
+              <label className="block font-bold text-sm mb-2">
+                ارز پرداخت
+              </label>
+
+              <select
+                value={paidCurrency}
+                onChange={(e) =>
+                  setPaidCurrency(
+                    e.target.value as Currency
+                  )
+                }
+                className="w-full h-12 border rounded-xl px-4"
+              >
+                {currencies.map(
+                  (cur) => (
+                    <option
+                      key={cur}
+                      value={cur}
+                    >
+                      {currencyLabels[cur]}
+                    </option>
+                  )
+                )}
+              </select>
+            </div>
+
+            <div>
+              <label className="block font-bold text-sm mb-2">
+                توضیحات پرداخت
+              </label>
+
+              <input
+                value={paymentNote}
+                onChange={(e) =>
+                  setPaymentNote(
+                    e.target.value
+                  )
+                }
+                className="w-full h-12 border rounded-xl px-4"
+              />
+            </div>
+
+          </div>
+
+        </div>
+
+        {/* Note */}
+
+        <div className="mt-6">
+
+          <label className="block font-bold text-sm mb-2">
+            یادداشت
+          </label>
+
+          <textarea
+            value={note}
+            onChange={(e) =>
+              setNote(e.target.value)
+            }
+            rows={3}
+            className="w-full border rounded-xl px-4 py-3"
+            placeholder="یادداشت اختیاری"
+          />
+
+        </div>
+
+        {/* Submit */}
+
+        <button
+          onClick={submitRemittance}
+          className="w-full h-14 mt-6 rounded-xl bg-[#092F3A] text-white font-bold hover:bg-[#0a4652] transition"
+        >
+          ثبت حواله
+        </button>
+
+      </div>
+
+      {/* Search / Filter */}
+
+      <div className="bg-white border rounded-xl p-5">
+
+        <div className="flex flex-col md:flex-row gap-4">
+
+          <input
+            value={search}
+            onChange={(e) =>
+              setSearch(e.target.value)
+            }
+            placeholder="جستجو بر اساس سند، فرستنده یا گیرنده"
+            className="flex-1 h-12 border rounded-xl px-4"
+          />
+
+          <select
+            value={activeStatus}
+            onChange={(e) =>
+              setActiveStatus(
+                e.target.value as
+                  | "همه"
+                  | RemittanceStatus
+              )
+            }
+            className="h-12 border rounded-xl px-4"
+          >
+            <option value="همه">
+              همه وضعیت‌ها
+            </option>
+
+            <option value="در انتظار">
+              در انتظار
+            </option>
+
+            <option value="در حال پردازش">
+              در حال پردازش
+            </option>
+
+            <option value="آماده پرداخت">
+              آماده پرداخت
+            </option>
+
+            <option value="پرداخت شد">
+              پرداخت شد
+            </option>
+
+            <option value="لغو شد">
+              لغو شد
+            </option>
+
+            <option value="برگشت داده شد">
+              برگشت داده شد
+            </option>
+          </select>
+
+        </div>
+
+      </div>
+
+      {/* Remittance Table */}
+
+      <div className="bg-white border rounded-xl shadow-sm overflow-x-auto">
+
+        <div className="p-5">
+
+          <h2 className="text-lg font-bold">
+            آخرین حواله‌ها
+          </h2>
+
+        </div>
+
+        <table className="min-w-full text-sm">
+
+          <thead className="bg-gray-50">
+
+            <tr>
+
+              <th className="px-4 py-3 text-right font-bold">
+                سند
+              </th>
+
+              <th className="px-4 py-3 text-right font-bold">
+                تاریخ
+              </th>
+
+              <th className="px-4 py-3 text-right font-bold">
+                نوع
+              </th>
+
+              <th className="px-4 py-3 text-right font-bold">
+                فرستنده
+              </th>
+
+              <th className="px-4 py-3 text-right font-bold">
+                گیرنده
+              </th>
+
+              <th className="px-4 py-3 text-right font-bold">
+                مبلغ
+              </th>
+
+              <th className="px-4 py-3 text-right font-bold">
+                کارمزد
+              </th>
+
+              <th className="px-4 py-3 text-right font-bold">
+                وضعیت
+              </th>
+
+              <th className="px-4 py-3 text-right font-bold">
+                عملیات
+              </th>
+
+            </tr>
+
+          </thead>
+
+          <tbody>
+
+            {filteredRemittances.length === 0 ? (
+
+              <tr>
+
+                <td
+                  colSpan={9}
+                  className="text-center py-10 text-gray-400"
+                >
+                  هنوز حواله‌ای ثبت نشده است.
+                </td>
+
+              </tr>
+
+            ) : (
+
+              filteredRemittances.map(
+                (tx) => (
+
+                  <tr
+                    key={tx.id}
+                    className="border-t hover:bg-gray-50"
+                  >
+
+                    <td className="px-4 py-3 font-mono text-xs">
+                      {tx.id}
+                    </td>
+
+                    <td className="px-4 py-3">
+                      {new Date(
+                        tx.date
+                      ).toLocaleString(
+                        "fa-IR"
+                      )}
+                    </td>
+
+                    <td className="px-4 py-3">
+                      {tx.type}
+                    </td>
+
+                    <td className="px-4 py-3">
+                      {getCustomerName(
+                        customers,
+                        tx.senderId
+                      )}
+                    </td>
+
+                    <td className="px-4 py-3">
+                      {tx.receiverName}
+                    </td>
+
+                    <td className="px-4 py-3 font-bold">
+                      {formatNumber(
+                        tx.amount
+                      )}{" "}
+                      {
+                        currencyLabels[
+                          tx.currency
+                        ]
+                      }
+                    </td>
+
+                    <td className="px-4 py-3">
+                      {formatNumber(
+                        tx.commission
+                      )}{" "}
+                      {
+                        currencyLabels[
+                          tx.commissionCurrency
+                        ]
+                      }
+                    </td>
+
+                    <td className="px-4 py-3">
+                      {tx.status}
+                    </td>
+
+                    <td className="px-4 py-3">
+
+                      <div className="flex flex-wrap gap-2">
+
+                        <button
+                          onClick={() =>
+                            setViewRemittance(
+                              tx
+                            )
+                          }
+                          className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg"
+                        >
+                          مشاهده
+                        </button>
+
+                        <button
+                          onClick={() =>
+                            printReceipt(
+                              tx
+                            )
+                          }
+                          className="px-3 py-1.5 bg-gray-100 rounded-lg"
+                        >
+                          چاپ
+                        </button>
+
+                        <button
+                          onClick={() =>
+                            sendWhatsAppReceipt(
+                              tx
+                            )
+                          }
+                          className="px-3 py-1.5 bg-green-50 text-green-700 rounded-lg"
+                        >
+                          WhatsApp
+                        </button>
+
+                        <button
+                          onClick={() =>
+                            copyReceipt(
+                              tx
+                            )
+                          }
+                          className="px-3 py-1.5 bg-gray-100 rounded-lg"
+                        >
+                          کپی رسید
+                        </button>
+
+                        <select
+                          value={tx.status}
+                          onChange={(e) =>
+                            changeStatus(
+                              tx.id,
+                              e.target
+                                .value as RemittanceStatus
+                            )
+                          }
+                          className="border rounded-lg px-2 py-1.5"
+                        >
+                          <option value="در انتظار">
+                            در انتظار
+                          </option>
+
+                          <option value="در حال پردازش">
+                            در حال پردازش
+                          </option>
+
+                          <option value="آماده پرداخت">
+                            آماده پرداخت
+                          </option>
+
+                          <option value="پرداخت شد">
+                            پرداخت شد
+                          </option>
+
+                          <option value="لغو شد">
+                            لغو شد
+                          </option>
+
+                          <option value="برگشت داده شد">
+                            برگشت داده شد
+                          </option>
+                        </select>
+
+                      </div>
+
+                    </td>
+
+                  </tr>
+
+                )
+              )
+
+            )}
+
+          </tbody>
+
+        </table>
+
+      </div>
+
+      {/* Customer Balances */}
+
+      <div className="bg-white border rounded-xl shadow-sm p-5">
+
+        <h2 className="text-lg font-bold mb-4">
+          موجودی فعلی مشتریان
+        </h2>
+
+        <div className="overflow-x-auto">
+
+          <table className="min-w-full text-sm">
+
+            <thead className="bg-gray-50">
+
+              <tr>
+
+                <th className="px-4 py-3 text-right font-bold">
+                  مشتری
+                </th>
+
+                {currencies.map(
+                  (cur) => (
+                    <th
+                      key={cur}
+                      className="px-4 py-3 text-right font-bold"
+                    >
+                      {
+                        currencyLabels[
+                          cur
+                        ]
+                      }
+                    </th>
+                  )
+                )}
+
+              </tr>
+
+            </thead>
+
+            <tbody>
+
+              {customers.map(
+                (customer) => {
+
+                  const balance =
+                    liveBalances[
+                      customer.id
+                    ];
+
+                  return (
+                    <tr
+                      key={customer.id}
+                      className="border-t"
+                    >
+
+                      <td className="px-4 py-3 font-bold">
+                        {customer.name}
+                      </td>
+
+                      {currencies.map(
+                        (cur) => (
+                          <td
+                            key={cur}
+                            className="px-4 py-3"
+                          >
+                            {formatNumber(
+                              balance[
+                                cur
+                              ] || 0
+                            )}
+                          </td>
+                        )
+                      )}
+
+                    </tr>
+                  );
+                }
+              )}
+
+            </tbody>
+
+          </table>
+
+        </div>
+
+      </div>
+
+      {/* View Modal */}
+
+      {viewRemittance && (
+
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+          onClick={() =>
+            setViewRemittance(null)
+          }
+        >
+
+          <div
+            className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6"
+            onClick={(e) =>
+              e.stopPropagation()
+            }
+          >
+
+            <h2 className="text-xl font-bold mb-5">
+              جزئیات حواله
+            </h2>
+
+            <div className="space-y-3 text-sm">
+
+              <p>
+                <strong>شماره سند:</strong>{" "}
+                {viewRemittance.id}
+              </p>
+
+              <p>
+                <strong>نوع حواله:</strong>{" "}
+                {viewRemittance.type}
+              </p>
+
+              <p>
+                <strong>تاریخ:</strong>{" "}
+                {new Date(
+                  viewRemittance.date
+                ).toLocaleString(
+                  "fa-IR"
+                )}
+              </p>
+
+              <p>
+                <strong>فرستنده:</strong>{" "}
+                {getCustomerName(
+                  customers,
+                  viewRemittance.senderId
+                )}
+              </p>
+
+              <p>
+                <strong>گیرنده:</strong>{" "}
+                {viewRemittance.receiverName}
+              </p>
+
+              <p>
+                <strong>شماره گیرنده:</strong>{" "}
+                {viewRemittance.receiverPhone ||
+                  "-"}
+              </p>
+
+              <p>
+                <strong>کشور:</strong>{" "}
+                {viewRemittance.receiverCountry ||
+                  "-"}
+              </p>
+
+              <p>
+                <strong>شهر:</strong>{" "}
+                {viewRemittance.receiverCity ||
+                  "-"}
+              </p>
+
+              <p>
+                <strong>مبلغ حواله:</strong>{" "}
+                {formatNumber(
+                  viewRemittance.amount
+                )}{" "}
+                {
+                  currencyLabels[
+                    viewRemittance.currency
+                  ]
+                }
+              </p>
+
+              <p>
+                <strong>کارمزد:</strong>{" "}
+                {formatNumber(
+                  viewRemittance.commission
+                )}{" "}
+                {
+                  currencyLabels[
+                    viewRemittance.commissionCurrency
+                  ]
+                }
+              </p>
+
+              <p>
+                <strong>مبلغ کل:</strong>{" "}
+                {formatNumber(
+                  viewRemittance.totalReceived
+                )}{" "}
+                {
+                  currencyLabels[
+                    viewRemittance.currency
+                  ]
+                }
+              </p>
+
+              <p>
+                <strong>روش پرداخت:</strong>{" "}
+                {viewRemittance.paymentMethod}
+              </p>
+
+              <p>
+                <strong>وضعیت:</strong>{" "}
+                {viewRemittance.status}
+              </p>
+
+              <p>
+                <strong>یادداشت:</strong>{" "}
+                {viewRemittance.note || "-"}
+              </p>
+
+            </div>
+
+            <div className="flex flex-wrap gap-2 mt-6">
+
+              <button
+                onClick={() =>
+                  printReceipt(
+                    viewRemittance
+                  )
+                }
+                className="px-4 py-2 bg-gray-100 rounded-lg"
+              >
+                چاپ رسید
+              </button>
+
+              <button
+                onClick={() =>
+                  sendWhatsAppReceipt(
+                    viewRemittance
+                  )
+                }
+                className="px-4 py-2 bg-green-100 text-green-700 rounded-lg"
+              >
+                ارسال به WhatsApp
+              </button>
+
+              <button
+                onClick={() =>
+                  copyReceipt(
+                    viewRemittance
+                  )
+                }
+                className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg"
+              >
+                کپی رسید
+              </button>
+
+              <button
+                onClick={() =>
+                  setViewRemittance(null)
+                }
+                className="px-4 py-2 bg-gray-200 rounded-lg"
+              >
+                بستن
+              </button>
+
+            </div>
+
+          </div>
+
+        </div>
+
       )}
+
     </div>
   );
 }
