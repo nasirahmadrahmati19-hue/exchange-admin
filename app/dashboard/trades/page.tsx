@@ -292,6 +292,8 @@ export default function CurrencyExchangePage() {
     string | null
   >(null);
 
+  const [search, setSearch] = useState("");
+
   /* ---------------- Exchange ---------------- */
 
   const [customer, setCustomer] = useState("");
@@ -965,6 +967,49 @@ export default function CurrencyExchangePage() {
     return "انتقال";
   }
 
+  /* ---------------- Search ---------------- */
+
+  const rawSearch = normalizeDigits(search.trim()).toLowerCase();
+  const amountSearch = rawSearch.replace(/[,،]/g, "");
+  const isSearching = amountSearch.trim().length > 0;
+
+  function transactionMatchesSearch(tx: Transaction) {
+    if (!isSearching) return true;
+
+    const names = [
+      customerName(tx.customerId),
+      customerName(tx.senderId),
+      customerName(tx.receiverId),
+      transactionCustomerLabel(tx),
+    ];
+
+    const nameMatch = names.some((n) =>
+      normalizeDigits(n)
+        .toLowerCase()
+        .includes(rawSearch)
+    );
+
+    if (nameMatch) return true;
+
+    const amounts = [
+      tx.fromAmount,
+      tx.toAmount,
+      tx.commission || 0,
+    ];
+
+    const amountMatch = amounts.some((a) => {
+      const plain = normalizeDigits(String(a));
+      const formatted = normalizeDigits(fmt(a)).replace(/,/g, "");
+
+      return (
+        plain.includes(amountSearch) ||
+        formatted.includes(amountSearch)
+      );
+    });
+
+    return amountMatch;
+  }
+
   function currencySelect(
     value: Currency,
     change: (v: Currency) => void
@@ -1266,7 +1311,7 @@ export default function CurrencyExchangePage() {
             </div>
           )}
 
-          <div className="grid md:grid-cols-2 gap-4">
+          <div className="grid md:grid-cols-3 gap-4">
 
             <div className="space-y-2">
 
@@ -1310,6 +1355,21 @@ export default function CurrencyExchangePage() {
                 <option value="buy">خرید</option>
                 <option value="sell">فروش</option>
               </select>
+
+            </div>
+
+            <div className="space-y-2">
+
+              <label className="text-sm font-bold">
+                جستجو
+              </label>
+
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="h-12 w-full rounded-xl border px-3"
+              />
 
             </div>
 
@@ -1505,10 +1565,6 @@ export default function CurrencyExchangePage() {
 
               </div>
 
-              <div className="text-xs text-gray-600">
-                مثال: 1 دلار = 50 افغانی، 1000 تومان = 0.38 افغانی، 1000 کلدار = 250 افغانی
-              </div>
-
               {exchangeRateValue > 0 && (
                 <div className="font-bold text-blue-700">
                   نرخ ثبت‌شده:{" "}
@@ -1610,10 +1666,6 @@ export default function CurrencyExchangePage() {
 
                 </div>
 
-              </div>
-
-              <div className="text-xs text-gray-600">
-                مثال: اگر مبنا دلار باشد و دلار به تومان تبدیل شود: 1 دلار = چند تومان؟
               </div>
 
               {exchangeRateValue > 0 &&
@@ -1737,17 +1789,36 @@ export default function CurrencyExchangePage() {
             </div>
           )}
 
-          <div className="space-y-2">
+          <div className="grid md:grid-cols-2 gap-4">
 
-            <label className="text-sm font-bold">
-              تاریخ و ساعت {editingTransferId ? "(اصل)" : "(خودکار)"}
-            </label>
+            <div className="space-y-2">
 
-            <input
-              readOnly
-              value={transferDateDisplay}
-              className="h-12 w-full md:w-72 rounded-xl border px-3 bg-gray-100"
-            />
+              <label className="text-sm font-bold">
+                تاریخ و ساعت {editingTransferId ? "(اصل)" : "(خودکار)"}
+              </label>
+
+              <input
+                readOnly
+                value={transferDateDisplay}
+                className="h-12 w-full md:w-72 rounded-xl border px-3 bg-gray-100"
+              />
+
+            </div>
+
+            <div className="space-y-2">
+
+              <label className="text-sm font-bold">
+                جستجو
+              </label>
+
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="h-12 w-full rounded-xl border px-3"
+              />
+
+            </div>
 
           </div>
 
@@ -1975,10 +2046,6 @@ export default function CurrencyExchangePage() {
 
               </div>
 
-              <div className="text-xs text-gray-600">
-                مثال: 1 دلار = 50 افغانی، 1000 تومان = 0.38 افغانی، 1000 کلدار = 250 افغانی
-              </div>
-
               {transferRateValue > 0 && (
                 <div className="font-bold text-purple-700">
                   نرخ ثبت‌شده:{" "}
@@ -2082,10 +2149,6 @@ export default function CurrencyExchangePage() {
 
                 </div>
 
-              </div>
-
-              <div className="text-xs text-gray-600">
-                مثال: اگر مبنا دلار باشد و دلار به تومان تبدیل شود: 1 دلار = چند تومان؟
               </div>
 
               {transferRateValue > 0 &&
@@ -2287,121 +2350,138 @@ export default function CurrencyExchangePage() {
 
           <tbody>
 
-            {transactions.map((tx, index) => (
+            {transactions.map((tx, index) => {
+              const matchesSearch =
+                transactionMatchesSearch(tx);
 
-              <tr
-                key={tx.id}
-                className={`border-t ${
-                  tx.status === "voided"
-                    ? "bg-red-50 text-gray-400"
-                    : ""
-                }`}
-              >
+              let rowClass = "border-t";
 
-                <td className="p-3">
-                  {transactions.length - index}
-                </td>
+              if (isSearching) {
+                if (matchesSearch) {
+                  rowClass += " bg-yellow-100";
+                } else {
+                  rowClass += " opacity-30";
+                }
 
-                <td className="p-3">
-                  {transactionCustomerLabel(tx)}
-                </td>
+                if (tx.status === "voided") {
+                  rowClass += " text-gray-400";
+                }
+              } else {
+                if (tx.status === "voided") {
+                  rowClass += " bg-red-50 text-gray-400";
+                }
+              }
 
-                <td className="p-3 whitespace-nowrap">
-                  {dateLabel(tx.date)}
-                </td>
+              return (
+                <tr
+                  key={tx.id}
+                  className={rowClass}
+                >
 
-                <td className="p-3">
-                  {transactionTypeLabel(tx)}
+                  <td className="p-3">
+                    {transactions.length - index}
+                  </td>
 
-                  {tx.status === "voided" && (
-                    <span className="text-red-500">
-                      {" "}
-                      (لغو شده)
-                    </span>
-                  )}
-                </td>
+                  <td className="p-3">
+                    {transactionCustomerLabel(tx)}
+                  </td>
 
-                <td className="p-3">
-                  {fmt(tx.fromAmount)}{" "}
-                  {labels[tx.fromCurrency]}
-                </td>
+                  <td className="p-3 whitespace-nowrap">
+                    {dateLabel(tx.date)}
+                  </td>
 
-                <td className="p-3">
-                  {fmt(tx.toAmount)}{" "}
-                  {labels[tx.toCurrency]}
-                </td>
+                  <td className="p-3">
+                    {transactionTypeLabel(tx)}
 
-                <td className="p-3 text-xs">
-                  {tx.rateLabel}
-                </td>
+                    {tx.status === "voided" && (
+                      <span className="text-red-500">
+                        {" "}
+                        (لغو شده)
+                      </span>
+                    )}
+                  </td>
 
-                <td className="p-3">
-                  {tx.commission
-                    ? `${fmt(tx.commission)} ${
-                        tx.commissionCurrency
-                          ? labels[tx.commissionCurrency]
-                          : ""
-                      }`
-                    : "-"}
-                </td>
+                  <td className="p-3">
+                    {fmt(tx.fromAmount)}{" "}
+                    {labels[tx.fromCurrency]}
+                  </td>
 
-                <td className="p-3">
+                  <td className="p-3">
+                    {fmt(tx.toAmount)}{" "}
+                    {labels[tx.toCurrency]}
+                  </td>
 
-                  <details className="relative">
+                  <td className="p-3 text-xs">
+                    {tx.rateLabel}
+                  </td>
 
-                    <summary className="cursor-pointer select-none text-sm text-blue-700">
-                      عملیات
-                    </summary>
+                  <td className="p-3">
+                    {tx.commission
+                      ? `${fmt(tx.commission)} ${
+                          tx.commissionCurrency
+                            ? labels[tx.commissionCurrency]
+                            : ""
+                        }`
+                      : "-"}
+                  </td>
 
-                    <ul className="mt-2 min-w-40 space-y-1 rounded-xl border bg-white p-2 shadow-sm">
+                  <td className="p-3">
 
-                      <li>
-                        <button
-                          onClick={() => editTransaction(tx)}
-                          disabled={tx.status === "voided"}
-                          className={actionButtonClass}
-                        >
-                          ویرایش
-                        </button>
-                      </li>
+                    <details className="relative">
 
-                      <li>
-                        <button
-                          onClick={() => printReceipt(tx)}
-                          className={actionButtonClass}
-                        >
-                          چاپ رسید
-                        </button>
-                      </li>
+                      <summary className="cursor-pointer select-none text-sm text-blue-700">
+                        عملیات
+                      </summary>
 
-                      <li>
-                        <button
-                          onClick={() => viewTransaction(tx)}
-                          className={actionButtonClass}
-                        >
-                          مشاهده
-                        </button>
-                      </li>
+                      <ul className="mt-2 min-w-40 space-y-1 rounded-xl border bg-white p-2 shadow-sm">
 
-                      <li>
-                        <button
-                          onClick={() => voidTransaction(tx)}
-                          disabled={tx.status === "voided"}
-                          className={`${actionButtonClass} text-red-600`}
-                        >
-                          لغو معامله
-                        </button>
-                      </li>
+                        <li>
+                          <button
+                            onClick={() => editTransaction(tx)}
+                            disabled={tx.status === "voided"}
+                            className={actionButtonClass}
+                          >
+                            ویرایش
+                          </button>
+                        </li>
 
-                    </ul>
+                        <li>
+                          <button
+                            onClick={() => printReceipt(tx)}
+                            className={actionButtonClass}
+                          >
+                            چاپ رسید
+                          </button>
+                        </li>
 
-                  </details>
+                        <li>
+                          <button
+                            onClick={() => viewTransaction(tx)}
+                            className={actionButtonClass}
+                          >
+                            مشاهده
+                          </button>
+                        </li>
 
-                </td>
+                        <li>
+                          <button
+                            onClick={() => voidTransaction(tx)}
+                            disabled={tx.status === "voided"}
+                            className={`${actionButtonClass} text-red-600`}
+                          >
+                            لغو معامله
+                          </button>
+                        </li>
 
-              </tr>
+                      </ul>
 
-            ))}
+                    </details>
+
+                  </td>
+
+                </tr>
+              );
+            })}
 
           </tbody>
 
