@@ -35,6 +35,7 @@ interface Hawala {
   status: HawalaStatus;
   paidAt?: string;
   paidBy?: string;
+  paidAmount?: number;
   cancelReason?: string;
 }
 
@@ -485,15 +486,27 @@ const styles = `
     gap: 10px;
     flex-wrap: wrap;
     margin-bottom: 16px;
+    align-items: center;
+  }
+
+  .search-bar input,
+  .search-bar select {
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 12px;
+    font-size: 14px;
+    background: #ffffff;
+    color: #111827;
+    outline: none;
   }
 
   .search-bar input {
     flex: 1;
     min-width: 220px;
-    padding: 10px 12px;
-    border: 1px solid #d1d5db;
-    border-radius: 12px;
-    font-size: 14px;
+  }
+
+  .search-bar select {
+    min-width: 180px;
   }
 
   .empty {
@@ -592,6 +605,71 @@ const styles = `
   }
 `;
 
+const normalizeDigits = (value: string) => {
+  const persianDigits = "۰۱۲۳۴۵۶۷۸۹";
+  const arabicDigits = "٠١٢٣٤٥٦٧٨٩";
+
+  return String(value || "")
+    .replace(/[۰-۹]/g, digit => String(persianDigits.indexOf(digit)))
+    .replace(/[٠-٩]/g, digit => String(arabicDigits.indexOf(digit)));
+};
+
+const cleanAmountQuery = (value: string) => {
+  return normalizeDigits(value).replace(/[,،\s]/g, "");
+};
+
+const getHawalaNumberValue = (number: string) => {
+  const match = String(number || "").match(/(\d+)$/);
+  return match ? Number(match[1]) : 0;
+};
+
+const sortByHawalaNumber = (items: Hawala[], order: "asc" | "desc") => {
+  return [...items].sort((a, b) => {
+    const aNumber = getHawalaNumberValue(a.number);
+    const bNumber = getHawalaNumberValue(b.number);
+
+    return order === "asc" ? aNumber - bNumber : bNumber - aNumber;
+  });
+};
+
+const matchesNameSearch = (item: Hawala, query: string) => {
+  const q = normalizeDigits(query).trim().toLowerCase();
+
+  if (!q) return true;
+
+  return [item.senderName, item.receiverName].some(field =>
+    String(field || "").toLowerCase().includes(q)
+  );
+};
+
+const matchesAmountSearch = (item: Hawala, query: string) => {
+  const raw = cleanAmountQuery(query);
+
+  if (!raw) return true;
+
+  const queryNumber = Number(raw);
+  const values = [item.amount, item.finalAmount, item.paidAmount];
+
+  if (!Number.isNaN(queryNumber)) {
+    return values.some(
+      value =>
+        typeof value === "number" &&
+        (value === queryNumber || String(value).includes(raw))
+    );
+  }
+
+  return values.some(value => String(value ?? "").includes(raw));
+};
+
+const getNextHawalaNumber = (items: Hawala[]) => {
+  const maxNumber = items.reduce(
+    (max, item) => Math.max(max, getHawalaNumberValue(item.number)),
+    0
+  );
+
+  return `HW-${String(maxNumber + 1).padStart(4, "0")}`;
+};
+
 const getNow = () => {
   return {
     date: new Date().toLocaleDateString("fa-IR"),
@@ -685,6 +763,30 @@ const getStoredCustomers = (): string[] => {
   }
 };
 
+const getStoredHawalas = (): Hawala[] => {
+  if (typeof window === "undefined") {
+    return initialHawalas;
+  }
+
+  try {
+    const raw = localStorage.getItem("hawalas");
+
+    if (!raw) {
+      return initialHawalas;
+    }
+
+    const parsed = JSON.parse(raw);
+
+    if (Array.isArray(parsed)) {
+      return parsed as Hawala[];
+    }
+
+    return initialHawalas;
+  } catch {
+    return initialHawalas;
+  }
+};
+
 function DetailRow({ label, value }: { label: string; value?: string | number }) {
   const hasValue = value !== undefined && value !== null && String(value).trim() !== "";
 
@@ -701,12 +803,18 @@ export default function HawalaPage() {
   const [customers, setCustomers] = useState<string[]>(getStoredCustomers);
 
   const [activeTab, setActiveTab] = useState<"new" | "current" | "history">("new");
-  const [hawalas, setHawalas] = useState<Hawala[]>(initialHawalas);
+  const [hawalas, setHawalas] = useState<Hawala[]>(getStoredHawalas);
   const [form, setForm] = useState<FormState>(() => createInitialForm(lastNames));
   const [errors, setErrors] = useState<FormErrors>({});
   const [previewOpen, setPreviewOpen] = useState(false);
 
-  const [historySearch, setHistorySearch] = useState("");
+  const [currentNameSearch, setCurrentNameSearch] = useState("");
+  const [currentAmountSearch, setCurrentAmountSearch] = useState("");
+  const [currentSortOrder, setCurrentSortOrder] = useState<"asc" | "desc">("desc");
+
+  const [historyNameSearch, setHistoryNameSearch] = useState("");
+  const [historyAmountSearch, setHistoryAmountSearch] = useState("");
+  const [historySortOrder, setHistorySortOrder] = useState<"asc" | "desc">("desc");
 
   const [settleTarget, setSettleTarget] = useState<Hawala | null>(null);
   const [cancelTarget, setCancelTarget] = useState<Hawala | null>(null);
@@ -727,6 +835,10 @@ export default function HawalaPage() {
     localStorage.setItem("hawalaCustomers", JSON.stringify(customers));
   }, [customers]);
 
+  useEffect(() => {
+    localStorage.setItem("hawalas", JSON.stringify(hawalas));
+  }, [hawalas]);
+
   const amount = Number(form.amount || 0);
   const fee = Number(form.fee || 0);
   const finalAmount = amount - fee;
@@ -740,32 +852,31 @@ export default function HawalaPage() {
   const receiveCount = hawalas.filter(item => item.type === "receive").length;
   const pendingCount = hawalas.filter(item => item.status === "pending").length;
 
-  const currentHawalas = hawalas.filter(
-    item => item.status === "pending" || item.status === "sent"
-  );
+  const currentHawalas = useMemo(() => {
+    const base = hawalas.filter(
+      item => item.status === "pending" || item.status === "sent"
+    );
+
+    const filtered = base.filter(item => {
+      return (
+        matchesNameSearch(item, currentNameSearch) &&
+        matchesAmountSearch(item, currentAmountSearch)
+      );
+    });
+
+    return sortByHawalaNumber(filtered, currentSortOrder);
+  }, [hawalas, currentNameSearch, currentAmountSearch, currentSortOrder]);
 
   const filteredHistory = useMemo(() => {
-    const q = historySearch.trim().toLowerCase();
-
-    return hawalas.filter(item => {
-      if (!q) return true;
-
-      const fields = [
-        item.number,
-        item.senderName,
-        item.receiverName,
-        item.senderPhone,
-        item.receiverPhone,
-        item.receiverTazkira,
-        item.province,
-        item.district,
-        item.destinationText,
-        item.currency
-      ];
-
-      return fields.some(field => String(field || "").toLowerCase().includes(q));
+    const filtered = hawalas.filter(item => {
+      return (
+        matchesNameSearch(item, historyNameSearch) &&
+        matchesAmountSearch(item, historyAmountSearch)
+      );
     });
-  }, [hawalas, historySearch]);
+
+    return sortByHawalaNumber(filtered, historySortOrder);
+  }, [hawalas, historyNameSearch, historyAmountSearch, historySortOrder]);
 
   const showToast = (message: string) => {
     setToast(message);
@@ -862,7 +973,7 @@ export default function HawalaPage() {
   };
 
   const makeHawalaNumber = () => {
-    return `HW-${String(hawalas.length + 1).padStart(4, "0")}`;
+    return getNextHawalaNumber(hawalas);
   };
 
   const confirmRegister = () => {
@@ -903,7 +1014,7 @@ export default function HawalaPage() {
       receiverPhone: form.receiverPhone,
       receiverAddress: form.receiverAddress,
 
-      status: "pending"
+      status: "pending" as HawalaStatus
     };
 
     const newLastNames: LastNames = {
@@ -924,6 +1035,21 @@ export default function HawalaPage() {
     setForm(createInitialForm(lastNames));
     setErrors({});
     showToast("فورم پاک شد.");
+  };
+
+  const markAsSent = (item: Hawala) => {
+    setHawalas(prev =>
+      prev.map(hawala =>
+        hawala.id === item.id
+          ? {
+              ...hawala,
+              status: "sent" as HawalaStatus
+            }
+          : hawala
+      )
+    );
+
+    showToast("وضعیت حواله به ارسال‌شده تغییر کرد.");
   };
 
   const openSettlement = (item: Hawala) => {
@@ -954,9 +1080,10 @@ export default function HawalaPage() {
         item.id === settleTarget.id
           ? {
               ...item,
-              status: "paid",
+              status: "paid" as HawalaStatus,
               paidAt: `${now.date} — ${now.time}`,
-              paidBy
+              paidBy,
+              paidAmount: amountPaid
             }
           : item
       )
@@ -984,7 +1111,7 @@ export default function HawalaPage() {
         item.id === cancelTarget.id
           ? {
               ...item,
-              status: "cancelled",
+              status: "cancelled" as HawalaStatus,
               cancelReason
             }
           : item
@@ -1331,14 +1458,40 @@ export default function HawalaPage() {
           <div className="card">
             <div className="section-title">حواله‌های جاری</div>
 
+            <div className="search-bar">
+              <input
+                value={currentNameSearch}
+                onChange={e => setCurrentNameSearch(e.target.value)}
+                placeholder="جستجو بر اساس نام و نام خانوادگی حواله‌دهنده یا حواله‌گیرنده"
+              />
+
+              <input
+                value={currentAmountSearch}
+                onChange={e => setCurrentAmountSearch(e.target.value)}
+                placeholder="جستجو بر اساس مبلغ"
+                inputMode="numeric"
+              />
+
+              <select
+                value={currentSortOrder}
+                onChange={e =>
+                  setCurrentSortOrder(e.target.value as "asc" | "desc")
+                }
+              >
+                <option value="desc">جدیدترین شماره</option>
+                <option value="asc">قدیمی‌ترین شماره</option>
+              </select>
+            </div>
+
             {currentHawalas.length === 0 ? (
-              <div className="empty">هیچ حواله جاری وجود ندارد.</div>
+              <div className="empty">هیچ حواله جاری پیدا نشد.</div>
             ) : (
               <div className="table-wrap">
                 <table>
                   <thead>
                     <tr>
                       <th>شماره</th>
+                      <th>شماره حواله</th>
                       <th>تاریخ</th>
                       <th>حواله‌دهنده</th>
                       <th>حواله‌گیرنده</th>
@@ -1351,8 +1504,9 @@ export default function HawalaPage() {
                   </thead>
 
                   <tbody>
-                    {currentHawalas.map(item => (
+                    {currentHawalas.map((item, index) => (
                       <tr key={item.id}>
+                        <td>{index + 1}</td>
                         <td>{item.number}</td>
                         <td>{item.date}</td>
                         <td>{item.senderName}</td>
@@ -1367,6 +1521,15 @@ export default function HawalaPage() {
                         </td>
                         <td>
                           <div className="actions">
+                            {item.status === "pending" && (
+                              <button
+                                className="btn btn-primary"
+                                onClick={() => markAsSent(item)}
+                              >
+                                ارسال
+                              </button>
+                            )}
+
                             {(item.status === "pending" || item.status === "sent") && (
                               <button
                                 className="btn btn-success"
@@ -1401,10 +1564,27 @@ export default function HawalaPage() {
 
             <div className="search-bar">
               <input
-                value={historySearch}
-                onChange={e => setHistorySearch(e.target.value)}
-                placeholder="جستجو: شماره حواله، نام، شماره تماس، تذکره، مقصد..."
+                value={historyNameSearch}
+                onChange={e => setHistoryNameSearch(e.target.value)}
+                placeholder="جستجو بر اساس نام و نام خانوادگی حواله‌دهنده یا حواله‌گیرنده"
               />
+
+              <input
+                value={historyAmountSearch}
+                onChange={e => setHistoryAmountSearch(e.target.value)}
+                placeholder="جستجو بر اساس مبلغ"
+                inputMode="numeric"
+              />
+
+              <select
+                value={historySortOrder}
+                onChange={e =>
+                  setHistorySortOrder(e.target.value as "asc" | "desc")
+                }
+              >
+                <option value="desc">جدیدترین شماره</option>
+                <option value="asc">قدیمی‌ترین شماره</option>
+              </select>
             </div>
 
             {filteredHistory.length === 0 ? (
@@ -1415,6 +1595,7 @@ export default function HawalaPage() {
                   <thead>
                     <tr>
                       <th>شماره</th>
+                      <th>شماره حواله</th>
                       <th>تاریخ</th>
                       <th>حواله‌دهنده</th>
                       <th>حواله‌گیرنده</th>
@@ -1426,8 +1607,9 @@ export default function HawalaPage() {
                   </thead>
 
                   <tbody>
-                    {filteredHistory.map(item => (
+                    {filteredHistory.map((item, index) => (
                       <tr key={item.id}>
+                        <td>{index + 1}</td>
                         <td>{item.number}</td>
                         <td>{item.date}</td>
                         <td>{item.senderName}</td>
