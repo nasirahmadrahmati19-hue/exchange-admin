@@ -1,6 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import {
+  useEffect,
+  useState,
+  type KeyboardEvent,
+} from "react";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 
@@ -103,6 +107,14 @@ const fmt = (n: number) =>
 
 const newId = () =>
   `EX-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+function preventNumberArrows(
+  e: KeyboardEvent<HTMLInputElement>
+) {
+  if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+    e.preventDefault();
+  }
+}
 
 function formatDateTime(d: Date) {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -862,6 +874,19 @@ export default function CurrencyExchangePage() {
   return (
     <div dir="rtl" className="p-5 space-y-5 bg-gray-50 min-h-screen">
 
+      <style>{`
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
+          -webkit-appearance: none;
+          margin: 0;
+        }
+
+        input[type="number"] {
+          -moz-appearance: textfield;
+          appearance: textfield;
+        }
+      `}</style>
+
       <h1 className="text-2xl font-bold">
         معاملات ارزی
       </h1>
@@ -911,48 +936,48 @@ export default function CurrencyExchangePage() {
             تبادل ارز صرافی با مشتری
           </h2>
 
-          <div className="grid md:grid-cols-2 gap-4">
+          <div className="space-y-2">
 
-            <div className="space-y-2">
-              <label className="text-sm font-bold">
-                تاریخ و ساعت (خودکار)
-              </label>
+            <label className="text-sm font-bold">
+              تاریخ و ساعت (خودکار)
+            </label>
 
-              <input
-                readOnly
-                value={currentDateTime}
-                className="h-12 w-full rounded-xl border px-3 bg-gray-100"
-              />
-            </div>
+            <input
+              readOnly
+              value={currentDateTime}
+              className="h-12 w-full md:w-72 rounded-xl border px-3 bg-gray-100"
+            />
 
-            <div className="space-y-2">
-              <label className="text-sm font-bold">
-                نوع معامله
-              </label>
+          </div>
 
-              <select
-                value={exchangeDealType}
-                onChange={(e) => {
-                  setExchangeDealType(
-                    e.target.value as DealType | ""
-                  );
+          <div className="space-y-2">
 
-                  setExchangeErrors((prev) => ({
-                    ...prev,
-                    dealType: undefined,
-                  }));
-                }}
-                className={`h-12 w-full md:w-40 rounded-xl border px-3 ${
-                  exchangeErrors.dealType
-                    ? "border-red-500"
-                    : ""
-                }`}
-              >
-                <option value="">انتخاب نوع معامله</option>
-                <option value="buy">خرید</option>
-                <option value="sell">فروش</option>
-              </select>
-            </div>
+            <label className="text-sm font-bold">
+              نوع معامله
+            </label>
+
+            <select
+              value={exchangeDealType}
+              onChange={(e) => {
+                setExchangeDealType(
+                  e.target.value as DealType | ""
+                );
+
+                setExchangeErrors((prev) => ({
+                  ...prev,
+                  dealType: undefined,
+                }));
+              }}
+              className={`h-12 w-full md:w-56 rounded-xl border px-3 ${
+                exchangeErrors.dealType
+                  ? "border-red-500"
+                  : ""
+              }`}
+            >
+              <option value="">انتخاب نوع معامله</option>
+              <option value="buy">خرید</option>
+              <option value="sell">فروش</option>
+            </select>
 
           </div>
 
@@ -995,6 +1020,7 @@ export default function CurrencyExchangePage() {
               <b>دریافت از مشتری</b>
 
               <div className="space-y-2">
+
                 <label className="text-sm font-bold">
                   ارز دریافتی
                 </label>
@@ -1011,9 +1037,11 @@ export default function CurrencyExchangePage() {
                     }));
                   }
                 )}
+
               </div>
 
               <div className="space-y-2">
+
                 <label className="text-sm font-bold">
                   مبلغ دریافتی
                 </label>
@@ -1023,6 +1051,7 @@ export default function CurrencyExchangePage() {
                   step="any"
                   min="0"
                   value={receivedAmount}
+                  onKeyDown={preventNumberArrows}
                   onChange={(e) => {
                     setReceivedAmount(e.target.value);
 
@@ -1038,6 +1067,7 @@ export default function CurrencyExchangePage() {
                       : ""
                   }`}
                 />
+
               </div>
 
             </div>
@@ -1047,6 +1077,7 @@ export default function CurrencyExchangePage() {
               <b>پرداخت به مشتری</b>
 
               <div className="space-y-2">
+
                 <label className="text-sm font-bold">
                   ارز پرداختی
                 </label>
@@ -1063,9 +1094,11 @@ export default function CurrencyExchangePage() {
                     }));
                   }
                 )}
+
               </div>
 
               <div className="space-y-2">
+
                 <label className="text-sm font-bold">
                   مبلغ پرداختی
                 </label>
@@ -1079,6 +1112,7 @@ export default function CurrencyExchangePage() {
                       : ""
                   }`}
                 />
+
               </div>
 
             </div>
@@ -1114,6 +1148,7 @@ export default function CurrencyExchangePage() {
                     step="any"
                     min="0"
                     value={rate}
+                    onKeyDown={preventNumberArrows}
                     onChange={(e) => {
                       setRate(e.target.value);
 
@@ -1215,6 +1250,7 @@ export default function CurrencyExchangePage() {
                       step="any"
                       min="0"
                       value={rate}
+                      onKeyDown={preventNumberArrows}
                       onChange={(e) => {
                         setRate(e.target.value);
 
@@ -1280,6 +1316,7 @@ export default function CurrencyExchangePage() {
               step="any"
               min="0"
               value={exchangeCommission}
+              onKeyDown={preventNumberArrows}
               onChange={(e) =>
                 setExchangeCommission(e.target.value)
               }
@@ -1409,6 +1446,7 @@ export default function CurrencyExchangePage() {
                   step="any"
                   min="0"
                   value={senderAmount}
+                  onKeyDown={preventNumberArrows}
                   onChange={(e) => {
                     setSenderAmount(e.target.value);
 
@@ -1537,6 +1575,7 @@ export default function CurrencyExchangePage() {
                     step="any"
                     min="0"
                     value={transferRate}
+                    onKeyDown={preventNumberArrows}
                     onChange={(e) => {
                       setTransferRate(e.target.value);
 
@@ -1638,6 +1677,7 @@ export default function CurrencyExchangePage() {
                       step="any"
                       min="0"
                       value={transferRate}
+                      onKeyDown={preventNumberArrows}
                       onChange={(e) => {
                         setTransferRate(e.target.value);
 
@@ -1703,6 +1743,7 @@ export default function CurrencyExchangePage() {
               step="any"
               min="0"
               value={commission}
+              onKeyDown={preventNumberArrows}
               onChange={(e) =>
                 setCommission(e.target.value)
               }
