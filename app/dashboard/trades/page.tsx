@@ -32,6 +32,7 @@ type Transaction = {
   toAmount: number;
   rate: number;
   rateLabel: string;
+  rateBase?: Currency;
   commission?: number;
   commissionCurrency?: Currency;
   status: "active" | "voided";
@@ -107,6 +108,10 @@ const fmt = (n: number) =>
 
 const newId = () =>
   `EX-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+function shortId(id: string) {
+  return id.slice(-6);
+}
 
 function preventNumberArrows(
   e: KeyboardEvent<HTMLInputElement>
@@ -272,6 +277,18 @@ export default function CurrencyExchangePage() {
   }, []);
 
   const currentDateTime = now ? formatDateTime(now) : "";
+
+  const [actionMessage, setActionMessage] = useState("");
+  const [selectedTransaction, setSelectedTransaction] =
+    useState<Transaction | null>(null);
+
+  const [editingExchangeId, setEditingExchangeId] = useState<
+    string | null
+  >(null);
+
+  const [editingTransferId, setEditingTransferId] = useState<
+    string | null
+  >(null);
 
   /* ---------------- Exchange ---------------- */
 
@@ -538,6 +555,30 @@ export default function CurrencyExchangePage() {
     transferDirectCounter,
   ]);
 
+  /* ---------------- Reset Forms ---------------- */
+
+  function resetExchangeForm() {
+    setCustomer("");
+    setExchangeDealType("");
+    setReceivedAmount("");
+    setPaidAmount("");
+    setRate("");
+    setExchangeCommission("0");
+    setExchangeErrors({});
+    setEditingExchangeId(null);
+  }
+
+  function resetTransferForm() {
+    setSender("");
+    setReceiver("");
+    setSenderAmount("");
+    setReceiverAmount("");
+    setTransferRate("");
+    setCommission("0");
+    setTransferErrors({});
+    setEditingTransferId(null);
+  }
+
   /* ---------------- Exchange Validation ---------------- */
 
   function validateExchange(): ExchangeFormErrors {
@@ -648,6 +689,11 @@ export default function CurrencyExchangePage() {
     parseAmount(exchangeCommission)
   );
 
+  const exchangeRateBase =
+    exchangeMode === "direct"
+      ? exchangeDirectBaseValue
+      : undefined;
+
   function submitExchange() {
     const errs = validateExchange();
     setExchangeErrors(errs);
@@ -682,32 +728,59 @@ export default function CurrencyExchangePage() {
       );
     }
 
-    const tx: Transaction = {
-      id: newId(),
-      type: "exchange",
-      dealType: exchangeDealType as DealType,
-      date: new Date().toISOString(),
-      customerId: customer,
-      fromCurrency: receivedCurrency,
-      fromAmount,
-      toCurrency: paidCurrency,
-      toAmount,
-      rate: txRate,
-      rateLabel,
-      commission: exchangeCommissionValue,
-      commissionCurrency: receivedCurrency,
-      status: "active",
-    };
+    if (editingExchangeId) {
+      setTransactions((prev) =>
+        prev.map((t) =>
+          t.id === editingExchangeId
+            ? {
+                ...t,
+                type: "exchange",
+                dealType: exchangeDealType as DealType,
+                customerId: customer,
+                fromCurrency: receivedCurrency,
+                fromAmount,
+                toCurrency: paidCurrency,
+                toAmount,
+                rate: txRate,
+                rateLabel,
+                rateBase: exchangeRateBase,
+                commission: exchangeCommissionValue,
+                commissionCurrency: receivedCurrency,
+              }
+            : t
+        )
+      );
 
-    setTransactions((x) => [tx, ...x]);
+      setActionMessage(
+        `معامله ${shortId(editingExchangeId)} به‌روزرسانی شد.`
+      );
+    } else {
+      const tx: Transaction = {
+        id: newId(),
+        type: "exchange",
+        dealType: exchangeDealType as DealType,
+        date: new Date().toISOString(),
+        customerId: customer,
+        fromCurrency: receivedCurrency,
+        fromAmount,
+        toCurrency: paidCurrency,
+        toAmount,
+        rate: txRate,
+        rateLabel,
+        rateBase: exchangeRateBase,
+        commission: exchangeCommissionValue,
+        commissionCurrency: receivedCurrency,
+        status: "active",
+      };
 
-    setCustomer("");
-    setExchangeDealType("");
-    setReceivedAmount("");
-    setPaidAmount("");
-    setRate("");
-    setExchangeCommission("0");
-    setExchangeErrors({});
+      setTransactions((x) => [tx, ...x]);
+
+      setActionMessage(
+        `معامله ${shortId(tx.id)} ثبت شد.`
+      );
+    }
+
+    resetExchangeForm();
   }
 
   /* ---------------- Transfer Submit ---------------- */
@@ -716,6 +789,11 @@ export default function CurrencyExchangePage() {
   const transferToAmount = parseAmount(receiverAmount);
   const transferRateValue = parseAmount(transferRate);
   const commissionValue = Math.max(0, parseAmount(commission));
+
+  const transferRateBase =
+    transferMode === "direct"
+      ? transferDirectBaseValue
+      : undefined;
 
   function submitTransfer() {
     const errs = validateTransfer();
@@ -751,32 +829,57 @@ export default function CurrencyExchangePage() {
       );
     }
 
-    const tx: Transaction = {
-      id: newId(),
-      type: "transfer",
-      date: new Date().toISOString(),
-      senderId: sender,
-      receiverId: receiver,
-      fromCurrency: senderCurrency,
-      fromAmount,
-      toCurrency: receiverCurrency,
-      toAmount,
-      rate: txRate,
-      rateLabel,
-      commission: commissionValue,
-      commissionCurrency: senderCurrency,
-      status: "active",
-    };
+    if (editingTransferId) {
+      setTransactions((prev) =>
+        prev.map((t) =>
+          t.id === editingTransferId
+            ? {
+                ...t,
+                type: "transfer",
+                senderId: sender,
+                receiverId: receiver,
+                fromCurrency: senderCurrency,
+                fromAmount,
+                toCurrency: receiverCurrency,
+                toAmount,
+                rate: txRate,
+                rateLabel,
+                rateBase: transferRateBase,
+                commission: commissionValue,
+                commissionCurrency: senderCurrency,
+              }
+            : t
+        )
+      );
 
-    setTransactions((x) => [tx, ...x]);
+      setActionMessage(
+        `انتقال ${shortId(editingTransferId)} به‌روزرسانی شد.`
+      );
+    } else {
+      const tx: Transaction = {
+        id: newId(),
+        type: "transfer",
+        date: new Date().toISOString(),
+        senderId: sender,
+        receiverId: receiver,
+        fromCurrency: senderCurrency,
+        fromAmount,
+        toCurrency: receiverCurrency,
+        toAmount,
+        rate: txRate,
+        rateLabel,
+        rateBase: transferRateBase,
+        commission: commissionValue,
+        commissionCurrency: senderCurrency,
+        status: "active",
+      };
 
-    setSender("");
-    setReceiver("");
-    setSenderAmount("");
-    setReceiverAmount("");
-    setTransferRate("");
-    setCommission("0");
-    setTransferErrors({});
+      setTransactions((x) => [tx, ...x]);
+
+      setActionMessage(`انتقال ${shortId(tx.id)} ثبت شد.`);
+    }
+
+    resetTransferForm();
   }
 
   /* ---------------- Balance ---------------- */
@@ -842,6 +945,24 @@ export default function CurrencyExchangePage() {
     return customers.find((c) => c.id === id)?.name || "-";
   }
 
+  function transactionCustomerLabel(tx: Transaction) {
+    if (tx.type === "exchange") {
+      return customerName(tx.customerId);
+    }
+
+    return `${customerName(tx.senderId)} - ${customerName(
+      tx.receiverId
+    )}`;
+  }
+
+  function transactionTypeLabel(tx: Transaction) {
+    if (tx.type === "exchange") {
+      return dealTypeLabel(tx.dealType);
+    }
+
+    return "انتقال";
+  }
+
   function currencySelect(
     value: Currency,
     change: (v: Currency) => void
@@ -871,6 +992,227 @@ export default function CurrencyExchangePage() {
     (msg): msg is string => Boolean(msg)
   );
 
+  const editingExchangeTransaction = transactions.find(
+    (t) => t.id === editingExchangeId
+  );
+
+  const editingTransferTransaction = transactions.find(
+    (t) => t.id === editingTransferId
+  );
+
+  const exchangeDateDisplay = editingExchangeTransaction
+    ? dateLabel(editingExchangeTransaction.date)
+    : currentDateTime;
+
+  const transferDateDisplay = editingTransferTransaction
+    ? dateLabel(editingTransferTransaction.date)
+    : currentDateTime;
+
+  /* ---------------- Transactions Actions ---------------- */
+
+  function editTransaction(tx: Transaction) {
+    if (tx.status === "voided") {
+      setActionMessage("معامله لغو شده قابل ویرایش نیست.");
+      return;
+    }
+
+    if (tx.type === "exchange") {
+      setTab("exchange");
+      setEditingTransferId(null);
+      setEditingExchangeId(tx.id);
+
+      setCustomer(tx.customerId || "");
+      setExchangeDealType(tx.dealType || "");
+      setReceivedCurrency(tx.fromCurrency);
+      setPaidCurrency(tx.toCurrency);
+      setReceivedAmount(String(tx.fromAmount));
+      setExchangeCommission(String(tx.commission || 0));
+      setRate(String(tx.rate));
+
+      const mode = getRateMode(tx.fromCurrency, tx.toCurrency);
+
+      if (mode === "direct") {
+        setExchangeDirectBase(
+          tx.rateBase ||
+            preferredDirectBase(tx.fromCurrency, tx.toCurrency)
+        );
+      }
+
+      setExchangeErrors({});
+
+      setActionMessage(
+        `ویرایش معامله ${shortId(
+          tx.id
+        )} فعال شد. پس از تغییرات، دکمه ثبت را بزنید.`
+      );
+    }
+
+    if (tx.type === "transfer") {
+      setTab("transfer");
+      setEditingExchangeId(null);
+      setEditingTransferId(tx.id);
+
+      setSender(tx.senderId || "");
+      setReceiver(tx.receiverId || "");
+      setSenderCurrency(tx.fromCurrency);
+      setReceiverCurrency(tx.toCurrency);
+      setSenderAmount(String(tx.fromAmount));
+      setCommission(String(tx.commission || 0));
+      setTransferRate(String(tx.rate));
+
+      const mode = getRateMode(tx.fromCurrency, tx.toCurrency);
+
+      if (mode === "direct") {
+        setTransferDirectBase(
+          tx.rateBase ||
+            preferredDirectBase(tx.fromCurrency, tx.toCurrency)
+        );
+      }
+
+      setTransferErrors({});
+
+      setActionMessage(
+        `ویرایش انتقال ${shortId(
+          tx.id
+        )} فعال شد. پس از تغییرات، دکمه ثبت را بزنید.`
+      );
+    }
+  }
+
+  function viewTransaction(tx: Transaction) {
+    setSelectedTransaction(tx);
+  }
+
+  function voidTransaction(tx: Transaction) {
+    if (tx.status === "voided") return;
+
+    const ok = window.confirm(
+      "آیا مطمئن هستید که این معامله لغو شود؟"
+    );
+
+    if (!ok) return;
+
+    setTransactions((prev) =>
+      prev.map((t) =>
+        t.id === tx.id ? { ...t, status: "voided" } : t
+      )
+    );
+
+    if (editingExchangeId === tx.id) {
+      setEditingExchangeId(null);
+    }
+
+    if (editingTransferId === tx.id) {
+      setEditingTransferId(null);
+    }
+
+    setActionMessage(`معامله ${shortId(tx.id)} لغو شد.`);
+  }
+
+  function printReceipt(tx: Transaction) {
+    const win = window.open(
+      "",
+      "_blank",
+      "width=650,height=800"
+    );
+
+    if (!win) {
+      setActionMessage(
+        "پنجره چاپ باز نشد. لطفاً اجازه پاپ‌آپ را فعال کنید."
+      );
+      return;
+    }
+
+    const customerLabel = transactionCustomerLabel(tx);
+    const commissionLabel = tx.commission
+      ? `${fmt(tx.commission)} ${
+          tx.commissionCurrency
+            ? labels[tx.commissionCurrency]
+            : ""
+        }`
+      : "-";
+
+    const statusLabel =
+      tx.status === "voided" ? "لغو شده" : "فعال";
+
+    const html = `
+      <html dir="rtl">
+        <head>
+          <meta charset="utf-8" />
+          <title>رسید معامله</title>
+          <style>
+            body {
+              font-family: Tahoma, Arial, sans-serif;
+              padding: 24px;
+              direction: rtl;
+            }
+            h2 {
+              margin-bottom: 16px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+            }
+            td, th {
+              border: 1px solid #ccc;
+              padding: 8px;
+              text-align: right;
+            }
+          </style>
+        </head>
+        <body>
+          <h2>رسید معامله</h2>
+          <table>
+            <tr>
+              <th>شماره</th>
+              <td>${tx.id}</td>
+            </tr>
+            <tr>
+              <th>تاریخ</th>
+              <td>${dateLabel(tx.date)}</td>
+            </tr>
+            <tr>
+              <th>نوع معامله</th>
+              <td>${transactionTypeLabel(tx)}</td>
+            </tr>
+            <tr>
+              <th>مشتری</th>
+              <td>${customerLabel}</td>
+            </tr>
+            <tr>
+              <th>دریافت</th>
+              <td>${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]}</td>
+            </tr>
+            <tr>
+              <th>پرداخت</th>
+              <td>${fmt(tx.toAmount)} ${labels[tx.toCurrency]}</td>
+            </tr>
+            <tr>
+              <th>نرخ ارز</th>
+              <td>${tx.rateLabel}</td>
+            </tr>
+            <tr>
+              <th>کارمزد</th>
+              <td>${commissionLabel}</td>
+            </tr>
+            <tr>
+              <th>وضعیت</th>
+              <td>${statusLabel}</td>
+            </tr>
+          </table>
+        </body>
+      </html>
+    `;
+
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    win.print();
+  }
+
+  const actionButtonClass =
+    "w-full rounded-lg px-3 py-2 text-right text-sm bg-gray-50 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed";
+
   return (
     <div dir="rtl" className="p-5 space-y-5 bg-gray-50 min-h-screen">
 
@@ -898,8 +1240,7 @@ export default function CurrencyExchangePage() {
         <button
           onClick={() => {
             setTab("exchange");
-            setExchangeErrors({});
-            setTransferErrors({});
+            setActionMessage("");
           }}
           className={`px-5 py-3 rounded-xl ${
             tab === "exchange"
@@ -913,8 +1254,7 @@ export default function CurrencyExchangePage() {
         <button
           onClick={() => {
             setTab("transfer");
-            setExchangeErrors({});
-            setTransferErrors({});
+            setActionMessage("");
           }}
           className={`px-5 py-3 rounded-xl ${
             tab === "transfer"
@@ -936,48 +1276,70 @@ export default function CurrencyExchangePage() {
             تبادل ارز صرافی با مشتری
           </h2>
 
-          <div className="space-y-2">
+          {editingExchangeId && (
+            <div className="bg-yellow-50 text-yellow-800 rounded-xl p-4 flex items-center justify-between gap-3">
 
-            <label className="text-sm font-bold">
-              تاریخ و ساعت (خودکار)
-            </label>
+              <span>
+                در حال ویرایش معامله{" "}
+                {shortId(editingExchangeId)}. تاریخ اصلی حفظ می‌شود.
+              </span>
 
-            <input
-              readOnly
-              value={currentDateTime}
-              className="h-12 w-full md:w-72 rounded-xl border px-3 bg-gray-100"
-            />
+              <button
+                onClick={resetExchangeForm}
+                className="shrink-0 font-bold"
+              >
+                انصراف
+              </button>
 
-          </div>
+            </div>
+          )}
 
-          <div className="space-y-2">
+          <div className="grid md:grid-cols-2 gap-4">
 
-            <label className="text-sm font-bold">
-              نوع معامله
-            </label>
+            <div className="space-y-2">
 
-            <select
-              value={exchangeDealType}
-              onChange={(e) => {
-                setExchangeDealType(
-                  e.target.value as DealType | ""
-                );
+              <label className="text-sm font-bold">
+                تاریخ و ساعت {editingExchangeId ? "(اصل)" : "(خودکار)"}
+              </label>
 
-                setExchangeErrors((prev) => ({
-                  ...prev,
-                  dealType: undefined,
-                }));
-              }}
-              className={`h-12 w-full md:w-56 rounded-xl border px-3 ${
-                exchangeErrors.dealType
-                  ? "border-red-500"
-                  : ""
-              }`}
-            >
-              <option value="">انتخاب نوع معامله</option>
-              <option value="buy">خرید</option>
-              <option value="sell">فروش</option>
-            </select>
+              <input
+                readOnly
+                value={exchangeDateDisplay}
+                className="h-12 w-full md:w-72 rounded-xl border px-3 bg-gray-100"
+              />
+
+            </div>
+
+            <div className="space-y-2">
+
+              <label className="text-sm font-bold">
+                نوع معامله
+              </label>
+
+              <select
+                value={exchangeDealType}
+                onChange={(e) => {
+                  setExchangeDealType(
+                    e.target.value as DealType | ""
+                  );
+
+                  setExchangeErrors((prev) => ({
+                    ...prev,
+                    dealType: undefined,
+                  }));
+                }}
+                className={`h-12 w-full md:w-56 rounded-xl border px-3 ${
+                  exchangeErrors.dealType
+                    ? "border-red-500"
+                    : ""
+                }`}
+              >
+                <option value="">انتخاب نوع معامله</option>
+                <option value="buy">خرید</option>
+                <option value="sell">فروش</option>
+              </select>
+
+            </div>
 
           </div>
 
@@ -1347,7 +1709,9 @@ export default function CurrencyExchangePage() {
             onClick={submitExchange}
             className="w-full h-12 rounded-xl bg-[#092F3A] text-white"
           >
-            ثبت معامله
+            {editingExchangeId
+              ? "به‌روزرسانی معامله"
+              : "ثبت معامله"}
           </button>
 
         </div>
@@ -1362,15 +1726,33 @@ export default function CurrencyExchangePage() {
             تبادل بین حساب مشتریان
           </h2>
 
+          {editingTransferId && (
+            <div className="bg-yellow-50 text-yellow-800 rounded-xl p-4 flex items-center justify-between gap-3">
+
+              <span>
+                در حال ویرایش انتقال{" "}
+                {shortId(editingTransferId)}. تاریخ اصلی حفظ می‌شود.
+              </span>
+
+              <button
+                onClick={resetTransferForm}
+                className="shrink-0 font-bold"
+              >
+                انصراف
+              </button>
+
+            </div>
+          )}
+
           <div className="space-y-2">
 
             <label className="text-sm font-bold">
-              تاریخ و ساعت (خودکار)
+              تاریخ و ساعت {editingTransferId ? "(اصل)" : "(خودکار)"}
             </label>
 
             <input
               readOnly
-              value={currentDateTime}
+              value={transferDateDisplay}
               className="h-12 w-full md:w-72 rounded-xl border px-3 bg-gray-100"
             />
 
@@ -1774,7 +2156,9 @@ export default function CurrencyExchangePage() {
             onClick={submitTransfer}
             className="w-full h-12 rounded-xl bg-[#092F3A] text-white"
           >
-            ثبت انتقال
+            {editingTransferId
+              ? "به‌روزرسانی انتقال"
+              : "ثبت انتقال"}
           </button>
 
         </div>
@@ -1835,11 +2219,26 @@ export default function CurrencyExchangePage() {
 
       {/* Transactions */}
 
-      <div className="bg-white rounded-2xl p-5 overflow-x-auto">
+      <div className="bg-white rounded-2xl p-5 overflow-x-auto space-y-4">
 
-        <h2 className="font-bold text-lg mb-4">
+        <h2 className="font-bold text-lg">
           آخرین معاملات
         </h2>
+
+        {actionMessage && (
+          <div className="bg-blue-50 text-blue-800 rounded-xl p-4 flex items-start justify-between gap-3">
+
+            <span>{actionMessage}</span>
+
+            <button
+              onClick={() => setActionMessage("")}
+              className="shrink-0 font-bold"
+            >
+              بستن
+            </button>
+
+          </div>
+        )}
 
         <table className="w-full text-sm">
 
@@ -1847,35 +2246,39 @@ export default function CurrencyExchangePage() {
             <tr className="bg-gray-50">
 
               <th className="p-3 text-right">
+                شماره
+              </th>
+
+              <th className="p-3 text-right">
+                نام مشتری
+              </th>
+
+              <th className="p-3 text-right">
                 تاریخ
               </th>
 
               <th className="p-3 text-right">
-                نوع
+                نوع معامله
               </th>
 
               <th className="p-3 text-right">
-                خرید / فروش
+                دریافت
               </th>
 
               <th className="p-3 text-right">
-                مشتری
+                پرداخت
               </th>
 
               <th className="p-3 text-right">
-                دریافت / ارسال
-              </th>
-
-              <th className="p-3 text-right">
-                پرداخت / دریافت
-              </th>
-
-              <th className="p-3 text-right">
-                نرخ
+                نرخ ارز
               </th>
 
               <th className="p-3 text-right">
                 کارمزد
+              </th>
+
+              <th className="p-3 text-right">
+                عملیات
               </th>
 
             </tr>
@@ -1887,26 +2290,33 @@ export default function CurrencyExchangePage() {
 
               <tr
                 key={tx.id}
-                className="border-t"
+                className={`border-t ${
+                  tx.status === "voided"
+                    ? "bg-red-50 text-gray-400"
+                    : ""
+                }`}
               >
+
+                <td className="p-3" title={tx.id}>
+                  {shortId(tx.id)}
+                </td>
+
+                <td className="p-3">
+                  {transactionCustomerLabel(tx)}
+                </td>
 
                 <td className="p-3 whitespace-nowrap">
                   {dateLabel(tx.date)}
                 </td>
 
                 <td className="p-3">
-                  {tx.type === "exchange"
-                    ? "صرافی با مشتری"
-                    : "بین مشتریان"}
-                </td>
+                  {transactionTypeLabel(tx)}
 
-                <td className="p-3">
-                  {dealTypeLabel(tx.dealType)}
-                </td>
-
-                <td className="p-3">
-                  {customerName(
-                    tx.customerId || tx.senderId
+                  {tx.status === "voided" && (
+                    <span className="text-red-500">
+                      {" "}
+                      (لغو شده)
+                    </span>
                   )}
                 </td>
 
@@ -1934,6 +2344,60 @@ export default function CurrencyExchangePage() {
                     : "-"}
                 </td>
 
+                <td className="p-3">
+
+                  <details className="relative">
+
+                    <summary className="cursor-pointer select-none text-sm text-blue-700">
+                      عملیات
+                    </summary>
+
+                    <ul className="mt-2 min-w-40 space-y-1 rounded-xl border bg-white p-2 shadow-sm">
+
+                      <li>
+                        <button
+                          onClick={() => editTransaction(tx)}
+                          disabled={tx.status === "voided"}
+                          className={actionButtonClass}
+                        >
+                          ویرایش
+                        </button>
+                      </li>
+
+                      <li>
+                        <button
+                          onClick={() => printReceipt(tx)}
+                          className={actionButtonClass}
+                        >
+                          چاپ رسید
+                        </button>
+                      </li>
+
+                      <li>
+                        <button
+                          onClick={() => viewTransaction(tx)}
+                          className={actionButtonClass}
+                        >
+                          مشاهده
+                        </button>
+                      </li>
+
+                      <li>
+                        <button
+                          onClick={() => voidTransaction(tx)}
+                          disabled={tx.status === "voided"}
+                          className={`${actionButtonClass} text-red-600`}
+                        >
+                          لغو معامله
+                        </button>
+                      </li>
+
+                    </ul>
+
+                  </details>
+
+                </td>
+
               </tr>
 
             ))}
@@ -1943,6 +2407,111 @@ export default function CurrencyExchangePage() {
         </table>
 
       </div>
+
+      {/* View Modal */}
+
+      {selectedTransaction && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setSelectedTransaction(null)}
+        >
+
+          <div
+            className="w-full max-w-lg rounded-2xl bg-white p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+
+            <div className="flex items-center justify-between">
+
+              <b>جزئیات معامله</b>
+
+              <button
+                onClick={() => setSelectedTransaction(null)}
+                className="text-gray-500"
+              >
+                ✕
+              </button>
+
+            </div>
+
+            <div className="text-sm space-y-2">
+
+              <div className="flex justify-between gap-4">
+                <span className="text-gray-500">شماره:</span>
+                <span>{selectedTransaction.id}</span>
+              </div>
+
+              <div className="flex justify-between gap-4">
+                <span className="text-gray-500">تاریخ:</span>
+                <span>{dateLabel(selectedTransaction.date)}</span>
+              </div>
+
+              <div className="flex justify-between gap-4">
+                <span className="text-gray-500">نوع معامله:</span>
+                <span>
+                  {transactionTypeLabel(selectedTransaction)}
+                </span>
+              </div>
+
+              <div className="flex justify-between gap-4">
+                <span className="text-gray-500">نام مشتری:</span>
+                <span>
+                  {transactionCustomerLabel(selectedTransaction)}
+                </span>
+              </div>
+
+              <div className="flex justify-between gap-4">
+                <span className="text-gray-500">دریافت:</span>
+                <span>
+                  {fmt(selectedTransaction.fromAmount)}{" "}
+                  {labels[selectedTransaction.fromCurrency]}
+                </span>
+              </div>
+
+              <div className="flex justify-between gap-4">
+                <span className="text-gray-500">پرداخت:</span>
+                <span>
+                  {fmt(selectedTransaction.toAmount)}{" "}
+                  {labels[selectedTransaction.toCurrency]}
+                </span>
+              </div>
+
+              <div className="flex justify-between gap-4">
+                <span className="text-gray-500">نرخ ارز:</span>
+                <span>{selectedTransaction.rateLabel}</span>
+              </div>
+
+              <div className="flex justify-between gap-4">
+                <span className="text-gray-500">کارمزد:</span>
+                <span>
+                  {selectedTransaction.commission
+                    ? `${fmt(selectedTransaction.commission)} ${
+                        selectedTransaction.commissionCurrency
+                          ? labels[
+                              selectedTransaction
+                                .commissionCurrency
+                            ]
+                          : ""
+                      }`
+                    : "-"}
+                </span>
+              </div>
+
+              <div className="flex justify-between gap-4">
+                <span className="text-gray-500">وضعیت:</span>
+                <span>
+                  {selectedTransaction.status === "voided"
+                    ? "لغو شده"
+                    : "فعال"}
+                </span>
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+      )}
 
     </div>
   );
