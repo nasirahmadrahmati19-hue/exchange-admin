@@ -314,7 +314,7 @@ function directRateLabel(
 }
 
 /* ============================================================
-   UI ONLY — آیکون‌ها، توکن‌های ظاهری و اجزای نمایشی
+   UI ONLY — آیکون‌ها و اجزای نمایشی
    ============================================================ */
 
 const iconPaths = {
@@ -379,59 +379,35 @@ function DetailRow({
   label,
   value,
   valueClass = "",
+  dark = false,
 }: {
   label: string;
   value: string;
   valueClass?: string;
+  dark?: boolean;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-dashed border-slate-200 py-3 last:border-0 dark:border-slate-700/60">
-      <span className="shrink-0 text-[11px] font-black text-slate-400 dark:text-slate-500">
+    <div
+      className={`flex items-start justify-between gap-4 border-b border-dashed py-3 last:border-0 ${
+        dark ? "border-slate-700/60" : "border-slate-200"
+      }`}
+    >
+      <span
+        className={`shrink-0 text-[11px] font-black ${
+          dark ? "text-slate-500" : "text-slate-400"
+        }`}
+      >
         {label}
       </span>
       <span
-        className={`text-left text-[13px] font-bold text-slate-700 dark:text-slate-200 ${valueClass}`}
+        className={`text-left text-[13px] font-bold ${
+          dark ? "text-slate-200" : "text-slate-700"
+        } ${valueClass}`}
       >
         {value}
       </span>
     </div>
   );
-}
-
-const uiCard =
-  "rounded-2xl border border-slate-200/90 bg-white/90 shadow-[0_16px_40px_-28px_rgba(9,47,58,0.45)] backdrop-blur transition-colors duration-300 dark:border-slate-800 dark:bg-[#0e1a28]/90 dark:shadow-[0_16px_40px_-24px_rgba(0,0,0,0.75)]";
-
-const inputShell =
-  "rounded-xl border border-slate-300 bg-white text-sm font-medium text-slate-800 shadow-sm outline-none transition-all duration-200 placeholder:text-slate-400 hover:border-slate-400 focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 dark:border-slate-700 dark:bg-[#0b1622] dark:text-slate-100 dark:placeholder:text-slate-500 dark:hover:border-slate-500 dark:focus:border-teal-400 dark:focus:ring-teal-400/10";
-
-const uiInput = `h-12 w-full px-3.5 ${inputShell}`;
-
-const errInput =
-  "border-rose-400 hover:border-rose-500 focus:border-rose-500 focus:ring-rose-500/10 dark:border-rose-500/70 dark:hover:border-rose-400 dark:focus:border-rose-400 dark:focus:ring-rose-500/10";
-
-const roInput =
-  "cursor-default bg-slate-100 text-slate-500 hover:border-slate-300 focus:border-slate-300 focus:ring-0 dark:bg-[#0c1826] dark:text-slate-400 dark:hover:border-slate-700 dark:focus:border-slate-700 dark:focus:ring-0";
-
-const uiLabel =
-  "mb-1.5 block text-[11px] font-black tracking-wide text-slate-500 dark:text-slate-400";
-
-const rateChip =
-  "flex h-12 items-center whitespace-nowrap rounded-xl border border-slate-200/80 bg-white/85 px-3.5 text-sm font-bold text-slate-700 shadow-sm dark:border-slate-700 dark:bg-[#0b1622]/85 dark:text-slate-200";
-
-function typeChipClass(tx: Transaction) {
-  if (tx.type === "transfer") {
-    return "bg-violet-500/10 text-violet-700 ring-1 ring-violet-500/25 dark:bg-violet-400/10 dark:text-violet-300 dark:ring-violet-400/20";
-  }
-
-  if (tx.dealType === "buy") {
-    return "bg-emerald-500/10 text-emerald-700 ring-1 ring-emerald-500/25 dark:bg-emerald-400/10 dark:text-emerald-300 dark:ring-emerald-400/20";
-  }
-
-  if (tx.dealType === "sell") {
-    return "bg-amber-500/10 text-amber-700 ring-1 ring-amber-500/25 dark:bg-amber-400/10 dark:text-amber-300 dark:ring-amber-400/20";
-  }
-
-  return "bg-slate-500/10 text-slate-600 ring-1 ring-slate-500/20 dark:bg-slate-400/10 dark:text-slate-300 dark:ring-slate-400/20";
 }
 
 export default function CurrencyExchangePage() {
@@ -458,6 +434,74 @@ export default function CurrencyExchangePage() {
       window.localStorage.setItem("fx-theme", theme);
     } catch {}
   }, [theme]);
+
+  const dk = theme === "dark";
+
+  /* ---------------- Theme tokens (UI only) ---------------- */
+
+  const heading = dk ? "text-white" : "text-slate-900";
+  const subText = dk ? "text-slate-500" : "text-slate-400";
+  const iconMuted = dk ? "text-slate-500" : "text-slate-400";
+
+  const glassChip = dk
+    ? "border-slate-700/80 bg-[#0e1a28]/85"
+    : "border-slate-200/90 bg-white/85";
+
+  const uiCard = `rounded-2xl border backdrop-blur transition-colors duration-300 ${
+    dk
+      ? "border-slate-800 bg-[#0e1a28]/90 shadow-[0_16px_40px_-24px_rgba(0,0,0,0.75)]"
+      : "border-slate-200/90 bg-white/90 shadow-[0_16px_40px_-28px_rgba(9,47,58,0.45)]"
+  }`;
+
+  const inputShell = `rounded-xl border text-sm font-medium shadow-sm outline-none transition-all duration-200 focus:ring-4 ${
+    dk
+      ? "border-slate-700 bg-[#0b1622] text-slate-100 placeholder:text-slate-500 hover:border-slate-500 focus:border-teal-400 focus:ring-teal-400/10"
+      : "border-slate-300 bg-white text-slate-800 placeholder:text-slate-400 hover:border-slate-400 focus:border-teal-600 focus:ring-teal-600/10"
+  }`;
+
+  const uiInput = `h-12 w-full px-3.5 ${inputShell}`;
+
+  const errInput = dk
+    ? "border-rose-500/70 hover:border-rose-400 focus:border-rose-400 focus:ring-rose-500/10"
+    : "border-rose-400 hover:border-rose-500 focus:border-rose-500 focus:ring-rose-500/10";
+
+  const roInput = dk
+    ? "cursor-default bg-[#0c1826] text-slate-400 hover:border-slate-700 focus:border-slate-700 focus:ring-0"
+    : "cursor-default bg-slate-100 text-slate-500 hover:border-slate-300 focus:border-slate-300 focus:ring-0";
+
+  const uiLabel = `mb-1.5 block text-[11px] font-black tracking-wide ${
+    dk ? "text-slate-400" : "text-slate-500"
+  }`;
+
+  const rateChip = `flex h-12 items-center whitespace-nowrap rounded-xl border px-3.5 text-sm font-bold shadow-sm ${
+    dk
+      ? "border-slate-700 bg-[#0b1622]/85 text-slate-200"
+      : "border-slate-200/80 bg-white/85 text-slate-700"
+  }`;
+
+  function typeChipClass(tx: Transaction) {
+    if (tx.type === "transfer") {
+      return dk
+        ? "bg-violet-400/10 text-violet-300 ring-1 ring-violet-400/20"
+        : "bg-violet-500/10 text-violet-700 ring-1 ring-violet-500/25";
+    }
+
+    if (tx.dealType === "buy") {
+      return dk
+        ? "bg-emerald-400/10 text-emerald-300 ring-1 ring-emerald-400/20"
+        : "bg-emerald-500/10 text-emerald-700 ring-1 ring-emerald-500/25";
+    }
+
+    if (tx.dealType === "sell") {
+      return dk
+        ? "bg-amber-400/10 text-amber-300 ring-1 ring-amber-400/20"
+        : "bg-amber-500/10 text-amber-700 ring-1 ring-amber-500/25";
+    }
+
+    return dk
+      ? "bg-slate-400/10 text-slate-300 ring-1 ring-slate-400/20"
+      : "bg-slate-500/10 text-slate-600 ring-1 ring-slate-500/20";
+  }
 
   useEffect(() => {
     setNow(new Date());
@@ -1185,7 +1229,7 @@ export default function CurrencyExchangePage() {
             </option>
           ))}
         </select>
-        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
+        <span className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${iconMuted}`}>
           <Ic n="chevron" className="h-4 w-4" />
         </span>
       </div>
@@ -1398,14 +1442,20 @@ export default function CurrencyExchangePage() {
     win.print();
   }
 
-  const actionButtonClass =
-    "flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold text-slate-600 transition-colors hover:bg-teal-500/10 hover:text-teal-700 disabled:cursor-not-allowed disabled:opacity-35 dark:text-slate-300 dark:hover:bg-teal-400/10 dark:hover:text-teal-300";
+  const actionButtonClass = `flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${
+    dk
+      ? "text-slate-300 hover:bg-teal-400/10 hover:text-teal-300"
+      : "text-slate-600 hover:bg-teal-500/10 hover:text-teal-700"
+  }`;
 
-  const dangerActionButtonClass =
-    "flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold text-rose-600 transition-colors hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-35 dark:text-rose-400 dark:hover:bg-rose-400/10";
+  const dangerActionButtonClass = `flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${
+    dk
+      ? "text-rose-400 hover:bg-rose-400/10"
+      : "text-rose-600 hover:bg-rose-500/10"
+  }`;
 
   return (
-    <div dir="rtl" className={theme === "dark" ? "dark" : ""}>
+    <div dir="rtl" className={dk ? "dark" : ""}>
       <style>{`
         @import url("https://fonts.googleapis.com/css2?family=Lalezar&family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap");
 
@@ -1435,16 +1485,38 @@ export default function CurrencyExchangePage() {
         ::selection { background: rgba(13,148,136,0.25); }
       `}</style>
 
-      <div className="fx-font relative min-h-screen overflow-x-hidden bg-[#eef2f5] text-slate-800 antialiased transition-colors duration-500 dark:bg-[#0a131e] dark:text-slate-100">
+      <div
+        className={`fx-font relative min-h-screen overflow-x-hidden antialiased transition-colors duration-500 ${
+          dk ? "bg-[#0a131e] text-slate-100" : "bg-[#eef2f5] text-slate-800"
+        }`}
+      >
         {/* نوار امضای بالا */}
-        <div className="fixed inset-x-0 top-0 z-30 h-1 bg-gradient-to-l from-teal-700 via-emerald-500 to-amber-400 dark:from-teal-400 dark:via-emerald-400 dark:to-amber-300" />
+        <div
+          className={`fixed inset-x-0 top-0 z-30 h-1 bg-gradient-to-l ${
+            dk
+              ? "from-teal-400 via-emerald-400 to-amber-300"
+              : "from-teal-700 via-emerald-500 to-amber-400"
+          }`}
+        />
 
         {/* پس‌زمینه محیطی */}
         <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-0">
           <div className="fx-grid absolute inset-0" />
-          <div className="absolute -top-36 right-[-12rem] h-[30rem] w-[30rem] rounded-full bg-teal-500/15 blur-[110px] dark:bg-teal-400/10" />
-          <div className="absolute left-[-12rem] top-1/4 h-[26rem] w-[26rem] rounded-full bg-amber-400/15 blur-[110px] dark:bg-amber-400/[0.07]" />
-          <div className="absolute bottom-[-10rem] right-1/3 h-[24rem] w-[24rem] rounded-full bg-emerald-400/10 blur-[100px] dark:bg-emerald-400/[0.06]" />
+          <div
+            className={`absolute -top-36 right-[-12rem] h-[30rem] w-[30rem] rounded-full blur-[110px] ${
+              dk ? "bg-teal-400/10" : "bg-teal-500/15"
+            }`}
+          />
+          <div
+            className={`absolute left-[-12rem] top-1/4 h-[26rem] w-[26rem] rounded-full blur-[110px] ${
+              dk ? "bg-amber-400/[0.07]" : "bg-amber-400/15"
+            }`}
+          />
+          <div
+            className={`absolute bottom-[-10rem] right-1/3 h-[24rem] w-[24rem] rounded-full blur-[100px] ${
+              dk ? "bg-emerald-400/[0.06]" : "bg-emerald-400/10"
+            }`}
+          />
         </div>
 
         <div className="relative z-10 mx-auto w-full max-w-7xl space-y-5 px-4 pb-16 pt-9 md:space-y-6 md:px-8">
@@ -1453,33 +1525,48 @@ export default function CurrencyExchangePage() {
             <div className="flex items-center gap-3.5">
               <div className="relative grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-[#092f3a] via-teal-700 to-emerald-500 text-white shadow-lg shadow-teal-800/30 ring-1 ring-white/20">
                 <Ic n="swap" className="h-6 w-6" />
-                <span className="absolute -bottom-1.5 -left-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-amber-400 px-1 text-[8px] font-black text-slate-900 ring-2 ring-white dark:ring-[#0a131e]">
+                <span
+                  className={`absolute -bottom-1.5 -left-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-amber-400 px-1 text-[8px] font-black text-slate-900 ring-2 ${
+                    dk ? "ring-[#0a131e]" : "ring-white"
+                  }`}
+                >
                   AFN
                 </span>
               </div>
               <div>
-                <h1 className="fx-display text-3xl leading-none text-slate-900 dark:text-white md:text-4xl">
+                <h1 className={`fx-display text-3xl leading-none md:text-4xl ${heading}`}>
                   معاملات ارزی
                 </h1>
-                <p className="mt-1.5 text-[11px] font-bold text-slate-500 dark:text-slate-400 md:text-xs">
+                <p className={`mt-1.5 text-[11px] font-bold md:text-xs ${subText}`}>
                   سامانهٔ تبادل و حوالهٔ صرافی — پنج ارز فعال
                 </p>
               </div>
             </div>
 
             <div className="flex items-center gap-2.5">
-              <div className="flex items-center gap-2.5 rounded-xl border border-slate-200/90 bg-white/85 px-3.5 py-2.5 shadow-sm backdrop-blur dark:border-slate-700/80 dark:bg-[#0e1a28]/85">
+              <div
+                className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 shadow-sm backdrop-blur ${glassChip}`}
+              >
                 <span className="relative flex h-2.5 w-2.5">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-70" />
                   <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
                 </span>
-                <span dir="ltr" className="text-xs font-bold tabular-nums text-slate-600 dark:text-slate-300">
+                <span
+                  dir="ltr"
+                  className={`text-xs font-bold tabular-nums ${
+                    dk ? "text-slate-300" : "text-slate-600"
+                  }`}
+                >
                   {currentDateTime || "--:--:--"}
                 </span>
                 {now && (
                   <>
-                    <span className="h-4 w-px bg-slate-200 dark:bg-slate-700" />
-                    <span className="whitespace-nowrap text-[10px] font-black text-teal-700 dark:text-teal-300">
+                    <span className={`h-4 w-px ${dk ? "bg-slate-700" : "bg-slate-200"}`} />
+                    <span
+                      className={`whitespace-nowrap text-[10px] font-black ${
+                        dk ? "text-teal-300" : "text-teal-700"
+                      }`}
+                    >
                       {shamsiMonthLabel(now)}
                     </span>
                   </>
@@ -1487,13 +1574,15 @@ export default function CurrencyExchangePage() {
               </div>
 
               <button
-                onClick={() =>
-                  setTheme(theme === "dark" ? "light" : "dark")
-                }
-                title={theme === "dark" ? "پوستهٔ روشن" : "پوستهٔ تیره"}
-                className="group grid h-11 w-11 cursor-pointer place-items-center rounded-xl border border-slate-200/90 bg-white/85 text-slate-600 shadow-sm backdrop-blur transition-all duration-300 hover:border-teal-500/50 hover:text-teal-600 active:scale-90 dark:border-slate-700/80 dark:bg-[#0e1a28]/85 dark:text-amber-300 dark:hover:border-amber-400/50 dark:hover:text-amber-200"
+                onClick={() => setTheme(dk ? "light" : "dark")}
+                title={dk ? "پوستهٔ روشن" : "پوستهٔ تیره"}
+                className={`group grid h-11 w-11 cursor-pointer place-items-center rounded-xl border shadow-sm backdrop-blur transition-all duration-300 active:scale-90 ${
+                  dk
+                    ? "border-slate-700/80 bg-[#0e1a28]/85 text-amber-300 hover:border-amber-400/50 hover:text-amber-200"
+                    : "border-slate-200/90 bg-white/85 text-slate-600 hover:border-teal-500/50 hover:text-teal-600"
+                }`}
               >
-                {theme === "dark" ? (
+                {dk ? (
                   <Ic n="sun" className="h-5 w-5 transition-transform duration-500 group-hover:rotate-45" />
                 ) : (
                   <Ic n="moon" className="h-5 w-5 transition-transform duration-500 group-hover:-rotate-12" />
@@ -1510,7 +1599,11 @@ export default function CurrencyExchangePage() {
             {currencies.map((c) => (
               <span
                 key={c}
-                className="flex cursor-default items-center gap-2 rounded-full border border-slate-200/90 bg-white/85 py-1.5 pl-3.5 pr-1.5 text-xs font-bold text-slate-600 shadow-sm backdrop-blur transition-all duration-300 hover:-translate-y-0.5 hover:border-teal-500/40 hover:shadow-md dark:border-slate-700/80 dark:bg-[#0e1a28]/85 dark:text-slate-300 dark:hover:border-teal-400/40"
+                className={`flex cursor-default items-center gap-2 rounded-full border py-1.5 pl-3.5 pr-1.5 text-xs font-bold shadow-sm backdrop-blur transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md ${glassChip} ${
+                  dk
+                    ? "text-slate-300 hover:border-teal-400/40"
+                    : "text-slate-600 hover:border-teal-500/40"
+                }`}
               >
                 <span className="grid h-6 w-6 place-items-center rounded-full bg-gradient-to-br from-teal-600 to-emerald-500 text-[8px] font-black text-white">
                   {c}
@@ -1520,15 +1613,33 @@ export default function CurrencyExchangePage() {
             ))}
 
             <div className="mr-auto flex flex-wrap items-center gap-2 text-[11px] font-black">
-              <span className="flex items-center gap-1.5 rounded-full border border-slate-200/90 bg-white/85 px-3 py-1.5 text-slate-600 shadow-sm backdrop-blur dark:border-slate-700/80 dark:bg-[#0e1a28]/85 dark:text-slate-300">
+              <span
+                className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 shadow-sm backdrop-blur ${glassChip} ${
+                  dk ? "text-slate-300" : "text-slate-600"
+                }`}
+              >
                 کل معاملات
-                <b className="tabular-nums text-teal-700 dark:text-teal-300">{transactions.length}</b>
+                <b className={`tabular-nums ${dk ? "text-teal-300" : "text-teal-700"}`}>
+                  {transactions.length}
+                </b>
               </span>
-              <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1.5 text-emerald-700 ring-1 ring-emerald-500/25 dark:bg-emerald-400/10 dark:text-emerald-300 dark:ring-emerald-400/20">
+              <span
+                className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 ring-1 ${
+                  dk
+                    ? "bg-emerald-400/10 text-emerald-300 ring-emerald-400/20"
+                    : "bg-emerald-500/10 text-emerald-700 ring-emerald-500/25"
+                }`}
+              >
                 فعال
                 <b className="tabular-nums">{activeCount}</b>
               </span>
-              <span className="flex items-center gap-1.5 rounded-full bg-rose-500/10 px-3 py-1.5 text-rose-600 ring-1 ring-rose-500/25 dark:bg-rose-400/10 dark:text-rose-300 dark:ring-rose-400/20">
+              <span
+                className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 ring-1 ${
+                  dk
+                    ? "bg-rose-400/10 text-rose-300 ring-rose-400/20"
+                    : "bg-rose-500/10 text-rose-600 ring-rose-500/25"
+                }`}
+              >
                 لغو شده
                 <b className="tabular-nums">{voidedCount}</b>
               </span>
@@ -1537,15 +1648,21 @@ export default function CurrencyExchangePage() {
 
           {/* تب‌ها */}
           <div
-            className="fx-up flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/90 bg-white/85 p-2 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-[#0e1a28]/85 sm:w-fit"
+            className={`fx-up flex flex-wrap items-center gap-2 rounded-2xl border p-2 shadow-sm backdrop-blur sm:w-fit ${glassChip}`}
             style={{ animationDelay: "140ms" }}
           >
             <button
               onClick={() => setTab("exchange")}
               className={`flex cursor-pointer items-center gap-2 rounded-xl px-5 py-3 text-sm font-black transition-all duration-300 active:scale-[0.97] ${
                 tab === "exchange"
-                  ? "bg-gradient-to-l from-[#0a3540] via-teal-700 to-emerald-600 text-white shadow-lg shadow-teal-800/30 dark:from-teal-500 dark:via-emerald-500 dark:to-emerald-400 dark:text-slate-950 dark:shadow-teal-500/20"
-                  : "text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-200"
+                  ? `bg-gradient-to-l shadow-lg ${
+                      dk
+                        ? "from-teal-500 via-emerald-500 to-emerald-400 text-slate-950 shadow-teal-500/20"
+                        : "from-[#0a3540] via-teal-700 to-emerald-600 text-white shadow-teal-800/30"
+                    }`
+                  : dk
+                  ? "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
+                  : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
               }`}
             >
               <Ic n="swap" className="h-4 w-4" />
@@ -1556,8 +1673,14 @@ export default function CurrencyExchangePage() {
               onClick={() => setTab("transfer")}
               className={`flex cursor-pointer items-center gap-2 rounded-xl px-5 py-3 text-sm font-black transition-all duration-300 active:scale-[0.97] ${
                 tab === "transfer"
-                  ? "bg-gradient-to-l from-violet-700 via-violet-600 to-fuchsia-600 text-white shadow-lg shadow-violet-700/30 dark:from-violet-400 dark:via-fuchsia-400 dark:to-fuchsia-300 dark:text-slate-950 dark:shadow-fuchsia-400/20"
-                  : "text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-200"
+                  ? `bg-gradient-to-l shadow-lg ${
+                      dk
+                        ? "from-violet-400 via-fuchsia-400 to-fuchsia-300 text-slate-950 shadow-fuchsia-400/20"
+                        : "from-violet-700 via-violet-600 to-fuchsia-600 text-white shadow-violet-700/30"
+                    }`
+                  : dk
+                  ? "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
+                  : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
               }`}
             >
               <Ic n="users" className="h-4 w-4" />
@@ -1570,18 +1693,30 @@ export default function CurrencyExchangePage() {
           {tab === "exchange" && (
             <section className={`fx-up space-y-5 p-5 md:p-7 ${uiCard}`}>
               <div className="flex flex-wrap items-center gap-3">
-                <span className="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-teal-600/15 to-emerald-500/15 text-teal-700 ring-1 ring-teal-600/20 dark:from-teal-400/15 dark:to-emerald-400/10 dark:text-teal-300 dark:ring-teal-400/20">
+                <span
+                  className={`grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${
+                    dk
+                      ? "from-teal-400/15 to-emerald-400/10 text-teal-300 ring-teal-400/20"
+                      : "from-teal-600/15 to-emerald-500/15 text-teal-700 ring-teal-600/20"
+                  }`}
+                >
                   <Ic n="swap" className="h-5 w-5" />
                 </span>
                 <div className="flex-1">
-                  <h2 className="fx-display text-2xl leading-none text-slate-900 dark:text-white">
+                  <h2 className={`fx-display text-2xl leading-none ${heading}`}>
                     تبادل ارز صرافی با مشتری
                   </h2>
-                  <p className="mt-1 text-[11px] font-bold text-slate-400 dark:text-slate-500">
+                  <p className={`mt-1 text-[11px] font-bold ${subText}`}>
                     دریافت یک ارز از مشتری و پرداخت ارز دیگر
                   </p>
                 </div>
-                <span className="rounded-full bg-teal-600/10 px-3 py-1.5 text-[10px] font-black text-teal-700 ring-1 ring-teal-600/20 dark:bg-teal-400/10 dark:text-teal-300 dark:ring-teal-400/20">
+                <span
+                  className={`rounded-full px-3 py-1.5 text-[10px] font-black ring-1 ${
+                    dk
+                      ? "bg-teal-400/10 text-teal-300 ring-teal-400/20"
+                      : "bg-teal-600/10 text-teal-700 ring-teal-600/20"
+                  }`}
+                >
                   {editingExchangeId
                     ? `ویرایش ${shortId(editingExchangeId)}`
                     : "معاملهٔ جدید"}
@@ -1589,7 +1724,13 @@ export default function CurrencyExchangePage() {
               </div>
 
               {editingExchangeId && (
-                <div className="fx-pop flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-sm font-bold text-amber-800 dark:border-amber-400/25 dark:bg-amber-400/10 dark:text-amber-300">
+                <div
+                  className={`fx-pop flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm font-bold ${
+                    dk
+                      ? "border-amber-400/25 bg-amber-400/10 text-amber-300"
+                      : "border-amber-500/35 bg-amber-500/10 text-amber-800"
+                  }`}
+                >
                   <span className="flex items-center gap-2">
                     <Ic n="pencil" className="h-4 w-4 shrink-0" />
                     در حال ویرایش معامله {shortId(editingExchangeId)}. تاریخ اصلی حفظ می‌شود.
@@ -1615,7 +1756,7 @@ export default function CurrencyExchangePage() {
                       value={exchangeDateDisplay}
                       className={`${uiInput} ${roInput} pl-10 text-left tabular-nums`}
                     />
-                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
+                    <span className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${iconMuted}`}>
                       <Ic n="clock" className="h-4 w-4" />
                     </span>
                   </div>
@@ -1644,7 +1785,7 @@ export default function CurrencyExchangePage() {
                       <option value="buy">خرید</option>
                       <option value="sell">فروش</option>
                     </select>
-                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
+                    <span className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${iconMuted}`}>
                       <Ic n="chevron" className="h-4 w-4" />
                     </span>
                   </div>
@@ -1674,7 +1815,7 @@ export default function CurrencyExchangePage() {
                         </option>
                       ))}
                     </select>
-                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
+                    <span className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${iconMuted}`}>
                       <Ic n="chevron" className="h-4 w-4" />
                     </span>
                   </div>
@@ -1690,7 +1831,7 @@ export default function CurrencyExchangePage() {
                       placeholder="نام مشتری یا مبلغ…"
                       className={`${uiInput} pr-10`}
                     />
-                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
+                    <span className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 ${iconMuted}`}>
                       <Ic n="search" className="h-4 w-4" />
                     </span>
                   </div>
@@ -1699,12 +1840,22 @@ export default function CurrencyExchangePage() {
 
               {/* دریافت / پرداخت */}
               <div className="grid gap-4 lg:grid-cols-[1fr_auto_1fr]">
-                <div className="space-y-4 rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.05] p-4 transition-colors dark:border-emerald-400/15 dark:bg-emerald-400/[0.04]">
+                <div
+                  className={`space-y-4 rounded-2xl border p-4 transition-colors ${
+                    dk
+                      ? "border-emerald-400/15 bg-emerald-400/[0.04]"
+                      : "border-emerald-500/25 bg-emerald-500/[0.05]"
+                  }`}
+                >
                   <div className="flex items-center gap-2.5">
-                    <span className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">
+                    <span
+                      className={`grid h-9 w-9 place-items-center rounded-xl bg-emerald-500/15 ${
+                        dk ? "text-emerald-300" : "text-emerald-600"
+                      }`}
+                    >
                       <Ic n="down" className="h-4 w-4" />
                     </span>
-                    <b className="text-sm font-black text-emerald-800 dark:text-emerald-300">
+                    <b className={`text-sm font-black ${dk ? "text-emerald-300" : "text-emerald-800"}`}>
                       دریافت از مشتری
                     </b>
                   </div>
@@ -1749,17 +1900,33 @@ export default function CurrencyExchangePage() {
                 </div>
 
                 <div className="hidden flex-col items-center justify-center lg:flex">
-                  <span className="grid h-12 w-12 place-items-center rounded-full border border-slate-200 bg-white text-teal-600 shadow-md dark:border-slate-700 dark:bg-[#0b1622] dark:text-teal-300">
+                  <span
+                    className={`grid h-12 w-12 place-items-center rounded-full border shadow-md ${
+                      dk
+                        ? "border-slate-700 bg-[#0b1622] text-teal-300"
+                        : "border-slate-200 bg-white text-teal-600"
+                    }`}
+                  >
                     <Ic n="swap" className="h-5 w-5" />
                   </span>
                 </div>
 
-                <div className="space-y-4 rounded-2xl border border-sky-500/25 bg-sky-500/[0.05] p-4 transition-colors dark:border-sky-400/15 dark:bg-sky-400/[0.04]">
+                <div
+                  className={`space-y-4 rounded-2xl border p-4 transition-colors ${
+                    dk
+                      ? "border-sky-400/15 bg-sky-400/[0.04]"
+                      : "border-sky-500/25 bg-sky-500/[0.05]"
+                  }`}
+                >
                   <div className="flex items-center gap-2.5">
-                    <span className="grid h-9 w-9 place-items-center rounded-xl bg-sky-500/15 text-sky-600 dark:text-sky-300">
+                    <span
+                      className={`grid h-9 w-9 place-items-center rounded-xl bg-sky-500/15 ${
+                        dk ? "text-sky-300" : "text-sky-600"
+                      }`}
+                    >
                       <Ic n="up" className="h-4 w-4" />
                     </span>
-                    <b className="text-sm font-black text-sky-800 dark:text-sky-300">
+                    <b className={`text-sm font-black ${dk ? "text-sky-300" : "text-sky-800"}`}>
                       پرداخت به مشتری
                     </b>
                   </div>
@@ -1792,19 +1959,35 @@ export default function CurrencyExchangePage() {
               </div>
 
               {exchangeMode === "same" && (
-                <div className="flex items-center gap-3 rounded-2xl border border-slate-300/70 bg-slate-500/[0.06] p-4 text-sm font-bold text-slate-600 dark:border-slate-600/60 dark:bg-slate-400/[0.06] dark:text-slate-300">
+                <div
+                  className={`flex items-center gap-3 rounded-2xl border p-4 text-sm font-bold ${
+                    dk
+                      ? "border-slate-600/60 bg-slate-400/[0.06] text-slate-300"
+                      : "border-slate-300/70 bg-slate-500/[0.06] text-slate-600"
+                  }`}
+                >
                   <Ic n="info" className="h-5 w-5 shrink-0 opacity-70" />
                   ارز دریافت و پرداخت یکسان است؛ مبلغ پرداختی برابر مبلغ دریافتی خواهد بود.
                 </div>
               )}
 
               {exchangeMode === "afn" && exchangeForeign && (
-                <div className="space-y-4 rounded-2xl border border-sky-500/30 bg-sky-500/[0.07] p-4 transition-colors dark:border-sky-400/20 dark:bg-sky-400/[0.06] md:p-5">
+                <div
+                  className={`space-y-4 rounded-2xl border p-4 transition-colors md:p-5 ${
+                    dk
+                      ? "border-sky-400/20 bg-sky-400/[0.06]"
+                      : "border-sky-500/30 bg-sky-500/[0.07]"
+                  }`}
+                >
                   <div className="flex items-center gap-2.5">
-                    <span className="grid h-9 w-9 place-items-center rounded-xl bg-sky-500/15 text-sky-600 dark:text-sky-300">
+                    <span
+                      className={`grid h-9 w-9 place-items-center rounded-xl bg-sky-500/15 ${
+                        dk ? "text-sky-300" : "text-sky-600"
+                      }`}
+                    >
                       <Ic n="rate" className="h-4 w-4" />
                     </span>
-                    <b className="text-sm font-black text-sky-800 dark:text-sky-300">
+                    <b className={`text-sm font-black ${dk ? "text-sky-300" : "text-sky-800"}`}>
                       نرخ دستی در برابر افغانی
                     </b>
                   </div>
@@ -1842,14 +2025,24 @@ export default function CurrencyExchangePage() {
 
                   <div className="flex flex-wrap items-center gap-2.5">
                     {exchangeRateValue > 0 && (
-                      <span className="fx-pop inline-flex items-center gap-1.5 rounded-full bg-sky-500/15 px-3 py-1.5 text-xs font-black text-sky-700 dark:bg-sky-400/15 dark:text-sky-300">
+                      <span
+                        className={`fx-pop inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black ${
+                          dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-500/15 text-sky-700"
+                        }`}
+                      >
                         <Ic n="check" className="h-3.5 w-3.5" />
                         نرخ ثبت‌شده: {afnRateLabel(exchangeForeign, exchangeRateValue)}
                       </span>
                     )}
 
                     {paidAmount && (
-                      <span className="fx-pop inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-3 py-1.5 text-xs font-black text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300">
+                      <span
+                        className={`fx-pop inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black ${
+                          dk
+                            ? "bg-emerald-400/15 text-emerald-300"
+                            : "bg-emerald-500/15 text-emerald-700"
+                        }`}
+                      >
                         نتیجه: {paidAmount} {labels[paidCurrency]}
                       </span>
                     )}
@@ -1858,12 +2051,22 @@ export default function CurrencyExchangePage() {
               )}
 
               {exchangeMode === "direct" && (
-                <div className="space-y-4 rounded-2xl border border-amber-500/30 bg-amber-500/[0.07] p-4 transition-colors dark:border-amber-400/20 dark:bg-amber-400/[0.06] md:p-5">
+                <div
+                  className={`space-y-4 rounded-2xl border p-4 transition-colors md:p-5 ${
+                    dk
+                      ? "border-amber-400/20 bg-amber-400/[0.06]"
+                      : "border-amber-500/30 bg-amber-500/[0.07]"
+                  }`}
+                >
                   <div className="flex items-center gap-2.5">
-                    <span className="grid h-9 w-9 place-items-center rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-300">
+                    <span
+                      className={`grid h-9 w-9 place-items-center rounded-xl bg-amber-500/15 ${
+                        dk ? "text-amber-300" : "text-amber-600"
+                      }`}
+                    >
                       <Ic n="rate" className="h-4 w-4" />
                     </span>
-                    <b className="text-sm font-black text-amber-800 dark:text-amber-300">
+                    <b className={`text-sm font-black ${dk ? "text-amber-300" : "text-amber-800"}`}>
                       نرخ مستقیم جفت‌ارز
                     </b>
                   </div>
@@ -1893,7 +2096,7 @@ export default function CurrencyExchangePage() {
                             </option>
                           ))}
                         </select>
-                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
+                        <span className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${iconMuted}`}>
                           <Ic n="chevron" className="h-4 w-4" />
                         </span>
                       </div>
@@ -1938,7 +2141,13 @@ export default function CurrencyExchangePage() {
 
                   <div className="flex flex-wrap items-center gap-2.5">
                     {exchangeRateValue > 0 && exchangeDirectCounter && (
-                      <span className="fx-pop inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-3 py-1.5 text-xs font-black text-amber-700 dark:bg-amber-400/15 dark:text-amber-300">
+                      <span
+                        className={`fx-pop inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black ${
+                          dk
+                            ? "bg-amber-400/15 text-amber-300"
+                            : "bg-amber-500/15 text-amber-700"
+                        }`}
+                      >
                         <Ic n="check" className="h-3.5 w-3.5" />
                         نرخ ثبت‌شده:{" "}
                         {directRateLabel(
@@ -1950,7 +2159,13 @@ export default function CurrencyExchangePage() {
                     )}
 
                     {paidAmount && (
-                      <span className="fx-pop inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-3 py-1.5 text-xs font-black text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300">
+                      <span
+                        className={`fx-pop inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black ${
+                          dk
+                            ? "bg-emerald-400/15 text-emerald-300"
+                            : "bg-emerald-500/15 text-emerald-700"
+                        }`}
+                      >
                         نتیجه: {paidAmount} {labels[paidCurrency]}
                       </span>
                     )}
@@ -1982,7 +2197,13 @@ export default function CurrencyExchangePage() {
                         exchangeErrors.exchangeCommission ? errInput : ""
                       }`}
                     />
-                    <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 rounded-lg bg-teal-600/10 px-2 py-1 text-[10px] font-black text-teal-700 dark:bg-teal-400/10 dark:text-teal-300">
+                    <span
+                      className={`pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 rounded-lg px-2 py-1 text-[10px] font-black ${
+                        dk
+                          ? "bg-teal-400/10 text-teal-300"
+                          : "bg-teal-600/10 text-teal-700"
+                      }`}
+                    >
                       {labels[receivedCurrency]}
                     </span>
                   </div>
@@ -2003,7 +2224,13 @@ export default function CurrencyExchangePage() {
               </div>
 
               {exchangeErrorList.length > 0 && (
-                <div className="fx-pop space-y-2 rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-rose-700 dark:border-rose-400/25 dark:bg-rose-400/10 dark:text-rose-300">
+                <div
+                  className={`fx-pop space-y-2 rounded-xl border p-4 ${
+                    dk
+                      ? "border-rose-400/25 bg-rose-400/10 text-rose-300"
+                      : "border-rose-500/30 bg-rose-500/10 text-rose-700"
+                  }`}
+                >
                   <b className="flex items-center gap-2 text-sm">
                     <Ic n="alert" className="h-5 w-5 shrink-0" />
                     لطفاً این فیلدها را تکمیل کنید:
@@ -2019,7 +2246,11 @@ export default function CurrencyExchangePage() {
 
               <button
                 onClick={submitExchange}
-                className="group flex h-[52px] w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-[#092f3a] via-teal-700 to-emerald-600 text-base font-black text-white shadow-lg shadow-teal-800/30 transition-all duration-300 hover:shadow-xl hover:brightness-110 active:scale-[0.985] dark:from-teal-400 dark:via-emerald-400 dark:to-emerald-300 dark:text-[#04211d] dark:shadow-teal-400/20"
+                className={`group flex h-[52px] w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-base font-black shadow-lg transition-all duration-300 hover:shadow-xl hover:brightness-110 active:scale-[0.985] ${
+                  dk
+                    ? "from-teal-400 via-emerald-400 to-emerald-300 text-[#04211d] shadow-teal-400/20"
+                    : "from-[#092f3a] via-teal-700 to-emerald-600 text-white shadow-teal-800/30"
+                }`}
               >
                 {editingExchangeId
                   ? "به‌روزرسانی معامله"
@@ -2034,18 +2265,30 @@ export default function CurrencyExchangePage() {
           {tab === "transfer" && (
             <section className={`fx-up space-y-5 p-5 md:p-7 ${uiCard}`}>
               <div className="flex flex-wrap items-center gap-3">
-                <span className="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-violet-600/15 to-fuchsia-500/15 text-violet-700 ring-1 ring-violet-600/20 dark:from-violet-400/15 dark:to-fuchsia-400/10 dark:text-violet-300 dark:ring-violet-400/20">
+                <span
+                  className={`grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${
+                    dk
+                      ? "from-violet-400/15 to-fuchsia-400/10 text-violet-300 ring-violet-400/20"
+                      : "from-violet-600/15 to-fuchsia-500/15 text-violet-700 ring-violet-600/20"
+                  }`}
+                >
                   <Ic n="users" className="h-5 w-5" />
                 </span>
                 <div className="flex-1">
-                  <h2 className="fx-display text-2xl leading-none text-slate-900 dark:text-white">
+                  <h2 className={`fx-display text-2xl leading-none ${heading}`}>
                     تبادل بین حساب مشتریان
                   </h2>
-                  <p className="mt-1 text-[11px] font-bold text-slate-400 dark:text-slate-500">
+                  <p className={`mt-1 text-[11px] font-bold ${subText}`}>
                     انتقال موجودی از حساب مشتری به مشتری دیگر
                   </p>
                 </div>
-                <span className="rounded-full bg-violet-600/10 px-3 py-1.5 text-[10px] font-black text-violet-700 ring-1 ring-violet-600/20 dark:bg-violet-400/10 dark:text-violet-300 dark:ring-violet-400/20">
+                <span
+                  className={`rounded-full px-3 py-1.5 text-[10px] font-black ring-1 ${
+                    dk
+                      ? "bg-violet-400/10 text-violet-300 ring-violet-400/20"
+                      : "bg-violet-600/10 text-violet-700 ring-violet-600/20"
+                  }`}
+                >
                   {editingTransferId
                     ? `ویرایش ${shortId(editingTransferId)}`
                     : "انتقال جدید"}
@@ -2053,7 +2296,13 @@ export default function CurrencyExchangePage() {
               </div>
 
               {editingTransferId && (
-                <div className="fx-pop flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-sm font-bold text-amber-800 dark:border-amber-400/25 dark:bg-amber-400/10 dark:text-amber-300">
+                <div
+                  className={`fx-pop flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm font-bold ${
+                    dk
+                      ? "border-amber-400/25 bg-amber-400/10 text-amber-300"
+                      : "border-amber-500/35 bg-amber-500/10 text-amber-800"
+                  }`}
+                >
                   <span className="flex items-center gap-2">
                     <Ic n="pencil" className="h-4 w-4 shrink-0" />
                     در حال ویرایش انتقال {shortId(editingTransferId)}. تاریخ اصلی حفظ می‌شود.
@@ -2079,7 +2328,7 @@ export default function CurrencyExchangePage() {
                       value={transferDateDisplay}
                       className={`${uiInput} ${roInput} pl-10 text-left tabular-nums`}
                     />
-                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
+                    <span className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${iconMuted}`}>
                       <Ic n="clock" className="h-4 w-4" />
                     </span>
                   </div>
@@ -2095,7 +2344,7 @@ export default function CurrencyExchangePage() {
                       placeholder="نام مشتری یا مبلغ…"
                       className={`${uiInput} pr-10`}
                     />
-                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
+                    <span className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 ${iconMuted}`}>
                       <Ic n="search" className="h-4 w-4" />
                     </span>
                   </div>
@@ -2104,12 +2353,22 @@ export default function CurrencyExchangePage() {
 
               {/* فرستنده / گیرنده */}
               <div className="grid gap-4 lg:grid-cols-[1fr_auto_1fr]">
-                <div className="space-y-4 rounded-2xl border border-violet-500/25 bg-violet-500/[0.05] p-4 transition-colors dark:border-violet-400/15 dark:bg-violet-400/[0.04]">
+                <div
+                  className={`space-y-4 rounded-2xl border p-4 transition-colors ${
+                    dk
+                      ? "border-violet-400/15 bg-violet-400/[0.04]"
+                      : "border-violet-500/25 bg-violet-500/[0.05]"
+                  }`}
+                >
                   <div className="flex items-center gap-2.5">
-                    <span className="grid h-9 w-9 place-items-center rounded-xl bg-violet-500/15 text-violet-600 dark:text-violet-300">
+                    <span
+                      className={`grid h-9 w-9 place-items-center rounded-xl bg-violet-500/15 ${
+                        dk ? "text-violet-300" : "text-violet-600"
+                      }`}
+                    >
                       <Ic n="up" className="h-4 w-4" />
                     </span>
-                    <b className="text-sm font-black text-violet-800 dark:text-violet-300">
+                    <b className={`text-sm font-black ${dk ? "text-violet-300" : "text-violet-800"}`}>
                       فرستنده
                     </b>
                   </div>
@@ -2138,7 +2397,7 @@ export default function CurrencyExchangePage() {
                           </option>
                         ))}
                       </select>
-                      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
+                      <span className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${iconMuted}`}>
                         <Ic n="chevron" className="h-4 w-4" />
                       </span>
                     </div>
@@ -2184,17 +2443,33 @@ export default function CurrencyExchangePage() {
                 </div>
 
                 <div className="hidden flex-col items-center justify-center lg:flex">
-                  <span className="grid h-12 w-12 place-items-center rounded-full border border-slate-200 bg-white text-violet-600 shadow-md dark:border-slate-700 dark:bg-[#0b1622] dark:text-violet-300">
+                  <span
+                    className={`grid h-12 w-12 place-items-center rounded-full border shadow-md ${
+                      dk
+                        ? "border-slate-700 bg-[#0b1622] text-violet-300"
+                        : "border-slate-200 bg-white text-violet-600"
+                    }`}
+                  >
                     <Ic n="arrowLeft" className="h-5 w-5" />
                   </span>
                 </div>
 
-                <div className="space-y-4 rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.05] p-4 transition-colors dark:border-emerald-400/15 dark:bg-emerald-400/[0.04]">
+                <div
+                  className={`space-y-4 rounded-2xl border p-4 transition-colors ${
+                    dk
+                      ? "border-emerald-400/15 bg-emerald-400/[0.04]"
+                      : "border-emerald-500/25 bg-emerald-500/[0.05]"
+                  }`}
+                >
                   <div className="flex items-center gap-2.5">
-                    <span className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">
+                    <span
+                      className={`grid h-9 w-9 place-items-center rounded-xl bg-emerald-500/15 ${
+                        dk ? "text-emerald-300" : "text-emerald-600"
+                      }`}
+                    >
                       <Ic n="down" className="h-4 w-4" />
                     </span>
-                    <b className="text-sm font-black text-emerald-800 dark:text-emerald-300">
+                    <b className={`text-sm font-black ${dk ? "text-emerald-300" : "text-emerald-800"}`}>
                       گیرنده
                     </b>
                   </div>
@@ -2223,7 +2498,7 @@ export default function CurrencyExchangePage() {
                           </option>
                         ))}
                       </select>
-                      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
+                      <span className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${iconMuted}`}>
                         <Ic n="chevron" className="h-4 w-4" />
                       </span>
                     </div>
@@ -2257,19 +2532,35 @@ export default function CurrencyExchangePage() {
               </div>
 
               {transferMode === "same" && (
-                <div className="flex items-center gap-3 rounded-2xl border border-slate-300/70 bg-slate-500/[0.06] p-4 text-sm font-bold text-slate-600 dark:border-slate-600/60 dark:bg-slate-400/[0.06] dark:text-slate-300">
+                <div
+                  className={`flex items-center gap-3 rounded-2xl border p-4 text-sm font-bold ${
+                    dk
+                      ? "border-slate-600/60 bg-slate-400/[0.06] text-slate-300"
+                      : "border-slate-300/70 bg-slate-500/[0.06] text-slate-600"
+                  }`}
+                >
                   <Ic n="info" className="h-5 w-5 shrink-0 opacity-70" />
                   ارز فرستنده و گیرنده یکسان است؛ مبلغ گیرنده برابر مبلغ فرستنده خواهد بود.
                 </div>
               )}
 
               {transferMode === "afn" && transferForeign && (
-                <div className="space-y-4 rounded-2xl border border-violet-500/30 bg-violet-500/[0.07] p-4 transition-colors dark:border-violet-400/20 dark:bg-violet-400/[0.06] md:p-5">
+                <div
+                  className={`space-y-4 rounded-2xl border p-4 transition-colors md:p-5 ${
+                    dk
+                      ? "border-violet-400/20 bg-violet-400/[0.06]"
+                      : "border-violet-500/30 bg-violet-500/[0.07]"
+                  }`}
+                >
                   <div className="flex items-center gap-2.5">
-                    <span className="grid h-9 w-9 place-items-center rounded-xl bg-violet-500/15 text-violet-600 dark:text-violet-300">
+                    <span
+                      className={`grid h-9 w-9 place-items-center rounded-xl bg-violet-500/15 ${
+                        dk ? "text-violet-300" : "text-violet-600"
+                      }`}
+                    >
                       <Ic n="rate" className="h-4 w-4" />
                     </span>
-                    <b className="text-sm font-black text-violet-800 dark:text-violet-300">
+                    <b className={`text-sm font-black ${dk ? "text-violet-300" : "text-violet-800"}`}>
                       نرخ دستی در برابر افغانی
                     </b>
                   </div>
@@ -2309,14 +2600,26 @@ export default function CurrencyExchangePage() {
 
                   <div className="flex flex-wrap items-center gap-2.5">
                     {transferRateValue > 0 && (
-                      <span className="fx-pop inline-flex items-center gap-1.5 rounded-full bg-violet-500/15 px-3 py-1.5 text-xs font-black text-violet-700 dark:bg-violet-400/15 dark:text-violet-300">
+                      <span
+                        className={`fx-pop inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black ${
+                          dk
+                            ? "bg-violet-400/15 text-violet-300"
+                            : "bg-violet-500/15 text-violet-700"
+                        }`}
+                      >
                         <Ic n="check" className="h-3.5 w-3.5" />
                         نرخ ثبت‌شده: {afnRateLabel(transferForeign, transferRateValue)}
                       </span>
                     )}
 
                     {receiverAmount && (
-                      <span className="fx-pop inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-3 py-1.5 text-xs font-black text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300">
+                      <span
+                        className={`fx-pop inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black ${
+                          dk
+                            ? "bg-emerald-400/15 text-emerald-300"
+                            : "bg-emerald-500/15 text-emerald-700"
+                        }`}
+                      >
                         نتیجه: {receiverAmount} {labels[receiverCurrency]}
                       </span>
                     )}
@@ -2325,12 +2628,22 @@ export default function CurrencyExchangePage() {
               )}
 
               {transferMode === "direct" && (
-                <div className="space-y-4 rounded-2xl border border-fuchsia-500/30 bg-fuchsia-500/[0.07] p-4 transition-colors dark:border-fuchsia-400/20 dark:bg-fuchsia-400/[0.06] md:p-5">
+                <div
+                  className={`space-y-4 rounded-2xl border p-4 transition-colors md:p-5 ${
+                    dk
+                      ? "border-fuchsia-400/20 bg-fuchsia-400/[0.06]"
+                      : "border-fuchsia-500/30 bg-fuchsia-500/[0.07]"
+                  }`}
+                >
                   <div className="flex items-center gap-2.5">
-                    <span className="grid h-9 w-9 place-items-center rounded-xl bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-300">
+                    <span
+                      className={`grid h-9 w-9 place-items-center rounded-xl bg-fuchsia-500/15 ${
+                        dk ? "text-fuchsia-300" : "text-fuchsia-600"
+                      }`}
+                    >
                       <Ic n="rate" className="h-4 w-4" />
                     </span>
-                    <b className="text-sm font-black text-fuchsia-800 dark:text-fuchsia-300">
+                    <b className={`text-sm font-black ${dk ? "text-fuchsia-300" : "text-fuchsia-800"}`}>
                       نرخ مستقیم جفت‌ارز
                     </b>
                   </div>
@@ -2360,7 +2673,7 @@ export default function CurrencyExchangePage() {
                             </option>
                           ))}
                         </select>
-                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
+                        <span className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${iconMuted}`}>
                           <Ic n="chevron" className="h-4 w-4" />
                         </span>
                       </div>
@@ -2407,7 +2720,13 @@ export default function CurrencyExchangePage() {
 
                   <div className="flex flex-wrap items-center gap-2.5">
                     {transferRateValue > 0 && transferDirectCounter && (
-                      <span className="fx-pop inline-flex items-center gap-1.5 rounded-full bg-fuchsia-500/15 px-3 py-1.5 text-xs font-black text-fuchsia-700 dark:bg-fuchsia-400/15 dark:text-fuchsia-300">
+                      <span
+                        className={`fx-pop inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black ${
+                          dk
+                            ? "bg-fuchsia-400/15 text-fuchsia-300"
+                            : "bg-fuchsia-500/15 text-fuchsia-700"
+                        }`}
+                      >
                         <Ic n="check" className="h-3.5 w-3.5" />
                         نرخ ثبت‌شده:{" "}
                         {directRateLabel(
@@ -2419,7 +2738,13 @@ export default function CurrencyExchangePage() {
                     )}
 
                     {receiverAmount && (
-                      <span className="fx-pop inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-3 py-1.5 text-xs font-black text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300">
+                      <span
+                        className={`fx-pop inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black ${
+                          dk
+                            ? "bg-emerald-400/15 text-emerald-300"
+                            : "bg-emerald-500/15 text-emerald-700"
+                        }`}
+                      >
                         نتیجه: {receiverAmount} {labels[receiverCurrency]}
                       </span>
                     )}
@@ -2449,7 +2774,13 @@ export default function CurrencyExchangePage() {
                         transferErrors.commission ? errInput : ""
                       }`}
                     />
-                    <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 rounded-lg bg-violet-600/10 px-2 py-1 text-[10px] font-black text-violet-700 dark:bg-violet-400/10 dark:text-violet-300">
+                    <span
+                      className={`pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 rounded-lg px-2 py-1 text-[10px] font-black ${
+                        dk
+                          ? "bg-violet-400/10 text-violet-300"
+                          : "bg-violet-600/10 text-violet-700"
+                      }`}
+                    >
                       {labels[senderCurrency]}
                     </span>
                   </div>
@@ -2470,7 +2801,13 @@ export default function CurrencyExchangePage() {
               </div>
 
               {transferErrorList.length > 0 && (
-                <div className="fx-pop space-y-2 rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-rose-700 dark:border-rose-400/25 dark:bg-rose-400/10 dark:text-rose-300">
+                <div
+                  className={`fx-pop space-y-2 rounded-xl border p-4 ${
+                    dk
+                      ? "border-rose-400/25 bg-rose-400/10 text-rose-300"
+                      : "border-rose-500/30 bg-rose-500/10 text-rose-700"
+                  }`}
+                >
                   <b className="flex items-center gap-2 text-sm">
                     <Ic n="alert" className="h-5 w-5 shrink-0" />
                     لطفاً این فیلدها را تکمیل کنید:
@@ -2486,7 +2823,11 @@ export default function CurrencyExchangePage() {
 
               <button
                 onClick={submitTransfer}
-                className="group flex h-[52px] w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-violet-700 via-purple-600 to-fuchsia-600 text-base font-black text-white shadow-lg shadow-violet-700/30 transition-all duration-300 hover:shadow-xl hover:brightness-110 active:scale-[0.985] dark:from-violet-400 dark:via-purple-400 dark:to-fuchsia-300 dark:text-[#1e0b36] dark:shadow-fuchsia-400/20"
+                className={`group flex h-[52px] w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-base font-black shadow-lg transition-all duration-300 hover:shadow-xl hover:brightness-110 active:scale-[0.985] ${
+                  dk
+                    ? "from-violet-400 via-purple-400 to-fuchsia-300 text-[#1e0b36] shadow-fuchsia-400/20"
+                    : "from-violet-700 via-purple-600 to-fuchsia-600 text-white shadow-violet-700/30"
+                }`}
               >
                 {editingTransferId
                   ? "به‌روزرسانی انتقال"
@@ -2503,14 +2844,20 @@ export default function CurrencyExchangePage() {
             style={{ animationDelay: "160ms" }}
           >
             <div className="flex flex-wrap items-center gap-3 p-5 pb-4 md:px-7 md:pt-6">
-              <span className="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-teal-600/15 to-emerald-500/15 text-teal-700 ring-1 ring-teal-600/20 dark:from-teal-400/15 dark:to-emerald-400/10 dark:text-teal-300 dark:ring-teal-400/20">
+              <span
+                className={`grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${
+                  dk
+                    ? "from-teal-400/15 to-emerald-400/10 text-teal-300 ring-teal-400/20"
+                    : "from-teal-600/15 to-emerald-500/15 text-teal-700 ring-teal-600/20"
+                }`}
+              >
                 <Ic n="doc" className="h-5 w-5" />
               </span>
               <div className="flex-1">
-                <h2 className="fx-display text-2xl leading-none text-slate-900 dark:text-white">
+                <h2 className={`fx-display text-2xl leading-none ${heading}`}>
                   آخرین معاملات
                 </h2>
-                <p className="mt-1 text-[11px] font-bold text-slate-400 dark:text-slate-500">
+                <p className={`mt-1 text-[11px] font-bold ${subText}`}>
                   ثبت، ویرایش، چاپ رسید و لغو معاملات
                 </p>
               </div>
@@ -2518,7 +2865,11 @@ export default function CurrencyExchangePage() {
               {isSearching && (
                 <button
                   onClick={() => setSearch("")}
-                  className="flex cursor-pointer items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1.5 text-[10px] font-black text-amber-700 ring-1 ring-amber-500/25 transition hover:bg-amber-500/20 dark:bg-amber-400/10 dark:text-amber-300 dark:ring-amber-400/20"
+                  className={`flex cursor-pointer items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] font-black ring-1 transition ${
+                    dk
+                      ? "bg-amber-400/10 text-amber-300 ring-amber-400/20 hover:bg-amber-400/20"
+                      : "bg-amber-500/10 text-amber-700 ring-amber-500/25 hover:bg-amber-500/20"
+                  }`}
                 >
                   نتایج جستجو
                   <Ic n="x" className="h-3 w-3" />
@@ -2529,25 +2880,37 @@ export default function CurrencyExchangePage() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[980px] text-sm">
                 <thead>
-                  <tr className="border-y border-slate-100 bg-slate-50/80 dark:border-slate-800 dark:bg-[#0b1520]/80">
-                    <th className="px-4 py-3 text-right text-[11px] font-black text-slate-500 dark:text-slate-400 md:px-7">شماره</th>
-                    <th className="px-4 py-3 text-right text-[11px] font-black text-slate-500 dark:text-slate-400">نام مشتری</th>
-                    <th className="px-4 py-3 text-right text-[11px] font-black text-slate-500 dark:text-slate-400">تاریخ (شمسی)</th>
-                    <th className="px-4 py-3 text-right text-[11px] font-black text-slate-500 dark:text-slate-400">نوع معامله</th>
-                    <th className="px-4 py-3 text-right text-[11px] font-black text-slate-500 dark:text-slate-400">دریافت</th>
-                    <th className="px-4 py-3 text-right text-[11px] font-black text-slate-500 dark:text-slate-400">پرداخت</th>
-                    <th className="px-4 py-3 text-right text-[11px] font-black text-slate-500 dark:text-slate-400">نرخ ارز</th>
-                    <th className="px-4 py-3 text-right text-[11px] font-black text-slate-500 dark:text-slate-400">کارمزد</th>
-                    <th className="px-4 py-3 text-right text-[11px] font-black text-slate-500 dark:text-slate-400 md:px-7">عملیات</th>
+                  <tr
+                    className={`border-y ${
+                      dk
+                        ? "border-slate-800 bg-[#0b1520]/80"
+                        : "border-slate-100 bg-slate-50/80"
+                    }`}
+                  >
+                    <th className={`px-4 py-3 text-right text-[11px] font-black md:px-7 ${dk ? "text-slate-400" : "text-slate-500"}`}>شماره</th>
+                    <th className={`px-4 py-3 text-right text-[11px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>نام مشتری</th>
+                    <th className={`px-4 py-3 text-right text-[11px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>تاریخ (شمسی)</th>
+                    <th className={`px-4 py-3 text-right text-[11px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>نوع معامله</th>
+                    <th className={`px-4 py-3 text-right text-[11px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>دریافت</th>
+                    <th className={`px-4 py-3 text-right text-[11px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>پرداخت</th>
+                    <th className={`px-4 py-3 text-right text-[11px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>نرخ ارز</th>
+                    <th className={`px-4 py-3 text-right text-[11px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>کارمزد</th>
+                    <th className={`px-4 py-3 text-right text-[11px] font-black md:px-7 ${dk ? "text-slate-400" : "text-slate-500"}`}>عملیات</th>
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
+                <tbody className={`divide-y ${dk ? "divide-slate-800/70" : "divide-slate-100"}`}>
                   {transactions.length === 0 ? (
                     <tr>
                       <td colSpan={9}>
-                        <div className="flex flex-col items-center gap-3 px-6 py-14 text-slate-400 dark:text-slate-500">
-                          <span className="grid h-16 w-16 place-items-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/40">
+                        <div className={`flex flex-col items-center gap-3 px-6 py-14 ${dk ? "text-slate-500" : "text-slate-400"}`}>
+                          <span
+                            className={`grid h-16 w-16 place-items-center rounded-2xl border border-dashed ${
+                              dk
+                                ? "border-slate-700 bg-slate-800/40"
+                                : "border-slate-300 bg-slate-50"
+                            }`}
+                          >
                             <Ic n="inbox" className="h-7 w-7 opacity-70" />
                           </span>
                           <p className="text-sm font-black">هنوز معامله‌ای ثبت نشده است</p>
@@ -2562,40 +2925,49 @@ export default function CurrencyExchangePage() {
                       const matchesSearch =
                         transactionMatchesSearch(tx);
 
-                      let rowClass =
-                        "transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/30";
+                      let rowClass = dk
+                        ? "transition-colors hover:bg-slate-800/30"
+                        : "transition-colors hover:bg-slate-50/80";
 
                       if (isSearching) {
                         if (matchesSearch) {
-                          rowClass +=
-                            " bg-amber-400/20 hover:bg-amber-400/25 dark:bg-amber-400/10 dark:hover:bg-amber-400/15";
+                          rowClass += dk
+                            ? " bg-amber-400/10 hover:bg-amber-400/15"
+                            : " bg-amber-400/20 hover:bg-amber-400/25";
                         } else {
                           rowClass += " opacity-30";
                         }
 
                         if (tx.status === "voided") {
-                          rowClass += " text-slate-400 dark:text-slate-500";
+                          rowClass += dk ? " text-slate-500" : " text-slate-400";
                         }
                       } else {
                         if (tx.status === "voided") {
-                          rowClass +=
-                            " bg-rose-500/[0.05] text-slate-400 dark:bg-rose-400/[0.04] dark:text-slate-500";
+                          rowClass += dk
+                            ? " bg-rose-400/[0.04] text-slate-500"
+                            : " bg-rose-500/[0.05] text-slate-400";
                         }
                       }
 
                       return (
                         <tr key={tx.id} className={rowClass}>
                           <td className="px-4 py-3.5 md:px-7">
-                            <span className="grid h-8 w-8 place-items-center rounded-lg bg-slate-100 text-[11px] font-black tabular-nums text-slate-500 dark:bg-slate-800/80 dark:text-slate-400">
+                            <span
+                              className={`grid h-8 w-8 place-items-center rounded-lg text-[11px] font-black tabular-nums ${
+                                dk
+                                  ? "bg-slate-800/80 text-slate-400"
+                                  : "bg-slate-100 text-slate-500"
+                              }`}
+                            >
                               {transactions.length - index}
                             </span>
                           </td>
 
-                          <td className="px-4 py-3.5 text-[13px] font-bold text-slate-700 dark:text-slate-200">
+                          <td className={`px-4 py-3.5 text-[13px] font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>
                             {transactionCustomerLabel(tx)}
                           </td>
 
-                          <td className="whitespace-nowrap px-4 py-3.5 text-xs tabular-nums text-slate-500 dark:text-slate-400">
+                          <td className={`whitespace-nowrap px-4 py-3.5 text-xs tabular-nums ${dk ? "text-slate-400" : "text-slate-500"}`}>
                             <span dir="ltr">{dateLabel(tx.date)}</span>
                           </td>
 
@@ -2608,7 +2980,13 @@ export default function CurrencyExchangePage() {
                               </span>
 
                               {tx.status === "voided" && (
-                                <span className="inline-flex rounded-full bg-rose-500/10 px-2.5 py-1 text-[10px] font-black text-rose-600 ring-1 ring-rose-500/25 dark:bg-rose-400/10 dark:text-rose-300 dark:ring-rose-400/20">
+                                <span
+                                  className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ring-1 ${
+                                    dk
+                                      ? "bg-rose-400/10 text-rose-300 ring-rose-400/20"
+                                      : "bg-rose-500/10 text-rose-600 ring-rose-500/25"
+                                  }`}
+                                >
                                   لغو شده
                                 </span>
                               )}
@@ -2619,7 +2997,7 @@ export default function CurrencyExchangePage() {
                             <div className="text-[13px] font-black tabular-nums">
                               {fmt(tx.fromAmount)}
                             </div>
-                            <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500">
+                            <div className={`text-[10px] font-bold ${subText}`}>
                               {labels[tx.fromCurrency]}
                             </div>
                           </td>
@@ -2628,12 +3006,12 @@ export default function CurrencyExchangePage() {
                             <div className="text-[13px] font-black tabular-nums">
                               {fmt(tx.toAmount)}
                             </div>
-                            <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500">
+                            <div className={`text-[10px] font-bold ${subText}`}>
                               {labels[tx.toCurrency]}
                             </div>
                           </td>
 
-                          <td className="px-4 py-3.5 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                          <td className={`px-4 py-3.5 text-[11px] font-medium ${dk ? "text-slate-400" : "text-slate-500"}`}>
                             {tx.rateLabel}
                           </td>
 
@@ -2643,12 +3021,24 @@ export default function CurrencyExchangePage() {
 
                           <td className="px-4 py-3.5 md:px-7">
                             <details className="relative">
-                              <summary className="inline-flex cursor-pointer select-none items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-black text-teal-700 shadow-sm transition-all hover:border-teal-500/50 hover:bg-teal-500/10 dark:border-slate-700 dark:bg-[#0b1622] dark:text-teal-300 dark:hover:border-teal-400/50 dark:hover:bg-teal-400/10">
+                              <summary
+                                className={`inline-flex cursor-pointer select-none items-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-black shadow-sm transition-all ${
+                                  dk
+                                    ? "border-slate-700 bg-[#0b1622] text-teal-300 hover:border-teal-400/50 hover:bg-teal-400/10"
+                                    : "border-slate-200 bg-white text-teal-700 hover:border-teal-500/50 hover:bg-teal-500/10"
+                                }`}
+                              >
                                 عملیات
                                 <Ic n="chevron" className="h-3 w-3" />
                               </summary>
 
-                              <ul className="fx-pop mt-2 w-44 space-y-1 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl shadow-slate-900/10 dark:border-slate-700 dark:bg-[#101d2c] dark:shadow-black/40">
+                              <ul
+                                className={`fx-pop mt-2 w-44 space-y-1 rounded-xl border p-1.5 shadow-xl ${
+                                  dk
+                                    ? "border-slate-700 bg-[#101d2c] shadow-black/40"
+                                    : "border-slate-200 bg-white shadow-slate-900/10"
+                                }`}
+                              >
                                 <li>
                                   <button
                                     onClick={() => editTransaction(tx)}
@@ -2712,12 +3102,24 @@ export default function CurrencyExchangePage() {
           onClick={() => setSelectedTransaction(null)}
         >
           <div
-            className="fx-pop w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-[#0e1a28]"
+            className={`fx-pop w-full max-w-lg overflow-hidden rounded-2xl border shadow-2xl ${
+              dk ? "border-slate-700 bg-[#0e1a28]" : "border-slate-200 bg-white"
+            }`}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/80 px-5 py-4 dark:border-slate-800 dark:bg-[#0b1520]/80">
-              <b className="flex items-center gap-2 text-sm text-slate-800 dark:text-slate-100">
-                <span className="grid h-8 w-8 place-items-center rounded-lg bg-teal-600/10 text-teal-700 dark:bg-teal-400/10 dark:text-teal-300">
+            <div
+              className={`flex items-center justify-between border-b px-5 py-4 ${
+                dk
+                  ? "border-slate-800 bg-[#0b1520]/80"
+                  : "border-slate-100 bg-slate-50/80"
+              }`}
+            >
+              <b className={`flex items-center gap-2 text-sm ${dk ? "text-slate-100" : "text-slate-800"}`}>
+                <span
+                  className={`grid h-8 w-8 place-items-center rounded-lg ${
+                    dk ? "bg-teal-400/10 text-teal-300" : "bg-teal-600/10 text-teal-700"
+                  }`}
+                >
                   <Ic n="doc" className="h-4 w-4" />
                 </span>
                 جزئیات معامله
@@ -2725,48 +3127,60 @@ export default function CurrencyExchangePage() {
 
               <button
                 onClick={() => setSelectedTransaction(null)}
-                className="grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-all duration-300 hover:rotate-90 hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-white"
+                className={`grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-all duration-300 hover:rotate-90 ${
+                  dk
+                    ? "hover:bg-slate-700 hover:text-white"
+                    : "hover:bg-slate-200 hover:text-slate-700"
+                }`}
               >
                 <Ic n="x" className="h-4 w-4" />
               </button>
             </div>
 
             <div className="max-h-[70vh] overflow-y-auto px-5 py-2">
-              <DetailRow label="شماره" value={selectedTransaction.id} />
+              <DetailRow dark={dk} label="شماره" value={selectedTransaction.id} />
               <DetailRow
+                dark={dk}
                 label="تاریخ (هجری شمسی)"
                 value={dateLabel(selectedTransaction.date)}
               />
               <DetailRow
+                dark={dk}
                 label="نوع معامله"
                 value={transactionTypeLabel(selectedTransaction)}
               />
               <DetailRow
+                dark={dk}
                 label="نام مشتری"
                 value={transactionCustomerLabel(selectedTransaction)}
               />
               <DetailRow
+                dark={dk}
                 label="دریافت"
                 value={`${fmt(selectedTransaction.fromAmount)} ${
                   labels[selectedTransaction.fromCurrency]
                 }`}
               />
               <DetailRow
+                dark={dk}
                 label="پرداخت"
                 value={`${fmt(selectedTransaction.toAmount)} ${
                   labels[selectedTransaction.toCurrency]
                 }`}
               />
-              <DetailRow label="نرخ ارز" value={selectedTransaction.rateLabel} />
+              <DetailRow dark={dk} label="نرخ ارز" value={selectedTransaction.rateLabel} />
               <DetailRow
+                dark={dk}
                 label="کارمزد"
                 value={transactionCommissionLabel(selectedTransaction)}
               />
               <DetailRow
+                dark={dk}
                 label="توضیحات"
                 value={selectedTransaction.description || "-"}
               />
               <DetailRow
+                dark={dk}
                 label="وضعیت"
                 value={
                   selectedTransaction.status === "voided"
@@ -2775,8 +3189,12 @@ export default function CurrencyExchangePage() {
                 }
                 valueClass={
                   selectedTransaction.status === "voided"
-                    ? "text-rose-600 dark:text-rose-400"
-                    : "text-emerald-600 dark:text-emerald-400"
+                    ? dk
+                      ? "text-rose-400"
+                      : "text-rose-600"
+                    : dk
+                    ? "text-emerald-400"
+                    : "text-emerald-600"
                 }
               />
             </div>
