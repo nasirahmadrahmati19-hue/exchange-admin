@@ -263,6 +263,138 @@ function directRateLabel(
   )} ${labels[counter]}`;
 }
 
+/* ============================================================
+   UI ONLY — آیکون‌ها، توکن‌های ظاهری و اجزای نمایشی
+   (هیچ تأثیری بر منطق برنامه ندارند)
+   ============================================================ */
+
+const iconPaths = {
+  swap: "M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5",
+  users:
+    "M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z",
+  sun: "M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z",
+  moon:
+    "M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z",
+  clock: "M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
+  search:
+    "m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z",
+  chevron: "m19.5 8.25-7.5 7.5-7.5-7.5",
+  pencil:
+    "m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10",
+  printer:
+    "M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0 1 10.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0 .229 2.523a1.125 1.125 0 0 1-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0 0 21 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 0 0-1.913-.247M6.34 18H5.25A2.25 2.25 0 0 1 3 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 0 1 1.913-.247m10.5 0a48.536 48.536 0 0 0-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5Zm-3 0h.008v.008H15V10.5Z",
+  eye: "M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
+  x: "M6 18 18 6M6 6l12 12",
+  xCircle:
+    "m9.75 9.75 4.5 4.5m0-4.5-4.5 4.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
+  check:
+    "M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
+  alert:
+    "M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z",
+  wallet:
+    "M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z",
+  doc: "M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z",
+  inbox:
+    "M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h3.218a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H6.911a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661Z",
+  arrowLeft: "M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18",
+  down: "M19.5 13.5 12 21m0 0-7.5-7.5M12 21V3",
+  up: "M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18",
+  rate: "M2.25 18 9 11.25l4.306 4.306a11.95 11.95 0 0 1 5.814-5.518l2.74-1.22m0 0-5.94-2.281m5.94 2.28-2.28 5.941",
+  info: "m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z",
+};
+
+type IconName = keyof typeof iconPaths;
+
+function Ic({
+  n,
+  className = "h-5 w-5",
+}: {
+  n: IconName;
+  className?: string;
+}) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.9}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d={iconPaths[n]} />
+    </svg>
+  );
+}
+
+function DetailRow({
+  label,
+  value,
+  valueClass = "",
+}: {
+  label: string;
+  value: string;
+  valueClass?: string;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4 border-b border-dashed border-slate-200 py-3 last:border-0 dark:border-slate-700/60">
+      <span className="shrink-0 text-[11px] font-black text-slate-400 dark:text-slate-500">
+        {label}
+      </span>
+      <span
+        className={`text-left text-[13px] font-bold text-slate-700 dark:text-slate-200 ${valueClass}`}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+const avatarPalette = [
+  "from-teal-500 to-emerald-600",
+  "from-violet-500 to-fuchsia-600",
+  "from-amber-500 to-orange-600",
+  "from-sky-500 to-indigo-600",
+  "from-rose-500 to-pink-600",
+];
+
+const uiCard =
+  "rounded-2xl border border-slate-200/90 bg-white/90 shadow-[0_16px_40px_-28px_rgba(9,47,58,0.45)] backdrop-blur transition-colors duration-300 dark:border-slate-800 dark:bg-[#0e1a28]/90 dark:shadow-[0_16px_40px_-24px_rgba(0,0,0,0.75)]";
+
+const inputShell =
+  "rounded-xl border border-slate-300 bg-white text-sm font-medium text-slate-800 shadow-sm outline-none transition-all duration-200 placeholder:text-slate-400 hover:border-slate-400 focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 dark:border-slate-700 dark:bg-[#0b1622] dark:text-slate-100 dark:placeholder:text-slate-500 dark:hover:border-slate-500 dark:focus:border-teal-400 dark:focus:ring-teal-400/10";
+
+const uiInput = `h-12 w-full px-3.5 ${inputShell}`;
+
+const errInput =
+  "border-rose-400 hover:border-rose-500 focus:border-rose-500 focus:ring-rose-500/10 dark:border-rose-500/70 dark:hover:border-rose-400 dark:focus:border-rose-400 dark:focus:ring-rose-500/10";
+
+const roInput =
+  "cursor-default bg-slate-100 text-slate-500 hover:border-slate-300 focus:border-slate-300 focus:ring-0 dark:bg-[#0c1826] dark:text-slate-400 dark:hover:border-slate-700 dark:focus:border-slate-700 dark:focus:ring-0";
+
+const uiLabel =
+  "mb-1.5 block text-[11px] font-black tracking-wide text-slate-500 dark:text-slate-400";
+
+const rateChip =
+  "flex h-12 items-center whitespace-nowrap rounded-xl border border-slate-200/80 bg-white/85 px-3.5 text-sm font-bold text-slate-700 shadow-sm dark:border-slate-700 dark:bg-[#0b1622]/85 dark:text-slate-200";
+
+function typeChipClass(tx: Transaction) {
+  if (tx.type === "transfer") {
+    return "bg-violet-500/10 text-violet-700 ring-1 ring-violet-500/25 dark:bg-violet-400/10 dark:text-violet-300 dark:ring-violet-400/20";
+  }
+
+  if (tx.dealType === "buy") {
+    return "bg-emerald-500/10 text-emerald-700 ring-1 ring-emerald-500/25 dark:bg-emerald-400/10 dark:text-emerald-300 dark:ring-emerald-400/20";
+  }
+
+  if (tx.dealType === "sell") {
+    return "bg-amber-500/10 text-amber-700 ring-1 ring-amber-500/25 dark:bg-amber-400/10 dark:text-amber-300 dark:ring-amber-400/20";
+  }
+
+  return "bg-slate-500/10 text-slate-600 ring-1 ring-slate-500/20 dark:bg-slate-400/10 dark:text-slate-300 dark:ring-slate-400/20";
+}
+
 export default function CurrencyExchangePage() {
   const [customers] = useState<Customer[]>(initialCustomers);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -270,6 +402,23 @@ export default function CurrencyExchangePage() {
   const [tab, setTab] = useState<"exchange" | "transfer">("exchange");
 
   const [now, setNow] = useState<Date | null>(null);
+
+  /* ---------------- Theme (UI only) ---------------- */
+
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("fx-theme");
+      if (saved === "dark" || saved === "light") setTheme(saved);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("fx-theme", theme);
+    } catch {}
+  }, [theme]);
 
   useEffect(() => {
     setNow(new Date());
@@ -993,6 +1142,11 @@ export default function CurrencyExchangePage() {
   const amountSearch = rawSearch.replace(/[,،]/g, "");
   const isSearching = amountSearch.trim().length > 0;
 
+  const activeCount = transactions.filter(
+    (t) => t.status === "active"
+  ).length;
+  const voidedCount = transactions.length - activeCount;
+
   function transactionMatchesSearch(tx: Transaction) {
     if (!isSearching) return true;
 
@@ -1035,19 +1189,24 @@ export default function CurrencyExchangePage() {
     change: (v: Currency) => void
   ) {
     return (
-      <select
-        value={value}
-        onChange={(e) =>
-          change(e.target.value as Currency)
-        }
-        className="h-12 w-full rounded-xl border px-3"
-      >
-        {currencies.map((c) => (
-          <option key={c} value={c}>
-            {labels[c]}
-          </option>
-        ))}
-      </select>
+      <div className="relative">
+        <select
+          value={value}
+          onChange={(e) =>
+            change(e.target.value as Currency)
+          }
+          className={`${uiInput} cursor-pointer appearance-none pl-9`}
+        >
+          {currencies.map((c) => (
+            <option key={c} value={c}>
+              {labels[c]}
+            </option>
+          ))}
+        </select>
+        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
+          <Ic n="chevron" className="h-4 w-4" />
+        </span>
+      </div>
     );
   }
 
@@ -1258,1355 +1417,1465 @@ export default function CurrencyExchangePage() {
   }
 
   const actionButtonClass =
-    "w-full rounded-lg px-3 py-2 text-right text-sm bg-gray-50 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed";
+    "flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold text-slate-600 transition-colors hover:bg-teal-500/10 hover:text-teal-700 disabled:cursor-not-allowed disabled:opacity-35 dark:text-slate-300 dark:hover:bg-teal-400/10 dark:hover:text-teal-300";
+
+  const dangerActionButtonClass =
+    "flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold text-rose-600 transition-colors hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-35 dark:text-rose-400 dark:hover:bg-rose-400/10";
 
   return (
-    <div dir="rtl" className="p-5 space-y-5 bg-gray-50 min-h-screen">
+    <div dir="rtl" className={theme === "dark" ? "dark" : ""}>
+      <style>{`
+        @import url("https://fonts.googleapis.com/css2?family=Lalezar&family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap");
 
-      <h1 className="text-2xl font-bold">
-        معاملات ارزی
-      </h1>
+        .fx-font { font-family: "Vazirmatn", "Segoe UI", Tahoma, sans-serif; }
+        .fx-display { font-family: "Lalezar", "Vazirmatn", Tahoma, sans-serif; letter-spacing: 0.01em; }
 
-      {/* Tabs */}
+        .dark { color-scheme: dark; }
 
-      <div className="flex gap-2">
+        .fx-grid {
+          background-image: radial-gradient(circle at 1px 1px, rgba(13,42,58,0.10) 1px, transparent 0);
+          background-size: 24px 24px;
+          -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,0.9), rgba(0,0,0,0.25) 60%, transparent);
+          mask-image: linear-gradient(to bottom, rgba(0,0,0,0.9), rgba(0,0,0,0.25) 60%, transparent);
+        }
+        .dark .fx-grid {
+          background-image: radial-gradient(circle at 1px 1px, rgba(148,190,210,0.08) 1px, transparent 0);
+        }
 
-        <button
-          onClick={() => setTab("exchange")}
-          className={`px-5 py-3 rounded-xl ${
-            tab === "exchange"
-              ? "bg-cyan-600 text-white"
-              : "bg-white"
-          }`}
-        >
-          تبادل ارز
-        </button>
+        @keyframes fxUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fxPop { from { opacity: 0; transform: scale(0.96) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        .fx-up { animation: fxUp 0.5s cubic-bezier(0.22, 0.8, 0.35, 1) both; }
+        .fx-pop { animation: fxPop 0.28s cubic-bezier(0.22, 0.8, 0.35, 1) both; }
 
-        <button
-          onClick={() => setTab("transfer")}
-          className={`px-5 py-3 rounded-xl ${
-            tab === "transfer"
-              ? "bg-purple-600 text-white"
-              : "bg-white"
-          }`}
-        >
-          تبادل بین مشتریان
-        </button>
+        details > summary { list-style: none; }
+        details > summary::-webkit-details-marker { display: none; }
 
-      </div>
+        ::selection { background: rgba(13,148,136,0.25); }
+      `}</style>
 
-      {/* Exchange */}
+      <div className="fx-font relative min-h-screen overflow-x-hidden bg-[#eef2f5] text-slate-800 antialiased transition-colors duration-500 dark:bg-[#0a131e] dark:text-slate-100">
+        {/* نوار امضای بالا */}
+        <div className="fixed inset-x-0 top-0 z-30 h-1 bg-gradient-to-l from-teal-700 via-emerald-500 to-amber-400 dark:from-teal-400 dark:via-emerald-400 dark:to-amber-300" />
 
-      {tab === "exchange" && (
-        <div className="bg-white rounded-2xl p-5 space-y-5">
+        {/* پس‌زمینه محیطی */}
+        <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-0">
+          <div className="fx-grid absolute inset-0" />
+          <div className="absolute -top-36 right-[-12rem] h-[30rem] w-[30rem] rounded-full bg-teal-500/15 blur-[110px] dark:bg-teal-400/10" />
+          <div className="absolute left-[-12rem] top-1/4 h-[26rem] w-[26rem] rounded-full bg-amber-400/15 blur-[110px] dark:bg-amber-400/[0.07]" />
+          <div className="absolute bottom-[-10rem] right-1/3 h-[24rem] w-[24rem] rounded-full bg-emerald-400/10 blur-[100px] dark:bg-emerald-400/[0.06]" />
+        </div>
 
-          <h2 className="font-bold text-lg">
-            تبادل ارز صرافی با مشتری
-          </h2>
+        <div className="relative z-10 mx-auto w-full max-w-7xl space-y-5 px-4 pb-16 pt-9 md:space-y-6 md:px-8">
+          {/* سربرگ */}
+          <header className="fx-up flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="relative grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-[#092f3a] via-teal-700 to-emerald-500 text-white shadow-lg shadow-teal-800/30 ring-1 ring-white/20">
+                <Ic n="swap" className="h-6 w-6" />
+                <span className="absolute -bottom-1.5 -left-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-amber-400 px-1 text-[8px] font-black text-slate-900 ring-2 ring-white dark:ring-[#0a131e]">
+                  AFN
+                </span>
+              </div>
+              <div>
+                <h1 className="fx-display text-3xl leading-none text-slate-900 dark:text-white md:text-4xl">
+                  معاملات ارزی
+                </h1>
+                <p className="mt-1.5 text-[11px] font-bold text-slate-500 dark:text-slate-400 md:text-xs">
+                  سامانهٔ تبادل و حوالهٔ صرافی — پنج ارز فعال
+                </p>
+              </div>
+            </div>
 
-          {editingExchangeId && (
-            <div className="bg-yellow-50 text-yellow-800 rounded-xl p-4 flex items-center justify-between gap-3">
-
-              <span>
-                در حال ویرایش معامله{" "}
-                {shortId(editingExchangeId)}. تاریخ اصلی حفظ می‌شود.
-              </span>
+            <div className="flex items-center gap-2.5">
+              <div className="flex items-center gap-2.5 rounded-xl border border-slate-200/90 bg-white/85 px-3.5 py-2.5 shadow-sm backdrop-blur dark:border-slate-700/80 dark:bg-[#0e1a28]/85">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-70" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                </span>
+                <span dir="ltr" className="text-xs font-bold tabular-nums text-slate-600 dark:text-slate-300">
+                  {currentDateTime || "--:--:--"}
+                </span>
+              </div>
 
               <button
-                onClick={resetExchangeForm}
-                className="shrink-0 font-bold"
+                onClick={() =>
+                  setTheme(theme === "dark" ? "light" : "dark")
+                }
+                title={theme === "dark" ? "پوستهٔ روشن" : "پوستهٔ تیره"}
+                className="group grid h-11 w-11 cursor-pointer place-items-center rounded-xl border border-slate-200/90 bg-white/85 text-slate-600 shadow-sm backdrop-blur transition-all duration-300 hover:border-teal-500/50 hover:text-teal-600 active:scale-90 dark:border-slate-700/80 dark:bg-[#0e1a28]/85 dark:text-amber-300 dark:hover:border-amber-400/50 dark:hover:text-amber-200"
               >
-                انصراف
+                {theme === "dark" ? (
+                  <Ic n="sun" className="h-5 w-5 transition-transform duration-500 group-hover:rotate-45" />
+                ) : (
+                  <Ic n="moon" className="h-5 w-5 transition-transform duration-500 group-hover:-rotate-12" />
+                )}
               </button>
-
             </div>
-          )}
+          </header>
 
-          <div className="grid md:grid-cols-3 gap-4">
-
-            <div className="space-y-2">
-
-              <label className="text-sm font-bold">
-                تاریخ و ساعت {editingExchangeId ? "(اصل)" : "(خودکار)"}
-              </label>
-
-              <input
-                readOnly
-                value={exchangeDateDisplay}
-                className="h-12 w-full md:w-72 rounded-xl border px-3 bg-gray-100"
-              />
-
-            </div>
-
-            <div className="space-y-2">
-
-              <label className="text-sm font-bold">
-                نوع معامله
-              </label>
-
-              <select
-                value={exchangeDealType}
-                onChange={(e) => {
-                  setExchangeDealType(
-                    e.target.value as DealType | ""
-                  );
-
-                  setExchangeErrors((prev) => ({
-                    ...prev,
-                    dealType: undefined,
-                  }));
-                }}
-                className={`h-12 w-full md:w-56 rounded-xl border px-3 ${
-                  exchangeErrors.dealType
-                    ? "border-red-500"
-                    : ""
-                }`}
+          {/* نوار ارزها و آمار */}
+          <div
+            className="fx-up flex flex-wrap items-center gap-2"
+            style={{ animationDelay: "70ms" }}
+          >
+            {currencies.map((c) => (
+              <span
+                key={c}
+                className="flex cursor-default items-center gap-2 rounded-full border border-slate-200/90 bg-white/85 py-1.5 pl-3.5 pr-1.5 text-xs font-bold text-slate-600 shadow-sm backdrop-blur transition-all duration-300 hover:-translate-y-0.5 hover:border-teal-500/40 hover:shadow-md dark:border-slate-700/80 dark:bg-[#0e1a28]/85 dark:text-slate-300 dark:hover:border-teal-400/40"
               >
-                <option value="">انتخاب نوع معامله</option>
-                <option value="buy">خرید</option>
-                <option value="sell">فروش</option>
-              </select>
+                <span className="grid h-6 w-6 place-items-center rounded-full bg-gradient-to-br from-teal-600 to-emerald-500 text-[8px] font-black text-white">
+                  {c}
+                </span>
+                {labels[c]}
+              </span>
+            ))}
 
+            <div className="mr-auto flex flex-wrap items-center gap-2 text-[11px] font-black">
+              <span className="flex items-center gap-1.5 rounded-full border border-slate-200/90 bg-white/85 px-3 py-1.5 text-slate-600 shadow-sm backdrop-blur dark:border-slate-700/80 dark:bg-[#0e1a28]/85 dark:text-slate-300">
+                کل معاملات
+                <b className="tabular-nums text-teal-700 dark:text-teal-300">{transactions.length}</b>
+              </span>
+              <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1.5 text-emerald-700 ring-1 ring-emerald-500/25 dark:bg-emerald-400/10 dark:text-emerald-300 dark:ring-emerald-400/20">
+                فعال
+                <b className="tabular-nums">{activeCount}</b>
+              </span>
+              <span className="flex items-center gap-1.5 rounded-full bg-rose-500/10 px-3 py-1.5 text-rose-600 ring-1 ring-rose-500/25 dark:bg-rose-400/10 dark:text-rose-300 dark:ring-rose-400/20">
+                لغو شده
+                <b className="tabular-nums">{voidedCount}</b>
+              </span>
             </div>
-
-            <div className="space-y-2">
-
-              <label className="text-sm font-bold">
-                جستجو
-              </label>
-
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="h-12 w-full rounded-xl border px-3"
-              />
-
-            </div>
-
           </div>
 
-          <div className="space-y-2">
-
-            <label className="text-sm font-bold">
-              مشتری
-            </label>
-
-            <select
-              value={customer}
-              onChange={(e) => {
-                setCustomer(e.target.value);
-
-                setExchangeErrors((prev) => ({
-                  ...prev,
-                  customer: undefined,
-                }));
-              }}
-              className={`h-12 w-full md:w-56 rounded-xl border px-3 ${
-                exchangeErrors.customer
-                  ? "border-red-500"
-                  : ""
+          {/* تب‌ها */}
+          <div
+            className="fx-up flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/90 bg-white/85 p-2 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-[#0e1a28]/85 sm:w-fit"
+            style={{ animationDelay: "140ms" }}
+          >
+            <button
+              onClick={() => setTab("exchange")}
+              className={`flex cursor-pointer items-center gap-2 rounded-xl px-5 py-3 text-sm font-black transition-all duration-300 active:scale-[0.97] ${
+                tab === "exchange"
+                  ? "bg-gradient-to-l from-[#0a3540] via-teal-700 to-emerald-600 text-white shadow-lg shadow-teal-800/30 dark:from-teal-500 dark:via-emerald-500 dark:to-emerald-400 dark:text-slate-950 dark:shadow-teal-500/20"
+                  : "text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-200"
               }`}
             >
-              <option value="">انتخاب مشتری</option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+              <Ic n="swap" className="h-4 w-4" />
+              تبادل ارز
+            </button>
 
+            <button
+              onClick={() => setTab("transfer")}
+              className={`flex cursor-pointer items-center gap-2 rounded-xl px-5 py-3 text-sm font-black transition-all duration-300 active:scale-[0.97] ${
+                tab === "transfer"
+                  ? "bg-gradient-to-l from-violet-700 via-violet-600 to-fuchsia-600 text-white shadow-lg shadow-violet-700/30 dark:from-violet-400 dark:via-fuchsia-400 dark:to-fuchsia-300 dark:text-slate-950 dark:shadow-fuchsia-400/20"
+                  : "text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-200"
+              }`}
+            >
+              <Ic n="users" className="h-4 w-4" />
+              تبادل بین مشتریان
+            </button>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-4">
+          {/* ================= Exchange ================= */}
 
-            <div className="space-y-3">
-
-              <b>دریافت از مشتری</b>
-
-              <div className="space-y-2">
-
-                <label className="text-sm font-bold">
-                  ارز دریافتی
-                </label>
-
-                {currencySelect(
-                  receivedCurrency,
-                  (v) => {
-                    setReceivedCurrency(v);
-
-                    setExchangeErrors((prev) => ({
-                      ...prev,
-                      rate: undefined,
-                      paidAmount: undefined,
-                    }));
-                  }
-                )}
-
+          {tab === "exchange" && (
+            <section className={`fx-up space-y-5 p-5 md:p-7 ${uiCard}`}>
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-teal-600/15 to-emerald-500/15 text-teal-700 ring-1 ring-teal-600/20 dark:from-teal-400/15 dark:to-emerald-400/10 dark:text-teal-300 dark:ring-teal-400/20">
+                  <Ic n="swap" className="h-5 w-5" />
+                </span>
+                <div className="flex-1">
+                  <h2 className="fx-display text-2xl leading-none text-slate-900 dark:text-white">
+                    تبادل ارز صرافی با مشتری
+                  </h2>
+                  <p className="mt-1 text-[11px] font-bold text-slate-400 dark:text-slate-500">
+                    دریافت یک ارز از مشتری و پرداخت ارز دیگر
+                  </p>
+                </div>
+                <span className="rounded-full bg-teal-600/10 px-3 py-1.5 text-[10px] font-black text-teal-700 ring-1 ring-teal-600/20 dark:bg-teal-400/10 dark:text-teal-300 dark:ring-teal-400/20">
+                  {editingExchangeId
+                    ? `ویرایش ${shortId(editingExchangeId)}`
+                    : "معاملهٔ جدید"}
+                </span>
               </div>
 
-              <div className="space-y-2">
-
-                <label className="text-sm font-bold">
-                  مبلغ دریافتی
-                </label>
-
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  dir="ltr"
-                  value={receivedAmount}
-                  onChange={(e) => {
-                    setReceivedAmount(
-                      toNumericText(e.target.value)
-                    );
-
-                    setExchangeErrors((prev) => ({
-                      ...prev,
-                      receivedAmount: undefined,
-                      paidAmount: undefined,
-                    }));
-                  }}
-                  className={`h-12 w-full rounded-xl border px-3 text-left ${
-                    exchangeErrors.receivedAmount
-                      ? "border-red-500"
-                      : ""
-                  }`}
-                />
-
-              </div>
-
-            </div>
-
-            <div className="space-y-3">
-
-              <b>پرداخت به مشتری</b>
-
-              <div className="space-y-2">
-
-                <label className="text-sm font-bold">
-                  ارز پرداختی
-                </label>
-
-                {currencySelect(
-                  paidCurrency,
-                  (v) => {
-                    setPaidCurrency(v);
-
-                    setExchangeErrors((prev) => ({
-                      ...prev,
-                      rate: undefined,
-                      paidAmount: undefined,
-                    }));
-                  }
-                )}
-
-              </div>
-
-              <div className="space-y-2">
-
-                <label className="text-sm font-bold">
-                  مبلغ پرداختی
-                </label>
-
-                <input
-                  readOnly
-                  value={paidAmount}
-                  className={`h-12 w-full rounded-xl border px-3 bg-gray-100 text-left ${
-                    exchangeErrors.paidAmount
-                      ? "border-red-500"
-                      : ""
-                  }`}
-                />
-
-              </div>
-
-            </div>
-
-          </div>
-
-          {exchangeMode === "same" && (
-            <div className="bg-gray-100 text-gray-700 rounded-xl p-4">
-              ارز دریافت و پرداخت یکسان است؛ مبلغ پرداختی برابر مبلغ دریافتی خواهد بود.
-            </div>
-          )}
-
-          {exchangeMode === "afn" && exchangeForeign && (
-            <div className="bg-blue-50 rounded-xl p-4 space-y-3">
-
-              <b>نرخ دستی در برابر افغانی</b>
-
-              <div className="space-y-2">
-
-                <label className="text-sm font-bold">
-                  نرخ
-                </label>
-
-                <div className="flex flex-wrap items-center gap-2">
-
-                  <span className="whitespace-nowrap">
-                    {fmt(rateUnits[exchangeForeign])}{" "}
-                    {labels[exchangeForeign]} =
+              {editingExchangeId && (
+                <div className="fx-pop flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-sm font-bold text-amber-800 dark:border-amber-400/25 dark:bg-amber-400/10 dark:text-amber-300">
+                  <span className="flex items-center gap-2">
+                    <Ic n="pencil" className="h-4 w-4 shrink-0" />
+                    در حال ویرایش معامله {shortId(editingExchangeId)}. تاریخ اصلی حفظ می‌شود.
                   </span>
-
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    dir="ltr"
-                    value={rate}
-                    onChange={(e) => {
-                      setRate(toNumericText(e.target.value));
-
-                      setExchangeErrors((prev) => ({
-                        ...prev,
-                        rate: undefined,
-                        paidAmount: undefined,
-                      }));
-                    }}
-                    className={`h-12 w-44 rounded-xl border px-3 text-left ${
-                      exchangeErrors.rate
-                        ? "border-red-500"
-                        : ""
-                    }`}
-                  />
-
-                  <span>{labels.AFN}</span>
-
-                </div>
-
-              </div>
-
-              {exchangeRateValue > 0 && (
-                <div className="font-bold text-blue-700">
-                  نرخ ثبت‌شده:{" "}
-                  {afnRateLabel(
-                    exchangeForeign,
-                    exchangeRateValue
-                  )}
-                </div>
-              )}
-
-              {paidAmount && (
-                <div className="text-green-700 font-bold">
-                  نتیجه: {paidAmount}{" "}
-                  {labels[paidCurrency]}
-                </div>
-              )}
-
-            </div>
-          )}
-
-          {exchangeMode === "direct" && (
-            <div className="bg-amber-50 rounded-xl p-4 space-y-3">
-
-              <b>نرخ مستقیم جفت‌ارز</b>
-
-              <div className="grid md:grid-cols-2 gap-4 items-end">
-
-                <div className="space-y-2">
-
-                  <label className="text-sm font-bold">
-                    مبنای نرخ
-                  </label>
-
-                  <select
-                    value={exchangeDirectBaseValue}
-                    onChange={(e) => {
-                      setExchangeDirectBase(
-                        e.target.value as Currency
-                      );
-
-                      setExchangeErrors((prev) => ({
-                        ...prev,
-                        rate: undefined,
-                        paidAmount: undefined,
-                      }));
-                    }}
-                    className="h-12 w-full rounded-xl border px-3"
+                  <button
+                    onClick={resetExchangeForm}
+                    className="cursor-pointer rounded-lg bg-amber-500/20 px-3.5 py-1.5 text-xs font-black transition-all hover:bg-amber-500/30 active:scale-95"
                   >
-                    {[receivedCurrency, paidCurrency].map((c) => (
-                      <option key={c} value={c}>
-                        {labels[c]}
-                      </option>
-                    ))}
-                  </select>
+                    انصراف
+                  </button>
+                </div>
+              )}
 
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <div>
+                  <label className={uiLabel}>
+                    تاریخ و ساعت {editingExchangeId ? "(اصل)" : "(خودکار)"}
+                  </label>
+                  <div className="relative">
+                    <input
+                      readOnly
+                      dir="ltr"
+                      value={exchangeDateDisplay}
+                      className={`${uiInput} ${roInput} pl-10 text-left tabular-nums`}
+                    />
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
+                      <Ic n="clock" className="h-4 w-4" />
+                    </span>
+                  </div>
                 </div>
 
-                <div className="space-y-2">
-
-                  <label className="text-sm font-bold">
-                    نرخ مستقیم
-                  </label>
-
-                  <div className="flex flex-wrap items-center gap-2">
-
-                    <span className="whitespace-nowrap">
-                      {fmt(rateUnits[exchangeDirectBaseValue])}{" "}
-                      {labels[exchangeDirectBaseValue]} =
-                    </span>
-
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      dir="ltr"
-                      value={rate}
+                <div>
+                  <label className={uiLabel}>نوع معامله</label>
+                  <div className="relative">
+                    <select
+                      value={exchangeDealType}
                       onChange={(e) => {
-                        setRate(toNumericText(e.target.value));
+                        setExchangeDealType(
+                          e.target.value as DealType | ""
+                        );
 
                         setExchangeErrors((prev) => ({
                           ...prev,
-                          rate: undefined,
-                          paidAmount: undefined,
+                          dealType: undefined,
                         }));
                       }}
-                      className={`h-12 w-44 rounded-xl border px-3 text-left ${
-                        exchangeErrors.rate
-                          ? "border-red-500"
-                          : ""
+                      className={`${uiInput} cursor-pointer appearance-none pl-9 ${
+                        exchangeErrors.dealType ? errInput : ""
                       }`}
+                    >
+                      <option value="">انتخاب نوع معامله</option>
+                      <option value="buy">خرید</option>
+                      <option value="sell">فروش</option>
+                    </select>
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
+                      <Ic n="chevron" className="h-4 w-4" />
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className={uiLabel}>مشتری</label>
+                  <div className="relative">
+                    <select
+                      value={customer}
+                      onChange={(e) => {
+                        setCustomer(e.target.value);
+
+                        setExchangeErrors((prev) => ({
+                          ...prev,
+                          customer: undefined,
+                        }));
+                      }}
+                      className={`${uiInput} cursor-pointer appearance-none pl-9 ${
+                        exchangeErrors.customer ? errInput : ""
+                      }`}
+                    >
+                      <option value="">انتخاب مشتری</option>
+                      {customers.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
+                      <Ic n="chevron" className="h-4 w-4" />
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className={uiLabel}>جستجو</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="نام مشتری یا مبلغ…"
+                      className={`${uiInput} pr-10`}
                     />
-
-                    <span>
-                      {exchangeDirectCounter
-                        ? labels[exchangeDirectCounter]
-                        : ""}
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
+                      <Ic n="search" className="h-4 w-4" />
                     </span>
+                  </div>
+                </div>
+              </div>
 
+              {/* دریافت / پرداخت */}
+              <div className="grid gap-4 lg:grid-cols-[1fr_auto_1fr]">
+                <div className="space-y-4 rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.05] p-4 transition-colors dark:border-emerald-400/15 dark:bg-emerald-400/[0.04]">
+                  <div className="flex items-center gap-2.5">
+                    <span className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">
+                      <Ic n="down" className="h-4 w-4" />
+                    </span>
+                    <b className="text-sm font-black text-emerald-800 dark:text-emerald-300">
+                      دریافت از مشتری
+                    </b>
                   </div>
 
-                </div>
+                  <div>
+                    <label className={uiLabel}>ارز دریافتی</label>
+                    {currencySelect(receivedCurrency, (v) => {
+                      setReceivedCurrency(v);
 
-              </div>
-
-              {exchangeRateValue > 0 &&
-                exchangeDirectCounter && (
-                  <div className="font-bold text-amber-700">
-                    نرخ ثبت‌شده:{" "}
-                    {directRateLabel(
-                      exchangeDirectBaseValue,
-                      exchangeDirectCounter,
-                      exchangeRateValue
-                    )}
+                      setExchangeErrors((prev) => ({
+                        ...prev,
+                        rate: undefined,
+                        paidAmount: undefined,
+                      }));
+                    })}
                   </div>
-                )}
 
-              {paidAmount && (
-                <div className="text-green-700 font-bold">
-                  نتیجه: {paidAmount}{" "}
-                  {labels[paidCurrency]}
-                </div>
-              )}
-
-            </div>
-          )}
-
-          <div className="grid md:grid-cols-2 gap-4">
-
-            <div className="space-y-2">
-
-              <label className="text-sm font-bold">
-                کارمزد
-              </label>
-
-              <input
-                type="text"
-                inputMode="decimal"
-                dir="ltr"
-                value={exchangeCommission}
-                onChange={(e) => {
-                  setExchangeCommission(
-                    toNumericText(e.target.value)
-                  );
-
-                  setExchangeErrors((prev) => ({
-                    ...prev,
-                    exchangeCommission: undefined,
-                  }));
-                }}
-                className={`h-12 w-full md:w-40 rounded-xl border px-3 text-left ${
-                  exchangeErrors.exchangeCommission
-                    ? "border-red-500"
-                    : ""
-                }`}
-              />
-
-            </div>
-
-            <div className="space-y-2">
-
-              <label className="text-sm font-bold">
-                توضیحات
-              </label>
-
-              <input
-                type="text"
-                value={exchangeDescription}
-                onChange={(e) =>
-                  setExchangeDescription(e.target.value)
-                }
-                className="h-12 w-full rounded-xl border px-3"
-              />
-
-            </div>
-
-          </div>
-
-          {exchangeErrorList.length > 0 && (
-            <div className="bg-red-50 text-red-700 rounded-xl p-4 space-y-2">
-
-              <b>لطفاً این فیلدها را تکمیل کنید:</b>
-
-              <ul className="list-disc pr-5 space-y-1">
-                {exchangeErrorList.map((msg, i) => (
-                  <li key={i}>{msg}</li>
-                ))}
-              </ul>
-
-            </div>
-          )}
-
-          <button
-            onClick={submitExchange}
-            className="w-full h-12 rounded-xl bg-[#092F3A] text-white"
-          >
-            {editingExchangeId
-              ? "به‌روزرسانی معامله"
-              : "ثبت معامله"}
-          </button>
-
-        </div>
-      )}
-
-      {/* Transfer */}
-
-      {tab === "transfer" && (
-        <div className="bg-white rounded-2xl p-5 space-y-5">
-
-          <h2 className="font-bold text-lg">
-            تبادل بین حساب مشتریان
-          </h2>
-
-          {editingTransferId && (
-            <div className="bg-yellow-50 text-yellow-800 rounded-xl p-4 flex items-center justify-between gap-3">
-
-              <span>
-                در حال ویرایش انتقال{" "}
-                {shortId(editingTransferId)}. تاریخ اصلی حفظ می‌شود.
-              </span>
-
-              <button
-                onClick={resetTransferForm}
-                className="shrink-0 font-bold"
-              >
-                انصراف
-              </button>
-
-            </div>
-          )}
-
-          <div className="grid md:grid-cols-2 gap-4">
-
-            <div className="space-y-2">
-
-              <label className="text-sm font-bold">
-                تاریخ و ساعت {editingTransferId ? "(اصل)" : "(خودکار)"}
-              </label>
-
-              <input
-                readOnly
-                value={transferDateDisplay}
-                className="h-12 w-full md:w-72 rounded-xl border px-3 bg-gray-100"
-              />
-
-            </div>
-
-            <div className="space-y-2">
-
-              <label className="text-sm font-bold">
-                جستجو
-              </label>
-
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="h-12 w-full rounded-xl border px-3"
-              />
-
-            </div>
-
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-4">
-
-            <div className="space-y-3">
-
-              <b>فرستنده</b>
-
-              <div className="space-y-2">
-
-                <label className="text-sm font-bold">
-                  مشتری فرستنده
-                </label>
-
-                <select
-                  value={sender}
-                  onChange={(e) => {
-                    setSender(e.target.value);
-
-                    setTransferErrors((prev) => ({
-                      ...prev,
-                      sender: undefined,
-                    }));
-                  }}
-                  className={`h-12 w-full rounded-xl border px-3 ${
-                    transferErrors.sender
-                      ? "border-red-500"
-                      : ""
-                  }`}
-                >
-                  <option value="">انتخاب مشتری</option>
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-
-              </div>
-
-              <div className="space-y-2">
-
-                <label className="text-sm font-bold">
-                  ارز فرستنده
-                </label>
-
-                {currencySelect(
-                  senderCurrency,
-                  (v) => {
-                    setSenderCurrency(v);
-
-                    setTransferErrors((prev) => ({
-                      ...prev,
-                      transferRate: undefined,
-                      receiverAmount: undefined,
-                    }));
-                  }
-                )}
-
-              </div>
-
-              <div className="space-y-2">
-
-                <label className="text-sm font-bold">
-                  مبلغ فرستنده
-                </label>
-
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  dir="ltr"
-                  value={senderAmount}
-                  onChange={(e) => {
-                    setSenderAmount(
-                      toNumericText(e.target.value)
-                    );
-
-                    setTransferErrors((prev) => ({
-                      ...prev,
-                      senderAmount: undefined,
-                      receiverAmount: undefined,
-                    }));
-                  }}
-                  className={`h-12 w-full rounded-xl border px-3 text-left ${
-                    transferErrors.senderAmount
-                      ? "border-red-500"
-                      : ""
-                  }`}
-                />
-
-              </div>
-
-            </div>
-
-            <div className="space-y-3">
-
-              <b>گیرنده</b>
-
-              <div className="space-y-2">
-
-                <label className="text-sm font-bold">
-                  مشتری گیرنده
-                </label>
-
-                <select
-                  value={receiver}
-                  onChange={(e) => {
-                    setReceiver(e.target.value);
-
-                    setTransferErrors((prev) => ({
-                      ...prev,
-                      receiver: undefined,
-                    }));
-                  }}
-                  className={`h-12 w-full rounded-xl border px-3 ${
-                    transferErrors.receiver
-                      ? "border-red-500"
-                      : ""
-                  }`}
-                >
-                  <option value="">انتخاب مشتری</option>
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-
-              </div>
-
-              <div className="space-y-2">
-
-                <label className="text-sm font-bold">
-                  ارز گیرنده
-                </label>
-
-                {currencySelect(
-                  receiverCurrency,
-                  (v) => {
-                    setReceiverCurrency(v);
-
-                    setTransferErrors((prev) => ({
-                      ...prev,
-                      transferRate: undefined,
-                      receiverAmount: undefined,
-                    }));
-                  }
-                )}
-
-              </div>
-
-              <div className="space-y-2">
-
-                <label className="text-sm font-bold">
-                  مبلغ گیرنده
-                </label>
-
-                <input
-                  readOnly
-                  value={receiverAmount}
-                  className={`h-12 w-full rounded-xl border px-3 bg-gray-100 text-left ${
-                    transferErrors.receiverAmount
-                      ? "border-red-500"
-                      : ""
-                  }`}
-                />
-
-              </div>
-
-            </div>
-
-          </div>
-
-          {transferMode === "same" && (
-            <div className="bg-gray-100 text-gray-700 rounded-xl p-4">
-              ارز فرستنده و گیرنده یکسان است؛ مبلغ گیرنده برابر مبلغ فرستنده خواهد بود.
-            </div>
-          )}
-
-          {transferMode === "afn" && transferForeign && (
-            <div className="bg-purple-50 rounded-xl p-4 space-y-3">
-
-              <b>نرخ دستی در برابر افغانی</b>
-
-              <div className="space-y-2">
-
-                <label className="text-sm font-bold">
-                  نرخ
-                </label>
-
-                <div className="flex flex-wrap items-center gap-2">
-
-                  <span className="whitespace-nowrap">
-                    {fmt(rateUnits[transferForeign])}{" "}
-                    {labels[transferForeign]} =
-                  </span>
-
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    dir="ltr"
-                    value={transferRate}
-                    onChange={(e) => {
-                      setTransferRate(
-                        toNumericText(e.target.value)
-                      );
-
-                      setTransferErrors((prev) => ({
-                        ...prev,
-                        transferRate: undefined,
-                        receiverAmount: undefined,
-                      }));
-                    }}
-                    className={`h-12 w-44 rounded-xl border px-3 text-left ${
-                      transferErrors.transferRate
-                        ? "border-red-500"
-                        : ""
-                    }`}
-                  />
-
-                  <span>{labels.AFN}</span>
-
-                </div>
-
-              </div>
-
-              {transferRateValue > 0 && (
-                <div className="font-bold text-purple-700">
-                  نرخ ثبت‌شده:{" "}
-                  {afnRateLabel(
-                    transferForeign,
-                    transferRateValue
-                  )}
-                </div>
-              )}
-
-              {receiverAmount && (
-                <div className="text-green-700 font-bold">
-                  نتیجه: {receiverAmount}{" "}
-                  {labels[receiverCurrency]}
-                </div>
-              )}
-
-            </div>
-          )}
-
-          {transferMode === "direct" && (
-            <div className="bg-fuchsia-50 rounded-xl p-4 space-y-3">
-
-              <b>نرخ مستقیم جفت‌ارز</b>
-
-              <div className="grid md:grid-cols-2 gap-4 items-end">
-
-                <div className="space-y-2">
-
-                  <label className="text-sm font-bold">
-                    مبنای نرخ
-                  </label>
-
-                  <select
-                    value={transferDirectBaseValue}
-                    onChange={(e) => {
-                      setTransferDirectBase(
-                        e.target.value as Currency
-                      );
-
-                      setTransferErrors((prev) => ({
-                        ...prev,
-                        transferRate: undefined,
-                        receiverAmount: undefined,
-                      }));
-                    }}
-                    className="h-12 w-full rounded-xl border px-3"
-                  >
-                    {[senderCurrency, receiverCurrency].map((c) => (
-                      <option key={c} value={c}>
-                        {labels[c]}
-                      </option>
-                    ))}
-                  </select>
-
-                </div>
-
-                <div className="space-y-2">
-
-                  <label className="text-sm font-bold">
-                    نرخ مستقیم
-                  </label>
-
-                  <div className="flex flex-wrap items-center gap-2">
-
-                    <span className="whitespace-nowrap">
-                      {fmt(rateUnits[transferDirectBaseValue])}{" "}
-                      {labels[transferDirectBaseValue]} =
-                    </span>
-
+                  <div>
+                    <label className={uiLabel}>مبلغ دریافتی</label>
                     <input
                       type="text"
                       inputMode="decimal"
                       dir="ltr"
-                      value={transferRate}
+                      value={receivedAmount}
                       onChange={(e) => {
-                        setTransferRate(
+                        setReceivedAmount(
+                          toNumericText(e.target.value)
+                        );
+
+                        setExchangeErrors((prev) => ({
+                          ...prev,
+                          receivedAmount: undefined,
+                          paidAmount: undefined,
+                        }));
+                      }}
+                      placeholder="0.00"
+                      className={`${uiInput} text-left tabular-nums ${
+                        exchangeErrors.receivedAmount ? errInput : ""
+                      }`}
+                    />
+                  </div>
+                </div>
+
+                <div className="hidden flex-col items-center justify-center lg:flex">
+                  <span className="grid h-12 w-12 place-items-center rounded-full border border-slate-200 bg-white text-teal-600 shadow-md dark:border-slate-700 dark:bg-[#0b1622] dark:text-teal-300">
+                    <Ic n="swap" className="h-5 w-5" />
+                  </span>
+                </div>
+
+                <div className="space-y-4 rounded-2xl border border-sky-500/25 bg-sky-500/[0.05] p-4 transition-colors dark:border-sky-400/15 dark:bg-sky-400/[0.04]">
+                  <div className="flex items-center gap-2.5">
+                    <span className="grid h-9 w-9 place-items-center rounded-xl bg-sky-500/15 text-sky-600 dark:text-sky-300">
+                      <Ic n="up" className="h-4 w-4" />
+                    </span>
+                    <b className="text-sm font-black text-sky-800 dark:text-sky-300">
+                      پرداخت به مشتری
+                    </b>
+                  </div>
+
+                  <div>
+                    <label className={uiLabel}>ارز پرداختی</label>
+                    {currencySelect(paidCurrency, (v) => {
+                      setPaidCurrency(v);
+
+                      setExchangeErrors((prev) => ({
+                        ...prev,
+                        rate: undefined,
+                        paidAmount: undefined,
+                      }));
+                    })}
+                  </div>
+
+                  <div>
+                    <label className={uiLabel}>مبلغ پرداختی</label>
+                    <input
+                      readOnly
+                      dir="ltr"
+                      value={paidAmount}
+                      className={`${uiInput} ${roInput} text-left tabular-nums ${
+                        exchangeErrors.paidAmount ? errInput : ""
+                      }`}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {exchangeMode === "same" && (
+                <div className="flex items-center gap-3 rounded-2xl border border-slate-300/70 bg-slate-500/[0.06] p-4 text-sm font-bold text-slate-600 dark:border-slate-600/60 dark:bg-slate-400/[0.06] dark:text-slate-300">
+                  <Ic n="info" className="h-5 w-5 shrink-0 opacity-70" />
+                  ارز دریافت و پرداخت یکسان است؛ مبلغ پرداختی برابر مبلغ دریافتی خواهد بود.
+                </div>
+              )}
+
+              {exchangeMode === "afn" && exchangeForeign && (
+                <div className="space-y-4 rounded-2xl border border-sky-500/30 bg-sky-500/[0.07] p-4 transition-colors dark:border-sky-400/20 dark:bg-sky-400/[0.06] md:p-5">
+                  <div className="flex items-center gap-2.5">
+                    <span className="grid h-9 w-9 place-items-center rounded-xl bg-sky-500/15 text-sky-600 dark:text-sky-300">
+                      <Ic n="rate" className="h-4 w-4" />
+                    </span>
+                    <b className="text-sm font-black text-sky-800 dark:text-sky-300">
+                      نرخ دستی در برابر افغانی
+                    </b>
+                  </div>
+
+                  <div>
+                    <label className={uiLabel}>نرخ</label>
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <span className={rateChip}>
+                        {fmt(rateUnits[exchangeForeign])} {labels[exchangeForeign]} =
+                      </span>
+
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        dir="ltr"
+                        value={rate}
+                        onChange={(e) => {
+                          setRate(toNumericText(e.target.value));
+
+                          setExchangeErrors((prev) => ({
+                            ...prev,
+                            rate: undefined,
+                            paidAmount: undefined,
+                          }));
+                        }}
+                        placeholder="0"
+                        className={`h-12 w-44 px-3 text-left text-sm font-bold tabular-nums ${inputShell} ${
+                          exchangeErrors.rate ? errInput : ""
+                        }`}
+                      />
+
+                      <span className={rateChip}>{labels.AFN}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    {exchangeRateValue > 0 && (
+                      <span className="fx-pop inline-flex items-center gap-1.5 rounded-full bg-sky-500/15 px-3 py-1.5 text-xs font-black text-sky-700 dark:bg-sky-400/15 dark:text-sky-300">
+                        <Ic n="check" className="h-3.5 w-3.5" />
+                        نرخ ثبت‌شده: {afnRateLabel(exchangeForeign, exchangeRateValue)}
+                      </span>
+                    )}
+
+                    {paidAmount && (
+                      <span className="fx-pop inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-3 py-1.5 text-xs font-black text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300">
+                        نتیجه: {paidAmount} {labels[paidCurrency]}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {exchangeMode === "direct" && (
+                <div className="space-y-4 rounded-2xl border border-amber-500/30 bg-amber-500/[0.07] p-4 transition-colors dark:border-amber-400/20 dark:bg-amber-400/[0.06] md:p-5">
+                  <div className="flex items-center gap-2.5">
+                    <span className="grid h-9 w-9 place-items-center rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-300">
+                      <Ic n="rate" className="h-4 w-4" />
+                    </span>
+                    <b className="text-sm font-black text-amber-800 dark:text-amber-300">
+                      نرخ مستقیم جفت‌ارز
+                    </b>
+                  </div>
+
+                  <div className="grid items-end gap-4 md:grid-cols-2">
+                    <div>
+                      <label className={uiLabel}>مبنای نرخ</label>
+                      <div className="relative">
+                        <select
+                          value={exchangeDirectBaseValue}
+                          onChange={(e) => {
+                            setExchangeDirectBase(
+                              e.target.value as Currency
+                            );
+
+                            setExchangeErrors((prev) => ({
+                              ...prev,
+                              rate: undefined,
+                              paidAmount: undefined,
+                            }));
+                          }}
+                          className={`${uiInput} cursor-pointer appearance-none pl-9`}
+                        >
+                          {[receivedCurrency, paidCurrency].map((c) => (
+                            <option key={c} value={c}>
+                              {labels[c]}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
+                          <Ic n="chevron" className="h-4 w-4" />
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className={uiLabel}>نرخ مستقیم</label>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={rateChip}>
+                          {fmt(rateUnits[exchangeDirectBaseValue])}{" "}
+                          {labels[exchangeDirectBaseValue]} =
+                        </span>
+
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          dir="ltr"
+                          value={rate}
+                          onChange={(e) => {
+                            setRate(toNumericText(e.target.value));
+
+                            setExchangeErrors((prev) => ({
+                              ...prev,
+                              rate: undefined,
+                              paidAmount: undefined,
+                            }));
+                          }}
+                          placeholder="0"
+                          className={`h-12 w-40 px-3 text-left text-sm font-bold tabular-nums ${inputShell} ${
+                            exchangeErrors.rate ? errInput : ""
+                          }`}
+                        />
+
+                        <span className={rateChip}>
+                          {exchangeDirectCounter
+                            ? labels[exchangeDirectCounter]
+                            : ""}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    {exchangeRateValue > 0 && exchangeDirectCounter && (
+                      <span className="fx-pop inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-3 py-1.5 text-xs font-black text-amber-700 dark:bg-amber-400/15 dark:text-amber-300">
+                        <Ic n="check" className="h-3.5 w-3.5" />
+                        نرخ ثبت‌شده:{" "}
+                        {directRateLabel(
+                          exchangeDirectBaseValue,
+                          exchangeDirectCounter,
+                          exchangeRateValue
+                        )}
+                      </span>
+                    )}
+
+                    {paidAmount && (
+                      <span className="fx-pop inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-3 py-1.5 text-xs font-black text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300">
+                        نتیجه: {paidAmount} {labels[paidCurrency]}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className={uiLabel}>کارمزد</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      dir="ltr"
+                      value={exchangeCommission}
+                      onChange={(e) => {
+                        setExchangeCommission(
+                          toNumericText(e.target.value)
+                        );
+
+                        setExchangeErrors((prev) => ({
+                          ...prev,
+                          exchangeCommission: undefined,
+                        }));
+                      }}
+                      placeholder="0"
+                      className={`${uiInput} pl-24 text-left tabular-nums ${
+                        exchangeErrors.exchangeCommission ? errInput : ""
+                      }`}
+                    />
+                    <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 rounded-lg bg-teal-600/10 px-2 py-1 text-[10px] font-black text-teal-700 dark:bg-teal-400/10 dark:text-teal-300">
+                      {labels[receivedCurrency]}
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className={uiLabel}>توضیحات</label>
+                  <input
+                    type="text"
+                    value={exchangeDescription}
+                    onChange={(e) =>
+                      setExchangeDescription(e.target.value)
+                    }
+                    placeholder="توضیحات اختیاری…"
+                    className={uiInput}
+                  />
+                </div>
+              </div>
+
+              {exchangeErrorList.length > 0 && (
+                <div className="fx-pop space-y-2 rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-rose-700 dark:border-rose-400/25 dark:bg-rose-400/10 dark:text-rose-300">
+                  <b className="flex items-center gap-2 text-sm">
+                    <Ic n="alert" className="h-4.5 w-4.5 h-5 w-5 shrink-0" />
+                    لطفاً این فیلدها را تکمیل کنید:
+                  </b>
+
+                  <ul className="list-disc pr-5 text-sm marker:text-rose-400 space-y-1">
+                    {exchangeErrorList.map((msg, i) => (
+                      <li key={i}>{msg}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <button
+                onClick={submitExchange}
+                className="group flex h-[52px] w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-[#092f3a] via-teal-700 to-emerald-600 text-base font-black text-white shadow-lg shadow-teal-800/30 transition-all duration-300 hover:shadow-xl hover:brightness-110 active:scale-[0.985] dark:from-teal-400 dark:via-emerald-400 dark:to-emerald-300 dark:text-[#04211d] dark:shadow-teal-400/20"
+              >
+                {editingExchangeId
+                  ? "به‌روزرسانی معامله"
+                  : "ثبت معامله"}
+                <Ic n="arrowLeft" className="h-5 w-5 transition-transform group-hover:-translate-x-1" />
+              </button>
+            </section>
+          )}
+
+          {/* ================= Transfer ================= */}
+
+          {tab === "transfer" && (
+            <section className={`fx-up space-y-5 p-5 md:p-7 ${uiCard}`}>
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-violet-600/15 to-fuchsia-500/15 text-violet-700 ring-1 ring-violet-600/20 dark:from-violet-400/15 dark:to-fuchsia-400/10 dark:text-violet-300 dark:ring-violet-400/20">
+                  <Ic n="users" className="h-5 w-5" />
+                </span>
+                <div className="flex-1">
+                  <h2 className="fx-display text-2xl leading-none text-slate-900 dark:text-white">
+                    تبادل بین حساب مشتریان
+                  </h2>
+                  <p className="mt-1 text-[11px] font-bold text-slate-400 dark:text-slate-500">
+                    انتقال موجودی از حساب مشتری به مشتری دیگر
+                  </p>
+                </div>
+                <span className="rounded-full bg-violet-600/10 px-3 py-1.5 text-[10px] font-black text-violet-700 ring-1 ring-violet-600/20 dark:bg-violet-400/10 dark:text-violet-300 dark:ring-violet-400/20">
+                  {editingTransferId
+                    ? `ویرایش ${shortId(editingTransferId)}`
+                    : "انتقال جدید"}
+                </span>
+              </div>
+
+              {editingTransferId && (
+                <div className="fx-pop flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-sm font-bold text-amber-800 dark:border-amber-400/25 dark:bg-amber-400/10 dark:text-amber-300">
+                  <span className="flex items-center gap-2">
+                    <Ic n="pencil" className="h-4 w-4 shrink-0" />
+                    در حال ویرایش انتقال {shortId(editingTransferId)}. تاریخ اصلی حفظ می‌شود.
+                  </span>
+                  <button
+                    onClick={resetTransferForm}
+                    className="cursor-pointer rounded-lg bg-amber-500/20 px-3.5 py-1.5 text-xs font-black transition-all hover:bg-amber-500/30 active:scale-95"
+                  >
+                    انصراف
+                  </button>
+                </div>
+              )}
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className={uiLabel}>
+                    تاریخ و ساعت {editingTransferId ? "(اصل)" : "(خودکار)"}
+                  </label>
+                  <div className="relative">
+                    <input
+                      readOnly
+                      dir="ltr"
+                      value={transferDateDisplay}
+                      className={`${uiInput} ${roInput} pl-10 text-left tabular-nums`}
+                    />
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
+                      <Ic n="clock" className="h-4 w-4" />
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className={uiLabel}>جستجو</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="نام مشتری یا مبلغ…"
+                      className={`${uiInput} pr-10`}
+                    />
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
+                      <Ic n="search" className="h-4 w-4" />
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* فرستنده / گیرنده */}
+              <div className="grid gap-4 lg:grid-cols-[1fr_auto_1fr]">
+                <div className="space-y-4 rounded-2xl border border-violet-500/25 bg-violet-500/[0.05] p-4 transition-colors dark:border-violet-400/15 dark:bg-violet-400/[0.04]">
+                  <div className="flex items-center gap-2.5">
+                    <span className="grid h-9 w-9 place-items-center rounded-xl bg-violet-500/15 text-violet-600 dark:text-violet-300">
+                      <Ic n="up" className="h-4 w-4" />
+                    </span>
+                    <b className="text-sm font-black text-violet-800 dark:text-violet-300">
+                      فرستنده
+                    </b>
+                  </div>
+
+                  <div>
+                    <label className={uiLabel}>مشتری فرستنده</label>
+                    <div className="relative">
+                      <select
+                        value={sender}
+                        onChange={(e) => {
+                          setSender(e.target.value);
+
+                          setTransferErrors((prev) => ({
+                            ...prev,
+                            sender: undefined,
+                          }));
+                        }}
+                        className={`${uiInput} cursor-pointer appearance-none pl-9 ${
+                          transferErrors.sender ? errInput : ""
+                        }`}
+                      >
+                        <option value="">انتخاب مشتری</option>
+                        {customers.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
+                        <Ic n="chevron" className="h-4 w-4" />
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className={uiLabel}>ارز فرستنده</label>
+                    {currencySelect(senderCurrency, (v) => {
+                      setSenderCurrency(v);
+
+                      setTransferErrors((prev) => ({
+                        ...prev,
+                        transferRate: undefined,
+                        receiverAmount: undefined,
+                      }));
+                    })}
+                  </div>
+
+                  <div>
+                    <label className={uiLabel}>مبلغ فرستنده</label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      dir="ltr"
+                      value={senderAmount}
+                      onChange={(e) => {
+                        setSenderAmount(
                           toNumericText(e.target.value)
                         );
 
                         setTransferErrors((prev) => ({
                           ...prev,
-                          transferRate: undefined,
+                          senderAmount: undefined,
                           receiverAmount: undefined,
                         }));
                       }}
-                      className={`h-12 w-44 rounded-xl border px-3 text-left ${
-                        transferErrors.transferRate
-                          ? "border-red-500"
-                          : ""
+                      placeholder="0.00"
+                      className={`${uiInput} text-left tabular-nums ${
+                        transferErrors.senderAmount ? errInput : ""
                       }`}
                     />
-
-                    <span>
-                      {transferDirectCounter
-                        ? labels[transferDirectCounter]
-                        : ""}
-                    </span>
-
                   </div>
-
                 </div>
 
+                <div className="hidden flex-col items-center justify-center lg:flex">
+                  <span className="grid h-12 w-12 place-items-center rounded-full border border-slate-200 bg-white text-violet-600 shadow-md dark:border-slate-700 dark:bg-[#0b1622] dark:text-violet-300">
+                    <Ic n="arrowLeft" className="h-5 w-5" />
+                  </span>
+                </div>
+
+                <div className="space-y-4 rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.05] p-4 transition-colors dark:border-emerald-400/15 dark:bg-emerald-400/[0.04]">
+                  <div className="flex items-center gap-2.5">
+                    <span className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">
+                      <Ic n="down" className="h-4 w-4" />
+                    </span>
+                    <b className="text-sm font-black text-emerald-800 dark:text-emerald-300">
+                      گیرنده
+                    </b>
+                  </div>
+
+                  <div>
+                    <label className={uiLabel}>مشتری گیرنده</label>
+                    <div className="relative">
+                      <select
+                        value={receiver}
+                        onChange={(e) => {
+                          setReceiver(e.target.value);
+
+                          setTransferErrors((prev) => ({
+                            ...prev,
+                            receiver: undefined,
+                          }));
+                        }}
+                        className={`${uiInput} cursor-pointer appearance-none pl-9 ${
+                          transferErrors.receiver ? errInput : ""
+                        }`}
+                      >
+                        <option value="">انتخاب مشتری</option>
+                        {customers.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
+                        <Ic n="chevron" className="h-4 w-4" />
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className={uiLabel}>ارز گیرنده</label>
+                    {currencySelect(receiverCurrency, (v) => {
+                      setReceiverCurrency(v);
+
+                      setTransferErrors((prev) => ({
+                        ...prev,
+                        transferRate: undefined,
+                        receiverAmount: undefined,
+                      }));
+                    })}
+                  </div>
+
+                  <div>
+                    <label className={uiLabel}>مبلغ گیرنده</label>
+                    <input
+                      readOnly
+                      dir="ltr"
+                      value={receiverAmount}
+                      className={`${uiInput} ${roInput} text-left tabular-nums ${
+                        transferErrors.receiverAmount ? errInput : ""
+                      }`}
+                    />
+                  </div>
+                </div>
               </div>
 
-              {transferRateValue > 0 &&
-                transferDirectCounter && (
-                  <div className="font-bold text-fuchsia-700">
-                    نرخ ثبت‌شده:{" "}
-                    {directRateLabel(
-                      transferDirectBaseValue,
-                      transferDirectCounter,
-                      transferRateValue
-                    )}
-                  </div>
-                )}
-
-              {receiverAmount && (
-                <div className="text-green-700 font-bold">
-                  نتیجه: {receiverAmount}{" "}
-                  {labels[receiverCurrency]}
+              {transferMode === "same" && (
+                <div className="flex items-center gap-3 rounded-2xl border border-slate-300/70 bg-slate-500/[0.06] p-4 text-sm font-bold text-slate-600 dark:border-slate-600/60 dark:bg-slate-400/[0.06] dark:text-slate-300">
+                  <Ic n="info" className="h-5 w-5 shrink-0 opacity-70" />
+                  ارز فرستنده و گیرنده یکسان است؛ مبلغ گیرنده برابر مبلغ فرستنده خواهد بود.
                 </div>
               )}
 
-            </div>
-          )}
+              {transferMode === "afn" && transferForeign && (
+                <div className="space-y-4 rounded-2xl border border-violet-500/30 bg-violet-500/[0.07] p-4 transition-colors dark:border-violet-400/20 dark:bg-violet-400/[0.06] md:p-5">
+                  <div className="flex items-center gap-2.5">
+                    <span className="grid h-9 w-9 place-items-center rounded-xl bg-violet-500/15 text-violet-600 dark:text-violet-300">
+                      <Ic n="rate" className="h-4 w-4" />
+                    </span>
+                    <b className="text-sm font-black text-violet-800 dark:text-violet-300">
+                      نرخ دستی در برابر افغانی
+                    </b>
+                  </div>
 
-          <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label className={uiLabel}>نرخ</label>
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <span className={rateChip}>
+                        {fmt(rateUnits[transferForeign])} {labels[transferForeign]} =
+                      </span>
 
-            <div className="space-y-2">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        dir="ltr"
+                        value={transferRate}
+                        onChange={(e) => {
+                          setTransferRate(
+                            toNumericText(e.target.value)
+                          );
 
-              <label className="text-sm font-bold">
-                کارمزد
-              </label>
+                          setTransferErrors((prev) => ({
+                            ...prev,
+                            transferRate: undefined,
+                            receiverAmount: undefined,
+                          }));
+                        }}
+                        placeholder="0"
+                        className={`h-12 w-44 px-3 text-left text-sm font-bold tabular-nums ${inputShell} ${
+                          transferErrors.transferRate ? errInput : ""
+                        }`}
+                      />
 
-              <input
-                type="text"
-                inputMode="decimal"
-                dir="ltr"
-                value={commission}
-                onChange={(e) => {
-                  setCommission(toNumericText(e.target.value));
+                      <span className={rateChip}>{labels.AFN}</span>
+                    </div>
+                  </div>
 
-                  setTransferErrors((prev) => ({
-                    ...prev,
-                    commission: undefined,
-                  }));
-                }}
-                className={`h-12 w-full md:w-40 rounded-xl border px-3 text-left ${
-                  transferErrors.commission
-                    ? "border-red-500"
-                    : ""
-                }`}
-              />
-
-            </div>
-
-            <div className="space-y-2">
-
-              <label className="text-sm font-bold">
-                توضیحات
-              </label>
-
-              <input
-                type="text"
-                value={transferDescription}
-                onChange={(e) =>
-                  setTransferDescription(e.target.value)
-                }
-                className="h-12 w-full rounded-xl border px-3"
-              />
-
-            </div>
-
-          </div>
-
-          {transferErrorList.length > 0 && (
-            <div className="bg-red-50 text-red-700 rounded-xl p-4 space-y-2">
-
-              <b>لطفاً این فیلدها را تکمیل کنید:</b>
-
-              <ul className="list-disc pr-5 space-y-1">
-                {transferErrorList.map((msg, i) => (
-                  <li key={i}>{msg}</li>
-                ))}
-              </ul>
-
-            </div>
-          )}
-
-          <button
-            onClick={submitTransfer}
-            className="w-full h-12 rounded-xl bg-[#092F3A] text-white"
-          >
-            {editingTransferId
-              ? "به‌روزرسانی انتقال"
-              : "ثبت انتقال"}
-          </button>
-
-        </div>
-      )}
-
-      {/* Balances */}
-
-      <div className="bg-white rounded-2xl p-5 overflow-x-auto">
-
-        <h2 className="font-bold text-lg mb-4">
-          موجودی مشتریان
-        </h2>
-
-        <table className="w-full text-sm">
-
-          <thead>
-            <tr className="bg-gray-50">
-              <th className="p-3 text-right">
-                مشتری
-              </th>
-
-              {currencies.map((c) => (
-                <th key={c} className="p-3 text-right">
-                  {labels[c]}
-                </th>
-              ))}
-            </tr>
-          </thead>
-
-          <tbody>
-
-            {customers.map((c) => {
-              const b =
-                currentBalances[c.id] || c.balances;
-
-              return (
-                <tr key={c.id} className="border-t">
-
-                  <td className="p-3">
-                    {c.name}
-                  </td>
-
-                  {currencies.map((cur) => (
-                    <td key={cur} className="p-3">
-                      {fmt(b[cur] || 0)}
-                    </td>
-                  ))}
-
-                </tr>
-              );
-            })}
-
-          </tbody>
-
-        </table>
-
-      </div>
-
-      {/* Transactions */}
-
-      <div className="bg-white rounded-2xl p-5 overflow-x-auto space-y-4">
-
-        <h2 className="font-bold text-lg">
-          آخرین معاملات
-        </h2>
-
-        <table className="w-full text-sm">
-
-          <thead>
-            <tr className="bg-gray-50">
-
-              <th className="p-3 text-right">
-                شماره
-              </th>
-
-              <th className="p-3 text-right">
-                نام مشتری
-              </th>
-
-              <th className="p-3 text-right">
-                تاریخ
-              </th>
-
-              <th className="p-3 text-right">
-                نوع معامله
-              </th>
-
-              <th className="p-3 text-right">
-                دریافت
-              </th>
-
-              <th className="p-3 text-right">
-                پرداخت
-              </th>
-
-              <th className="p-3 text-right">
-                نرخ ارز
-              </th>
-
-              <th className="p-3 text-right">
-                کارمزد
-              </th>
-
-              <th className="p-3 text-right">
-                عملیات
-              </th>
-
-            </tr>
-          </thead>
-
-          <tbody>
-
-            {transactions.map((tx, index) => {
-              const matchesSearch =
-                transactionMatchesSearch(tx);
-
-              let rowClass = "border-t";
-
-              if (isSearching) {
-                if (matchesSearch) {
-                  rowClass += " bg-yellow-100";
-                } else {
-                  rowClass += " opacity-30";
-                }
-
-                if (tx.status === "voided") {
-                  rowClass += " text-gray-400";
-                }
-              } else {
-                if (tx.status === "voided") {
-                  rowClass += " bg-red-50 text-gray-400";
-                }
-              }
-
-              return (
-                <tr
-                  key={tx.id}
-                  className={rowClass}
-                >
-
-                  <td className="p-3">
-                    {transactions.length - index}
-                  </td>
-
-                  <td className="p-3">
-                    {transactionCustomerLabel(tx)}
-                  </td>
-
-                  <td className="p-3 whitespace-nowrap">
-                    {dateLabel(tx.date)}
-                  </td>
-
-                  <td className="p-3">
-                    {transactionTypeLabel(tx)}
-
-                    {tx.status === "voided" && (
-                      <span className="text-red-500">
-                        {" "}
-                        (لغو شده)
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    {transferRateValue > 0 && (
+                      <span className="fx-pop inline-flex items-center gap-1.5 rounded-full bg-violet-500/15 px-3 py-1.5 text-xs font-black text-violet-700 dark:bg-violet-400/15 dark:text-violet-300">
+                        <Ic n="check" className="h-3.5 w-3.5" />
+                        نرخ ثبت‌شده: {afnRateLabel(transferForeign, transferRateValue)}
                       </span>
                     )}
-                  </td>
 
-                  <td className="p-3">
-                    {fmt(tx.fromAmount)}{" "}
-                    {labels[tx.fromCurrency]}
-                  </td>
+                    {receiverAmount && (
+                      <span className="fx-pop inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-3 py-1.5 text-xs font-black text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300">
+                        نتیجه: {receiverAmount} {labels[receiverCurrency]}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
 
-                  <td className="p-3">
-                    {fmt(tx.toAmount)}{" "}
-                    {labels[tx.toCurrency]}
-                  </td>
+              {transferMode === "direct" && (
+                <div className="space-y-4 rounded-2xl border border-fuchsia-500/30 bg-fuchsia-500/[0.07] p-4 transition-colors dark:border-fuchsia-400/20 dark:bg-fuchsia-400/[0.06] md:p-5">
+                  <div className="flex items-center gap-2.5">
+                    <span className="grid h-9 w-9 place-items-center rounded-xl bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-300">
+                      <Ic n="rate" className="h-4 w-4" />
+                    </span>
+                    <b className="text-sm font-black text-fuchsia-800 dark:text-fuchsia-300">
+                      نرخ مستقیم جفت‌ارز
+                    </b>
+                  </div>
 
-                  <td className="p-3 text-xs">
-                    {tx.rateLabel}
-                  </td>
+                  <div className="grid items-end gap-4 md:grid-cols-2">
+                    <div>
+                      <label className={uiLabel}>مبنای نرخ</label>
+                      <div className="relative">
+                        <select
+                          value={transferDirectBaseValue}
+                          onChange={(e) => {
+                            setTransferDirectBase(
+                              e.target.value as Currency
+                            );
 
-                  <td className="p-3">
-                    {transactionCommissionLabel(tx)}
-                  </td>
+                            setTransferErrors((prev) => ({
+                              ...prev,
+                              transferRate: undefined,
+                              receiverAmount: undefined,
+                            }));
+                          }}
+                          className={`${uiInput} cursor-pointer appearance-none pl-9`}
+                        >
+                          {[senderCurrency, receiverCurrency].map((c) => (
+                            <option key={c} value={c}>
+                              {labels[c]}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
+                          <Ic n="chevron" className="h-4 w-4" />
+                        </span>
+                      </div>
+                    </div>
 
-                  <td className="p-3">
+                    <div>
+                      <label className={uiLabel}>نرخ مستقیم</label>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={rateChip}>
+                          {fmt(rateUnits[transferDirectBaseValue])}{" "}
+                          {labels[transferDirectBaseValue]} =
+                        </span>
 
-                    <details className="relative">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          dir="ltr"
+                          value={transferRate}
+                          onChange={(e) => {
+                            setTransferRate(
+                              toNumericText(e.target.value)
+                            );
 
-                      <summary className="cursor-pointer select-none text-sm text-blue-700">
-                        عملیات
-                      </summary>
+                            setTransferErrors((prev) => ({
+                              ...prev,
+                              transferRate: undefined,
+                              receiverAmount: undefined,
+                            }));
+                          }}
+                          placeholder="0"
+                          className={`h-12 w-40 px-3 text-left text-sm font-bold tabular-nums ${inputShell} ${
+                            transferErrors.transferRate ? errInput : ""
+                          }`}
+                        />
 
-                      <ul className="mt-2 min-w-40 space-y-1 rounded-xl border bg-white p-2 shadow-sm">
+                        <span className={rateChip}>
+                          {transferDirectCounter
+                            ? labels[transferDirectCounter]
+                            : ""}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
 
-                        <li>
-                          <button
-                            onClick={() => editTransaction(tx)}
-                            disabled={tx.status === "voided"}
-                            className={actionButtonClass}
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    {transferRateValue > 0 && transferDirectCounter && (
+                      <span className="fx-pop inline-flex items-center gap-1.5 rounded-full bg-fuchsia-500/15 px-3 py-1.5 text-xs font-black text-fuchsia-700 dark:bg-fuchsia-400/15 dark:text-fuchsia-300">
+                        <Ic n="check" className="h-3.5 w-3.5" />
+                        نرخ ثبت‌شده:{" "}
+                        {directRateLabel(
+                          transferDirectBaseValue,
+                          transferDirectCounter,
+                          transferRateValue
+                        )}
+                      </span>
+                    )}
+
+                    {receiverAmount && (
+                      <span className="fx-pop inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-3 py-1.5 text-xs font-black text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300">
+                        نتیجه: {receiverAmount} {labels[receiverCurrency]}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className={uiLabel}>کارمزد</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      dir="ltr"
+                      value={commission}
+                      onChange={(e) => {
+                        setCommission(toNumericText(e.target.value));
+
+                        setTransferErrors((prev) => ({
+                          ...prev,
+                          commission: undefined,
+                        }));
+                      }}
+                      placeholder="0"
+                      className={`${uiInput} pl-24 text-left tabular-nums ${
+                        transferErrors.commission ? errInput : ""
+                      }`}
+                    />
+                    <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 rounded-lg bg-violet-600/10 px-2 py-1 text-[10px] font-black text-violet-700 dark:bg-violet-400/10 dark:text-violet-300">
+                      {labels[senderCurrency]}
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className={uiLabel}>توضیحات</label>
+                  <input
+                    type="text"
+                    value={transferDescription}
+                    onChange={(e) =>
+                      setTransferDescription(e.target.value)
+                    }
+                    placeholder="توضیحات اختیاری…"
+                    className={uiInput}
+                  />
+                </div>
+              </div>
+
+              {transferErrorList.length > 0 && (
+                <div className="fx-pop space-y-2 rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-rose-700 dark:border-rose-400/25 dark:bg-rose-400/10 dark:text-rose-300">
+                  <b className="flex items-center gap-2 text-sm">
+                    <Ic n="alert" className="h-5 w-5 shrink-0" />
+                    لطفاً این فیلدها را تکمیل کنید:
+                  </b>
+
+                  <ul className="list-disc pr-5 text-sm marker:text-rose-400 space-y-1">
+                    {transferErrorList.map((msg, i) => (
+                      <li key={i}>{msg}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <button
+                onClick={submitTransfer}
+                className="group flex h-[52px] w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-violet-700 via-purple-600 to-fuchsia-600 text-base font-black text-white shadow-lg shadow-violet-700/30 transition-all duration-300 hover:shadow-xl hover:brightness-110 active:scale-[0.985] dark:from-violet-400 dark:via-purple-400 dark:to-fuchsia-300 dark:text-[#1e0b36] dark:shadow-fuchsia-400/20"
+              >
+                {editingTransferId
+                  ? "به‌روزرسانی انتقال"
+                  : "ثبت انتقال"}
+                <Ic n="arrowLeft" className="h-5 w-5 transition-transform group-hover:-translate-x-1" />
+              </button>
+            </section>
+          )}
+
+          {/* ================= Balances ================= */}
+
+          <section
+            className={`fx-up overflow-hidden ${uiCard}`}
+            style={{ animationDelay: "80ms" }}
+          >
+            <div className="flex flex-wrap items-center gap-3 p-5 pb-4 md:px-7 md:pt-6">
+              <span className="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-amber-500/15 to-orange-400/15 text-amber-600 ring-1 ring-amber-500/25 dark:from-amber-400/15 dark:to-orange-400/10 dark:text-amber-300 dark:ring-amber-400/20">
+                <Ic n="wallet" className="h-5 w-5" />
+              </span>
+              <div className="flex-1">
+                <h2 className="fx-display text-2xl leading-none text-slate-900 dark:text-white">
+                  موجودی مشتریان
+                </h2>
+                <p className="mt-1 text-[11px] font-bold text-slate-400 dark:text-slate-500">
+                  به‌روزرسانی‌شده بر اساس معاملات فعال
+                </p>
+              </div>
+              <span className="rounded-full bg-slate-500/10 px-3 py-1.5 text-[10px] font-black text-slate-600 ring-1 ring-slate-500/20 dark:bg-slate-400/10 dark:text-slate-300 dark:ring-slate-400/20">
+                {customers.length} مشتری
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[720px] text-sm">
+                <thead>
+                  <tr className="border-y border-slate-100 bg-slate-50/80 dark:border-slate-800 dark:bg-[#0b1520]/80">
+                    <th className="px-5 py-3 text-right text-[11px] font-black text-slate-500 dark:text-slate-400 md:px-7">
+                      مشتری
+                    </th>
+
+                    {currencies.map((c) => (
+                      <th key={c} className="px-4 py-3 text-right">
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-black text-slate-500 dark:text-slate-400">
+                          <span className="h-1.5 w-1.5 rounded-full bg-gradient-to-br from-teal-500 to-emerald-400" />
+                          {labels[c]}
+                        </span>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
+                  {customers.map((c, ci) => {
+                    const b = currentBalances[c.id] || c.balances;
+
+                    return (
+                      <tr
+                        key={c.id}
+                        className="transition-colors hover:bg-teal-500/[0.045] dark:hover:bg-teal-400/[0.05]"
+                      >
+                        <td className="px-5 py-3.5 md:px-7">
+                          <div className="flex items-center gap-3">
+                            <span
+                              className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br text-xs font-black text-white shadow-sm ${
+                                avatarPalette[ci % avatarPalette.length]
+                              }`}
+                            >
+                              {c.name.charAt(0)}
+                            </span>
+                            <span className="font-bold text-slate-700 dark:text-slate-200">
+                              {c.name}
+                            </span>
+                          </div>
+                        </td>
+
+                        {currencies.map((cur) => (
+                          <td
+                            key={cur}
+                            className={`px-4 py-3.5 text-sm font-bold tabular-nums transition-colors ${
+                              b[cur]
+                                ? "text-slate-700 dark:text-slate-200"
+                                : "text-slate-300 dark:text-slate-600"
+                            }`}
                           >
-                            ویرایش
-                          </button>
-                        </li>
+                            {fmt(b[cur] || 0)}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
 
-                        <li>
-                          <button
-                            onClick={() => printReceipt(tx)}
-                            className={actionButtonClass}
-                          >
-                            چاپ رسید
-                          </button>
-                        </li>
+          {/* ================= Transactions ================= */}
 
-                        <li>
-                          <button
-                            onClick={() => viewTransaction(tx)}
-                            className={actionButtonClass}
-                          >
-                            مشاهده
-                          </button>
-                        </li>
+          <section
+            className={`fx-up overflow-hidden ${uiCard}`}
+            style={{ animationDelay: "160ms" }}
+          >
+            <div className="flex flex-wrap items-center gap-3 p-5 pb-4 md:px-7 md:pt-6">
+              <span className="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-teal-600/15 to-emerald-500/15 text-teal-700 ring-1 ring-teal-600/20 dark:from-teal-400/15 dark:to-emerald-400/10 dark:text-teal-300 dark:ring-teal-400/20">
+                <Ic n="doc" className="h-5 w-5" />
+              </span>
+              <div className="flex-1">
+                <h2 className="fx-display text-2xl leading-none text-slate-900 dark:text-white">
+                  آخرین معاملات
+                </h2>
+                <p className="mt-1 text-[11px] font-bold text-slate-400 dark:text-slate-500">
+                  ثبت، ویرایش، چاپ رسید و لغو معاملات
+                </p>
+              </div>
 
-                        <li>
-                          <button
-                            onClick={() => voidTransaction(tx)}
-                            disabled={tx.status === "voided"}
-                            className={`${actionButtonClass} text-red-600`}
-                          >
-                            لغو معامله
-                          </button>
-                        </li>
+              {isSearching && (
+                <button
+                  onClick={() => setSearch("")}
+                  className="flex cursor-pointer items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1.5 text-[10px] font-black text-amber-700 ring-1 ring-amber-500/25 transition hover:bg-amber-500/20 dark:bg-amber-400/10 dark:text-amber-300 dark:ring-amber-400/20"
+                >
+                  نتایج جستجو
+                  <Ic n="x" className="h-3 w-3" />
+                </button>
+              )}
+            </div>
 
-                      </ul>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[980px] text-sm">
+                <thead>
+                  <tr className="border-y border-slate-100 bg-slate-50/80 dark:border-slate-800 dark:bg-[#0b1520]/80">
+                    <th className="px-4 py-3 text-right text-[11px] font-black text-slate-500 dark:text-slate-400 md:px-7">شماره</th>
+                    <th className="px-4 py-3 text-right text-[11px] font-black text-slate-500 dark:text-slate-400">نام مشتری</th>
+                    <th className="px-4 py-3 text-right text-[11px] font-black text-slate-500 dark:text-slate-400">تاریخ</th>
+                    <th className="px-4 py-3 text-right text-[11px] font-black text-slate-500 dark:text-slate-400">نوع معامله</th>
+                    <th className="px-4 py-3 text-right text-[11px] font-black text-slate-500 dark:text-slate-400">دریافت</th>
+                    <th className="px-4 py-3 text-right text-[11px] font-black text-slate-500 dark:text-slate-400">پرداخت</th>
+                    <th className="px-4 py-3 text-right text-[11px] font-black text-slate-500 dark:text-slate-400">نرخ ارز</th>
+                    <th className="px-4 py-3 text-right text-[11px] font-black text-slate-500 dark:text-slate-400">کارمزد</th>
+                    <th className="px-4 py-3 text-right text-[11px] font-black text-slate-500 dark:text-slate-400 md:px-7">عملیات</th>
+                  </tr>
+                </thead>
 
-                    </details>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
+                  {transactions.length === 0 ? (
+                    <tr>
+                      <td colSpan={9}>
+                        <div className="flex flex-col items-center gap-3 px-6 py-14 text-slate-400 dark:text-slate-500">
+                          <span className="grid h-16 w-16 place-items-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/40">
+                            <Ic n="inbox" className="h-7 w-7 opacity-70" />
+                          </span>
+                          <p className="text-sm font-black">هنوز معامله‌ای ثبت نشده است</p>
+                          <p className="text-xs font-medium">
+                            اولین معامله را از فرم بالا ثبت کنید؛ جزئیات آن اینجا نمایش داده می‌شود.
+                          </p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    transactions.map((tx, index) => {
+                      const matchesSearch =
+                        transactionMatchesSearch(tx);
 
-                  </td>
+                      let rowClass =
+                        "transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/30";
 
-                </tr>
-              );
-            })}
+                      if (isSearching) {
+                        if (matchesSearch) {
+                          rowClass +=
+                            " bg-amber-400/20 hover:bg-amber-400/25 dark:bg-amber-400/10 dark:hover:bg-amber-400/15";
+                        } else {
+                          rowClass += " opacity-30";
+                        }
 
-          </tbody>
+                        if (tx.status === "voided") {
+                          rowClass += " text-slate-400 dark:text-slate-500";
+                        }
+                      } else {
+                        if (tx.status === "voided") {
+                          rowClass +=
+                            " bg-rose-500/[0.05] text-slate-400 dark:bg-rose-400/[0.04] dark:text-slate-500";
+                        }
+                      }
 
-        </table>
+                      return (
+                        <tr key={tx.id} className={rowClass}>
+                          <td className="px-4 py-3.5 md:px-7">
+                            <span className="grid h-8 w-8 place-items-center rounded-lg bg-slate-100 text-[11px] font-black tabular-nums text-slate-500 dark:bg-slate-800/80 dark:text-slate-400">
+                              {transactions.length - index}
+                            </span>
+                          </td>
 
+                          <td className="px-4 py-3.5 text-[13px] font-bold text-slate-700 dark:text-slate-200">
+                            {transactionCustomerLabel(tx)}
+                          </td>
+
+                          <td className="whitespace-nowrap px-4 py-3.5 text-xs tabular-nums text-slate-500 dark:text-slate-400">
+                            <span dir="ltr">{dateLabel(tx.date)}</span>
+                          </td>
+
+                          <td className="px-4 py-3.5">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span
+                                className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${typeChipClass(tx)}`}
+                              >
+                                {transactionTypeLabel(tx)}
+                              </span>
+
+                              {tx.status === "voided" && (
+                                <span className="inline-flex rounded-full bg-rose-500/10 px-2.5 py-1 text-[10px] font-black text-rose-600 ring-1 ring-rose-500/25 dark:bg-rose-400/10 dark:text-rose-300 dark:ring-rose-400/20">
+                                  لغو شده
+                                </span>
+                              )}
+                            </div>
+                          </td>
+
+                          <td className="px-4 py-3.5">
+                            <div className="text-[13px] font-black tabular-nums">
+                              {fmt(tx.fromAmount)}
+                            </div>
+                            <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500">
+                              {labels[tx.fromCurrency]}
+                            </div>
+                          </td>
+
+                          <td className="px-4 py-3.5">
+                            <div className="text-[13px] font-black tabular-nums">
+                              {fmt(tx.toAmount)}
+                            </div>
+                            <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500">
+                              {labels[tx.toCurrency]}
+                            </div>
+                          </td>
+
+                          <td className="px-4 py-3.5 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                            {tx.rateLabel}
+                          </td>
+
+                          <td className="px-4 py-3.5 text-xs font-bold tabular-nums">
+                            {transactionCommissionLabel(tx)}
+                          </td>
+
+                          <td className="px-4 py-3.5 md:px-7">
+                            <details className="relative">
+                              <summary className="inline-flex cursor-pointer select-none items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-black text-teal-700 shadow-sm transition-all hover:border-teal-500/50 hover:bg-teal-500/10 dark:border-slate-700 dark:bg-[#0b1622] dark:text-teal-300 dark:hover:border-teal-400/50 dark:hover:bg-teal-400/10">
+                                عملیات
+                                <Ic n="chevron" className="h-3 w-3" />
+                              </summary>
+
+                              <ul className="fx-pop mt-2 w-44 space-y-1 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl shadow-slate-900/10 dark:border-slate-700 dark:bg-[#101d2c] dark:shadow-black/40">
+                                <li>
+                                  <button
+                                    onClick={() => editTransaction(tx)}
+                                    disabled={tx.status === "voided"}
+                                    className={actionButtonClass}
+                                  >
+                                    <Ic n="pencil" className="h-3.5 w-3.5" />
+                                    ویرایش
+                                  </button>
+                                </li>
+
+                                <li>
+                                  <button
+                                    onClick={() => printReceipt(tx)}
+                                    className={actionButtonClass}
+                                  >
+                                    <Ic n="printer" className="h-3.5 w-3.5" />
+                                    چاپ رسید
+                                  </button>
+                                </li>
+
+                                <li>
+                                  <button
+                                    onClick={() => viewTransaction(tx)}
+                                    className={actionButtonClass}
+                                  >
+                                    <Ic n="eye" className="h-3.5 w-3.5" />
+                                    مشاهده
+                                  </button>
+                                </li>
+
+                                <li>
+                                  <button
+                                    onClick={() => voidTransaction(tx)}
+                                    disabled={tx.status === "voided"}
+                                    className={dangerActionButtonClass}
+                                  >
+                                    <Ic n="xCircle" className="h-3.5 w-3.5" />
+                                    لغو معامله
+                                  </button>
+                                </li>
+                              </ul>
+                            </details>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
       </div>
 
-      {/* View Modal */}
+      {/* ================= View Modal ================= */}
 
       {selectedTransaction && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
           onClick={() => setSelectedTransaction(null)}
         >
-
           <div
-            className="w-full max-w-lg rounded-2xl bg-white p-5 space-y-4"
+            className="fx-pop w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-[#0e1a28]"
             onClick={(e) => e.stopPropagation()}
           >
-
-            <div className="flex items-center justify-between">
-
-              <b>جزئیات معامله</b>
+            <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/80 px-5 py-4 dark:border-slate-800 dark:bg-[#0b1520]/80">
+              <b className="flex items-center gap-2 text-sm text-slate-800 dark:text-slate-100">
+                <span className="grid h-8 w-8 place-items-center rounded-lg bg-teal-600/10 text-teal-700 dark:bg-teal-400/10 dark:text-teal-300">
+                  <Ic n="doc" className="h-4 w-4" />
+                </span>
+                جزئیات معامله
+              </b>
 
               <button
                 onClick={() => setSelectedTransaction(null)}
-                className="text-gray-500"
+                className="grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-all duration-300 hover:rotate-90 hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-white"
               >
-                ✕
+                <Ic n="x" className="h-4 w-4" />
               </button>
-
             </div>
 
-            <div className="text-sm space-y-2">
-
-              <div className="flex justify-between gap-4">
-                <span className="text-gray-500">شماره:</span>
-                <span>{selectedTransaction.id}</span>
-              </div>
-
-              <div className="flex justify-between gap-4">
-                <span className="text-gray-500">تاریخ:</span>
-                <span>{dateLabel(selectedTransaction.date)}</span>
-              </div>
-
-              <div className="flex justify-between gap-4">
-                <span className="text-gray-500">نوع معامله:</span>
-                <span>
-                  {transactionTypeLabel(selectedTransaction)}
-                </span>
-              </div>
-
-              <div className="flex justify-between gap-4">
-                <span className="text-gray-500">نام مشتری:</span>
-                <span>
-                  {transactionCustomerLabel(selectedTransaction)}
-                </span>
-              </div>
-
-              <div className="flex justify-between gap-4">
-                <span className="text-gray-500">دریافت:</span>
-                <span>
-                  {fmt(selectedTransaction.fromAmount)}{" "}
-                  {labels[selectedTransaction.fromCurrency]}
-                </span>
-              </div>
-
-              <div className="flex justify-between gap-4">
-                <span className="text-gray-500">پرداخت:</span>
-                <span>
-                  {fmt(selectedTransaction.toAmount)}{" "}
-                  {labels[selectedTransaction.toCurrency]}
-                </span>
-              </div>
-
-              <div className="flex justify-between gap-4">
-                <span className="text-gray-500">نرخ ارز:</span>
-                <span>{selectedTransaction.rateLabel}</span>
-              </div>
-
-              <div className="flex justify-between gap-4">
-                <span className="text-gray-500">کارمزد:</span>
-                <span>
-                  {transactionCommissionLabel(selectedTransaction)}
-                </span>
-              </div>
-
-              <div className="flex justify-between gap-4">
-                <span className="text-gray-500">توضیحات:</span>
-                <span>
-                  {selectedTransaction.description || "-"}
-                </span>
-              </div>
-
-              <div className="flex justify-between gap-4">
-                <span className="text-gray-500">وضعیت:</span>
-                <span>
-                  {selectedTransaction.status === "voided"
+            <div className="max-h-[70vh] overflow-y-auto px-5 py-2">
+              <DetailRow label="شماره" value={selectedTransaction.id} />
+              <DetailRow label="تاریخ" value={dateLabel(selectedTransaction.date)} />
+              <DetailRow
+                label="نوع معامله"
+                value={transactionTypeLabel(selectedTransaction)}
+              />
+              <DetailRow
+                label="نام مشتری"
+                value={transactionCustomerLabel(selectedTransaction)}
+              />
+              <DetailRow
+                label="دریافت"
+                value={`${fmt(selectedTransaction.fromAmount)} ${
+                  labels[selectedTransaction.fromCurrency]
+                }`}
+              />
+              <DetailRow
+                label="پرداخت"
+                value={`${fmt(selectedTransaction.toAmount)} ${
+                  labels[selectedTransaction.toCurrency]
+                }`}
+              />
+              <DetailRow label="نرخ ارز" value={selectedTransaction.rateLabel} />
+              <DetailRow
+                label="کارمزد"
+                value={transactionCommissionLabel(selectedTransaction)}
+              />
+              <DetailRow
+                label="توضیحات"
+                value={selectedTransaction.description || "-"}
+              />
+              <DetailRow
+                label="وضعیت"
+                value={
+                  selectedTransaction.status === "voided"
                     ? "لغو شده"
-                    : "فعال"}
-                </span>
-              </div>
-
+                    : "فعال"
+                }
+                valueClass={
+                  selectedTransaction.status === "voided"
+                    ? "text-rose-600 dark:text-rose-400"
+                    : "text-emerald-600 dark:text-emerald-400"
+                }
+              />
             </div>
-
           </div>
-
         </div>
       )}
-
     </div>
   );
 }
