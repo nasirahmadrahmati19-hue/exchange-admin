@@ -1,255 +1,1885 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
+import { useMemo, useState, type ChangeEvent } from "react";
 
-export default function FertilizerExchangePage() {
-  // ===== وضعیت‌های داخلی (برای نمایش پویا) =====
-  const [selectedFertilizer, setSelectedFertilizer] = useState('کود کامل NPK ۱۵-۱۰-۱۵ + میکرو');
-  const [amount, setAmount] = useState(1000);
-  const [price, setPrice] = useState(28500);
-  const [warehouse, setWarehouse] = useState('انبار مرکزی استان');
+type HawalaStatus = "pending" | "sent" | "paid" | "cancelled";
+type HawalaType = "send" | "receive";
+type TelegramStatus = "not_sent" | "sent" | "error";
 
-  // داده‌های نمونه برای جدول تاریخچه
-  const recentTrades = [
-    { time: '۱۴:۲۵', type: 'خرید', fertilizer: 'کامل ۱۵-۱۰-۱۵', tons: 5, price: 28400, counterparty: 'شرکت کشت سبز', status: 'انجام شده' },
-    { time: '۱۳:۵۰', type: 'فروش', fertilizer: 'اوره', tons: 12, price: 18100, counterparty: 'تعاونی روستایی', status: 'در انتظار تأیید' },
-    { time: '۱۲:۱۰', type: 'خرید', fertilizer: 'سولفات پتاسیم', tons: 3, price: 32200, counterparty: 'بازرگانی الف', status: 'انجام شده' },
-    { time: '۱۱:۰۵', type: 'فروش', fertilizer: 'کامل ۱۵-۱۰-۱۵', tons: 8, price: 28700, counterparty: 'کارخانه کود شمال', status: 'انجام شده' },
-  ];
+interface Hawala {
+  id: string;
+  hawalaNumber: string;
+  createdDate: string;
+  createdTime: string;
+  createdBy: string;
+  updatedAt?: string;
+  updatedBy?: string;
+
+  hawalaType: HawalaType;
+  status: HawalaStatus;
+
+  destinationCountry: string;
+  destinationProvince: string;
+  destinationDistrict: string;
+  destinationText: string;
+
+  currency: string;
+  amount: number;
+  fee: number;
+  finalAmount: number;
+  customerBalance: string;
+
+  note: string;
+  internalNote?: string;
+
+  senderName: string;
+  senderTazkira: string;
+  senderPhone: string;
+  senderTelegram: string;
+  senderAddress?: string;
+
+  receiverName: string;
+  receiverTazkira: string;
+  receiverPhone: string;
+  receiverTelegram: string;
+  receiverAddress?: string;
+
+  paidDate?: string;
+  paidTime?: string;
+  paidAmount?: number;
+  paidBy?: string;
+  receivedBy?: string;
+  paymentMethod?: string;
+  paymentAccount?: string;
+
+  cancelReason?: string;
+  cancelledDate?: string;
+  cancelledTime?: string;
+  cancelledBy?: string;
+
+  telegramStatus: TelegramStatus;
+  telegramSentAt?: string;
+}
+
+interface HawalaForm {
+  hawalaType: string;
+  destinationProvince: string;
+  destinationDistrict: string;
+  currency: string;
+  amount: string;
+  fee: string;
+  customerBalance: string;
+  note: string;
+  internalNote: string;
+
+  senderName: string;
+  senderTazkira: string;
+  senderPhone: string;
+  senderTelegram: string;
+  senderAddress: string;
+
+  receiverName: string;
+  receiverTazkira: string;
+  receiverPhone: string;
+  receiverTelegram: string;
+  receiverAddress: string;
+}
+
+const provinces = [
+  "هرات",
+  "ارزگان",
+  "بادغیس",
+  "بدخشان",
+  "بامیان",
+  "بغلان",
+  "بلخ",
+  "پکتیا",
+  "پکتیکا",
+  "پنجشیر",
+  "پروان",
+  "تخار",
+  "جوزجان",
+  "خوست",
+  "دایکندی",
+  "زابل",
+  "سرپل",
+  "سمنگان",
+  "فاریاب",
+  "فراه",
+  "غزنی",
+  "غور",
+  "کابل",
+  "کندهار",
+  "کاپیسا",
+  "قندوز",
+  "کنر",
+  "لغمان",
+  "لوگر",
+  "میدان وردک",
+  "ننگرهار",
+  "نیمروز",
+  "نورستان",
+  "هلمند"
+] as const;
+
+const heratDistricts = [
+  "گلران",
+  "مرکز هرات",
+  "ادرسکن",
+  "چشت شریف",
+  "فارسی",
+  "غوریان",
+  "گذره",
+  "انجیل",
+  "کرخ",
+  "کوهسان",
+  "کشک",
+  "کشک کهنه",
+  "اوبه",
+  "پشتون زرغون",
+  "شیندند",
+  "زنده جان"
+] as const;
+
+const currencies = ["AFN", "USD", "IRR"] as const;
+
+const paymentMethods = ["نقدی", "بانکی", "صندوق"] as const;
+
+const statusLabels: Record<HawalaStatus, string> = {
+  pending: "در انتظار",
+  sent: "ارسال‌شده",
+  paid: "پرداخت‌شده",
+  cancelled: "لغوشده"
+};
+
+const telegramLabels: Record<TelegramStatus, string> = {
+  not_sent: "ارسال نشده",
+  sent: "ارسال شده",
+  error: "ناموفق"
+};
+
+const initialHawalas: Hawala[] = [
+  {
+    id: "1",
+    hawalaNumber: "HW-20260809-0001",
+    createdDate: "1405-05-18",
+    createdTime: "10:30",
+    createdBy: "کاربر سیستم",
+    hawalaType: "send",
+    status: "sent",
+    destinationCountry: "افغانستان",
+    destinationProvince: "هرات",
+    destinationDistrict: "گلران",
+    destinationText: "هرات — گلران",
+    currency: "AFN",
+    amount: 10000,
+    fee: 200,
+    finalAmount: 9800,
+    customerBalance: "10,000",
+    note: "حواله نقدی",
+    internalNote: "",
+    senderName: "احمد احمدی",
+    senderTazkira: "1398-123456",
+    senderPhone: "0700000000",
+    senderTelegram: "@ahmad",
+    senderAddress: "",
+    receiverName: "محمود محمودی",
+    receiverTazkira: "1395-654321",
+    receiverPhone: "0788888888",
+    receiverTelegram: "@mahmood",
+    receiverAddress: "",
+    telegramStatus: "not_sent"
+  },
+  {
+    id: "2",
+    hawalaNumber: "HW-20260808-0002",
+    createdDate: "1405-05-17",
+    createdTime: "16:10",
+    createdBy: "کاربر سیستم",
+    hawalaType: "send",
+    status: "paid",
+    destinationCountry: "افغانستان",
+    destinationProvince: "هرات",
+    destinationDistrict: "غوریان",
+    destinationText: "هرات — غوریان",
+    currency: "AFN",
+    amount: 5000,
+    fee: 100,
+    finalAmount: 4900,
+    customerBalance: "4,900",
+    note: "",
+    internalNote: "",
+    senderName: "ولی ولی",
+    senderTazkira: "1390-555555",
+    senderPhone: "0777777777",
+    senderTelegram: "@wali",
+    senderAddress: "",
+    receiverName: "کریم کریمی",
+    receiverTazkira: "1392-444444",
+    receiverPhone: "0766666666",
+    receiverTelegram: "@karim",
+    receiverAddress: "",
+    paidDate: "1405-05-17",
+    paidTime: "16:45",
+    paidAmount: 4900,
+    paidBy: "صندوقکار",
+    receivedBy: "کریم کریمی",
+    paymentMethod: "نقدی",
+    paymentAccount: "",
+    telegramStatus: "sent",
+    telegramSentAt: "1405-05-17 — 16:46"
+  },
+  {
+    id: "3",
+    hawalaNumber: "HW-20260807-0003",
+    createdDate: "1405-05-16",
+    createdTime: "09:05",
+    createdBy: "کاربر سیستم",
+    hawalaType: "receive",
+    status: "cancelled",
+    destinationCountry: "افغانستان",
+    destinationProvince: "کابل",
+    destinationDistrict: "کابل",
+    destinationText: "کابل",
+    currency: "AFN",
+    amount: 7000,
+    fee: 150,
+    finalAmount: 6850,
+    customerBalance: "",
+    note: "",
+    internalNote: "",
+    senderName: "نور نور",
+    senderTazkira: "1388-222222",
+    senderPhone: "0755555555",
+    senderTelegram: "@noor",
+    senderAddress: "",
+    receiverName: "عبدالله عبداللهی",
+    receiverTazkira: "1389-333333",
+    receiverPhone: "0744444444",
+    receiverTelegram: "@abdullah",
+    receiverAddress: "",
+    cancelReason: "مشتری منصرف شد",
+    cancelledDate: "1405-05-16",
+    cancelledTime: "09:30",
+    cancelledBy: "کاربر سیستم",
+    telegramStatus: "not_sent"
+  }
+];
+
+const emptyForm: HawalaForm = {
+  hawalaType: "send",
+  destinationProvince: "هرات",
+  destinationDistrict: "گلران",
+  currency: "AFN",
+  amount: "",
+  fee: "",
+  customerBalance: "",
+  note: "",
+  internalNote: "",
+
+  senderName: "",
+  senderTazkira: "",
+  senderPhone: "",
+  senderTelegram: "",
+  senderAddress: "",
+
+  receiverName: "",
+  receiverTazkira: "",
+  receiverPhone: "",
+  receiverTelegram: "",
+  receiverAddress: ""
+};
+
+const styles = `
+  .hawala-app * {
+    box-sizing: border-box;
+  }
+
+  .hawala-app {
+    min-height: 100vh;
+    background: #f3f4f6;
+    padding: 24px;
+    color: #111827;
+    font-family: Tahoma, Arial, sans-serif;
+  }
+
+  .hawala-container {
+    max-width: 1300px;
+    margin: 0 auto;
+  }
+
+  .hawala-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+
+  .hawala-header h1 {
+    margin: 0;
+    font-size: 26px;
+    font-weight: 900;
+  }
+
+  .muted {
+    color: #6b7280;
+    font-size: 13px;
+  }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+    margin-bottom: 18px;
+  }
+
+  .stat-card {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 16px;
+    padding: 16px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.05);
+  }
+
+  .stat-label {
+    color: #6b7280;
+    font-size: 13px;
+    margin-bottom: 8px;
+  }
+
+  .stat-value {
+    font-size: 22px;
+    font-weight: 900;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+  }
+
+  .tab {
+    border: none;
+    padding: 10px 16px;
+    border-radius: 999px;
+    background: #e5e7eb;
+    color: #374151;
+    font-weight: 800;
+    cursor: pointer;
+    font-size: 14px;
+  }
+
+  .tab.active {
+    background: #111827;
+    color: #ffffff;
+  }
+
+  .card {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 18px;
+    padding: 20px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
+  }
+
+  .section-title {
+    margin: 20px 0 12px;
+    font-size: 15px;
+    font-weight: 900;
+    border-right: 4px solid #2563eb;
+    padding-right: 10px;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .full {
+    grid-column: 1 / -1;
+  }
+
+  .field label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 13px;
+    font-weight: 800;
+    color: #374151;
+  }
+
+  .field input,
+  .field select,
+  .field textarea {
+    width: 100%;
+    border: 1px solid #d1d5db;
+    border-radius: 12px;
+    padding: 10px 12px;
+    font-size: 14px;
+    background: #ffffff;
+    color: #111827;
+    outline: none;
+  }
+
+  .field input:focus,
+  .field select:focus,
+  .field textarea:focus {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+  }
+
+  .field input:disabled {
+    background: #f3f4f6;
+    color: #6b7280;
+  }
+
+  .summary {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    padding: 14px;
+    border-radius: 14px;
+    margin-top: 18px;
+  }
+
+  .summary-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 6px 0;
+    font-size: 14px;
+  }
+
+  .actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    border: none;
+    padding: 9px 13px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 800;
+  }
+
+  .btn:hover {
+    opacity: 0.92;
+  }
+
+  .btn-primary {
+    background: #2563eb;
+    color: #ffffff;
+  }
+
+  .btn-success {
+    background: #16a34a;
+    color: #ffffff;
+  }
+
+  .btn-danger {
+    background: #dc2626;
+    color: #ffffff;
+  }
+
+  .btn-secondary {
+    background: #e5e7eb;
+    color: #111827;
+  }
+
+  .btn-warning {
+    background: #d97706;
+    color: #ffffff;
+  }
+
+  .btn-telegram {
+    background: #0088cc;
+    color: #ffffff;
+  }
+
+  .table-wrap {
+    overflow: auto;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  th {
+    text-align: right;
+    padding: 10px;
+    color: #6b7280;
+    border-bottom: 1px solid #e5e7eb;
+    background: #f9fafb;
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 10px;
+    border-bottom: 1px solid #f3f4f6;
+    white-space: nowrap;
+  }
+
+  .badge {
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 900;
+    display: inline-block;
+  }
+
+  .badge-pending {
+    background: #fef3c7;
+    color: #92400e;
+  }
+
+  .badge-sent {
+    background: #dbeafe;
+    color: #1d4ed8;
+  }
+
+  .badge-paid {
+    background: #dcfce7;
+    color: #166534;
+  }
+
+  .badge-cancelled {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+
+  .search-bar {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+
+  .search-bar input,
+  .search-bar select {
+    flex: 1;
+    min-width: 180px;
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 12px;
+    font-size: 14px;
+  }
+
+  .empty {
+    padding: 36px;
+    text-align: center;
+    color: #6b7280;
+  }
+
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.65);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    z-index: 50;
+  }
+
+  .modal {
+    background: #ffffff;
+    width: 100%;
+    max-width: 820px;
+    border-radius: 18px;
+    padding: 20px;
+    max-height: 90vh;
+    overflow: auto;
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+
+  .modal-title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 900;
+  }
+
+  .receipt {
+    border: 1px dashed #94a3b8;
+    border-radius: 14px;
+    padding: 16px;
+    background: #ffffff;
+  }
+
+  .receipt-title {
+    text-align: center;
+    font-weight: 900;
+    margin-bottom: 12px;
+  }
+
+  .receipt-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 7px 0;
+    font-size: 14px;
+  }
+
+  .divider {
+    border-top: 1px dashed #cbd5e1;
+    margin: 12px 0;
+  }
+
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 24px;
+    background: #111827;
+    color: #ffffff;
+    padding: 12px 16px;
+    border-radius: 12px;
+    z-index: 99;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
+  }
+
+  @media (max-width: 900px) {
+    .stats {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 600px) {
+    .stats {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media print {
+    .hawala-app * {
+      visibility: hidden;
+    }
+
+    .modal-overlay {
+      position: absolute;
+      background: #ffffff;
+    }
+
+    .modal,
+    .modal * {
+      visibility: visible;
+    }
+  }
+`;
+
+const getNow = () => {
+  return {
+    date: new Date().toLocaleDateString("fa-IR"),
+    time: new Date().toLocaleTimeString("fa-IR", {
+      hour: "2-digit",
+      minute: "2-digit"
+    })
+  };
+};
+
+const formatNumber = (value: number) => {
+  return Number(value || 0).toLocaleString("fa-IR");
+};
+
+const formatDestination = (province: string, district: string) => {
+  if (province === "هرات") {
+    return `${province} — ${district}`;
+  }
+
+  return province;
+};
+
+const badgeClass = (status: HawalaStatus) => {
+  if (status === "pending") return "badge badge-pending";
+  if (status === "sent") return "badge badge-sent";
+  if (status === "paid") return "badge badge-paid";
+  return "badge badge-cancelled";
+};
+
+function DetailRow({ label, value }: { label: string; value?: string | number }) {
+  const hasValue = value !== undefined && value !== null && String(value).trim() !== "";
 
   return (
-    <div style={{ background: '#f4f7f9', padding: '20px', minHeight: '100vh', fontFamily: 'Vazirmatn, sans-serif' }}>
-      {/* لینک فونت و آیکون‌ها */}
-      <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;700;900&display=swap" rel="stylesheet" />
-      <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+    <div className="receipt-row">
+      <span>{label}</span>
+      <strong>{hasValue ? value : "—"}</strong>
+    </div>
+  );
+}
 
-      <div style={{ maxWidth: '1440px', margin: '0 auto', background: '#ffffff', borderRadius: '32px', boxShadow: '0 20px 60px rgba(0,0,0,0.08)', padding: '25px 30px 30px' }}>
+export default function HawalaPage() {
+  const [activeTab, setActiveTab] = useState<"new" | "current" | "history">("new");
+  const [hawalas, setHawalas] = useState<Hawala[]>(initialHawalas);
+  const [form, setForm] = useState<HawalaForm>(emptyForm);
 
-        {/* ===== هدر ===== */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', flexWrap: 'wrap', gap: '15px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-            <div style={{ background: '#1b4d2b', color: '#fff', padding: '10px 20px', borderRadius: '60px', fontWeight: 900, fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <i className="fas fa-seedling" style={{ color: '#ffd54f' }}></i> صرافی کود
-            </div>
-            <span style={{ background: '#e8f5e9', color: '#1b4d2b', padding: '6px 18px', borderRadius: '40px', fontSize: '0.8rem', fontWeight: 700, border: '1px solid #a5d6a7' }}>
-              <i className="fas fa-circle" style={{ color: '#2b8a3e', fontSize: '0.5rem' }}></i> بازار آزاد (بازار معاملات محلی)
-            </span>
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  const [selected, setSelected] = useState<Hawala | null>(null);
+  const [settlement, setSettlement] = useState<Hawala | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<Hawala | null>(null);
+
+  const [paidBy, setPaidBy] = useState("");
+  const [paidAmount, setPaidAmount] = useState("");
+  const [receivedBy, setReceivedBy] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("نقدی");
+  const [paymentAccount, setPaymentAccount] = useState("");
+
+  const [cancelReason, setCancelReason] = useState("");
+  const [toast, setToast] = useState("");
+
+  const amount = Number(form.amount || 0);
+  const fee = Number(form.fee || 0);
+  const finalAmount = amount - fee;
+  const safeFinalAmount = finalAmount > 0 ? finalAmount : 0;
+
+  const isHerat = form.destinationProvince === "هرات";
+  const destinationText = formatDestination(
+    form.destinationProvince,
+    form.destinationDistrict
+  );
+
+  const currentHawalas = hawalas.filter(
+    item => item.status === "pending" || item.status === "sent"
+  );
+
+  const openCount = currentHawalas.length;
+  const paidCount = hawalas.filter(item => item.status === "paid").length;
+  const cancelledCount = hawalas.filter(item => item.status === "cancelled").length;
+  const openAmount = currentHawalas.reduce((sum, item) => sum + item.finalAmount, 0);
+
+  const filteredHistory = useMemo(() => {
+    const q = search.trim().toLowerCase();
+
+    return hawalas.filter(item => {
+      const matchesStatus = statusFilter === "all" || item.status === statusFilter;
+
+      if (!matchesStatus) return false;
+      if (!q) return true;
+
+      const fields = [
+        item.hawalaNumber,
+        item.senderName,
+        item.receiverName,
+        item.senderPhone,
+        item.receiverPhone,
+        item.senderTelegram,
+        item.receiverTelegram,
+        item.destinationProvince,
+        item.destinationDistrict,
+        item.destinationText
+      ];
+
+      return fields.some(field => String(field || "").toLowerCase().includes(q));
+    });
+  }, [hawalas, search, statusFilter]);
+
+  const showToast = (message: string) => {
+    setToast(message);
+    setTimeout(() => setToast(""), 3500);
+  };
+
+  const updateForm = (field: keyof HawalaForm, value: string) => {
+    setForm(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const handleProvinceChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    const newProvince = event.target.value;
+
+    setForm(prev => ({
+      ...prev,
+      destinationProvince: newProvince,
+      destinationDistrict: newProvince === "هرات" ? "گلران" : newProvince
+    }));
+  };
+
+  const makeHawalaNumber = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+
+    return `HW-${year}${month}${day}-${String(hawalas.length + 1).padStart(4, "0")}`;
+  };
+
+  const submitForm = () => {
+    if (!form.senderName.trim()) {
+      showToast("نام حواله‌دهنده را بنویسید.");
+      return;
+    }
+
+    if (!form.senderTazkira.trim()) {
+      showToast("شماره تذکره حواله‌دهنده را بنویسید.");
+      return;
+    }
+
+    if (!form.senderPhone.trim()) {
+      showToast("شماره تماس حواله‌دهنده را بنویسید.");
+      return;
+    }
+
+    if (!form.receiverName.trim()) {
+      showToast("نام حواله‌گیرنده را بنویسید.");
+      return;
+    }
+
+    if (!form.receiverTazkira.trim()) {
+      showToast("شماره تذکره حواله‌گیرنده را بنویسید.");
+      return;
+    }
+
+    if (!form.receiverPhone.trim()) {
+      showToast("شماره تماس حواله‌گیرنده را بنویسید.");
+      return;
+    }
+
+    if (amount <= 0) {
+      showToast("مبلغ حواله باید بزرگ‌تر از صفر باشد.");
+      return;
+    }
+
+    if (fee < 0) {
+      showToast("کارمزد نمی‌تواند منفی باشد.");
+      return;
+    }
+
+    if (finalAmount <= 0) {
+      showToast("مبلغ نهایی نمی‌تواند صفر یا منفی باشد.");
+      return;
+    }
+
+    const now = getNow();
+
+    const newHawala: Hawala = {
+      id: String(Date.now()),
+      hawalaNumber: makeHawalaNumber(),
+      createdDate: now.date,
+      createdTime: now.time,
+      createdBy: "کاربر سیستم",
+      hawalaType: form.hawalaType as HawalaType,
+      status: "pending",
+
+      destinationCountry: "افغانستان",
+      destinationProvince: form.destinationProvince,
+      destinationDistrict:
+        form.destinationProvince === "هرات"
+          ? form.destinationDistrict
+          : form.destinationProvince,
+      destinationText,
+
+      currency: form.currency,
+      amount,
+      fee,
+      finalAmount,
+      customerBalance: form.customerBalance,
+
+      note: form.note,
+      internalNote: form.internalNote,
+
+      senderName: form.senderName,
+      senderTazkira: form.senderTazkira,
+      senderPhone: form.senderPhone,
+      senderTelegram: form.senderTelegram,
+      senderAddress: form.senderAddress,
+
+      receiverName: form.receiverName,
+      receiverTazkira: form.receiverTazkira,
+      receiverPhone: form.receiverPhone,
+      receiverTelegram: form.receiverTelegram,
+      receiverAddress: form.receiverAddress,
+
+      telegramStatus: "not_sent"
+    };
+
+    setHawalas(prev => [newHawala, ...prev]);
+    setForm(emptyForm);
+    setActiveTab("current");
+    showToast("حواله با موفقیت ثبت شد.");
+  };
+
+  const markSent = (id: string) => {
+    const now = getNow();
+
+    setHawalas(prev =>
+      prev.map(item =>
+        item.id === id
+          ? {
+              ...item,
+              status: "sent",
+              updatedAt: `${now.date} — ${now.time}`,
+              updatedBy: "کاربر سیستم"
+            }
+          : item
+      )
+    );
+
+    showToast("حواله به عنوان ارسال‌شده ثبت شد.");
+  };
+
+  const openSettlement = (item: Hawala) => {
+    setSettlement(item);
+    setPaidAmount(String(item.finalAmount));
+    setReceivedBy(item.receiverName);
+    setPaymentMethod("نقدی");
+    setPaymentAccount("");
+    setPaidBy("");
+  };
+
+  const confirmSettlement = () => {
+    if (!settlement) return;
+
+    if (!paidBy.trim()) {
+      showToast("نام پرداخت‌کننده را بنویسید.");
+      return;
+    }
+
+    if (!receivedBy.trim()) {
+      showToast("نام دریافت‌کننده را بنویسید.");
+      return;
+    }
+
+    const amountPaid = Number(paidAmount || settlement.finalAmount);
+
+    if (amountPaid <= 0) {
+      showToast("مبلغ پرداخت‌شده معتبر نیست.");
+      return;
+    }
+
+    const now = getNow();
+
+    setHawalas(prev =>
+      prev.map(item =>
+        item.id === settlement.id
+          ? {
+              ...item,
+              status: "paid",
+              paidDate: now.date,
+              paidTime: now.time,
+              paidAmount: amountPaid,
+              paidBy,
+              receivedBy,
+              paymentMethod,
+              paymentAccount,
+              updatedAt: `${now.date} — ${now.time}`,
+              updatedBy: paidBy
+            }
+          : item
+      )
+    );
+
+    setSettlement(null);
+    showToast("حواله با موفقیت تسویه شد.");
+  };
+
+  const openCancel = (item: Hawala) => {
+    setCancelTarget(item);
+    setCancelReason("");
+  };
+
+  const confirmCancel = () => {
+    if (!cancelTarget) return;
+
+    if (!cancelReason.trim()) {
+      showToast("دلیل لغو حواله را بنویسید.");
+      return;
+    }
+
+    const now = getNow();
+
+    setHawalas(prev =>
+      prev.map(item =>
+        item.id === cancelTarget.id
+          ? {
+              ...item,
+              status: "cancelled",
+              cancelReason,
+              cancelledDate: now.date,
+              cancelledTime: now.time,
+              cancelledBy: "کاربر سیستم",
+              updatedAt: `${now.date} — ${now.time}`,
+              updatedBy: "کاربر سیستم"
+            }
+          : item
+      )
+    );
+
+    setCancelTarget(null);
+    showToast("حواله لغو شد.");
+  };
+
+  const sendTelegram = (item: Hawala) => {
+    const now = getNow();
+
+    const target =
+      item.status === "paid" ? item.receiverTelegram : item.senderTelegram;
+
+    if (!target.trim()) {
+      setHawalas(prev =>
+        prev.map(h =>
+          h.id === item.id
+            ? {
+                ...h,
+                telegramStatus: "error"
+              }
+            : h
+        )
+      );
+
+      setSelected(prev =>
+        prev && prev.id === item.id
+          ? {
+              ...prev,
+              telegramStatus: "error"
+            }
+          : prev
+      );
+
+      showToast("چت آی‌دی تلگرام مشتری ثبت نشده است.");
+      return;
+    }
+
+    const sentAt = `${now.date} — ${now.time}`;
+
+    setHawalas(prev =>
+      prev.map(h =>
+        h.id === item.id
+          ? {
+              ...h,
+              telegramStatus: "sent",
+              telegramSentAt: sentAt
+            }
+          : h
+      )
+    );
+
+    setSelected(prev =>
+      prev && prev.id === item.id
+        ? {
+            ...prev,
+            telegramStatus: "sent",
+            telegramSentAt: sentAt
+          }
+        : prev
+    );
+
+    showToast(`رسید به تلگرام ${target} ارسال شد.`);
+  };
+
+  const tabs = [
+    {
+      id: "new",
+      label: "➕ ثبت حواله جدید"
+    },
+    {
+      id: "current",
+      label: "📋 حواله‌های جاری"
+    },
+    {
+      id: "history",
+      label: "📜 تاریخچه حواله‌ها"
+    }
+  ] as const;
+
+  return (
+    <div className="hawala-app" dir="rtl">
+      <style>{styles}</style>
+
+      <div className="hawala-container">
+        <div className="hawala-header">
+          <div>
+            <h1>🏦 حواله‌جات</h1>
+            <div className="muted">ثبت، پیگیری و تسویه حواله‌ها</div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '25px' }}>
-            <div style={{ background: '#f1f3f5', padding: '8px 18px', borderRadius: '40px', fontSize: '0.9rem', color: '#495057' }}>
-              <i className="far fa-calendar-alt"></i> ۱۸ مرداد ۱۴۰۵
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: '#f8f9fa', padding: '6px 16px 6px 6px', borderRadius: '60px' }}>
-              <div style={{ background: '#1b4d2b', width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 'bold' }}>ک</div>
-              <span style={{ fontWeight: 700 }}>کاربر حقیقی</span>
-              <i className="fas fa-chevron-down" style={{ color: '#adb5bd', fontSize: '0.7rem' }}></i>
-            </div>
+
+          <button className="btn btn-primary" onClick={() => setActiveTab("new")}>
+            ➕ ثبت حواله جدید
+          </button>
+        </div>
+
+        <div className="stats">
+          <div className="stat-card">
+            <div className="stat-label">حواله‌های باز</div>
+            <div className="stat-value">{formatNumber(openCount)}</div>
+          </div>
+
+          <div className="stat-card">
+            <div className="stat-label">پرداخت‌شده</div>
+            <div className="stat-value">{formatNumber(paidCount)}</div>
+          </div>
+
+          <div className="stat-card">
+            <div className="stat-label">لغوشده</div>
+            <div className="stat-value">{formatNumber(cancelledCount)}</div>
+          </div>
+
+          <div className="stat-card">
+            <div className="stat-label">مجموع مبلغ باز</div>
+            <div className="stat-value">{formatNumber(openAmount)}</div>
           </div>
         </div>
 
-        {/* ===== کارت‌های آماری ===== */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '30px' }}>
-          {[
-            { icon: 'fa-weight-scale', label: 'حجم کل معاملات امروز', value: '۴,۲۵۰ تن', change: '+۱۲% نسبت به دیروز', up: true },
-            { icon: 'fa-chart-line', label: 'میانگین قیمت (کود کامل)', value: '۲۸,۵۰۰ تومان', change: '-۲.۱%', up: false },
-            { icon: 'fa-handshake', label: 'تعداد معاملات', value: '۱۴۲', change: 'در ۶ ساعت اخیر', up: true },
-            { icon: 'fa-truck', label: 'آماده تحویل فوری', value: '۸۹۰ تن', change: 'در انبارهای استان', up: true },
-          ].map((stat, idx) => (
-            <div key={idx} style={{ background: '#fafbfc', borderRadius: '20px', padding: '18px 20px', border: '1px solid #e9ecef' }}>
-              <div style={{ fontSize: '0.8rem', color: '#868e96', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <i className={`fas ${stat.icon}`}></i> {stat.label}
-              </div>
-              <div style={{ fontSize: '1.7rem', fontWeight: 900, color: '#1b1f22', marginTop: '6px' }}>{stat.value}</div>
-              <span style={{
-                fontSize: '0.75rem',
-                color: stat.up ? '#2b8a3e' : '#c62828',
-                background: stat.up ? '#d3f0df' : '#ffebee',
-                padding: '2px 12px',
-                borderRadius: '30px',
-                display: 'inline-block',
-                marginTop: '5px'
-              }}>
-                {stat.change.startsWith('+') ? <i className="fas fa-arrow-up"></i> : stat.change.startsWith('-') ? <i className="fas fa-arrow-down"></i> : ''}
-                {' '}{stat.change}
-              </span>
-            </div>
+        <div className="tabs">
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              className={activeTab === tab.id ? "tab active" : "tab"}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+            </button>
           ))}
         </div>
 
-        {/* ===== پنل اصلی معاملاتی ===== */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.8fr 1.2fr', gap: '20px', marginBottom: '30px' }}>
+        {activeTab === "new" && (
+          <div className="card">
+            <div className="section-title">معلومات مقصد</div>
 
-          {/* دفتر سفارشات */}
-          <div style={{ background: '#ffffff', borderRadius: '24px', padding: '18px 16px', border: '1px solid #eef2f6' }}>
-            <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', color: '#868e96', letterSpacing: '0.5px', marginBottom: '15px', display: 'flex', justifyContent: 'space-between' }}>
-              <span><i className="fas fa-arrow-up" style={{ color: '#d63939' }}></i> فروشندگان (قیمت درخواستی)</span>
-              <span style={{ background: '#f1f3f5', padding: '2px 12px', borderRadius: '40px', fontSize: '0.7rem' }}>تعداد: ۱۸ سفارش</span>
-            </div>
-            {[
-              ['فروشنده الف', '۲۹,۱۰۰', '۱۲ تن'],
-              ['فروشنده ب', '۲۹,۰۵۰', '۸ تن'],
-              ['فروشنده ج', '۲۸,۹۰۰', '۲۵ تن'],
-              ['فروشنده د', '۲۸,۷۵۰', '۵ تن'],
-            ].map(([seller, price, volume], i) => (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 4px', fontSize: '0.9rem', borderBottom: '1px solid #f1f3f5' }}>
-                <span>{seller}</span>
-                <span style={{ fontWeight: 700, color: '#d63939' }}>{price}</span>
-                <span style={{ color: '#495057' }}>{volume}</span>
+            <div className="grid">
+              <div className="field">
+                <label>کشور</label>
+                <input value="افغانستان" disabled />
               </div>
-            ))}
-            <div style={{ textAlign: 'center', background: '#f1f3f5', borderRadius: '40px', padding: '4px 0', margin: '10px 0', fontSize: '0.75rem', fontWeight: 700, color: '#495057' }}>
-              --- قیمت تعادلی لحظه‌ای: ۲۸,۵۰۰ تومان ---
-            </div>
-            <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', color: '#868e96', marginBottom: '10px' }}>
-              <span><i className="fas fa-arrow-down" style={{ color: '#1b7a3d' }}></i> خریداران (قیمت پیشنهادی)</span>
-            </div>
-            {[
-              ['خریدار ۱', '۲۸,۳۰۰', '۲۰ تن'],
-              ['خریدار ۲', '۲۸,۱۰۰', '۱۵ تن'],
-              ['خریدار ۳', '۲۷,۹۵۰', '۱۰ تن'],
-            ].map(([buyer, price, volume], i) => (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 4px', fontSize: '0.9rem', borderBottom: '1px solid #f1f3f5' }}>
-                <span>{buyer}</span>
-                <span style={{ fontWeight: 700, color: '#1b7a3d' }}>{price}</span>
-                <span style={{ color: '#495057' }}>{volume}</span>
+
+              <div className="field">
+                <label>ولایت مقصد</label>
+                <select
+                  value={form.destinationProvince}
+                  onChange={handleProvinceChange}
+                >
+                  {provinces.map(province => (
+                    <option key={province} value={province}>
+                      {province}
+                    </option>
+                  ))}
+                </select>
               </div>
-            ))}
+
+              <div className="field">
+                <label>ولسوالی مقصد</label>
+
+                {isHerat ? (
+                  <select
+                    value={form.destinationDistrict}
+                    onChange={e => updateForm("destinationDistrict", e.target.value)}
+                  >
+                    {heratDistricts.map(district => (
+                      <option key={district} value={district}>
+                        {district}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input value={form.destinationProvince} disabled />
+                )}
+              </div>
+
+              <div className="field">
+                <label>مقصد نهایی</label>
+                <input value={destinationText} disabled />
+              </div>
+            </div>
+
+            <div className="section-title">نوع و معلومات مالی</div>
+
+            <div className="grid">
+              <div className="field">
+                <label>نوع حواله</label>
+                <select
+                  value={form.hawalaType}
+                  onChange={e => updateForm("hawalaType", e.target.value)}
+                >
+                  <option value="send">ارسال</option>
+                  <option value="receive">دریافت</option>
+                </select>
+              </div>
+
+              <div className="field">
+                <label>واحد پول</label>
+                <select
+                  value={form.currency}
+                  onChange={e => updateForm("currency", e.target.value)}
+                >
+                  {currencies.map(currency => (
+                    <option key={currency} value={currency}>
+                      {currency}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="field">
+                <label>مبلغ حواله</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={form.amount}
+                  onChange={e => updateForm("amount", e.target.value)}
+                  placeholder="مثلاً 10000"
+                />
+              </div>
+
+              <div className="field">
+                <label>کارمزد</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={form.fee}
+                  onChange={e => updateForm("fee", e.target.value)}
+                  placeholder="مثلاً 200"
+                />
+              </div>
+
+              <div className="field">
+                <label>مبلغ نهایی دریافتی</label>
+                <input value={formatNumber(safeFinalAmount)} disabled />
+              </div>
+
+              <div className="field">
+                <label>باقی مانده حساب مشتری</label>
+                <input
+                  value={form.customerBalance}
+                  onChange={e => updateForm("customerBalance", e.target.value)}
+                  placeholder="اختیاری"
+                />
+              </div>
+            </div>
+
+            <div className="section-title">حواله‌دهنده</div>
+
+            <div className="grid">
+              <div className="field">
+                <label>نام و نام خانوادگی</label>
+                <input
+                  value={form.senderName}
+                  onChange={e => updateForm("senderName", e.target.value)}
+                  placeholder="نام کامل حواله‌دهنده"
+                />
+              </div>
+
+              <div className="field">
+                <label>شماره تذکره</label>
+                <input
+                  value={form.senderTazkira}
+                  onChange={e => updateForm("senderTazkira", e.target.value)}
+                  placeholder="شماره تذکره حواله‌دهنده"
+                />
+              </div>
+
+              <div className="field">
+                <label>شماره تماس</label>
+                <input
+                  value={form.senderPhone}
+                  onChange={e => updateForm("senderPhone", e.target.value)}
+                  placeholder="07xxxxxxxx"
+                />
+              </div>
+
+              <div className="field">
+                <label>چت آی‌دی تلگرام</label>
+                <input
+                  value={form.senderTelegram}
+                  onChange={e => updateForm("senderTelegram", e.target.value)}
+                  placeholder="@example یا 123456789"
+                />
+              </div>
+
+              <div className="field full">
+                <label>آدرس حواله‌دهنده</label>
+                <input
+                  value={form.senderAddress}
+                  onChange={e => updateForm("senderAddress", e.target.value)}
+                  placeholder="اختیاری"
+                />
+              </div>
+            </div>
+
+            <div className="section-title">حواله‌گیرنده</div>
+
+            <div className="grid">
+              <div className="field">
+                <label>نام و نام خانوادگی</label>
+                <input
+                  value={form.receiverName}
+                  onChange={e => updateForm("receiverName", e.target.value)}
+                  placeholder="نام کامل حواله‌گیرنده"
+                />
+              </div>
+
+              <div className="field">
+                <label>شماره تذکره</label>
+                <input
+                  value={form.receiverTazkira}
+                  onChange={e => updateForm("receiverTazkira", e.target.value)}
+                  placeholder="شماره تذکره حواله‌گیرنده"
+                />
+              </div>
+
+              <div className="field">
+                <label>شماره تماس</label>
+                <input
+                  value={form.receiverPhone}
+                  onChange={e => updateForm("receiverPhone", e.target.value)}
+                  placeholder="07xxxxxxxx"
+                />
+              </div>
+
+              <div className="field">
+                <label>چت آی‌دی تلگرام</label>
+                <input
+                  value={form.receiverTelegram}
+                  onChange={e => updateForm("receiverTelegram", e.target.value)}
+                  placeholder="@example یا 123456789"
+                />
+              </div>
+
+              <div className="field full">
+                <label>آدرس حواله‌گیرنده</label>
+                <input
+                  value={form.receiverAddress}
+                  onChange={e => updateForm("receiverAddress", e.target.value)}
+                  placeholder="اختیاری"
+                />
+              </div>
+            </div>
+
+            <div className="section-title">یادداشت‌ها</div>
+
+            <div className="grid">
+              <div className="field full">
+                <label>یادداشت عمومی</label>
+                <textarea
+                  rows={3}
+                  value={form.note}
+                  onChange={e => updateForm("note", e.target.value)}
+                  placeholder="توضیح قابل نمایش در رسید..."
+                />
+              </div>
+
+              <div className="field full">
+                <label>یادداشت داخلی</label>
+                <textarea
+                  rows={3}
+                  value={form.internalNote}
+                  onChange={e => updateForm("internalNote", e.target.value)}
+                  placeholder="فقط برای کارمندان صرافی..."
+                />
+              </div>
+            </div>
+
+            <div className="summary">
+              <div className="summary-row">
+                <span>مقصد نهایی</span>
+                <strong>{destinationText}</strong>
+              </div>
+
+              <div className="summary-row">
+                <span>مبلغ حواله</span>
+                <strong>{formatNumber(amount)}</strong>
+              </div>
+
+              <div className="summary-row">
+                <span>کارمزد</span>
+                <strong>{formatNumber(fee)}</strong>
+              </div>
+
+              <div className="summary-row">
+                <span>مبلغ نهایی دریافتی</span>
+                <strong>{formatNumber(safeFinalAmount)}</strong>
+              </div>
+            </div>
+
+            <div className="actions" style={{ marginTop: "18px" }}>
+              <button className="btn btn-primary" onClick={submitForm}>
+                ثبت حواله
+              </button>
+
+              <button className="btn btn-secondary" onClick={() => setForm(emptyForm)}>
+                پاک کردن فرم
+              </button>
+            </div>
           </div>
+        )}
 
-          {/* فرم ثبت سفارش */}
-          <div style={{ background: '#ffffff', borderRadius: '24px', padding: '18px 16px', border: '1px solid #eef2f6' }}>
-            <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', color: '#868e96', marginBottom: '15px' }}>
-              <i className="fas fa-file-signature"></i> ثبت دستور معامله فوری
-            </div>
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#343a40', marginBottom: '5px' }}>
-                <i className="far fa-star"></i> نوع کود
-              </label>
-              <select value={selectedFertilizer} onChange={e => setSelectedFertilizer(e.target.value)} style={{ width: '100%', padding: '12px 16px', borderRadius: '16px', border: '1.5px solid #dee2e6', fontSize: '1rem', background: '#fafbfc' }}>
-                <option>کود کامل NPK ۱۵-۱۰-۱۵ + میکرو</option>
-                <option>کود اوره ۴۶%</option>
-                <option>سولفات پتاسیم</option>
-                <option>نیترات کلسیم</option>
+        {activeTab === "current" && (
+          <div className="card">
+            <div className="section-title">حواله‌های جاری</div>
+
+            {currentHawalas.length === 0 ? (
+              <div className="empty">هیچ حواله جاری وجود ندارد.</div>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>شماره</th>
+                      <th>تاریخ</th>
+                      <th>حواله‌دهنده</th>
+                      <th>حواله‌گیرنده</th>
+                      <th>مبلغ نهایی</th>
+                      <th>ارز</th>
+                      <th>مقصد</th>
+                      <th>وضعیت</th>
+                      <th>عملیات</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {currentHawalas.map(item => (
+                      <tr key={item.id}>
+                        <td>{item.hawalaNumber}</td>
+                        <td>{item.createdDate}</td>
+                        <td>{item.senderName}</td>
+                        <td>{item.receiverName}</td>
+                        <td>{formatNumber(item.finalAmount)}</td>
+                        <td>{item.currency}</td>
+                        <td>
+                          {formatDestination(
+                            item.destinationProvince,
+                            item.destinationDistrict
+                          )}
+                        </td>
+                        <td>
+                          <span className={badgeClass(item.status)}>
+                            {statusLabels[item.status]}
+                          </span>
+                        </td>
+                        <td>
+                          <div className="actions">
+                            <button
+                              className="btn btn-secondary"
+                              onClick={() => setSelected(item)}
+                            >
+                              مشاهده
+                            </button>
+
+                            {item.status === "pending" && (
+                              <button
+                                className="btn btn-warning"
+                                onClick={() => markSent(item.id)}
+                              >
+                                ارسال
+                              </button>
+                            )}
+
+                            {(item.status === "pending" || item.status === "sent") && (
+                              <button
+                                className="btn btn-success"
+                                onClick={() => openSettlement(item)}
+                              >
+                                تسویه
+                              </button>
+                            )}
+
+                            {(item.status === "pending" || item.status === "sent") && (
+                              <button
+                                className="btn btn-danger"
+                                onClick={() => openCancel(item)}
+                              >
+                                لغو
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "history" && (
+          <div className="card">
+            <div className="section-title">تاریخچه حواله‌ها</div>
+
+            <div className="search-bar">
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="جستجو: شماره حواله، نام، شماره تماس، تلگرام، مقصد..."
+              />
+
+              <select
+                value={statusFilter}
+                onChange={e => setStatusFilter(e.target.value)}
+              >
+                <option value="all">همه وضعیت‌ها</option>
+                <option value="pending">در انتظار</option>
+                <option value="sent">ارسال‌شده</option>
+                <option value="paid">پرداخت‌شده</option>
+                <option value="cancelled">لغوشده</option>
               </select>
             </div>
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#343a40', marginBottom: '5px' }}>
-                <i className="fas fa-weight-scale"></i> مقدار (به کیلوگرم)
-              </label>
-              <input type="number" value={amount} onChange={e => setAmount(Number(e.target.value))} style={{ width: '100%', padding: '12px 16px', borderRadius: '16px', border: '1.5px solid #dee2e6', fontSize: '1rem', background: '#fafbfc' }} />
-            </div>
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#343a40', marginBottom: '5px' }}>
-                <i className="fas fa-tag"></i> قیمت پیشنهادی (تومان / کیلو)
-              </label>
-              <input type="number" value={price} onChange={e => setPrice(Number(e.target.value))} style={{ width: '100%', padding: '12px 16px', borderRadius: '16px', border: '1.5px solid #dee2e6', fontSize: '1rem', background: '#fafbfc' }} />
-            </div>
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#343a40', marginBottom: '5px' }}>
-                <i className="fas fa-store"></i> انبار تحویل
-              </label>
-              <select value={warehouse} onChange={e => setWarehouse(e.target.value)} style={{ width: '100%', padding: '12px 16px', borderRadius: '16px', border: '1.5px solid #dee2e6', fontSize: '1rem', background: '#fafbfc' }}>
-                <option>انبار مرکزی استان</option>
-                <option>انبار غرب</option>
-              </select>
-            </div>
-            <div style={{ display: 'flex', gap: '12px', marginTop: '10px' }}>
-              <button style={{ flex: 1, padding: '14px 0', border: 'none', borderRadius: '60px', fontWeight: 900, fontSize: '1rem', cursor: 'pointer', background: '#1b7a3d', color: '#fff', boxShadow: '0 6px 14px rgba(27, 122, 61, 0.25)' }}>
-                <i className="fas fa-plus-circle"></i> خرید (ثبت سفارش)
-              </button>
-              <button style={{ flex: 1, padding: '14px 0', border: 'none', borderRadius: '60px', fontWeight: 900, fontSize: '1rem', cursor: 'pointer', background: '#d63939', color: '#fff', boxShadow: '0 6px 14px rgba(214, 57, 57, 0.2)' }}>
-                <i className="fas fa-minus-circle"></i> فروش (ثبت سفارش)
-              </button>
-            </div>
-            <div style={{ marginTop: '15px', background: '#f8fafb', borderRadius: '16px', padding: '12px', fontSize: '0.8rem', color: '#495057', textAlign: 'center' }}>
-              <i className="fas fa-info-circle"></i> کارمزد معامله: ۰.۵٪ | تسویه: نقدی هنگام تحویل
-            </div>
-          </div>
 
-          {/* وضعیت بازار و نمادها */}
-          <div style={{ background: '#ffffff', borderRadius: '24px', padding: '18px 16px', border: '1px solid #eef2f6' }}>
-            <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', color: '#868e96', marginBottom: '15px' }}>
-              <i className="fas fa-chart-pie"></i> خلاصه نمادهای پربازده
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {[
-                { name: 'کود کامل گرید A', change: '+۳.۲٪', price: '۲۹,۱۰۰ ت', volume: '۴۵ تن', color: '#1b7a3d', bg: '#f6faf7' },
-                { name: 'اوره ۴۶%', change: '-۱.۱٪', price: '۱۸,۲۰۰ ت', volume: '۸۰ تن', color: '#d63939', bg: '#fafbfc' },
-                { name: 'سولفات پتاسیم', change: '+۰.۸٪', price: '۳۲,۵۰۰ ت', volume: '۱۲ تن', color: '#1b7a3d', bg: '#fafbfc' },
-                { name: 'نیترات کلسیم', change: '+۰.۲٪', price: '۲۶,۷۰۰ ت', volume: '۸ تن', color: '#1b7a3d', bg: '#fafbfc' },
-              ].map((item, idx) => (
-                <div key={idx} style={{ background: item.bg, borderRadius: '16px', padding: '14px', borderRight: `4px solid ${item.color}` }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontWeight: 700 }}>{item.name}</span>
-                    <span style={{ color: item.color }}>{item.change}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#495057' }}>
-                    <span>{item.price}</span> <span>حجم: {item.volume}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div style={{ marginTop: '18px', background: '#1b4d2b', color: 'white', borderRadius: '20px', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span><i className="fas fa-bolt"></i> تسویه آنی</span>
-              <span style={{ fontWeight: 900 }}>۲۸,۵۰۰ تومان <span style={{ fontSize: '0.7rem', fontWeight: 400 }}>/ هر کیلو</span></span>
-            </div>
-          </div>
-        </div>
+            {filteredHistory.length === 0 ? (
+              <div className="empty">هیچ حواله‌ای پیدا نشد.</div>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>شماره</th>
+                      <th>تاریخ</th>
+                      <th>حواله‌دهنده</th>
+                      <th>حواله‌گیرنده</th>
+                      <th>مبلغ نهایی</th>
+                      <th>ارز</th>
+                      <th>مقصد</th>
+                      <th>وضعیت</th>
+                      <th>عملیات</th>
+                    </tr>
+                  </thead>
 
-        {/* ===== جدول تاریخچه معاملات ===== */}
-        <div style={{ background: '#ffffff', borderRadius: '24px', border: '1px solid #eef2f6', padding: '18px 16px', marginTop: '10px' }}>
-          <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', color: '#868e96', letterSpacing: '0.5px', marginBottom: '10px', display: 'flex', justifyContent: 'space-between' }}>
-            <span><i className="fas fa-clock-rotate-left"></i> آخرین معاملات انجام شده (تاریخچه امروز)</span>
-            <span style={{ background: '#f1f3f5', padding: '2px 16px', borderRadius: '40px', fontSize: '0.7rem' }}>به‌روزرسانی: لحظه‌ای</span>
+                  <tbody>
+                    {filteredHistory.map(item => (
+                      <tr key={item.id}>
+                        <td>{item.hawalaNumber}</td>
+                        <td>{item.createdDate}</td>
+                        <td>{item.senderName}</td>
+                        <td>{item.receiverName}</td>
+                        <td>{formatNumber(item.finalAmount)}</td>
+                        <td>{item.currency}</td>
+                        <td>
+                          {formatDestination(
+                            item.destinationProvince,
+                            item.destinationDistrict
+                          )}
+                        </td>
+                        <td>
+                          <span className={badgeClass(item.status)}>
+                            {statusLabels[item.status]}
+                          </span>
+                        </td>
+                        <td>
+                          <button
+                            className="btn btn-secondary"
+                            onClick={() => setSelected(item)}
+                          >
+                            مشاهده
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
-              <thead>
-                <tr>
-                  <th style={{ textAlign: 'right', padding: '16px 12px', background: '#f1f4f8', color: '#495057', fontWeight: 700 }}>زمان</th>
-                  <th style={{ textAlign: 'right', padding: '16px 12px', background: '#f1f4f8', color: '#495057', fontWeight: 700 }}>نوع</th>
-                  <th style={{ textAlign: 'right', padding: '16px 12px', background: '#f1f4f8', color: '#495057', fontWeight: 700 }}>کود</th>
-                  <th style={{ textAlign: 'right', padding: '16px 12px', background: '#f1f4f8', color: '#495057', fontWeight: 700 }}>مقدار (تن)</th>
-                  <th style={{ textAlign: 'right', padding: '16px 12px', background: '#f1f4f8', color: '#495057', fontWeight: 700 }}>قیمت (تومان)</th>
-                  <th style={{ textAlign: 'right', padding: '16px 12px', background: '#f1f4f8', color: '#495057', fontWeight: 700 }}>طرف مقابل</th>
-                  <th style={{ textAlign: 'right', padding: '16px 12px', background: '#f1f4f8', color: '#495057', fontWeight: 700 }}>وضعیت</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentTrades.map((trade, idx) => (
-                  <tr key={idx}>
-                    <td style={{ padding: '14px 12px', borderBottom: '1px solid #edf2f7' }}>{trade.time}</td>
-                    <td style={{ padding: '14px 12px', borderBottom: '1px solid #edf2f7' }}>
-                      <span style={{ color: trade.type === 'خرید' ? '#1b7a3d' : '#d63939', fontWeight: 700 }}>{trade.type}</span>
-                    </td>
-                    <td style={{ padding: '14px 12px', borderBottom: '1px solid #edf2f7' }}>{trade.fertilizer}</td>
-                    <td style={{ padding: '14px 12px', borderBottom: '1px solid #edf2f7' }}>{trade.tons}</td>
-                    <td style={{ padding: '14px 12px', borderBottom: '1px solid #edf2f7' }}>{trade.price.toLocaleString('fa-IR')}</td>
-                    <td style={{ padding: '14px 12px', borderBottom: '1px solid #edf2f7' }}>{trade.counterparty}</td>
-                    <td style={{ padding: '14px 12px', borderBottom: '1px solid #edf2f7' }}>
-                      <span style={{
-                        background: trade.status === 'انجام شده' ? '#e3f0e6' : '#fff3cd',
-                        color: trade.status === 'انجام شده' ? '#1b4d2b' : '#856404',
-                        padding: '4px 16px',
-                        borderRadius: '60px',
-                        fontSize: '0.75rem',
-                        fontWeight: 700
-                      }}>
-                        {trade.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* ===== فوتر ===== */}
-        <div style={{ marginTop: '25px', textAlign: 'center', fontSize: '0.8rem', color: '#adb5bd', borderTop: '1px solid #edf2f7', paddingTop: '20px' }}>
-          <i className="fas fa-shield-alt" style={{ color: '#1b4d2b' }}></i> تمامی معاملات این صرافی منطبق بر قوانین بازار محصولات کشاورزی بوده و به صورت شفاف در سامانه ثبت می‌گردد.
-        </div>
+        )}
       </div>
+
+      {selected && (
+        <div className="modal-overlay" onClick={() => setSelected(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">جزئیات حواله {selected.hawalaNumber}</h3>
+
+              <button className="btn btn-secondary" onClick={() => setSelected(null)}>
+                بستن
+              </button>
+            </div>
+
+            <div className="receipt">
+              <div className="receipt-title">🏦 رسید حواله</div>
+
+              <DetailRow label="شماره حواله" value={selected.hawalaNumber} />
+              <DetailRow label="تاریخ ثبت" value={selected.createdDate} />
+              <DetailRow label="ساعت ثبت" value={selected.createdTime} />
+              <DetailRow
+                label="نوع حواله"
+                value={selected.hawalaType === "send" ? "ارسال" : "دریافت"}
+              />
+              <DetailRow label="مقصد" value={selected.destinationText} />
+              <DetailRow label="واحد پول" value={selected.currency} />
+
+              <div className="divider" />
+
+              <DetailRow label="حواله‌دهنده" value={selected.senderName} />
+              <DetailRow label="تذکره حواله‌دهنده" value={selected.senderTazkira} />
+              <DetailRow label="تماس حواله‌دهنده" value={selected.senderPhone} />
+              <DetailRow label="تلگرام حواله‌دهنده" value={selected.senderTelegram} />
+              <DetailRow label="آدرس حواله‌دهنده" value={selected.senderAddress} />
+
+              <div className="divider" />
+
+              <DetailRow label="حواله‌گیرنده" value={selected.receiverName} />
+              <DetailRow label="تذکره حواله‌گیرنده" value={selected.receiverTazkira} />
+              <DetailRow label="تماس حواله‌گیرنده" value={selected.receiverPhone} />
+              <DetailRow label="تلگرام حواله‌گیرنده" value={selected.receiverTelegram} />
+              <DetailRow label="آدرس حواله‌گیرنده" value={selected.receiverAddress} />
+
+              <div className="divider" />
+
+              <DetailRow label="مبلغ حواله" value={formatNumber(selected.amount)} />
+              <DetailRow label="کارمزد" value={formatNumber(selected.fee)} />
+              <DetailRow
+                label="مبلغ نهایی دریافتی"
+                value={formatNumber(selected.finalAmount)}
+              />
+              <DetailRow label="باقی مانده حساب مشتری" value={selected.customerBalance} />
+              <DetailRow label="وضعیت" value={statusLabels[selected.status]} />
+              <DetailRow
+                label="وضعیت تلگرام"
+                value={telegramLabels[selected.telegramStatus]}
+              />
+
+              {selected.telegramSentAt && (
+                <DetailRow label="زمان ارسال تلگرام" value={selected.telegramSentAt} />
+              )}
+
+              {selected.paidDate && (
+                <DetailRow label="تاریخ پرداخت" value={selected.paidDate} />
+              )}
+
+              {selected.paidTime && (
+                <DetailRow label="ساعت پرداخت" value={selected.paidTime} />
+              )}
+
+              {typeof selected.paidAmount === "number" && (
+                <DetailRow
+                  label="مبلغ پرداخت‌شده"
+                  value={formatNumber(selected.paidAmount)}
+                />
+              )}
+
+              {selected.paidBy && <DetailRow label="پرداخت‌کننده" value={selected.paidBy} />}
+
+              {selected.receivedBy && (
+                <DetailRow label="دریافت‌کننده" value={selected.receivedBy} />
+              )}
+
+              {selected.paymentMethod && (
+                <DetailRow label="روش پرداخت" value={selected.paymentMethod} />
+              )}
+
+              {selected.paymentAccount && (
+                <DetailRow label="صندوق / حساب" value={selected.paymentAccount} />
+              )}
+
+              {selected.cancelReason && (
+                <DetailRow label="دلیل لغو" value={selected.cancelReason} />
+              )}
+
+              {selected.note && <DetailRow label="یادداشت" value={selected.note} />}
+            </div>
+
+            {selected.internalNote && (
+              <div className="summary" style={{ marginTop: "14px" }}>
+                <div className="summary-row">
+                  <span>یادداشت داخلی</span>
+                  <strong>{selected.internalNote}</strong>
+                </div>
+              </div>
+            )}
+
+            <div className="actions" style={{ marginTop: "18px" }}>
+              <button className="btn btn-primary" onClick={() => window.print()}>
+                🖨 چاپ رسید
+              </button>
+
+              <button
+                className="btn btn-telegram"
+                onClick={() => sendTelegram(selected)}
+              >
+                📨 ارسال رسید به تلگرام
+              </button>
+
+              {selected.status === "pending" && (
+                <button
+                  className="btn btn-warning"
+                  onClick={() => {
+                    markSent(selected.id);
+                    setSelected(null);
+                  }}
+                >
+                  ارسال
+                </button>
+              )}
+
+              {selected.status !== "paid" && selected.status !== "cancelled" && (
+                <>
+                  <button
+                    className="btn btn-success"
+                    onClick={() => {
+                      openSettlement(selected);
+                      setSelected(null);
+                    }}
+                  >
+                    تسویه
+                  </button>
+
+                  <button
+                    className="btn btn-danger"
+                    onClick={() => {
+                      openCancel(selected);
+                      setSelected(null);
+                    }}
+                  >
+                    لغو
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {settlement && (
+        <div className="modal-overlay" onClick={() => setSettlement(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">تسویه حواله {settlement.hawalaNumber}</h3>
+
+              <button className="btn btn-secondary" onClick={() => setSettlement(null)}>
+                بستن
+              </button>
+            </div>
+
+            <div className="summary">
+              <div className="summary-row">
+                <span>حواله‌گیرنده</span>
+                <strong>{settlement.receiverName}</strong>
+              </div>
+
+              <div className="summary-row">
+                <span>تذکره حواله‌گیرنده</span>
+                <strong>{settlement.receiverTazkira}</strong>
+              </div>
+
+              <div className="summary-row">
+                <span>تماس حواله‌گیرنده</span>
+                <strong>{settlement.receiverPhone}</strong>
+              </div>
+
+              <div className="summary-row">
+                <span>مبلغ نهایی</span>
+                <strong>
+                  {formatNumber(settlement.finalAmount)} {settlement.currency}
+                </strong>
+              </div>
+            </div>
+
+            <div className="grid" style={{ marginTop: "16px" }}>
+              <div className="field">
+                <label>نام پرداخت‌کننده</label>
+                <input
+                  value={paidBy}
+                  onChange={e => setPaidBy(e.target.value)}
+                  placeholder="مثلاً صندوقکار"
+                />
+              </div>
+
+              <div className="field">
+                <label>نام دریافت‌کننده</label>
+                <input
+                  value={receivedBy}
+                  onChange={e => setReceivedBy(e.target.value)}
+                  placeholder="نام حواله‌گیرنده"
+                />
+              </div>
+
+              <div className="field">
+                <label>مبلغ پرداخت‌شده</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={paidAmount}
+                  onChange={e => setPaidAmount(e.target.value)}
+                />
+              </div>
+
+              <div className="field">
+                <label>روش پرداخت</label>
+                <select
+                  value={paymentMethod}
+                  onChange={e => setPaymentMethod(e.target.value)}
+                >
+                  {paymentMethods.map(method => (
+                    <option key={method} value={method}>
+                      {method}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="field full">
+                <label>صندوق / حساب</label>
+                <input
+                  value={paymentAccount}
+                  onChange={e => setPaymentAccount(e.target.value)}
+                  placeholder="اختیاری"
+                />
+              </div>
+            </div>
+
+            <div className="actions" style={{ marginTop: "18px" }}>
+              <button className="btn btn-success" onClick={confirmSettlement}>
+                تأیید پرداخت
+              </button>
+
+              <button className="btn btn-secondary" onClick={() => setSettlement(null)}>
+                انصراف
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cancelTarget && (
+        <div className="modal-overlay" onClick={() => setCancelTarget(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">لغو حواله {cancelTarget.hawalaNumber}</h3>
+
+              <button className="btn btn-secondary" onClick={() => setCancelTarget(null)}>
+                بستن
+              </button>
+            </div>
+
+            <div className="field">
+              <label>دلیل لغو حواله</label>
+              <textarea
+                rows={4}
+                value={cancelReason}
+                onChange={e => setCancelReason(e.target.value)}
+                placeholder="دلیل لغو را بنویسید..."
+              />
+            </div>
+
+            <div className="actions" style={{ marginTop: "18px" }}>
+              <button className="btn btn-danger" onClick={confirmCancel}>
+                لغو حواله
+              </button>
+
+              <button className="btn btn-secondary" onClick={() => setCancelTarget(null)}>
+                انصراف
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toast && <div className="toast">{toast}</div>}
     </div>
   );
 }
