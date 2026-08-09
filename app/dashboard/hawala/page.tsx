@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 
 type HawalaStatus = "pending" | "sent" | "paid" | "cancelled";
 
@@ -16,6 +16,7 @@ interface Hawala {
   district: string;
   destinationText: string;
 
+  currency: string;
   amount: number;
   fee: number;
   finalAmount: number;
@@ -39,6 +40,7 @@ interface Hawala {
 
 interface FormState {
   type: string;
+  currency: string;
   senderName: string;
   senderPhone: string;
   senderTelegram: string;
@@ -52,6 +54,11 @@ interface FormState {
   receiverPhone: string;
   receiverAddress: string;
   note: string;
+}
+
+interface LastNames {
+  senderName: string;
+  receiverName: string;
 }
 
 type FormErrors = Partial<Record<keyof FormState, string>>;
@@ -112,8 +119,20 @@ const heratDistricts = [
   "زنده جان"
 ] as const;
 
-const emptyForm: FormState = {
-  type: "send",
+const currencies = ["AFN", "USD", "IRR"] as const;
+
+const defaultCustomers = [
+  "احمد احمدی",
+  "محمود محمودی",
+  "ولی ولی",
+  "کریم کریمی",
+  "نور نور",
+  "عبدالله عبداللهی"
+];
+
+const baseEmptyForm: FormState = {
+  type: "",
+  currency: "AFN",
   senderName: "",
   senderPhone: "",
   senderTelegram: "",
@@ -140,6 +159,7 @@ const initialHawalas: Hawala[] = [
     province: "هرات",
     district: "گلران",
     destinationText: "هرات — گلران",
+    currency: "AFN",
     amount: 10000,
     fee: 200,
     finalAmount: 9800,
@@ -159,11 +179,12 @@ const initialHawalas: Hawala[] = [
     number: "HW-0002",
     date: "1405-05-17",
     time: "16:10",
-    type: "send",
+    type: "receive",
     destinationCountry: "افغانستان",
     province: "هرات",
     district: "غوریان",
     destinationText: "هرات — غوریان",
+    currency: "AFN",
     amount: 5000,
     fee: 100,
     finalAmount: 4900,
@@ -176,9 +197,7 @@ const initialHawalas: Hawala[] = [
     receiverTazkira: "1392-444444",
     receiverPhone: "0766666666",
     receiverAddress: "",
-    status: "paid",
-    paidAt: "1405-05-17 — 16:45",
-    paidBy: "صندوقکار"
+    status: "pending"
   }
 ];
 
@@ -203,7 +222,7 @@ const styles = `
   }
 
   .hawala-container {
-    max-width: 1250px;
+    max-width: 1300px;
     margin: 0 auto;
   }
 
@@ -225,6 +244,32 @@ const styles = `
   .muted {
     color: #6b7280;
     font-size: 13px;
+  }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+    margin-bottom: 18px;
+  }
+
+  .stat-card {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 16px;
+    padding: 16px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.05);
+  }
+
+  .stat-label {
+    color: #6b7280;
+    font-size: 13px;
+    margin-bottom: 8px;
+  }
+
+  .stat-value {
+    font-size: 22px;
+    font-weight: 900;
   }
 
   .tabs {
@@ -531,7 +576,17 @@ const styles = `
   }
 
   @media (max-width: 900px) {
+    .stats {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
     .grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 600px) {
+    .stats {
       grid-template-columns: 1fr;
     }
   }
@@ -566,6 +621,70 @@ const badgeClass = (status: HawalaStatus) => {
   return "badge badge-cancelled";
 };
 
+const createInitialForm = (lastNames: LastNames): FormState => {
+  return {
+    ...baseEmptyForm,
+    senderName: lastNames.senderName || "",
+    receiverName: lastNames.receiverName || ""
+  };
+};
+
+const getStoredLastNames = (): LastNames => {
+  if (typeof window === "undefined") {
+    return {
+      senderName: "",
+      receiverName: ""
+    };
+  }
+
+  try {
+    const raw = localStorage.getItem("hawalaLastNames");
+
+    if (!raw) {
+      return {
+        senderName: "",
+        receiverName: ""
+      };
+    }
+
+    const parsed = JSON.parse(raw);
+
+    return {
+      senderName: parsed?.senderName || "",
+      receiverName: parsed?.receiverName || ""
+    };
+  } catch {
+    return {
+      senderName: "",
+      receiverName: ""
+    };
+  }
+};
+
+const getStoredCustomers = (): string[] => {
+  if (typeof window === "undefined") {
+    return defaultCustomers;
+  }
+
+  try {
+    const raw = localStorage.getItem("hawalaCustomers");
+
+    if (!raw) {
+      return defaultCustomers;
+    }
+
+    const parsed = JSON.parse(raw);
+
+    if (Array.isArray(parsed)) {
+      return parsed;
+    }
+
+    return defaultCustomers;
+  } catch {
+    return defaultCustomers;
+  }
+};
+
 function DetailRow({ label, value }: { label: string; value?: string | number }) {
   const hasValue = value !== undefined && value !== null && String(value).trim() !== "";
 
@@ -578,9 +697,12 @@ function DetailRow({ label, value }: { label: string; value?: string | number })
 }
 
 export default function HawalaPage() {
+  const [lastNames, setLastNames] = useState<LastNames>(getStoredLastNames);
+  const [customers, setCustomers] = useState<string[]>(getStoredCustomers);
+
   const [activeTab, setActiveTab] = useState<"new" | "current" | "history">("new");
   const [hawalas, setHawalas] = useState<Hawala[]>(initialHawalas);
-  const [form, setForm] = useState<FormState>(emptyForm);
+  const [form, setForm] = useState<FormState>(() => createInitialForm(lastNames));
   const [errors, setErrors] = useState<FormErrors>({});
   const [previewOpen, setPreviewOpen] = useState(false);
 
@@ -597,6 +719,14 @@ export default function HawalaPage() {
 
   const todayDate = useMemo(() => getNow().date, []);
 
+  useEffect(() => {
+    localStorage.setItem("hawalaLastNames", JSON.stringify(lastNames));
+  }, [lastNames]);
+
+  useEffect(() => {
+    localStorage.setItem("hawalaCustomers", JSON.stringify(customers));
+  }, [customers]);
+
   const amount = Number(form.amount || 0);
   const fee = Number(form.fee || 0);
   const finalAmount = amount - fee;
@@ -604,6 +734,11 @@ export default function HawalaPage() {
 
   const isHerat = form.province === "هرات";
   const destinationText = formatDestination(form.province, form.district);
+
+  const totalCount = hawalas.length;
+  const sendCount = hawalas.filter(item => item.type === "send").length;
+  const receiveCount = hawalas.filter(item => item.type === "receive").length;
+  const pendingCount = hawalas.filter(item => item.status === "pending").length;
 
   const currentHawalas = hawalas.filter(
     item => item.status === "pending" || item.status === "sent"
@@ -624,7 +759,8 @@ export default function HawalaPage() {
         item.receiverTazkira,
         item.province,
         item.district,
-        item.destinationText
+        item.destinationText,
+        item.currency
       ];
 
       return fields.some(field => String(field || "").toLowerCase().includes(q));
@@ -665,6 +801,14 @@ export default function HawalaPage() {
 
   const validateForm = () => {
     const newErrors: FormErrors = {};
+
+    if (!form.type.trim()) {
+      newErrors.type = "نوع حواله را انتخاب کنید.";
+    }
+
+    if (!form.currency.trim()) {
+      newErrors.currency = "واحد پول را انتخاب کنید.";
+    }
 
     if (!form.senderName.trim()) {
       newErrors.senderName = "نام و نام خانوادگی حواله‌دهنده ضروری است.";
@@ -724,6 +868,13 @@ export default function HawalaPage() {
   const confirmRegister = () => {
     const now = getNow();
 
+    const senderName = form.senderName.trim();
+    const receiverName = form.receiverName.trim();
+
+    if (senderName && !customers.includes(senderName)) {
+      setCustomers(prev => [...prev, senderName]);
+    }
+
     const newHawala: Hawala = {
       id: String(Date.now()),
       number: makeHawalaNumber(),
@@ -736,17 +887,18 @@ export default function HawalaPage() {
       district: form.province === "هرات" ? form.district : form.province,
       destinationText,
 
+      currency: form.currency,
       amount,
       fee,
       finalAmount,
       balance: form.balance,
       note: form.note,
 
-      senderName: form.senderName,
+      senderName,
       senderPhone: form.senderPhone,
       senderTelegram: form.senderTelegram,
 
-      receiverName: form.receiverName,
+      receiverName,
       receiverTazkira: form.receiverTazkira,
       receiverPhone: form.receiverPhone,
       receiverAddress: form.receiverAddress,
@@ -754,16 +906,22 @@ export default function HawalaPage() {
       status: "pending"
     };
 
+    const newLastNames: LastNames = {
+      senderName,
+      receiverName
+    };
+
     setHawalas(prev => [newHawala, ...prev]);
-    setPreviewOpen(false);
-    setForm(emptyForm);
+    setLastNames(newLastNames);
+    setForm(createInitialForm(newLastNames));
     setErrors({});
+    setPreviewOpen(false);
     setActiveTab("current");
     showToast("معامله با موفقیت ثبت شد.");
   };
 
   const resetForm = () => {
-    setForm(emptyForm);
+    setForm(createInitialForm(lastNames));
     setErrors({});
     showToast("فورم پاک شد.");
   };
@@ -862,10 +1020,28 @@ export default function HawalaPage() {
             <h1>🏦 حواله‌جات</h1>
             <div className="muted">ثبت، پیگیری و تسویه حواله‌ها</div>
           </div>
+        </div>
 
-          <button className="btn btn-primary" onClick={() => setActiveTab("new")}>
-            ➕ ثبت حواله جدید
-          </button>
+        <div className="stats">
+          <div className="stat-card">
+            <div className="stat-label">تعداد حواله‌ها</div>
+            <div className="stat-value">{formatNumber(totalCount)}</div>
+          </div>
+
+          <div className="stat-card">
+            <div className="stat-label">ارسال‌شده</div>
+            <div className="stat-value">{formatNumber(sendCount)}</div>
+          </div>
+
+          <div className="stat-card">
+            <div className="stat-label">دریافت‌شده</div>
+            <div className="stat-value">{formatNumber(receiveCount)}</div>
+          </div>
+
+          <div className="stat-card">
+            <div className="stat-label">در انتظار</div>
+            <div className="stat-value">{formatNumber(pendingCount)}</div>
+          </div>
         </div>
 
         <div className="tabs">
@@ -890,12 +1066,15 @@ export default function HawalaPage() {
                   نوع حواله <span className="req">*</span>
                 </label>
                 <select
+                  className={errors.type ? "error" : ""}
                   value={form.type}
                   onChange={e => setField("type", e.target.value)}
                 >
+                  <option value="">انتخاب کنید</option>
                   <option value="send">ارسال</option>
                   <option value="receive">دریافت</option>
                 </select>
+                {errors.type && <div className="error-text">{errors.type}</div>}
               </div>
 
               <div className="field">
@@ -908,11 +1087,17 @@ export default function HawalaPage() {
                   نام و نام خانوادگی حواله‌دهنده <span className="req">*</span>
                 </label>
                 <input
+                  list="customers-list"
                   className={errors.senderName ? "error" : ""}
                   value={form.senderName}
                   onChange={e => setField("senderName", e.target.value)}
-                  placeholder="نام کامل حواله‌دهنده"
+                  placeholder="انتخاب از مشتری‌ها یا نوشتن نام جدید"
                 />
+                <datalist id="customers-list">
+                  {customers.map(customer => (
+                    <option key={customer} value={customer} />
+                  ))}
+                </datalist>
                 {errors.senderName && (
                   <div className="error-text">{errors.senderName}</div>
                 )}
@@ -949,6 +1134,26 @@ export default function HawalaPage() {
 
               <div className="field">
                 <label>
+                  واحد پول <span className="req">*</span>
+                </label>
+                <select
+                  className={errors.currency ? "error" : ""}
+                  value={form.currency}
+                  onChange={e => setField("currency", e.target.value)}
+                >
+                  {currencies.map(currency => (
+                    <option key={currency} value={currency}>
+                      {currency}
+                    </option>
+                  ))}
+                </select>
+                {errors.currency && (
+                  <div className="error-text">{errors.currency}</div>
+                )}
+              </div>
+
+              <div className="field">
+                <label>
                   مبلغ حواله <span className="req">*</span>
                 </label>
                 <input
@@ -977,7 +1182,10 @@ export default function HawalaPage() {
 
               <div className="field">
                 <label>مبلغ نهایی</label>
-                <input value={formatNumber(safeFinalAmount)} disabled />
+                <input
+                  value={`${formatNumber(safeFinalAmount)} ${form.currency}`}
+                  disabled
+                />
               </div>
 
               <div className="field">
@@ -1135,6 +1343,7 @@ export default function HawalaPage() {
                       <th>حواله‌دهنده</th>
                       <th>حواله‌گیرنده</th>
                       <th>مبلغ نهایی</th>
+                      <th>ارز</th>
                       <th>مقصد</th>
                       <th>وضعیت</th>
                       <th>عملیات</th>
@@ -1149,6 +1358,7 @@ export default function HawalaPage() {
                         <td>{item.senderName}</td>
                         <td>{item.receiverName}</td>
                         <td>{formatNumber(item.finalAmount)}</td>
+                        <td>{item.currency}</td>
                         <td>{item.destinationText}</td>
                         <td>
                           <span className={badgeClass(item.status)}>
@@ -1209,6 +1419,7 @@ export default function HawalaPage() {
                       <th>حواله‌دهنده</th>
                       <th>حواله‌گیرنده</th>
                       <th>مبلغ نهایی</th>
+                      <th>ارز</th>
                       <th>مقصد</th>
                       <th>وضعیت</th>
                     </tr>
@@ -1222,6 +1433,7 @@ export default function HawalaPage() {
                         <td>{item.senderName}</td>
                         <td>{item.receiverName}</td>
                         <td>{formatNumber(item.finalAmount)}</td>
+                        <td>{item.currency}</td>
                         <td>{item.destinationText}</td>
                         <td>
                           <span className={badgeClass(item.status)}>
@@ -1259,6 +1471,7 @@ export default function HawalaPage() {
               />
               <DetailRow label="کشور مقصد" value="افغانستان" />
               <DetailRow label="مقصد" value={destinationText} />
+              <DetailRow label="واحد پول" value={form.currency} />
 
               <div className="divider" />
 
@@ -1268,11 +1481,17 @@ export default function HawalaPage() {
 
               <div className="divider" />
 
-              <DetailRow label="مبلغ حواله" value={formatNumber(amount)} />
-              <DetailRow label="کمیشن حواله" value={formatNumber(fee)} />
+              <DetailRow
+                label="مبلغ حواله"
+                value={`${formatNumber(amount)} ${form.currency}`}
+              />
+              <DetailRow
+                label="کمیشن حواله"
+                value={`${formatNumber(fee)} ${form.currency}`}
+              />
               <DetailRow
                 label="مبلغ نهایی"
-                value={formatNumber(safeFinalAmount)}
+                value={`${formatNumber(safeFinalAmount)} ${form.currency}`}
               />
               <DetailRow label="باقی مانده حساب مشتری" value={form.balance} />
 
@@ -1328,7 +1547,9 @@ export default function HawalaPage() {
 
               <div className="summary-row">
                 <span>مبلغ نهایی</span>
-                <strong>{formatNumber(settleTarget.finalAmount)}</strong>
+                <strong>
+                  {formatNumber(settleTarget.finalAmount)} {settleTarget.currency}
+                </strong>
               </div>
             </div>
 
