@@ -6,6 +6,8 @@ type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 
 type RateMode = "same" | "afn" | "direct";
 
+type DealType = "buy" | "sell";
+
 type Customer = {
   id: string;
   name: string;
@@ -14,7 +16,9 @@ type Customer = {
 
 type Transaction = {
   id: string;
+  docNumber: string;
   type: "exchange" | "transfer";
+  dealType?: DealType;
   date: string;
   customerId?: string;
   senderId?: string;
@@ -92,6 +96,25 @@ const fmt = (n: number) =>
 
 const newId = () =>
   `EX-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+function formatDateTime(d: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(
+    d.getDate()
+  )} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function dateLabel(s: string) {
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? "-" : formatDateTime(d);
+}
+
+function dealTypeLabel(d?: DealType) {
+  if (d === "buy") return "خرید";
+  if (d === "sell") return "فروش";
+  return "-";
+}
 
 function getRateMode(from: Currency, to: Currency): RateMode {
   if (from === to) return "same";
@@ -249,9 +272,28 @@ export default function CurrencyExchangePage() {
 
   const [tab, setTab] = useState<"exchange" | "transfer">("exchange");
 
+  const [now, setNow] = useState<Date | null>(null);
+
+  useEffect(() => {
+    setNow(new Date());
+
+    const timer = setInterval(() => {
+      setNow(new Date());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  const currentDateTime = now ? formatDateTime(now) : "";
+
   /* ---------------- Exchange ---------------- */
 
   const [customer, setCustomer] = useState("");
+
+  const [exchangeDocNumber, setExchangeDocNumber] = useState("");
+  const [exchangeDealType, setExchangeDealType] =
+    useState<DealType>("buy");
+  const [exchangeCommission, setExchangeCommission] = useState("0");
 
   const [receivedCurrency, setReceivedCurrency] =
     useState<Currency>("AFN");
@@ -269,6 +311,8 @@ export default function CurrencyExchangePage() {
 
   const [sender, setSender] = useState("");
   const [receiver, setReceiver] = useState("");
+
+  const [transferDocNumber, setTransferDocNumber] = useState("");
 
   const [senderCurrency, setSenderCurrency] =
     useState<Currency>("AFN");
@@ -507,8 +551,15 @@ export default function CurrencyExchangePage() {
   const exchangeFromAmount = parseAmount(receivedAmount);
   const exchangeToAmount = parseAmount(paidAmount);
   const exchangeRateValue = parseAmount(rate);
+  const exchangeCommissionValue = Math.max(
+    0,
+    parseAmount(exchangeCommission)
+  );
+
+  const exchangeDocOk = exchangeDocNumber.trim().length > 0;
 
   const canSubmitExchange =
+    exchangeDocOk &&
     !!customer &&
     exchangeFromAmount > 0 &&
     exchangeToAmount > 0 &&
@@ -549,7 +600,9 @@ export default function CurrencyExchangePage() {
 
     const tx: Transaction = {
       id: newId(),
+      docNumber: exchangeDocNumber.trim(),
       type: "exchange",
+      dealType: exchangeDealType,
       date: new Date().toISOString(),
       customerId: customer,
       fromCurrency: receivedCurrency,
@@ -558,15 +611,19 @@ export default function CurrencyExchangePage() {
       toAmount,
       rate: txRate,
       rateLabel,
+      commission: exchangeCommissionValue,
+      commissionCurrency: receivedCurrency,
       status: "active",
     };
 
     setTransactions((x) => [tx, ...x]);
 
     setCustomer("");
+    setExchangeDocNumber("");
     setReceivedAmount("");
     setPaidAmount("");
     setRate("");
+    setExchangeCommission("0");
   }
 
   /* ---------------- Transfer Submit ---------------- */
@@ -576,7 +633,10 @@ export default function CurrencyExchangePage() {
   const transferRateValue = parseAmount(transferRate);
   const commissionValue = Math.max(0, parseAmount(commission));
 
+  const transferDocOk = transferDocNumber.trim().length > 0;
+
   const canSubmitTransfer =
+    transferDocOk &&
     !!sender &&
     !!receiver &&
     sender !== receiver &&
@@ -619,6 +679,7 @@ export default function CurrencyExchangePage() {
 
     const tx: Transaction = {
       id: newId(),
+      docNumber: transferDocNumber.trim(),
       type: "transfer",
       date: new Date().toISOString(),
       senderId: sender,
@@ -638,6 +699,7 @@ export default function CurrencyExchangePage() {
 
     setSender("");
     setReceiver("");
+    setTransferDocNumber("");
     setSenderAmount("");
     setReceiverAmount("");
     setTransferRate("");
@@ -663,6 +725,11 @@ export default function CurrencyExchangePage() {
 
         b[tx.fromCurrency] =
           (b[tx.fromCurrency] || 0) - tx.fromAmount;
+
+        if (tx.commission && tx.commissionCurrency) {
+          b[tx.commissionCurrency] =
+            (b[tx.commissionCurrency] || 0) - tx.commission;
+        }
 
         b[tx.toCurrency] =
           (b[tx.toCurrency] || 0) + tx.toAmount;
@@ -766,6 +833,56 @@ export default function CurrencyExchangePage() {
           <h2 className="font-bold text-lg">
             تبادل ارز صرافی با مشتری
           </h2>
+
+          <div className="grid md:grid-cols-3 gap-4">
+
+            <div className="space-y-2">
+              <label className="text-sm font-bold">
+                تاریخ و ساعت (خودکار)
+              </label>
+
+              <input
+                readOnly
+                value={currentDateTime}
+                className="h-12 w-full rounded-xl border px-3 bg-gray-100"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-bold">
+                نمبر سند
+              </label>
+
+              <input
+                value={exchangeDocNumber}
+                onChange={(e) =>
+                  setExchangeDocNumber(e.target.value)
+                }
+                placeholder="نمبر سند را وارد کنید"
+                className="h-12 w-full rounded-xl border px-3"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-bold">
+                نوع معامله
+              </label>
+
+              <select
+                value={exchangeDealType}
+                onChange={(e) =>
+                  setExchangeDealType(
+                    e.target.value as DealType
+                  )
+                }
+                className="h-12 w-full rounded-xl border px-3"
+              >
+                <option value="buy">خرید</option>
+                <option value="sell">فروش</option>
+              </select>
+            </div>
+
+          </div>
 
           <select
             value={customer}
@@ -973,6 +1090,30 @@ export default function CurrencyExchangePage() {
             </div>
           )}
 
+          <div className="space-y-2">
+
+            <label className="text-sm font-bold">
+              کارمزد
+            </label>
+
+            <input
+              type="number"
+              step="any"
+              min="0"
+              value={exchangeCommission}
+              onChange={(e) =>
+                setExchangeCommission(e.target.value)
+              }
+              placeholder="کارمزد"
+              className="h-12 w-full rounded-xl border px-3"
+            />
+
+            <div className="text-xs text-gray-600">
+              کارمزد از ارز دریافتی ({labels[receivedCurrency]}) کسر می‌شود و روی محاسبه اصلی تبدیل اثر ندارد.
+            </div>
+
+          </div>
+
           <button
             onClick={submitExchange}
             disabled={!canSubmitExchange}
@@ -992,6 +1133,37 @@ export default function CurrencyExchangePage() {
           <h2 className="font-bold text-lg">
             تبادل بین حساب مشتریان
           </h2>
+
+          <div className="grid md:grid-cols-2 gap-4">
+
+            <div className="space-y-2">
+              <label className="text-sm font-bold">
+                تاریخ و ساعت (خودکار)
+              </label>
+
+              <input
+                readOnly
+                value={currentDateTime}
+                className="h-12 w-full rounded-xl border px-3 bg-gray-100"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-bold">
+                نمبر سند
+              </label>
+
+              <input
+                value={transferDocNumber}
+                onChange={(e) =>
+                  setTransferDocNumber(e.target.value)
+                }
+                placeholder="نمبر سند را وارد کنید"
+                className="h-12 w-full rounded-xl border px-3"
+              />
+            </div>
+
+          </div>
 
           <div className="grid md:grid-cols-2 gap-4">
 
@@ -1216,17 +1388,29 @@ export default function CurrencyExchangePage() {
             </div>
           )}
 
-          <input
-            type="number"
-            step="any"
-            min="0"
-            value={commission}
-            onChange={(e) =>
-              setCommission(e.target.value)
-            }
-            placeholder="کمیشن"
-            className="h-12 w-full rounded-xl border px-3"
-          />
+          <div className="space-y-2">
+
+            <label className="text-sm font-bold">
+              کارمزد
+            </label>
+
+            <input
+              type="number"
+              step="any"
+              min="0"
+              value={commission}
+              onChange={(e) =>
+                setCommission(e.target.value)
+              }
+              placeholder="کارمزد"
+              className="h-12 w-full rounded-xl border px-3"
+            />
+
+            <div className="text-xs text-gray-600">
+              کارمزد از ارز فرستنده ({labels[senderCurrency]}) کسر می‌شود و روی محاسبه اصلی تبدیل اثر ندارد.
+            </div>
+
+          </div>
 
           <button
             onClick={submitTransfer}
@@ -1306,11 +1490,19 @@ export default function CurrencyExchangePage() {
             <tr className="bg-gray-50">
 
               <th className="p-3 text-right">
-                سند
+                نمبر
+              </th>
+
+              <th className="p-3 text-right">
+                تاریخ
               </th>
 
               <th className="p-3 text-right">
                 نوع
+              </th>
+
+              <th className="p-3 text-right">
+                خرید / فروش
               </th>
 
               <th className="p-3 text-right">
@@ -1329,6 +1521,10 @@ export default function CurrencyExchangePage() {
                 نرخ
               </th>
 
+              <th className="p-3 text-right">
+                کارمزد
+              </th>
+
             </tr>
           </thead>
 
@@ -1342,13 +1538,21 @@ export default function CurrencyExchangePage() {
               >
 
                 <td className="p-3">
-                  {tx.id}
+                  {tx.docNumber || "-"}
+                </td>
+
+                <td className="p-3 whitespace-nowrap">
+                  {dateLabel(tx.date)}
                 </td>
 
                 <td className="p-3">
                   {tx.type === "exchange"
                     ? "صرافی با مشتری"
                     : "بین مشتریان"}
+                </td>
+
+                <td className="p-3">
+                  {dealTypeLabel(tx.dealType)}
                 </td>
 
                 <td className="p-3">
@@ -1369,6 +1573,16 @@ export default function CurrencyExchangePage() {
 
                 <td className="p-3 text-xs">
                   {tx.rateLabel}
+                </td>
+
+                <td className="p-3">
+                  {tx.commission
+                    ? `${fmt(tx.commission)} ${
+                        tx.commissionCurrency
+                          ? labels[tx.commissionCurrency]
+                          : ""
+                      }`
+                    : "-"}
                 </td>
 
               </tr>
