@@ -389,19 +389,19 @@ function DetailRow({
   return (
     <div
       className={`flex items-start justify-between gap-4 border-b border-dashed py-3 last:border-0 ${
-        dark ? "border-slate-700/60" : "border-slate-200"
+        dark ? "border-[#243646]" : "border-[#d9d0bc]"
       }`}
     >
       <span
         className={`shrink-0 text-[11px] font-black ${
-          dark ? "text-slate-500" : "text-slate-400"
+          dark ? "text-[#6d7a86]" : "text-[#8a939c]"
         }`}
       >
         {label}
       </span>
       <span
         className={`text-left text-[13px] font-bold ${
-          dark ? "text-slate-200" : "text-slate-700"
+          dark ? "text-[#e5dfd0]" : "text-[#22303a]"
         } ${valueClass}`}
       >
         {value}
@@ -437,65 +437,65 @@ export default function CurrencyExchangePage() {
 
   const dk = theme === "dark";
 
-  /* ---------------- Theme tokens (UI only) ---------------- */
+  /* ---------------- Theme Tokens (UI only) ---------------- */
 
-  const heading = dk ? "text-white" : "text-slate-900";
-  const subText = dk ? "text-slate-500" : "text-slate-400";
-  const iconMuted = dk ? "text-slate-500" : "text-slate-400";
+  const heading = dk ? "text-[#f2ead8]" : "text-[#14232e]";
+  const subText = dk ? "text-[#7d8a96]" : "text-[#6d7680]";
+  const iconMuted = dk ? "text-[#6d7a86]" : "text-[#8a939c]";
 
   const glassChip = dk
-    ? "border-slate-700/80 bg-[#0e1a28]/85"
-    : "border-slate-200/90 bg-white/85";
+    ? "border-[#1d2b38] bg-[#0d1721]/85"
+    : "border-[#cfc6b2] bg-[#f6f2e8]/85";
 
   const uiCard = `rounded-2xl border backdrop-blur transition-colors duration-300 ${
     dk
-      ? "border-slate-800 bg-[#0e1a28]/90 shadow-[0_16px_40px_-24px_rgba(0,0,0,0.75)]"
-      : "border-slate-200/90 bg-white/90 shadow-[0_16px_40px_-28px_rgba(9,47,58,0.45)]"
+      ? "border-[#1c2a38] bg-[#0d1721]/95 shadow-[0_16px_40px_-24px_rgba(0,0,0,0.75)]"
+      : "border-[#d6cdba] bg-[#f8f5ec]/95 shadow-[0_16px_40px_-28px_rgba(35,48,40,0.45)]"
   }`;
 
   const inputShell = `rounded-xl border text-sm font-medium shadow-sm outline-none transition-all duration-200 focus:ring-4 ${
     dk
-      ? "border-slate-700 bg-[#0b1622] text-slate-100 placeholder:text-slate-500 hover:border-slate-500 focus:border-teal-400 focus:ring-teal-400/10"
-      : "border-slate-300 bg-white text-slate-800 placeholder:text-slate-400 hover:border-slate-400 focus:border-teal-600 focus:ring-teal-600/10"
+      ? "border-[#243646] bg-[#0a141d] text-[#e8e2d2] placeholder:text-[#5f6d7a] hover:border-[#3a5165] focus:border-[#c9a45c] focus:ring-[#c9a45c]/10"
+      : "border-[#c9bfa8] bg-[#fffdf7] text-[#22303a] placeholder:text-[#9aa0a6] hover:border-[#a89c7f] focus:border-[#0d5c4c] focus:ring-[#0d5c4c]/10"
   }`;
 
   const uiInput = `h-12 w-full px-3.5 ${inputShell}`;
 
   const errInput = dk
-    ? "border-rose-500/70 hover:border-rose-400 focus:border-rose-400 focus:ring-rose-500/10"
-    : "border-rose-400 hover:border-rose-500 focus:border-rose-500 focus:ring-rose-500/10";
+    ? "border-rose-500/60 hover:border-rose-400 focus:border-rose-400 focus:ring-rose-500/10"
+    : "border-[#a32035] hover:border-[#8c2033] focus:border-[#8c2033] focus:ring-[#8c2033]/10";
 
   const roInput = dk
-    ? "cursor-default bg-[#0c1826] text-slate-400 hover:border-slate-700 focus:border-slate-700 focus:ring-0"
-    : "cursor-default bg-slate-100 text-slate-500 hover:border-slate-300 focus:border-slate-300 focus:ring-0";
+    ? "cursor-default bg-[#0c1620] text-[#8b96a2] hover:border-[#243646] focus:border-[#243646] focus:ring-0"
+    : "cursor-default bg-[#eee8da] text-[#66707a] hover:border-[#c9bfa8] focus:border-[#c9bfa8] focus:ring-0";
 
   const uiLabel = `mb-1.5 block text-[11px] font-black tracking-wide ${
-    dk ? "text-slate-400" : "text-slate-500"
+    dk ? "text-[#8b98a5]" : "text-[#5f6b76]"
   }`;
 
   const rateChip = `flex h-12 items-center whitespace-nowrap rounded-xl border px-3.5 text-sm font-bold shadow-sm ${
     dk
-      ? "border-slate-700 bg-[#0b1622]/85 text-slate-200"
-      : "border-slate-200/80 bg-white/85 text-slate-700"
+      ? "border-[#243646] bg-[#0a141d] text-[#e5dfd0]"
+      : "border-[#d6cdb8] bg-[#fffdf6] text-[#22303a]"
   }`;
 
   function typeChipClass(tx: Transaction) {
     if (tx.type === "transfer") {
       return dk
-        ? "bg-violet-400/10 text-violet-300 ring-1 ring-violet-400/20"
-        : "bg-violet-500/10 text-violet-700 ring-1 ring-violet-500/25";
+        ? "bg-[#a08fe8]/15 text-[#c3b8f2] ring-1 ring-[#a08fe8]/25"
+        : "bg-[#4c1d95]/10 text-[#4c1d95] ring-1 ring-[#4c1d95]/25";
     }
 
     if (tx.dealType === "buy") {
       return dk
-        ? "bg-emerald-400/10 text-emerald-300 ring-1 ring-emerald-400/20"
-        : "bg-emerald-500/10 text-emerald-700 ring-1 ring-emerald-500/25";
+        ? "bg-[#2e8b74]/15 text-[#7fd1b9] ring-1 ring-[#2e8b74]/25"
+        : "bg-[#0e5a4a]/10 text-[#0e5a4a] ring-1 ring-[#0e5a4a]/25";
     }
 
     if (tx.dealType === "sell") {
       return dk
-        ? "bg-amber-400/10 text-amber-300 ring-1 ring-amber-400/20"
-        : "bg-amber-500/10 text-amber-700 ring-1 ring-amber-500/25";
+        ? "bg-[#c9a45c]/15 text-[#e0be7a] ring-1 ring-[#c9a45c]/25"
+        : "bg-[#b08a3e]/15 text-[#6e5322] ring-1 ring-[#8a6a2f]/30";
     }
 
     return dk
@@ -1444,14 +1444,14 @@ export default function CurrencyExchangePage() {
 
   const actionButtonClass = `flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${
     dk
-      ? "text-slate-300 hover:bg-teal-400/10 hover:text-teal-300"
-      : "text-slate-600 hover:bg-teal-500/10 hover:text-teal-700"
+      ? "text-[#aeb9c4] hover:bg-[#c9a45c]/10 hover:text-[#e0be7a]"
+      : "text-[#44505a] hover:bg-[#0d5c4c]/10 hover:text-[#0d5c4c]"
   }`;
 
   const dangerActionButtonClass = `flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${
     dk
-      ? "text-rose-400 hover:bg-rose-400/10"
-      : "text-rose-600 hover:bg-rose-500/10"
+      ? "text-rose-300 hover:bg-rose-400/10"
+      : "text-[#8c2033] hover:bg-[#8c2033]/10"
   }`;
 
   return (
@@ -1465,13 +1465,13 @@ export default function CurrencyExchangePage() {
         .dark { color-scheme: dark; }
 
         .fx-grid {
-          background-image: radial-gradient(circle at 1px 1px, rgba(13,42,58,0.10) 1px, transparent 0);
+          background-image: radial-gradient(circle at 1px 1px, rgba(40,52,45,0.12) 1px, transparent 0);
           background-size: 24px 24px;
           -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,0.9), rgba(0,0,0,0.25) 60%, transparent);
           mask-image: linear-gradient(to bottom, rgba(0,0,0,0.9), rgba(0,0,0,0.25) 60%, transparent);
         }
         .dark .fx-grid {
-          background-image: radial-gradient(circle at 1px 1px, rgba(148,190,210,0.08) 1px, transparent 0);
+          background-image: radial-gradient(circle at 1px 1px, rgba(201,164,92,0.06) 1px, transparent 0);
         }
 
         @keyframes fxUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
@@ -1482,20 +1482,20 @@ export default function CurrencyExchangePage() {
         details > summary { list-style: none; }
         details > summary::-webkit-details-marker { display: none; }
 
-        ::selection { background: rgba(13,148,136,0.25); }
+        ::selection { background: rgba(176,138,62,0.3); }
       `}</style>
 
       <div
         className={`fx-font relative min-h-screen overflow-x-hidden antialiased transition-colors duration-500 ${
-          dk ? "bg-[#0a131e] text-slate-100" : "bg-[#eef2f5] text-slate-800"
+          dk ? "bg-[#080f16] text-[#dfe5e8]" : "bg-[#e8e3d7] text-[#22303a]"
         }`}
       >
         {/* نوار امضای بالا */}
         <div
           className={`fixed inset-x-0 top-0 z-30 h-1 bg-gradient-to-l ${
             dk
-              ? "from-teal-400 via-emerald-400 to-amber-300"
-              : "from-teal-700 via-emerald-500 to-amber-400"
+              ? "from-[#c9a45c] via-[#e0be7a] to-[#a8853f]"
+              : "from-[#7c5c1f] via-[#b08a3e] to-[#8a6a2f]"
           }`}
         />
 
@@ -1504,17 +1504,17 @@ export default function CurrencyExchangePage() {
           <div className="fx-grid absolute inset-0" />
           <div
             className={`absolute -top-36 right-[-12rem] h-[30rem] w-[30rem] rounded-full blur-[110px] ${
-              dk ? "bg-teal-400/10" : "bg-teal-500/15"
+              dk ? "bg-[#155e6e]/15" : "bg-[#123240]/[0.12]"
             }`}
           />
           <div
             className={`absolute left-[-12rem] top-1/4 h-[26rem] w-[26rem] rounded-full blur-[110px] ${
-              dk ? "bg-amber-400/[0.07]" : "bg-amber-400/15"
+              dk ? "bg-[#c9a45c]/[0.06]" : "bg-[#b08a3e]/[0.14]"
             }`}
           />
           <div
             className={`absolute bottom-[-10rem] right-1/3 h-[24rem] w-[24rem] rounded-full blur-[100px] ${
-              dk ? "bg-emerald-400/[0.06]" : "bg-emerald-400/10"
+              dk ? "bg-[#2e8b74]/[0.05]" : "bg-[#0e5a4a]/[0.10]"
             }`}
           />
         </div>
@@ -1523,11 +1523,11 @@ export default function CurrencyExchangePage() {
           {/* سربرگ */}
           <header className="fx-up flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3.5">
-              <div className="relative grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-[#092f3a] via-teal-700 to-emerald-500 text-white shadow-lg shadow-teal-800/30 ring-1 ring-white/20">
+              <div className="relative grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-[#0f2f3c] via-[#123c46] to-[#0e5a4a] text-[#e9dfc8] shadow-lg shadow-[#0f2f3c]/40 ring-1 ring-[#c9a45c]/40">
                 <Ic n="swap" className="h-6 w-6" />
                 <span
-                  className={`absolute -bottom-1.5 -left-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-amber-400 px-1 text-[8px] font-black text-slate-900 ring-2 ${
-                    dk ? "ring-[#0a131e]" : "ring-white"
+                  className={`absolute -bottom-1.5 -left-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-gradient-to-br from-[#7c5c1f] to-[#c9a45c] px-1 text-[8px] font-black text-[#1c1403] ring-2 ${
+                    dk ? "ring-[#080f16]" : "ring-[#e8e3d7]"
                   }`}
                 >
                   AFN
@@ -1548,23 +1548,23 @@ export default function CurrencyExchangePage() {
                 className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 shadow-sm backdrop-blur ${glassChip}`}
               >
                 <span className="relative flex h-2.5 w-2.5">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-70" />
-                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                  <span className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-70 ${dk ? "bg-[#c9a45c]" : "bg-[#b08a3e]"}`} />
+                  <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${dk ? "bg-[#e0be7a]" : "bg-[#8a6a2f]"}`} />
                 </span>
                 <span
                   dir="ltr"
                   className={`text-xs font-bold tabular-nums ${
-                    dk ? "text-slate-300" : "text-slate-600"
+                    dk ? "text-[#dfe5e8]" : "text-[#22303a]"
                   }`}
                 >
                   {currentDateTime || "--:--:--"}
                 </span>
                 {now && (
                   <>
-                    <span className={`h-4 w-px ${dk ? "bg-slate-700" : "bg-slate-200"}`} />
+                    <span className={`h-4 w-px ${dk ? "bg-[#243646]" : "bg-[#d6cdba]"}`} />
                     <span
                       className={`whitespace-nowrap text-[10px] font-black ${
-                        dk ? "text-teal-300" : "text-teal-700"
+                        dk ? "text-[#c9a45c]" : "text-[#8a6a2f]"
                       }`}
                     >
                       {shamsiMonthLabel(now)}
@@ -1578,8 +1578,8 @@ export default function CurrencyExchangePage() {
                 title={dk ? "پوستهٔ روشن" : "پوستهٔ تیره"}
                 className={`group grid h-11 w-11 cursor-pointer place-items-center rounded-xl border shadow-sm backdrop-blur transition-all duration-300 active:scale-90 ${
                   dk
-                    ? "border-slate-700/80 bg-[#0e1a28]/85 text-amber-300 hover:border-amber-400/50 hover:text-amber-200"
-                    : "border-slate-200/90 bg-white/85 text-slate-600 hover:border-teal-500/50 hover:text-teal-600"
+                    ? "border-[#243646] bg-[#0d1721]/85 text-[#c9a45c] hover:border-[#e0be7a]/60 hover:text-[#e0be7a]"
+                    : "border-[#cfc6b2] bg-[#f6f2e8]/85 text-[#4a5560] hover:border-[#b08a3e]/60 hover:text-[#8a6a2f]"
                 }`}
               >
                 {dk ? (
@@ -1601,11 +1601,11 @@ export default function CurrencyExchangePage() {
                 key={c}
                 className={`flex cursor-default items-center gap-2 rounded-full border py-1.5 pl-3.5 pr-1.5 text-xs font-bold shadow-sm backdrop-blur transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md ${glassChip} ${
                   dk
-                    ? "text-slate-300 hover:border-teal-400/40"
-                    : "text-slate-600 hover:border-teal-500/40"
+                    ? "text-[#aeb9c4] hover:border-[#c9a45c]/40"
+                    : "text-[#4a5560] hover:border-[#b08a3e]/50"
                 }`}
               >
-                <span className="grid h-6 w-6 place-items-center rounded-full bg-gradient-to-br from-teal-600 to-emerald-500 text-[8px] font-black text-white">
+                <span className="grid h-6 w-6 place-items-center rounded-full bg-gradient-to-br from-[#7c5c1f] to-[#c9a45c] text-[8px] font-black text-[#1c1403]">
                   {c}
                 </span>
                 {labels[c]}
@@ -1615,19 +1615,19 @@ export default function CurrencyExchangePage() {
             <div className="mr-auto flex flex-wrap items-center gap-2 text-[11px] font-black">
               <span
                 className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 shadow-sm backdrop-blur ${glassChip} ${
-                  dk ? "text-slate-300" : "text-slate-600"
+                  dk ? "text-[#aeb9c4]" : "text-[#4a5560]"
                 }`}
               >
                 کل معاملات
-                <b className={`tabular-nums ${dk ? "text-teal-300" : "text-teal-700"}`}>
+                <b className={`tabular-nums ${dk ? "text-[#c9a45c]" : "text-[#0d5c4c]"}`}>
                   {transactions.length}
                 </b>
               </span>
               <span
                 className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 ring-1 ${
                   dk
-                    ? "bg-emerald-400/10 text-emerald-300 ring-emerald-400/20"
-                    : "bg-emerald-500/10 text-emerald-700 ring-emerald-500/25"
+                    ? "bg-[#2e8b74]/15 text-[#7fd1b9] ring-[#2e8b74]/25"
+                    : "bg-[#0e5a4a]/10 text-[#0e5a4a] ring-[#0e5a4a]/30"
                 }`}
               >
                 فعال
@@ -1637,7 +1637,7 @@ export default function CurrencyExchangePage() {
                 className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 ring-1 ${
                   dk
                     ? "bg-rose-400/10 text-rose-300 ring-rose-400/20"
-                    : "bg-rose-500/10 text-rose-600 ring-rose-500/25"
+                    : "bg-[#8c2033]/10 text-[#8c2033] ring-[#8c2033]/30"
                 }`}
               >
                 لغو شده
@@ -1657,12 +1657,12 @@ export default function CurrencyExchangePage() {
                 tab === "exchange"
                   ? `bg-gradient-to-l shadow-lg ${
                       dk
-                        ? "from-teal-500 via-emerald-500 to-emerald-400 text-slate-950 shadow-teal-500/20"
-                        : "from-[#0a3540] via-teal-700 to-emerald-600 text-white shadow-teal-800/30"
+                        ? "from-[#a8853f] via-[#c9a45c] to-[#e0be7a] text-[#1c1403] shadow-[#c9a45c]/20"
+                        : "from-[#0f2f3c] via-[#0d4a42] to-[#0e5a4a] text-[#f3ecd9] shadow-[#0f2f3c]/40"
                     }`
                   : dk
-                  ? "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
-                  : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                  ? "text-[#8a97a4] hover:bg-white/5 hover:text-[#e8e2d2]"
+                  : "text-[#5d6871] hover:bg-[#0f2f3c]/5 hover:text-[#14232e]"
               }`}
             >
               <Ic n="swap" className="h-4 w-4" />
@@ -1675,12 +1675,12 @@ export default function CurrencyExchangePage() {
                 tab === "transfer"
                   ? `bg-gradient-to-l shadow-lg ${
                       dk
-                        ? "from-violet-400 via-fuchsia-400 to-fuchsia-300 text-slate-950 shadow-fuchsia-400/20"
-                        : "from-violet-700 via-violet-600 to-fuchsia-600 text-white shadow-violet-700/30"
+                        ? "from-[#5e4aa8] via-[#6f5ac0] to-[#846fd6] text-[#f5f2ff] shadow-[#6f5ac0]/25"
+                        : "from-[#33204a] via-[#4c1d95] to-[#5b21b6] text-[#f3ecd9] shadow-[#33204a]/40"
                     }`
                   : dk
-                  ? "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
-                  : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                  ? "text-[#8a97a4] hover:bg-white/5 hover:text-[#e8e2d2]"
+                  : "text-[#5d6871] hover:bg-[#0f2f3c]/5 hover:text-[#14232e]"
               }`}
             >
               <Ic n="users" className="h-4 w-4" />
@@ -1696,8 +1696,8 @@ export default function CurrencyExchangePage() {
                 <span
                   className={`grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${
                     dk
-                      ? "from-teal-400/15 to-emerald-400/10 text-teal-300 ring-teal-400/20"
-                      : "from-teal-600/15 to-emerald-500/15 text-teal-700 ring-teal-600/20"
+                      ? "from-[#c9a45c]/15 to-[#c9a45c]/5 text-[#c9a45c] ring-[#c9a45c]/25"
+                      : "from-[#0d5c4c]/15 to-[#0d5c4c]/5 text-[#0d5c4c] ring-[#0d5c4c]/20"
                   }`}
                 >
                   <Ic n="swap" className="h-5 w-5" />
@@ -1713,8 +1713,8 @@ export default function CurrencyExchangePage() {
                 <span
                   className={`rounded-full px-3 py-1.5 text-[10px] font-black ring-1 ${
                     dk
-                      ? "bg-teal-400/10 text-teal-300 ring-teal-400/20"
-                      : "bg-teal-600/10 text-teal-700 ring-teal-600/20"
+                      ? "bg-[#c9a45c]/10 text-[#c9a45c] ring-[#c9a45c]/25"
+                      : "bg-[#0d5c4c]/10 text-[#0d5c4c] ring-[#0d5c4c]/20"
                   }`}
                 >
                   {editingExchangeId
@@ -1727,8 +1727,8 @@ export default function CurrencyExchangePage() {
                 <div
                   className={`fx-pop flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm font-bold ${
                     dk
-                      ? "border-amber-400/25 bg-amber-400/10 text-amber-300"
-                      : "border-amber-500/35 bg-amber-500/10 text-amber-800"
+                      ? "border-[#c9a45c]/30 bg-[#c9a45c]/10 text-[#e0be7a]"
+                      : "border-[#8a6a2f]/40 bg-[#b08a3e]/10 text-[#6e5322]"
                   }`}
                 >
                   <span className="flex items-center gap-2">
@@ -1737,7 +1737,7 @@ export default function CurrencyExchangePage() {
                   </span>
                   <button
                     onClick={resetExchangeForm}
-                    className="cursor-pointer rounded-lg bg-amber-500/20 px-3.5 py-1.5 text-xs font-black transition-all hover:bg-amber-500/30 active:scale-95"
+                    className="cursor-pointer rounded-lg bg-[#b08a3e]/20 px-3.5 py-1.5 text-xs font-black transition-all hover:bg-[#b08a3e]/30 active:scale-95"
                   >
                     انصراف
                   </button>
@@ -1843,19 +1843,19 @@ export default function CurrencyExchangePage() {
                 <div
                   className={`space-y-4 rounded-2xl border p-4 transition-colors ${
                     dk
-                      ? "border-emerald-400/15 bg-emerald-400/[0.04]"
-                      : "border-emerald-500/25 bg-emerald-500/[0.05]"
+                      ? "border-[#2e8b74]/25 bg-[#2e8b74]/[0.06]"
+                      : "border-[#0e5a4a]/30 bg-[#0e5a4a]/[0.06]"
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
                     <span
-                      className={`grid h-9 w-9 place-items-center rounded-xl bg-emerald-500/15 ${
-                        dk ? "text-emerald-300" : "text-emerald-600"
+                      className={`grid h-9 w-9 place-items-center rounded-xl ${
+                        dk ? "bg-[#2e8b74]/15 text-[#7fd1b9]" : "bg-[#0e5a4a]/15 text-[#0e5a4a]"
                       }`}
                     >
                       <Ic n="down" className="h-4 w-4" />
                     </span>
-                    <b className={`text-sm font-black ${dk ? "text-emerald-300" : "text-emerald-800"}`}>
+                    <b className={`text-sm font-black ${dk ? "text-[#9fdcc8]" : "text-[#0e5a4a]"}`}>
                       دریافت از مشتری
                     </b>
                   </div>
@@ -1903,8 +1903,8 @@ export default function CurrencyExchangePage() {
                   <span
                     className={`grid h-12 w-12 place-items-center rounded-full border shadow-md ${
                       dk
-                        ? "border-slate-700 bg-[#0b1622] text-teal-300"
-                        : "border-slate-200 bg-white text-teal-600"
+                        ? "border-[#243646] bg-[#0a141d] text-[#c9a45c]"
+                        : "border-[#d6cdba] bg-[#f8f5ec] text-[#0d5c4c]"
                     }`}
                   >
                     <Ic n="swap" className="h-5 w-5" />
@@ -1914,19 +1914,19 @@ export default function CurrencyExchangePage() {
                 <div
                   className={`space-y-4 rounded-2xl border p-4 transition-colors ${
                     dk
-                      ? "border-sky-400/15 bg-sky-400/[0.04]"
-                      : "border-sky-500/25 bg-sky-500/[0.05]"
+                      ? "border-[#6f9cb8]/25 bg-[#6f9cb8]/[0.06]"
+                      : "border-[#123240]/30 bg-[#123240]/[0.05]"
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
                     <span
-                      className={`grid h-9 w-9 place-items-center rounded-xl bg-sky-500/15 ${
-                        dk ? "text-sky-300" : "text-sky-600"
+                      className={`grid h-9 w-9 place-items-center rounded-xl ${
+                        dk ? "bg-[#6f9cb8]/15 text-[#a9c8dc]" : "bg-[#123240]/15 text-[#123240]"
                       }`}
                     >
                       <Ic n="up" className="h-4 w-4" />
                     </span>
-                    <b className={`text-sm font-black ${dk ? "text-sky-300" : "text-sky-800"}`}>
+                    <b className={`text-sm font-black ${dk ? "text-[#a9c8dc]" : "text-[#123240]"}`}>
                       پرداخت به مشتری
                     </b>
                   </div>
@@ -1962,8 +1962,8 @@ export default function CurrencyExchangePage() {
                 <div
                   className={`flex items-center gap-3 rounded-2xl border p-4 text-sm font-bold ${
                     dk
-                      ? "border-slate-600/60 bg-slate-400/[0.06] text-slate-300"
-                      : "border-slate-300/70 bg-slate-500/[0.06] text-slate-600"
+                      ? "border-[#31465a] bg-[#31465a]/20 text-[#aeb9c4]"
+                      : "border-[#b9b09a] bg-[#8a8272]/10 text-[#4a5560]"
                   }`}
                 >
                   <Ic n="info" className="h-5 w-5 shrink-0 opacity-70" />
@@ -1975,19 +1975,19 @@ export default function CurrencyExchangePage() {
                 <div
                   className={`space-y-4 rounded-2xl border p-4 transition-colors md:p-5 ${
                     dk
-                      ? "border-sky-400/20 bg-sky-400/[0.06]"
-                      : "border-sky-500/30 bg-sky-500/[0.07]"
+                      ? "border-[#6f9cb8]/25 bg-[#6f9cb8]/[0.06]"
+                      : "border-[#123240]/30 bg-[#123240]/[0.05]"
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
                     <span
-                      className={`grid h-9 w-9 place-items-center rounded-xl bg-sky-500/15 ${
-                        dk ? "text-sky-300" : "text-sky-600"
+                      className={`grid h-9 w-9 place-items-center rounded-xl ${
+                        dk ? "bg-[#6f9cb8]/15 text-[#a9c8dc]" : "bg-[#123240]/15 text-[#123240]"
                       }`}
                     >
                       <Ic n="rate" className="h-4 w-4" />
                     </span>
-                    <b className={`text-sm font-black ${dk ? "text-sky-300" : "text-sky-800"}`}>
+                    <b className={`text-sm font-black ${dk ? "text-[#a9c8dc]" : "text-[#123240]"}`}>
                       نرخ دستی در برابر افغانی
                     </b>
                   </div>
@@ -2027,7 +2027,7 @@ export default function CurrencyExchangePage() {
                     {exchangeRateValue > 0 && (
                       <span
                         className={`fx-pop inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black ${
-                          dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-500/15 text-sky-700"
+                          dk ? "bg-[#6f9cb8]/15 text-[#a9c8dc]" : "bg-[#123240]/10 text-[#123240]"
                         }`}
                       >
                         <Ic n="check" className="h-3.5 w-3.5" />
@@ -2039,8 +2039,8 @@ export default function CurrencyExchangePage() {
                       <span
                         className={`fx-pop inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black ${
                           dk
-                            ? "bg-emerald-400/15 text-emerald-300"
-                            : "bg-emerald-500/15 text-emerald-700"
+                            ? "bg-[#2e8b74]/15 text-[#7fd1b9]"
+                            : "bg-[#0e5a4a]/10 text-[#0e5a4a]"
                         }`}
                       >
                         نتیجه: {paidAmount} {labels[paidCurrency]}
@@ -2054,19 +2054,19 @@ export default function CurrencyExchangePage() {
                 <div
                   className={`space-y-4 rounded-2xl border p-4 transition-colors md:p-5 ${
                     dk
-                      ? "border-amber-400/20 bg-amber-400/[0.06]"
-                      : "border-amber-500/30 bg-amber-500/[0.07]"
+                      ? "border-[#c9a45c]/25 bg-[#c9a45c]/[0.07]"
+                      : "border-[#8a6a2f]/35 bg-[#b08a3e]/[0.08]"
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
                     <span
-                      className={`grid h-9 w-9 place-items-center rounded-xl bg-amber-500/15 ${
-                        dk ? "text-amber-300" : "text-amber-600"
+                      className={`grid h-9 w-9 place-items-center rounded-xl ${
+                        dk ? "bg-[#c9a45c]/15 text-[#e0be7a]" : "bg-[#b08a3e]/15 text-[#7c5c1f]"
                       }`}
                     >
                       <Ic n="rate" className="h-4 w-4" />
                     </span>
-                    <b className={`text-sm font-black ${dk ? "text-amber-300" : "text-amber-800"}`}>
+                    <b className={`text-sm font-black ${dk ? "text-[#e0be7a]" : "text-[#7c5c1f]"}`}>
                       نرخ مستقیم جفت‌ارز
                     </b>
                   </div>
@@ -2144,8 +2144,8 @@ export default function CurrencyExchangePage() {
                       <span
                         className={`fx-pop inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black ${
                           dk
-                            ? "bg-amber-400/15 text-amber-300"
-                            : "bg-amber-500/15 text-amber-700"
+                            ? "bg-[#c9a45c]/15 text-[#e0be7a]"
+                            : "bg-[#b08a3e]/15 text-[#6e5322]"
                         }`}
                       >
                         <Ic n="check" className="h-3.5 w-3.5" />
@@ -2162,8 +2162,8 @@ export default function CurrencyExchangePage() {
                       <span
                         className={`fx-pop inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black ${
                           dk
-                            ? "bg-emerald-400/15 text-emerald-300"
-                            : "bg-emerald-500/15 text-emerald-700"
+                            ? "bg-[#2e8b74]/15 text-[#7fd1b9]"
+                            : "bg-[#0e5a4a]/10 text-[#0e5a4a]"
                         }`}
                       >
                         نتیجه: {paidAmount} {labels[paidCurrency]}
@@ -2200,8 +2200,8 @@ export default function CurrencyExchangePage() {
                     <span
                       className={`pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 rounded-lg px-2 py-1 text-[10px] font-black ${
                         dk
-                          ? "bg-teal-400/10 text-teal-300"
-                          : "bg-teal-600/10 text-teal-700"
+                          ? "bg-[#c9a45c]/15 text-[#c9a45c]"
+                          : "bg-[#0d5c4c]/10 text-[#0d5c4c]"
                       }`}
                     >
                       {labels[receivedCurrency]}
@@ -2228,7 +2228,7 @@ export default function CurrencyExchangePage() {
                   className={`fx-pop space-y-2 rounded-xl border p-4 ${
                     dk
                       ? "border-rose-400/25 bg-rose-400/10 text-rose-300"
-                      : "border-rose-500/30 bg-rose-500/10 text-rose-700"
+                      : "border-[#8c2033]/35 bg-[#8c2033]/[0.08] text-[#8c2033]"
                   }`}
                 >
                   <b className="flex items-center gap-2 text-sm">
@@ -2248,8 +2248,8 @@ export default function CurrencyExchangePage() {
                 onClick={submitExchange}
                 className={`group flex h-[52px] w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-base font-black shadow-lg transition-all duration-300 hover:shadow-xl hover:brightness-110 active:scale-[0.985] ${
                   dk
-                    ? "from-teal-400 via-emerald-400 to-emerald-300 text-[#04211d] shadow-teal-400/20"
-                    : "from-[#092f3a] via-teal-700 to-emerald-600 text-white shadow-teal-800/30"
+                    ? "from-[#a8853f] via-[#c9a45c] to-[#e0be7a] text-[#1c1403] shadow-[#c9a45c]/20"
+                    : "from-[#0f2f3c] via-[#0d4a42] to-[#0e5a4a] text-[#f3ecd9] shadow-[#0f2f3c]/40"
                 }`}
               >
                 {editingExchangeId
@@ -2268,8 +2268,8 @@ export default function CurrencyExchangePage() {
                 <span
                   className={`grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${
                     dk
-                      ? "from-violet-400/15 to-fuchsia-400/10 text-violet-300 ring-violet-400/20"
-                      : "from-violet-600/15 to-fuchsia-500/15 text-violet-700 ring-violet-600/20"
+                      ? "from-[#a08fe8]/15 to-[#a08fe8]/5 text-[#a08fe8] ring-[#a08fe8]/25"
+                      : "from-[#4c1d95]/15 to-[#4c1d95]/5 text-[#4c1d95] ring-[#4c1d95]/20"
                   }`}
                 >
                   <Ic n="users" className="h-5 w-5" />
@@ -2285,8 +2285,8 @@ export default function CurrencyExchangePage() {
                 <span
                   className={`rounded-full px-3 py-1.5 text-[10px] font-black ring-1 ${
                     dk
-                      ? "bg-violet-400/10 text-violet-300 ring-violet-400/20"
-                      : "bg-violet-600/10 text-violet-700 ring-violet-600/20"
+                      ? "bg-[#a08fe8]/10 text-[#a08fe8] ring-[#a08fe8]/25"
+                      : "bg-[#4c1d95]/10 text-[#4c1d95] ring-[#4c1d95]/20"
                   }`}
                 >
                   {editingTransferId
@@ -2299,8 +2299,8 @@ export default function CurrencyExchangePage() {
                 <div
                   className={`fx-pop flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm font-bold ${
                     dk
-                      ? "border-amber-400/25 bg-amber-400/10 text-amber-300"
-                      : "border-amber-500/35 bg-amber-500/10 text-amber-800"
+                      ? "border-[#c9a45c]/30 bg-[#c9a45c]/10 text-[#e0be7a]"
+                      : "border-[#8a6a2f]/40 bg-[#b08a3e]/10 text-[#6e5322]"
                   }`}
                 >
                   <span className="flex items-center gap-2">
@@ -2309,7 +2309,7 @@ export default function CurrencyExchangePage() {
                   </span>
                   <button
                     onClick={resetTransferForm}
-                    className="cursor-pointer rounded-lg bg-amber-500/20 px-3.5 py-1.5 text-xs font-black transition-all hover:bg-amber-500/30 active:scale-95"
+                    className="cursor-pointer rounded-lg bg-[#b08a3e]/20 px-3.5 py-1.5 text-xs font-black transition-all hover:bg-[#b08a3e]/30 active:scale-95"
                   >
                     انصراف
                   </button>
@@ -2356,19 +2356,19 @@ export default function CurrencyExchangePage() {
                 <div
                   className={`space-y-4 rounded-2xl border p-4 transition-colors ${
                     dk
-                      ? "border-violet-400/15 bg-violet-400/[0.04]"
-                      : "border-violet-500/25 bg-violet-500/[0.05]"
+                      ? "border-[#a08fe8]/25 bg-[#a08fe8]/[0.06]"
+                      : "border-[#4c1d95]/30 bg-[#4c1d95]/[0.05]"
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
                     <span
-                      className={`grid h-9 w-9 place-items-center rounded-xl bg-violet-500/15 ${
-                        dk ? "text-violet-300" : "text-violet-600"
+                      className={`grid h-9 w-9 place-items-center rounded-xl ${
+                        dk ? "bg-[#a08fe8]/15 text-[#c3b8f2]" : "bg-[#4c1d95]/15 text-[#4c1d95]"
                       }`}
                     >
                       <Ic n="up" className="h-4 w-4" />
                     </span>
-                    <b className={`text-sm font-black ${dk ? "text-violet-300" : "text-violet-800"}`}>
+                    <b className={`text-sm font-black ${dk ? "text-[#c3b8f2]" : "text-[#4c1d95]"}`}>
                       فرستنده
                     </b>
                   </div>
@@ -2446,8 +2446,8 @@ export default function CurrencyExchangePage() {
                   <span
                     className={`grid h-12 w-12 place-items-center rounded-full border shadow-md ${
                       dk
-                        ? "border-slate-700 bg-[#0b1622] text-violet-300"
-                        : "border-slate-200 bg-white text-violet-600"
+                        ? "border-[#243646] bg-[#0a141d] text-[#a08fe8]"
+                        : "border-[#d6cdba] bg-[#f8f5ec] text-[#4c1d95]"
                     }`}
                   >
                     <Ic n="arrowLeft" className="h-5 w-5" />
@@ -2457,19 +2457,19 @@ export default function CurrencyExchangePage() {
                 <div
                   className={`space-y-4 rounded-2xl border p-4 transition-colors ${
                     dk
-                      ? "border-emerald-400/15 bg-emerald-400/[0.04]"
-                      : "border-emerald-500/25 bg-emerald-500/[0.05]"
+                      ? "border-[#2e8b74]/25 bg-[#2e8b74]/[0.06]"
+                      : "border-[#0e5a4a]/30 bg-[#0e5a4a]/[0.06]"
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
                     <span
-                      className={`grid h-9 w-9 place-items-center rounded-xl bg-emerald-500/15 ${
-                        dk ? "text-emerald-300" : "text-emerald-600"
+                      className={`grid h-9 w-9 place-items-center rounded-xl ${
+                        dk ? "bg-[#2e8b74]/15 text-[#7fd1b9]" : "bg-[#0e5a4a]/15 text-[#0e5a4a]"
                       }`}
                     >
                       <Ic n="down" className="h-4 w-4" />
                     </span>
-                    <b className={`text-sm font-black ${dk ? "text-emerald-300" : "text-emerald-800"}`}>
+                    <b className={`text-sm font-black ${dk ? "text-[#9fdcc8]" : "text-[#0e5a4a]"}`}>
                       گیرنده
                     </b>
                   </div>
@@ -2535,8 +2535,8 @@ export default function CurrencyExchangePage() {
                 <div
                   className={`flex items-center gap-3 rounded-2xl border p-4 text-sm font-bold ${
                     dk
-                      ? "border-slate-600/60 bg-slate-400/[0.06] text-slate-300"
-                      : "border-slate-300/70 bg-slate-500/[0.06] text-slate-600"
+                      ? "border-[#31465a] bg-[#31465a]/20 text-[#aeb9c4]"
+                      : "border-[#b9b09a] bg-[#8a8272]/10 text-[#4a5560]"
                   }`}
                 >
                   <Ic n="info" className="h-5 w-5 shrink-0 opacity-70" />
@@ -2548,19 +2548,19 @@ export default function CurrencyExchangePage() {
                 <div
                   className={`space-y-4 rounded-2xl border p-4 transition-colors md:p-5 ${
                     dk
-                      ? "border-violet-400/20 bg-violet-400/[0.06]"
-                      : "border-violet-500/30 bg-violet-500/[0.07]"
+                      ? "border-[#a08fe8]/25 bg-[#a08fe8]/[0.06]"
+                      : "border-[#4c1d95]/30 bg-[#4c1d95]/[0.06]"
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
                     <span
-                      className={`grid h-9 w-9 place-items-center rounded-xl bg-violet-500/15 ${
-                        dk ? "text-violet-300" : "text-violet-600"
+                      className={`grid h-9 w-9 place-items-center rounded-xl ${
+                        dk ? "bg-[#a08fe8]/15 text-[#c3b8f2]" : "bg-[#4c1d95]/15 text-[#4c1d95]"
                       }`}
                     >
                       <Ic n="rate" className="h-4 w-4" />
                     </span>
-                    <b className={`text-sm font-black ${dk ? "text-violet-300" : "text-violet-800"}`}>
+                    <b className={`text-sm font-black ${dk ? "text-[#c3b8f2]" : "text-[#4c1d95]"}`}>
                       نرخ دستی در برابر افغانی
                     </b>
                   </div>
@@ -2603,8 +2603,8 @@ export default function CurrencyExchangePage() {
                       <span
                         className={`fx-pop inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black ${
                           dk
-                            ? "bg-violet-400/15 text-violet-300"
-                            : "bg-violet-500/15 text-violet-700"
+                            ? "bg-[#a08fe8]/15 text-[#c3b8f2]"
+                            : "bg-[#4c1d95]/10 text-[#4c1d95]"
                         }`}
                       >
                         <Ic n="check" className="h-3.5 w-3.5" />
@@ -2616,8 +2616,8 @@ export default function CurrencyExchangePage() {
                       <span
                         className={`fx-pop inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black ${
                           dk
-                            ? "bg-emerald-400/15 text-emerald-300"
-                            : "bg-emerald-500/15 text-emerald-700"
+                            ? "bg-[#2e8b74]/15 text-[#7fd1b9]"
+                            : "bg-[#0e5a4a]/10 text-[#0e5a4a]"
                         }`}
                       >
                         نتیجه: {receiverAmount} {labels[receiverCurrency]}
@@ -2631,19 +2631,19 @@ export default function CurrencyExchangePage() {
                 <div
                   className={`space-y-4 rounded-2xl border p-4 transition-colors md:p-5 ${
                     dk
-                      ? "border-fuchsia-400/20 bg-fuchsia-400/[0.06]"
-                      : "border-fuchsia-500/30 bg-fuchsia-500/[0.07]"
+                      ? "border-[#b39ddb]/25 bg-[#b39ddb]/[0.06]"
+                      : "border-[#6b21a8]/35 bg-[#6b21a8]/[0.07]"
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
                     <span
-                      className={`grid h-9 w-9 place-items-center rounded-xl bg-fuchsia-500/15 ${
-                        dk ? "text-fuchsia-300" : "text-fuchsia-600"
+                      className={`grid h-9 w-9 place-items-center rounded-xl ${
+                        dk ? "bg-[#b39ddb]/15 text-[#d6ccfa]" : "bg-[#6b21a8]/15 text-[#581c87]"
                       }`}
                     >
                       <Ic n="rate" className="h-4 w-4" />
                     </span>
-                    <b className={`text-sm font-black ${dk ? "text-fuchsia-300" : "text-fuchsia-800"}`}>
+                    <b className={`text-sm font-black ${dk ? "text-[#d6ccfa]" : "text-[#581c87]"}`}>
                       نرخ مستقیم جفت‌ارز
                     </b>
                   </div>
@@ -2723,8 +2723,8 @@ export default function CurrencyExchangePage() {
                       <span
                         className={`fx-pop inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black ${
                           dk
-                            ? "bg-fuchsia-400/15 text-fuchsia-300"
-                            : "bg-fuchsia-500/15 text-fuchsia-700"
+                            ? "bg-[#b39ddb]/15 text-[#d6ccfa]"
+                            : "bg-[#6b21a8]/15 text-[#581c87]"
                         }`}
                       >
                         <Ic n="check" className="h-3.5 w-3.5" />
@@ -2741,8 +2741,8 @@ export default function CurrencyExchangePage() {
                       <span
                         className={`fx-pop inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black ${
                           dk
-                            ? "bg-emerald-400/15 text-emerald-300"
-                            : "bg-emerald-500/15 text-emerald-700"
+                            ? "bg-[#2e8b74]/15 text-[#7fd1b9]"
+                            : "bg-[#0e5a4a]/10 text-[#0e5a4a]"
                         }`}
                       >
                         نتیجه: {receiverAmount} {labels[receiverCurrency]}
@@ -2777,8 +2777,8 @@ export default function CurrencyExchangePage() {
                     <span
                       className={`pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 rounded-lg px-2 py-1 text-[10px] font-black ${
                         dk
-                          ? "bg-violet-400/10 text-violet-300"
-                          : "bg-violet-600/10 text-violet-700"
+                          ? "bg-[#a08fe8]/15 text-[#c3b8f2]"
+                          : "bg-[#4c1d95]/10 text-[#4c1d95]"
                       }`}
                     >
                       {labels[senderCurrency]}
@@ -2805,7 +2805,7 @@ export default function CurrencyExchangePage() {
                   className={`fx-pop space-y-2 rounded-xl border p-4 ${
                     dk
                       ? "border-rose-400/25 bg-rose-400/10 text-rose-300"
-                      : "border-rose-500/30 bg-rose-500/10 text-rose-700"
+                      : "border-[#8c2033]/35 bg-[#8c2033]/[0.08] text-[#8c2033]"
                   }`}
                 >
                   <b className="flex items-center gap-2 text-sm">
@@ -2825,8 +2825,8 @@ export default function CurrencyExchangePage() {
                 onClick={submitTransfer}
                 className={`group flex h-[52px] w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-base font-black shadow-lg transition-all duration-300 hover:shadow-xl hover:brightness-110 active:scale-[0.985] ${
                   dk
-                    ? "from-violet-400 via-purple-400 to-fuchsia-300 text-[#1e0b36] shadow-fuchsia-400/20"
-                    : "from-violet-700 via-purple-600 to-fuchsia-600 text-white shadow-violet-700/30"
+                    ? "from-[#5e4aa8] via-[#6f5ac0] to-[#846fd6] text-[#f5f2ff] shadow-[#6f5ac0]/25"
+                    : "from-[#33204a] via-[#4c1d95] to-[#5b21b6] text-[#f3ecd9] shadow-[#33204a]/40"
                 }`}
               >
                 {editingTransferId
@@ -2847,8 +2847,8 @@ export default function CurrencyExchangePage() {
               <span
                 className={`grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${
                   dk
-                    ? "from-teal-400/15 to-emerald-400/10 text-teal-300 ring-teal-400/20"
-                    : "from-teal-600/15 to-emerald-500/15 text-teal-700 ring-teal-600/20"
+                    ? "from-[#c9a45c]/15 to-[#c9a45c]/5 text-[#c9a45c] ring-[#c9a45c]/25"
+                    : "from-[#0d5c4c]/15 to-[#0d5c4c]/5 text-[#0d5c4c] ring-[#0d5c4c]/20"
                 }`}
               >
                 <Ic n="doc" className="h-5 w-5" />
@@ -2867,8 +2867,8 @@ export default function CurrencyExchangePage() {
                   onClick={() => setSearch("")}
                   className={`flex cursor-pointer items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] font-black ring-1 transition ${
                     dk
-                      ? "bg-amber-400/10 text-amber-300 ring-amber-400/20 hover:bg-amber-400/20"
-                      : "bg-amber-500/10 text-amber-700 ring-amber-500/25 hover:bg-amber-500/20"
+                      ? "bg-[#c9a45c]/10 text-[#e0be7a] ring-[#c9a45c]/25 hover:bg-[#c9a45c]/20"
+                      : "bg-[#b08a3e]/15 text-[#6e5322] ring-[#8a6a2f]/30 hover:bg-[#b08a3e]/25"
                   }`}
                 >
                   نتایج جستجو
@@ -2883,32 +2883,32 @@ export default function CurrencyExchangePage() {
                   <tr
                     className={`border-y ${
                       dk
-                        ? "border-slate-800 bg-[#0b1520]/80"
-                        : "border-slate-100 bg-slate-50/80"
+                        ? "border-[#1c2a38] bg-[#0a141d]"
+                        : "border-[#d9d0bc] bg-[#efe9da]"
                     }`}
                   >
-                    <th className={`px-4 py-3 text-right text-[11px] font-black md:px-7 ${dk ? "text-slate-400" : "text-slate-500"}`}>شماره</th>
-                    <th className={`px-4 py-3 text-right text-[11px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>نام مشتری</th>
-                    <th className={`px-4 py-3 text-right text-[11px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>تاریخ (شمسی)</th>
-                    <th className={`px-4 py-3 text-right text-[11px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>نوع معامله</th>
-                    <th className={`px-4 py-3 text-right text-[11px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>دریافت</th>
-                    <th className={`px-4 py-3 text-right text-[11px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>پرداخت</th>
-                    <th className={`px-4 py-3 text-right text-[11px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>نرخ ارز</th>
-                    <th className={`px-4 py-3 text-right text-[11px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>کارمزد</th>
-                    <th className={`px-4 py-3 text-right text-[11px] font-black md:px-7 ${dk ? "text-slate-400" : "text-slate-500"}`}>عملیات</th>
+                    <th className={`px-4 py-3 text-right text-[11px] font-black md:px-7 ${dk ? "text-[#7d8a96]" : "text-[#6d7680]"}`}>شماره</th>
+                    <th className={`px-4 py-3 text-right text-[11px] font-black ${dk ? "text-[#7d8a96]" : "text-[#6d7680]"}`}>نام مشتری</th>
+                    <th className={`px-4 py-3 text-right text-[11px] font-black ${dk ? "text-[#7d8a96]" : "text-[#6d7680]"}`}>تاریخ (شمسی)</th>
+                    <th className={`px-4 py-3 text-right text-[11px] font-black ${dk ? "text-[#7d8a96]" : "text-[#6d7680]"}`}>نوع معامله</th>
+                    <th className={`px-4 py-3 text-right text-[11px] font-black ${dk ? "text-[#7d8a96]" : "text-[#6d7680]"}`}>دریافت</th>
+                    <th className={`px-4 py-3 text-right text-[11px] font-black ${dk ? "text-[#7d8a96]" : "text-[#6d7680]"}`}>پرداخت</th>
+                    <th className={`px-4 py-3 text-right text-[11px] font-black ${dk ? "text-[#7d8a96]" : "text-[#6d7680]"}`}>نرخ ارز</th>
+                    <th className={`px-4 py-3 text-right text-[11px] font-black ${dk ? "text-[#7d8a96]" : "text-[#6d7680]"}`}>کارمزد</th>
+                    <th className={`px-4 py-3 text-right text-[11px] font-black md:px-7 ${dk ? "text-[#7d8a96]" : "text-[#6d7680]"}`}>عملیات</th>
                   </tr>
                 </thead>
 
-                <tbody className={`divide-y ${dk ? "divide-slate-800/70" : "divide-slate-100"}`}>
+                <tbody className={`divide-y ${dk ? "divide-[#16232f]" : "divide-[#e2dbc9]"}`}>
                   {transactions.length === 0 ? (
                     <tr>
                       <td colSpan={9}>
-                        <div className={`flex flex-col items-center gap-3 px-6 py-14 ${dk ? "text-slate-500" : "text-slate-400"}`}>
+                        <div className={`flex flex-col items-center gap-3 px-6 py-14 ${dk ? "text-[#6d7a86]" : "text-[#8a939c]"}`}>
                           <span
                             className={`grid h-16 w-16 place-items-center rounded-2xl border border-dashed ${
                               dk
-                                ? "border-slate-700 bg-slate-800/40"
-                                : "border-slate-300 bg-slate-50"
+                                ? "border-[#243646] bg-[#0a141d]/60"
+                                : "border-[#b9b09a] bg-[#efe9da]"
                             }`}
                           >
                             <Ic n="inbox" className="h-7 w-7 opacity-70" />
@@ -2926,26 +2926,26 @@ export default function CurrencyExchangePage() {
                         transactionMatchesSearch(tx);
 
                       let rowClass = dk
-                        ? "transition-colors hover:bg-slate-800/30"
-                        : "transition-colors hover:bg-slate-50/80";
+                        ? "transition-colors hover:bg-white/[0.03]"
+                        : "transition-colors hover:bg-[#0d5c4c]/[0.04]";
 
                       if (isSearching) {
                         if (matchesSearch) {
                           rowClass += dk
-                            ? " bg-amber-400/10 hover:bg-amber-400/15"
-                            : " bg-amber-400/20 hover:bg-amber-400/25";
+                            ? " bg-[#c9a45c]/10 hover:bg-[#c9a45c]/15"
+                            : " bg-[#b08a3e]/20 hover:bg-[#b08a3e]/25";
                         } else {
                           rowClass += " opacity-30";
                         }
 
                         if (tx.status === "voided") {
-                          rowClass += dk ? " text-slate-500" : " text-slate-400";
+                          rowClass += dk ? " text-[#6d7a86]" : " text-[#8a939c]";
                         }
                       } else {
                         if (tx.status === "voided") {
                           rowClass += dk
-                            ? " bg-rose-400/[0.04] text-slate-500"
-                            : " bg-rose-500/[0.05] text-slate-400";
+                            ? " bg-rose-400/[0.04] text-[#6d7a86]"
+                            : " bg-[#8c2033]/[0.05] text-[#8a939c]";
                         }
                       }
 
@@ -2955,19 +2955,19 @@ export default function CurrencyExchangePage() {
                             <span
                               className={`grid h-8 w-8 place-items-center rounded-lg text-[11px] font-black tabular-nums ${
                                 dk
-                                  ? "bg-slate-800/80 text-slate-400"
-                                  : "bg-slate-100 text-slate-500"
+                                  ? "bg-[#16232f] text-[#8b98a5]"
+                                  : "bg-[#efe9da] text-[#6d7680]"
                               }`}
                             >
                               {transactions.length - index}
                             </span>
                           </td>
 
-                          <td className={`px-4 py-3.5 text-[13px] font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>
+                          <td className={`px-4 py-3.5 text-[13px] font-bold ${dk ? "text-[#e5dfd0]" : "text-[#22303a]"}`}>
                             {transactionCustomerLabel(tx)}
                           </td>
 
-                          <td className={`whitespace-nowrap px-4 py-3.5 text-xs tabular-nums ${dk ? "text-slate-400" : "text-slate-500"}`}>
+                          <td className={`whitespace-nowrap px-4 py-3.5 text-xs tabular-nums ${dk ? "text-[#8b98a5]" : "text-[#6d7680]"}`}>
                             <span dir="ltr">{dateLabel(tx.date)}</span>
                           </td>
 
@@ -2984,7 +2984,7 @@ export default function CurrencyExchangePage() {
                                   className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ring-1 ${
                                     dk
                                       ? "bg-rose-400/10 text-rose-300 ring-rose-400/20"
-                                      : "bg-rose-500/10 text-rose-600 ring-rose-500/25"
+                                      : "bg-[#8c2033]/10 text-[#8c2033] ring-[#8c2033]/30"
                                   }`}
                                 >
                                   لغو شده
@@ -3011,7 +3011,7 @@ export default function CurrencyExchangePage() {
                             </div>
                           </td>
 
-                          <td className={`px-4 py-3.5 text-[11px] font-medium ${dk ? "text-slate-400" : "text-slate-500"}`}>
+                          <td className={`px-4 py-3.5 text-[11px] font-medium ${dk ? "text-[#8b98a5]" : "text-[#6d7680]"}`}>
                             {tx.rateLabel}
                           </td>
 
@@ -3024,8 +3024,8 @@ export default function CurrencyExchangePage() {
                               <summary
                                 className={`inline-flex cursor-pointer select-none items-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-black shadow-sm transition-all ${
                                   dk
-                                    ? "border-slate-700 bg-[#0b1622] text-teal-300 hover:border-teal-400/50 hover:bg-teal-400/10"
-                                    : "border-slate-200 bg-white text-teal-700 hover:border-teal-500/50 hover:bg-teal-500/10"
+                                    ? "border-[#243646] bg-[#0a141d] text-[#c9a45c] hover:border-[#c9a45c]/50 hover:bg-[#c9a45c]/10"
+                                    : "border-[#d6cdba] bg-[#fffdf6] text-[#0d5c4c] hover:border-[#0d5c4c]/50 hover:bg-[#0d5c4c]/10"
                                 }`}
                               >
                                 عملیات
@@ -3035,8 +3035,8 @@ export default function CurrencyExchangePage() {
                               <ul
                                 className={`fx-pop mt-2 w-44 space-y-1 rounded-xl border p-1.5 shadow-xl ${
                                   dk
-                                    ? "border-slate-700 bg-[#101d2c] shadow-black/40"
-                                    : "border-slate-200 bg-white shadow-slate-900/10"
+                                    ? "border-[#243646] bg-[#0d1721] shadow-black/40"
+                                    : "border-[#d6cdba] bg-[#fffdf6] shadow-[#23302a]/10"
                                 }`}
                               >
                                 <li>
@@ -3103,21 +3103,21 @@ export default function CurrencyExchangePage() {
         >
           <div
             className={`fx-pop w-full max-w-lg overflow-hidden rounded-2xl border shadow-2xl ${
-              dk ? "border-slate-700 bg-[#0e1a28]" : "border-slate-200 bg-white"
+              dk ? "border-[#243646] bg-[#0d1721]" : "border-[#d6cdba] bg-[#f8f5ec]"
             }`}
             onClick={(e) => e.stopPropagation()}
           >
             <div
               className={`flex items-center justify-between border-b px-5 py-4 ${
                 dk
-                  ? "border-slate-800 bg-[#0b1520]/80"
-                  : "border-slate-100 bg-slate-50/80"
+                  ? "border-[#16232f] bg-[#0a141d]"
+                  : "border-[#e2dbc9] bg-[#efe9da]"
               }`}
             >
-              <b className={`flex items-center gap-2 text-sm ${dk ? "text-slate-100" : "text-slate-800"}`}>
+              <b className={`flex items-center gap-2 text-sm ${dk ? "text-[#e5dfd0]" : "text-[#14232e]"}`}>
                 <span
                   className={`grid h-8 w-8 place-items-center rounded-lg ${
-                    dk ? "bg-teal-400/10 text-teal-300" : "bg-teal-600/10 text-teal-700"
+                    dk ? "bg-[#c9a45c]/10 text-[#c9a45c]" : "bg-[#0d5c4c]/10 text-[#0d5c4c]"
                   }`}
                 >
                   <Ic n="doc" className="h-4 w-4" />
@@ -3127,10 +3127,10 @@ export default function CurrencyExchangePage() {
 
               <button
                 onClick={() => setSelectedTransaction(null)}
-                className={`grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-all duration-300 hover:rotate-90 ${
+                className={`grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-[#8a939c] transition-all duration-300 hover:rotate-90 ${
                   dk
-                    ? "hover:bg-slate-700 hover:text-white"
-                    : "hover:bg-slate-200 hover:text-slate-700"
+                    ? "hover:bg-[#243646] hover:text-white"
+                    : "hover:bg-[#e2dbc9] hover:text-[#22303a]"
                 }`}
               >
                 <Ic n="x" className="h-4 w-4" />
@@ -3190,11 +3190,11 @@ export default function CurrencyExchangePage() {
                 valueClass={
                   selectedTransaction.status === "voided"
                     ? dk
-                      ? "text-rose-400"
-                      : "text-rose-600"
+                      ? "text-rose-300"
+                      : "text-[#8c2033]"
                     : dk
-                    ? "text-emerald-400"
-                    : "text-emerald-600"
+                    ? "text-[#7fd1b9]"
+                    : "text-[#0e5a4a]"
                 }
               />
             </div>
