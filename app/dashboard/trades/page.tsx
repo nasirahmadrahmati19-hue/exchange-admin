@@ -16,7 +16,6 @@ type Customer = {
 
 type Transaction = {
   id: string;
-  docNumber: string;
   type: "exchange" | "transfer";
   dealType?: DealType;
   date: string;
@@ -32,6 +31,21 @@ type Transaction = {
   commission?: number;
   commissionCurrency?: Currency;
   status: "active" | "voided";
+};
+
+type ExchangeFormErrors = {
+  customer?: string;
+  receivedAmount?: string;
+  rate?: string;
+  paidAmount?: string;
+};
+
+type TransferFormErrors = {
+  sender?: string;
+  receiver?: string;
+  senderAmount?: string;
+  transferRate?: string;
+  receiverAmount?: string;
 };
 
 const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
@@ -290,7 +304,6 @@ export default function CurrencyExchangePage() {
 
   const [customer, setCustomer] = useState("");
 
-  const [exchangeDocNumber, setExchangeDocNumber] = useState("");
   const [exchangeDealType, setExchangeDealType] =
     useState<DealType>("buy");
   const [exchangeCommission, setExchangeCommission] = useState("0");
@@ -307,12 +320,13 @@ export default function CurrencyExchangePage() {
   const [exchangeDirectBase, setExchangeDirectBase] =
     useState<Currency>("USD");
 
+  const [exchangeErrors, setExchangeErrors] =
+    useState<ExchangeFormErrors>({});
+
   /* ---------------- Transfer ---------------- */
 
   const [sender, setSender] = useState("");
   const [receiver, setReceiver] = useState("");
-
-  const [transferDocNumber, setTransferDocNumber] = useState("");
 
   const [senderCurrency, setSenderCurrency] =
     useState<Currency>("AFN");
@@ -327,6 +341,9 @@ export default function CurrencyExchangePage() {
     useState<Currency>("USD");
 
   const [commission, setCommission] = useState("0");
+
+  const [transferErrors, setTransferErrors] =
+    useState<TransferFormErrors>({});
 
   /* ---------------- Exchange Mode ---------------- */
 
@@ -546,6 +563,102 @@ export default function CurrencyExchangePage() {
     transferDirectCounter,
   ]);
 
+  /* ---------------- Exchange Validation ---------------- */
+
+  function validateExchange(): ExchangeFormErrors {
+    const errs: ExchangeFormErrors = {};
+
+    if (!customer) {
+      errs.customer = "فیلد مشتری خالی است.";
+    }
+
+    const amount = parseAmount(receivedAmount);
+
+    if (!amount) {
+      errs.receivedAmount = "مبلغ دریافتی خالی یا صفر است.";
+    }
+
+    if (exchangeMode !== "same") {
+      const r = parseAmount(rate);
+
+      if (!r) {
+        errs.rate =
+          exchangeMode === "afn"
+            ? "نرخ در برابر افغانی خالی است."
+            : "نرخ مستقیم خالی است.";
+      }
+
+      if (exchangeMode === "direct" && !exchangeDirectCounter) {
+        errs.rate = "مبنای نرخ مستقیم معتبر نیست.";
+      }
+    }
+
+    if (amount) {
+      const paid = parseAmount(paidAmount);
+
+      if (!paid) {
+        errs.paidAmount =
+          exchangeMode === "same"
+            ? "مبلغ پرداختی محاسبه نشد."
+            : "مبلغ پرداختی محاسبه نشد؛ لطفاً نرخ را بررسی کنید.";
+      }
+    }
+
+    return errs;
+  }
+
+  /* ---------------- Transfer Validation ---------------- */
+
+  function validateTransfer(): TransferFormErrors {
+    const errs: TransferFormErrors = {};
+
+    if (!sender) {
+      errs.sender = "فیلد فرستنده خالی است.";
+    }
+
+    if (!receiver) {
+      errs.receiver = "فیلد گیرنده خالی است.";
+    }
+
+    if (sender && receiver && sender === receiver) {
+      errs.receiver = "فرستنده و گیرنده نباید یکسان باشند.";
+    }
+
+    const amount = parseAmount(senderAmount);
+
+    if (!amount) {
+      errs.senderAmount = "مبلغ فرستنده خالی یا صفر است.";
+    }
+
+    if (transferMode !== "same") {
+      const r = parseAmount(transferRate);
+
+      if (!r) {
+        errs.transferRate =
+          transferMode === "afn"
+            ? "نرخ در برابر افغانی خالی است."
+            : "نرخ مستقیم خالی است.";
+      }
+
+      if (transferMode === "direct" && !transferDirectCounter) {
+        errs.transferRate = "مبنای نرخ مستقیم معتبر نیست.";
+      }
+    }
+
+    if (amount) {
+      const received = parseAmount(receiverAmount);
+
+      if (!received) {
+        errs.receiverAmount =
+          transferMode === "same"
+            ? "مبلغ گیرنده محاسبه نشد."
+            : "مبلغ گیرنده محاسبه نشد؛ لطفاً نرخ را بررسی کنید.";
+      }
+    }
+
+    return errs;
+  }
+
   /* ---------------- Exchange Submit ---------------- */
 
   const exchangeFromAmount = parseAmount(receivedAmount);
@@ -556,20 +669,12 @@ export default function CurrencyExchangePage() {
     parseAmount(exchangeCommission)
   );
 
-  const exchangeDocOk = exchangeDocNumber.trim().length > 0;
-
-  const canSubmitExchange =
-    exchangeDocOk &&
-    !!customer &&
-    exchangeFromAmount > 0 &&
-    exchangeToAmount > 0 &&
-    (exchangeMode === "same" ||
-      (exchangeRateValue > 0 &&
-        (exchangeMode !== "direct" ||
-          exchangeDirectCounter !== null)));
-
   function submitExchange() {
-    if (!canSubmitExchange) return;
+    const errs = validateExchange();
+    setExchangeErrors(errs);
+
+    const hasError = Object.values(errs).some((x) => Boolean(x));
+    if (hasError) return;
 
     const fromAmount = exchangeFromAmount;
     const toAmount = exchangeToAmount;
@@ -600,7 +705,6 @@ export default function CurrencyExchangePage() {
 
     const tx: Transaction = {
       id: newId(),
-      docNumber: exchangeDocNumber.trim(),
       type: "exchange",
       dealType: exchangeDealType,
       date: new Date().toISOString(),
@@ -619,11 +723,11 @@ export default function CurrencyExchangePage() {
     setTransactions((x) => [tx, ...x]);
 
     setCustomer("");
-    setExchangeDocNumber("");
     setReceivedAmount("");
     setPaidAmount("");
     setRate("");
     setExchangeCommission("0");
+    setExchangeErrors({});
   }
 
   /* ---------------- Transfer Submit ---------------- */
@@ -633,22 +737,12 @@ export default function CurrencyExchangePage() {
   const transferRateValue = parseAmount(transferRate);
   const commissionValue = Math.max(0, parseAmount(commission));
 
-  const transferDocOk = transferDocNumber.trim().length > 0;
-
-  const canSubmitTransfer =
-    transferDocOk &&
-    !!sender &&
-    !!receiver &&
-    sender !== receiver &&
-    transferFromAmount > 0 &&
-    transferToAmount > 0 &&
-    (transferMode === "same" ||
-      (transferRateValue > 0 &&
-        (transferMode !== "direct" ||
-          transferDirectCounter !== null)));
-
   function submitTransfer() {
-    if (!canSubmitTransfer) return;
+    const errs = validateTransfer();
+    setTransferErrors(errs);
+
+    const hasError = Object.values(errs).some((x) => Boolean(x));
+    if (hasError) return;
 
     const fromAmount = transferFromAmount;
     const toAmount = transferToAmount;
@@ -679,7 +773,6 @@ export default function CurrencyExchangePage() {
 
     const tx: Transaction = {
       id: newId(),
-      docNumber: transferDocNumber.trim(),
       type: "transfer",
       date: new Date().toISOString(),
       senderId: sender,
@@ -699,11 +792,11 @@ export default function CurrencyExchangePage() {
 
     setSender("");
     setReceiver("");
-    setTransferDocNumber("");
     setSenderAmount("");
     setReceiverAmount("");
     setTransferRate("");
     setCommission("0");
+    setTransferErrors({});
   }
 
   /* ---------------- Balance ---------------- */
@@ -790,6 +883,14 @@ export default function CurrencyExchangePage() {
     );
   }
 
+  const exchangeErrorList = Object.values(exchangeErrors).filter(
+    (msg): msg is string => Boolean(msg)
+  );
+
+  const transferErrorList = Object.values(transferErrors).filter(
+    (msg): msg is string => Boolean(msg)
+  );
+
   return (
     <div dir="rtl" className="p-5 space-y-5 bg-gray-50 min-h-screen">
 
@@ -802,7 +903,11 @@ export default function CurrencyExchangePage() {
       <div className="flex gap-2">
 
         <button
-          onClick={() => setTab("exchange")}
+          onClick={() => {
+            setTab("exchange");
+            setExchangeErrors({});
+            setTransferErrors({});
+          }}
           className={`px-5 py-3 rounded-xl ${
             tab === "exchange"
               ? "bg-cyan-600 text-white"
@@ -813,7 +918,11 @@ export default function CurrencyExchangePage() {
         </button>
 
         <button
-          onClick={() => setTab("transfer")}
+          onClick={() => {
+            setTab("transfer");
+            setExchangeErrors({});
+            setTransferErrors({});
+          }}
           className={`px-5 py-3 rounded-xl ${
             tab === "transfer"
               ? "bg-purple-600 text-white"
@@ -834,7 +943,7 @@ export default function CurrencyExchangePage() {
             تبادل ارز صرافی با مشتری
           </h2>
 
-          <div className="grid md:grid-cols-3 gap-4">
+          <div className="grid md:grid-cols-2 gap-4">
 
             <div className="space-y-2">
               <label className="text-sm font-bold">
@@ -845,21 +954,6 @@ export default function CurrencyExchangePage() {
                 readOnly
                 value={currentDateTime}
                 className="h-12 w-full rounded-xl border px-3 bg-gray-100"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-bold">
-                نمبر سند
-              </label>
-
-              <input
-                value={exchangeDocNumber}
-                onChange={(e) =>
-                  setExchangeDocNumber(e.target.value)
-                }
-                placeholder="نمبر سند را وارد کنید"
-                className="h-12 w-full rounded-xl border px-3"
               />
             </div>
 
@@ -884,18 +978,36 @@ export default function CurrencyExchangePage() {
 
           </div>
 
-          <select
-            value={customer}
-            onChange={(e) => setCustomer(e.target.value)}
-            className="h-12 w-full rounded-xl border px-3"
-          >
-            <option value="">انتخاب مشتری</option>
-            {customers.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          <div className="space-y-2">
+
+            <label className="text-sm font-bold">
+              مشتری
+            </label>
+
+            <select
+              value={customer}
+              onChange={(e) => {
+                setCustomer(e.target.value);
+                setExchangeErrors((prev) => ({
+                  ...prev,
+                  customer: undefined,
+                }));
+              }}
+              className={`h-12 w-full md:w-56 rounded-xl border px-3 ${
+                exchangeErrors.customer
+                  ? "border-red-500"
+                  : ""
+              }`}
+            >
+              <option value="">انتخاب مشتری</option>
+              {customers.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+
+          </div>
 
           <div className="grid md:grid-cols-2 gap-4">
 
@@ -904,7 +1016,14 @@ export default function CurrencyExchangePage() {
 
               {currencySelect(
                 receivedCurrency,
-                setReceivedCurrency
+                (v) => {
+                  setReceivedCurrency(v);
+                  setExchangeErrors((prev) => ({
+                    ...prev,
+                    rate: undefined,
+                    paidAmount: undefined,
+                  }));
+                }
               )}
 
               <input
@@ -912,11 +1031,20 @@ export default function CurrencyExchangePage() {
                 step="any"
                 min="0"
                 value={receivedAmount}
-                onChange={(e) =>
-                  setReceivedAmount(e.target.value)
-                }
+                onChange={(e) => {
+                  setReceivedAmount(e.target.value);
+                  setExchangeErrors((prev) => ({
+                    ...prev,
+                    receivedAmount: undefined,
+                    paidAmount: undefined,
+                  }));
+                }}
                 placeholder="مبلغ دریافتی"
-                className="h-12 w-full rounded-xl border px-3"
+                className={`h-12 w-full rounded-xl border px-3 ${
+                  exchangeErrors.receivedAmount
+                    ? "border-red-500"
+                    : ""
+                }`}
               />
             </div>
 
@@ -925,14 +1053,25 @@ export default function CurrencyExchangePage() {
 
               {currencySelect(
                 paidCurrency,
-                setPaidCurrency
+                (v) => {
+                  setPaidCurrency(v);
+                  setExchangeErrors((prev) => ({
+                    ...prev,
+                    rate: undefined,
+                    paidAmount: undefined,
+                  }));
+                }
               )}
 
               <input
                 readOnly
                 value={paidAmount}
                 placeholder="مبلغ پرداختی"
-                className="h-12 w-full rounded-xl border px-3 bg-gray-100"
+                className={`h-12 w-full rounded-xl border px-3 bg-gray-100 ${
+                  exchangeErrors.paidAmount
+                    ? "border-red-500"
+                    : ""
+                }`}
               />
             </div>
 
@@ -961,11 +1100,20 @@ export default function CurrencyExchangePage() {
                   step="any"
                   min="0"
                   value={rate}
-                  onChange={(e) =>
-                    setRate(e.target.value)
-                  }
+                  onChange={(e) => {
+                    setRate(e.target.value);
+                    setExchangeErrors((prev) => ({
+                      ...prev,
+                      rate: undefined,
+                      paidAmount: undefined,
+                    }));
+                  }}
                   placeholder="نرخ"
-                  className="h-12 w-44 rounded-xl border px-3"
+                  className={`h-12 w-44 rounded-xl border px-3 ${
+                    exchangeErrors.rate
+                      ? "border-red-500"
+                      : ""
+                  }`}
                 />
 
                 <span>{labels.AFN}</span>
@@ -1011,11 +1159,16 @@ export default function CurrencyExchangePage() {
 
                   <select
                     value={exchangeDirectBaseValue}
-                    onChange={(e) =>
+                    onChange={(e) => {
                       setExchangeDirectBase(
                         e.target.value as Currency
-                      )
-                    }
+                      );
+                      setExchangeErrors((prev) => ({
+                        ...prev,
+                        rate: undefined,
+                        paidAmount: undefined,
+                      }));
+                    }}
                     className="h-12 w-full rounded-xl border px-3"
                   >
                     {[receivedCurrency, paidCurrency].map((c) => (
@@ -1045,11 +1198,20 @@ export default function CurrencyExchangePage() {
                       step="any"
                       min="0"
                       value={rate}
-                      onChange={(e) =>
-                        setRate(e.target.value)
-                      }
+                      onChange={(e) => {
+                        setRate(e.target.value);
+                        setExchangeErrors((prev) => ({
+                          ...prev,
+                          rate: undefined,
+                          paidAmount: undefined,
+                        }));
+                      }}
                       placeholder="نرخ مستقیم"
-                      className="h-12 w-44 rounded-xl border px-3"
+                      className={`h-12 w-44 rounded-xl border px-3 ${
+                        exchangeErrors.rate
+                          ? "border-red-500"
+                          : ""
+                      }`}
                     />
 
                     <span>
@@ -1114,10 +1276,23 @@ export default function CurrencyExchangePage() {
 
           </div>
 
+          {exchangeErrorList.length > 0 && (
+            <div className="bg-red-50 text-red-700 rounded-xl p-4 space-y-2">
+
+              <b>لطفاً این فیلدها را تکمیل کنید:</b>
+
+              <ul className="list-disc pr-5 space-y-1">
+                {exchangeErrorList.map((msg, i) => (
+                  <li key={i}>{msg}</li>
+                ))}
+              </ul>
+
+            </div>
+          )}
+
           <button
             onClick={submitExchange}
-            disabled={!canSubmitExchange}
-            className="w-full h-12 rounded-xl bg-[#092F3A] text-white disabled:opacity-50"
+            className="w-full h-12 rounded-xl bg-[#092F3A] text-white"
           >
             ثبت معامله
           </button>
@@ -1134,34 +1309,17 @@ export default function CurrencyExchangePage() {
             تبادل بین حساب مشتریان
           </h2>
 
-          <div className="grid md:grid-cols-2 gap-4">
+          <div className="space-y-2">
 
-            <div className="space-y-2">
-              <label className="text-sm font-bold">
-                تاریخ و ساعت (خودکار)
-              </label>
+            <label className="text-sm font-bold">
+              تاریخ و ساعت (خودکار)
+            </label>
 
-              <input
-                readOnly
-                value={currentDateTime}
-                className="h-12 w-full rounded-xl border px-3 bg-gray-100"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-bold">
-                نمبر سند
-              </label>
-
-              <input
-                value={transferDocNumber}
-                onChange={(e) =>
-                  setTransferDocNumber(e.target.value)
-                }
-                placeholder="نمبر سند را وارد کنید"
-                className="h-12 w-full rounded-xl border px-3"
-              />
-            </div>
+            <input
+              readOnly
+              value={currentDateTime}
+              className="h-12 w-full md:w-72 rounded-xl border px-3 bg-gray-100"
+            />
 
           </div>
 
@@ -1172,10 +1330,18 @@ export default function CurrencyExchangePage() {
 
               <select
                 value={sender}
-                onChange={(e) =>
-                  setSender(e.target.value)
-                }
-                className="h-12 w-full rounded-xl border px-3"
+                onChange={(e) => {
+                  setSender(e.target.value);
+                  setTransferErrors((prev) => ({
+                    ...prev,
+                    sender: undefined,
+                  }));
+                }}
+                className={`h-12 w-full rounded-xl border px-3 ${
+                  transferErrors.sender
+                    ? "border-red-500"
+                    : ""
+                }`}
               >
                 <option value="">انتخاب مشتری</option>
                 {customers.map((c) => (
@@ -1187,7 +1353,14 @@ export default function CurrencyExchangePage() {
 
               {currencySelect(
                 senderCurrency,
-                setSenderCurrency
+                (v) => {
+                  setSenderCurrency(v);
+                  setTransferErrors((prev) => ({
+                    ...prev,
+                    transferRate: undefined,
+                    receiverAmount: undefined,
+                  }));
+                }
               )}
 
               <input
@@ -1195,11 +1368,20 @@ export default function CurrencyExchangePage() {
                 step="any"
                 min="0"
                 value={senderAmount}
-                onChange={(e) =>
-                  setSenderAmount(e.target.value)
-                }
+                onChange={(e) => {
+                  setSenderAmount(e.target.value);
+                  setTransferErrors((prev) => ({
+                    ...prev,
+                    senderAmount: undefined,
+                    receiverAmount: undefined,
+                  }));
+                }}
                 placeholder="مبلغ فرستنده"
-                className="h-12 w-full rounded-xl border px-3"
+                className={`h-12 w-full rounded-xl border px-3 ${
+                  transferErrors.senderAmount
+                    ? "border-red-500"
+                    : ""
+                }`}
               />
             </div>
 
@@ -1208,10 +1390,18 @@ export default function CurrencyExchangePage() {
 
               <select
                 value={receiver}
-                onChange={(e) =>
-                  setReceiver(e.target.value)
-                }
-                className="h-12 w-full rounded-xl border px-3"
+                onChange={(e) => {
+                  setReceiver(e.target.value);
+                  setTransferErrors((prev) => ({
+                    ...prev,
+                    receiver: undefined,
+                  }));
+                }}
+                className={`h-12 w-full rounded-xl border px-3 ${
+                  transferErrors.receiver
+                    ? "border-red-500"
+                    : ""
+                }`}
               >
                 <option value="">انتخاب مشتری</option>
                 {customers.map((c) => (
@@ -1223,14 +1413,25 @@ export default function CurrencyExchangePage() {
 
               {currencySelect(
                 receiverCurrency,
-                setReceiverCurrency
+                (v) => {
+                  setReceiverCurrency(v);
+                  setTransferErrors((prev) => ({
+                    ...prev,
+                    transferRate: undefined,
+                    receiverAmount: undefined,
+                  }));
+                }
               )}
 
               <input
                 readOnly
                 value={receiverAmount}
                 placeholder="مبلغ گیرنده"
-                className="h-12 w-full rounded-xl border px-3 bg-gray-100"
+                className={`h-12 w-full rounded-xl border px-3 bg-gray-100 ${
+                  transferErrors.receiverAmount
+                    ? "border-red-500"
+                    : ""
+                }`}
               />
             </div>
 
@@ -1259,11 +1460,20 @@ export default function CurrencyExchangePage() {
                   step="any"
                   min="0"
                   value={transferRate}
-                  onChange={(e) =>
-                    setTransferRate(e.target.value)
-                  }
+                  onChange={(e) => {
+                    setTransferRate(e.target.value);
+                    setTransferErrors((prev) => ({
+                      ...prev,
+                      transferRate: undefined,
+                      receiverAmount: undefined,
+                    }));
+                  }}
                   placeholder="نرخ"
-                  className="h-12 w-44 rounded-xl border px-3"
+                  className={`h-12 w-44 rounded-xl border px-3 ${
+                    transferErrors.transferRate
+                      ? "border-red-500"
+                      : ""
+                  }`}
                 />
 
                 <span>{labels.AFN}</span>
@@ -1309,11 +1519,16 @@ export default function CurrencyExchangePage() {
 
                   <select
                     value={transferDirectBaseValue}
-                    onChange={(e) =>
+                    onChange={(e) => {
                       setTransferDirectBase(
                         e.target.value as Currency
-                      )
-                    }
+                      );
+                      setTransferErrors((prev) => ({
+                        ...prev,
+                        transferRate: undefined,
+                        receiverAmount: undefined,
+                      }));
+                    }}
                     className="h-12 w-full rounded-xl border px-3"
                   >
                     {[senderCurrency, receiverCurrency].map((c) => (
@@ -1343,11 +1558,20 @@ export default function CurrencyExchangePage() {
                       step="any"
                       min="0"
                       value={transferRate}
-                      onChange={(e) =>
-                        setTransferRate(e.target.value)
-                      }
+                      onChange={(e) => {
+                        setTransferRate(e.target.value);
+                        setTransferErrors((prev) => ({
+                          ...prev,
+                          transferRate: undefined,
+                          receiverAmount: undefined,
+                        }));
+                      }}
                       placeholder="نرخ مستقیم"
-                      className="h-12 w-44 rounded-xl border px-3"
+                      className={`h-12 w-44 rounded-xl border px-3 ${
+                        transferErrors.transferRate
+                          ? "border-red-500"
+                          : ""
+                      }`}
                     />
 
                     <span>
@@ -1412,10 +1636,23 @@ export default function CurrencyExchangePage() {
 
           </div>
 
+          {transferErrorList.length > 0 && (
+            <div className="bg-red-50 text-red-700 rounded-xl p-4 space-y-2">
+
+              <b>لطفاً این فیلدها را تکمیل کنید:</b>
+
+              <ul className="list-disc pr-5 space-y-1">
+                {transferErrorList.map((msg, i) => (
+                  <li key={i}>{msg}</li>
+                ))}
+              </ul>
+
+            </div>
+          )}
+
           <button
             onClick={submitTransfer}
-            disabled={!canSubmitTransfer}
-            className="w-full h-12 rounded-xl bg-[#092F3A] text-white disabled:opacity-50"
+            className="w-full h-12 rounded-xl bg-[#092F3A] text-white"
           >
             ثبت انتقال
           </button>
@@ -1490,10 +1727,6 @@ export default function CurrencyExchangePage() {
             <tr className="bg-gray-50">
 
               <th className="p-3 text-right">
-                نمبر
-              </th>
-
-              <th className="p-3 text-right">
                 تاریخ
               </th>
 
@@ -1536,10 +1769,6 @@ export default function CurrencyExchangePage() {
                 key={tx.id}
                 className="border-t"
               >
-
-                <td className="p-3">
-                  {tx.docNumber || "-"}
-                </td>
 
                 <td className="p-3 whitespace-nowrap">
                   {dateLabel(tx.date)}
