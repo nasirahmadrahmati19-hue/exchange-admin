@@ -21,8 +21,7 @@ type Transaction = {
   fromAmount: number;
   toCurrency: Currency;
   toAmount: number;
-  rate: number;
-  rateCurrency?: Currency;
+  rateLabel: string;
   commission?: number;
   commissionCurrency?: Currency;
   status: "active" | "voided";
@@ -39,21 +38,35 @@ const labels: Record<Currency, string> = {
 };
 
 /*
-  منطق نرخ:
+  واحد هر ارز:
+
+  1 دلار = 1 واحد
+  1 یورو = 1 واحد
+  1000 تومان = 1 واحد
+  1000 کلدار = 1 واحد
+
+  نرخ‌ها همیشه در برابر افغانی تعریف می‌شوند:
 
   1 USD = 50 AFN
-  1 EUR = 50 AFN یا هر نرخ مشابه
+  1 EUR = 50 AFN
   1000 IRR = 0.38 AFN
   1000 PKR = 250 AFN
-
-  بنابراین واحد نرخ برای تومان و کلدار 1000 است.
 */
+
 const rateUnits: Record<Currency, number> = {
   AFN: 1,
   USD: 1,
   EUR: 1,
   IRR: 1000,
   PKR: 1000,
+};
+
+const defaultRates: Record<Currency, string> = {
+  AFN: "1",
+  USD: "50",
+  EUR: "50",
+  IRR: "0.38",
+  PKR: "250",
 };
 
 const initialCustomers: Customer[] = [
@@ -74,86 +87,179 @@ const initialCustomers: Customer[] = [
   },
 ];
 
+const normalizeDigits = (s: string) =>
+  s
+    .replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
+    .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
+
+const parseAmount = (v: string) => {
+  const s = normalizeDigits(String(v || "")).replace(/,/g, "");
+  const n = Number(s);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+};
+
 const fmt = (n: number) =>
   Number.isFinite(n)
     ? n.toLocaleString("en-US", { maximumFractionDigits: 8 })
     : "0";
 
-const parseAmount = (v: string) => {
-  const n = Number(String(v || "").replace(/,/g, ""));
-  return Number.isFinite(n) ? n : 0;
-};
-
 const newId = () =>
   `EX-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
+function getNumericRates(
+  rates: Record<Currency, string>
+): Record<Currency, number> {
+  return {
+    AFN: 1,
+    USD: parseAmount(rates.USD),
+    EUR: parseAmount(rates.EUR),
+    IRR: parseAmount(rates.IRR),
+    PKR: parseAmount(rates.PKR),
+  };
+}
+
 /*
-  اگر یکی از دو ارز AFN باشد، ارز دیگر ارز نرخ است.
+  تبدیل ارز به افغانی
+
   مثال:
-  AFN -> USD => نرخ USD
-  USD -> AFN => نرخ USD
-  IRR -> AFN => نرخ IRR
-  AFN -> IRR => نرخ IRR
-*/
-function getRateCurrency(
-  from: Currency,
-  to: Currency
-): Currency | null {
-  if (from === to) return null;
-  if (from === "AFN") return to;
-  if (to === "AFN") return from;
-  return null;
-}
+  1000 USD -> AFN
+  1000 / 1 * 50 = 50000 AFN
 
-function rateDescription(rate: number, rateCurrency: Currency) {
-  return `${fmt(rateUnits[rateCurrency])} ${labels[rateCurrency]} = ${fmt(
-    rate
-  )} ${labels.AFN}`;
+  1000000 IRR -> AFN
+  1000000 / 1000 * 0.38 = 380 AFN
+*/
+function toAfn(
+  amount: number,
+  currency: Currency,
+  rates: Record<Currency, number>
+) {
+  if (!Number.isFinite(amount) || amount === 0) return 0;
+  if (currency === "AFN") return amount;
+
+  const unit = rateUnits[currency] || 1;
+  const rate = rates[currency];
+
+  if (!Number.isFinite(rate) || rate <= 0) return 0;
+
+  return (amount / unit) * rate;
 }
 
 /*
-  تبدیل فقط بر اساس نرخ نسبت به افغانی.
+  تبدیل افغانی به ارز مقصد
 
-  اگر از AFN به ارز خارجی:
-  amount / rate * unit
-
-  اگر از ارز خارجی به AFN:
-  amount / unit * rate
-
-  مثال‌ها:
-  50000 AFN -> USD با نرخ 50
+  مثال:
+  50000 AFN -> USD
   50000 / 50 * 1 = 1000 USD
 
-  1000000 IRR -> AFN با نرخ 0.38
-  1000000 / 1000 * 0.38 = 380 AFN
-
-  5000 PKR -> AFN با نرخ 250
-  5000 / 1000 * 250 = 1250 AFN
+  380 AFN -> IRR
+  380 / 0.38 * 1000 = 1000000 IRR
 */
-function convertByAfnRate(
+function fromAfn(
+  amountAfn: number,
+  currency: Currency,
+  rates: Record<Currency, number>
+) {
+  if (!Number.isFinite(amountAfn) || amountAfn === 0) return 0;
+  if (currency === "AFN") return amountAfn;
+
+  const unit = rateUnits[currency] || 1;
+  const rate = rates[currency];
+
+  if (!Number.isFinite(rate) || rate <= 0) return 0;
+
+  return (amountAfn / rate) * unit;
+}
+
+/*
+  تبدیل کامل بین دو ارز
+
+  مرحله اول:
+  FROM -> AFN
+
+  مرحله دوم:
+  AFN -> TO
+
+  مثال:
+  EUR -> USD
+  EUR -> AFN -> USD
+
+  PKR -> IRR
+  PKR -> AFN -> IRR
+*/
+function convertCurrency(
   amount: number,
   from: Currency,
   to: Currency,
-  rate: number
+  rates: Record<Currency, number>
 ) {
   if (!Number.isFinite(amount) || amount === 0) return 0;
   if (from === to) return amount;
-  if (!Number.isFinite(rate) || rate <= 0) return 0;
 
-  const rateCurrency = getRateCurrency(from, to);
-  if (!rateCurrency) return 0;
+  const afn = toAfn(amount, from, rates);
+  if (!afn) return 0;
 
-  const unit = rateUnits[rateCurrency] || 1;
+  return fromAfn(afn, to, rates);
+}
 
-  if (from === "AFN" && to === rateCurrency) {
-    return (amount / rate) * unit;
+function missingRates(
+  from: Currency,
+  to: Currency,
+  rates: Record<Currency, number>
+): Currency[] {
+  if (from === to) return [];
+
+  return [from, to].filter(
+    (c) => c !== "AFN" && (!rates[c] || rates[c] <= 0)
+  );
+}
+
+function formatRate(rate: number) {
+  return rate > 0 ? fmt(rate) : "نامشخص";
+}
+
+function usedRatesLabel(
+  from: Currency,
+  to: Currency,
+  rates: Record<Currency, number>
+) {
+  if (from === to) {
+    return `بدون تبدیل (${labels[from]})`;
   }
 
-  if (from === rateCurrency && to === "AFN") {
-    return (amount / unit) * rate;
+  const parts: string[] = [];
+
+  if (from !== "AFN") {
+    parts.push(
+      `${fmt(rateUnits[from])} ${labels[from]} = ${formatRate(
+        rates[from]
+      )} ${labels.AFN}`
+    );
   }
 
-  return 0;
+  if (to !== "AFN") {
+    parts.push(
+      `${fmt(rateUnits[to])} ${labels[to]} = ${formatRate(
+        rates[to]
+      )} ${labels.AFN}`
+    );
+  }
+
+  return parts.length ? parts.join(" | ") : "AFN = AFN";
+}
+
+function crossRatePreview(
+  from: Currency,
+  to: Currency,
+  rates: Record<Currency, number>
+) {
+  if (from === to) return "";
+
+  const unit = rateUnits[from] || 1;
+  const result = convertCurrency(unit, from, to, rates);
+
+  if (!result) return "";
+
+  return `${fmt(unit)} ${labels[from]} ≈ ${fmt(result)} ${labels[to]}`;
 }
 
 export default function CurrencyExchangePage() {
@@ -161,6 +267,9 @@ export default function CurrencyExchangePage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
 
   const [tab, setTab] = useState<"exchange" | "transfer">("exchange");
+
+  const [rates, setRates] =
+    useState<Record<Currency, string>>(defaultRates);
 
   /* ---------------- Exchange ---------------- */
 
@@ -173,8 +282,6 @@ export default function CurrencyExchangePage() {
   const [paidCurrency, setPaidCurrency] =
     useState<Currency>("USD");
   const [paidAmount, setPaidAmount] = useState("");
-
-  const [rate, setRate] = useState("");
 
   /* ---------------- Transfer ---------------- */
 
@@ -189,18 +296,18 @@ export default function CurrencyExchangePage() {
   const [senderAmount, setSenderAmount] = useState("");
   const [receiverAmount, setReceiverAmount] = useState("");
 
-  const [transferRate, setTransferRate] = useState("");
   const [commission, setCommission] = useState("0");
 
+  const numericRates = getNumericRates(rates);
+
+  function setRate(currency: Currency, value: string) {
+    setRates((prev) => ({
+      ...prev,
+      [currency]: value,
+    }));
+  }
+
   /* ---------------- Exchange Calculation ---------------- */
-
-  const exchangeRateCurrency = getRateCurrency(
-    receivedCurrency,
-    paidCurrency
-  );
-
-  const exchangeUnsupported =
-    receivedCurrency !== paidCurrency && !exchangeRateCurrency;
 
   useEffect(() => {
     const amount = parseAmount(receivedAmount);
@@ -210,48 +317,18 @@ export default function CurrencyExchangePage() {
       return;
     }
 
-    if (receivedCurrency === paidCurrency) {
-      setPaidAmount(fmt(amount));
-      return;
-    }
-
-    if (!exchangeRateCurrency) {
-      setPaidAmount("");
-      return;
-    }
-
-    const r = parseAmount(rate);
-
-    if (!r) {
-      setPaidAmount("");
-      return;
-    }
-
-    const result = convertByAfnRate(
+    const nr = getNumericRates(rates);
+    const result = convertCurrency(
       amount,
       receivedCurrency,
       paidCurrency,
-      r
+      nr
     );
 
     setPaidAmount(result ? fmt(result) : "");
-  }, [
-    receivedAmount,
-    receivedCurrency,
-    paidCurrency,
-    rate,
-    exchangeRateCurrency,
-  ]);
+  }, [receivedAmount, receivedCurrency, paidCurrency, rates]);
 
   /* ---------------- Transfer Calculation ---------------- */
-
-  const transferRateCurrency = getRateCurrency(
-    senderCurrency,
-    receiverCurrency
-  );
-
-  const transferUnsupported =
-    senderCurrency !== receiverCurrency && !transferRateCurrency;
 
   useEffect(() => {
     const amount = parseAmount(senderAmount);
@@ -261,66 +338,44 @@ export default function CurrencyExchangePage() {
       return;
     }
 
-    if (senderCurrency === receiverCurrency) {
-      setReceiverAmount(fmt(amount));
-      return;
-    }
-
-    if (!transferRateCurrency) {
-      setReceiverAmount("");
-      return;
-    }
-
-    const r = parseAmount(transferRate);
-
-    if (!r) {
-      setReceiverAmount("");
-      return;
-    }
-
-    const result = convertByAfnRate(
+    const nr = getNumericRates(rates);
+    const result = convertCurrency(
       amount,
       senderCurrency,
       receiverCurrency,
-      r
+      nr
     );
 
     setReceiverAmount(result ? fmt(result) : "");
-  }, [
-    senderAmount,
-    senderCurrency,
-    receiverCurrency,
-    transferRate,
-    transferRateCurrency,
-  ]);
+  }, [senderAmount, senderCurrency, receiverCurrency, rates]);
 
-  /* ---------------- Submit Exchange ---------------- */
+  /* ---------------- Exchange Submit ---------------- */
 
   const exchangeFromAmount = parseAmount(receivedAmount);
   const exchangeToAmount = parseAmount(paidAmount);
-  const exchangeRateValue = parseAmount(rate);
+  const exchangeMissing = missingRates(
+    receivedCurrency,
+    paidCurrency,
+    numericRates
+  );
+
+  const exchangeCrossPreview = crossRatePreview(
+    receivedCurrency,
+    paidCurrency,
+    numericRates
+  );
 
   const canSubmitExchange =
     !!customer &&
     exchangeFromAmount > 0 &&
-    !exchangeUnsupported &&
-    (receivedCurrency === paidCurrency ||
-      (exchangeRateValue > 0 && exchangeToAmount > 0));
+    exchangeToAmount > 0 &&
+    exchangeMissing.length === 0;
 
   function submitExchange() {
     if (!canSubmitExchange) return;
 
-    const fromAmount = parseAmount(receivedAmount);
-
-    const toAmount =
-      receivedCurrency === paidCurrency
-        ? fromAmount
-        : parseAmount(paidAmount);
-
-    const txRate =
-      receivedCurrency === paidCurrency
-        ? 1
-        : parseAmount(rate);
+    const fromAmount = exchangeFromAmount;
+    const toAmount = exchangeToAmount;
 
     const tx: Transaction = {
       id: newId(),
@@ -331,8 +386,11 @@ export default function CurrencyExchangePage() {
       fromAmount,
       toCurrency: paidCurrency,
       toAmount,
-      rate: txRate,
-      rateCurrency: exchangeRateCurrency ?? undefined,
+      rateLabel: usedRatesLabel(
+        receivedCurrency,
+        paidCurrency,
+        numericRates
+      ),
       status: "active",
     };
 
@@ -341,39 +399,39 @@ export default function CurrencyExchangePage() {
     setCustomer("");
     setReceivedAmount("");
     setPaidAmount("");
-    setRate("");
   }
 
-  /* ---------------- Submit Transfer ---------------- */
+  /* ---------------- Transfer Submit ---------------- */
 
   const transferFromAmount = parseAmount(senderAmount);
   const transferToAmount = parseAmount(receiverAmount);
-  const transferRateValue = parseAmount(transferRate);
   const commissionValue = Math.max(0, parseAmount(commission));
+
+  const transferMissing = missingRates(
+    senderCurrency,
+    receiverCurrency,
+    numericRates
+  );
+
+  const transferCrossPreview = crossRatePreview(
+    senderCurrency,
+    receiverCurrency,
+    numericRates
+  );
 
   const canSubmitTransfer =
     !!sender &&
     !!receiver &&
     sender !== receiver &&
     transferFromAmount > 0 &&
-    !transferUnsupported &&
-    (senderCurrency === receiverCurrency ||
-      (transferRateValue > 0 && transferToAmount > 0));
+    transferToAmount > 0 &&
+    transferMissing.length === 0;
 
   function submitTransfer() {
     if (!canSubmitTransfer) return;
 
-    const fromAmount = parseAmount(senderAmount);
-
-    const toAmount =
-      senderCurrency === receiverCurrency
-        ? fromAmount
-        : parseAmount(receiverAmount);
-
-    const txRate =
-      senderCurrency === receiverCurrency
-        ? 1
-        : parseAmount(transferRate);
+    const fromAmount = transferFromAmount;
+    const toAmount = transferToAmount;
 
     const tx: Transaction = {
       id: newId(),
@@ -385,8 +443,11 @@ export default function CurrencyExchangePage() {
       fromAmount,
       toCurrency: receiverCurrency,
       toAmount,
-      rate: txRate,
-      rateCurrency: transferRateCurrency ?? undefined,
+      rateLabel: usedRatesLabel(
+        senderCurrency,
+        receiverCurrency,
+        numericRates
+      ),
       commission: commissionValue,
       commissionCurrency: senderCurrency,
       status: "active",
@@ -398,7 +459,6 @@ export default function CurrencyExchangePage() {
     setReceiver("");
     setSenderAmount("");
     setReceiverAmount("");
-    setTransferRate("");
     setCommission("0");
   }
 
@@ -488,9 +548,59 @@ export default function CurrencyExchangePage() {
         معاملات ارزی
       </h1>
 
+      {/* Rates */}
+
+      <div className="bg-white rounded-2xl p-5 space-y-4">
+
+        <h2 className="font-bold text-lg">
+          نرخ‌های پایه در برابر افغانی
+        </h2>
+
+        <div className="text-sm text-gray-600">
+          فرمول تبدیل: ارز مبدا → افغانی → ارز مقصد. با این روش می‌توانید هر ارز را به هر ارز دیگر تبدیل کنید.
+        </div>
+
+        <div className="grid md:grid-cols-4 gap-4">
+
+          {currencies
+            .filter((c) => c !== "AFN")
+            .map((c) => (
+              <div key={c} className="space-y-2">
+
+                <label className="text-sm font-bold">
+                  {fmt(rateUnits[c])} {labels[c]} =
+                </label>
+
+                <div className="flex items-center gap-2">
+
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={rates[c]}
+                    onChange={(e) =>
+                      setRate(c, e.target.value)
+                    }
+                    className="h-12 w-full rounded-xl border px-3"
+                  />
+
+                  <span className="whitespace-nowrap">
+                    {labels.AFN}
+                  </span>
+
+                </div>
+
+              </div>
+            ))}
+
+        </div>
+
+      </div>
+
       {/* Tabs */}
 
       <div className="flex gap-2">
+
         <button
           onClick={() => setTab("exchange")}
           className={`px-5 py-3 rounded-xl ${
@@ -512,6 +622,7 @@ export default function CurrencyExchangePage() {
         >
           تبادل بین مشتریان
         </button>
+
       </div>
 
       {/* Exchange */}
@@ -549,6 +660,7 @@ export default function CurrencyExchangePage() {
               <input
                 type="number"
                 step="any"
+                min="0"
                 value={receivedAmount}
                 onChange={(e) =>
                   setReceivedAmount(e.target.value)
@@ -576,68 +688,41 @@ export default function CurrencyExchangePage() {
 
           </div>
 
-          {receivedCurrency === paidCurrency && (
-            <div className="bg-gray-100 text-gray-700 rounded-xl p-4">
-              ارز دریافت و پرداخت یکسان است؛ مبلغ پرداختی برابر مبلغ دریافتی خواهد بود.
-            </div>
-          )}
+          <div className="bg-blue-50 rounded-xl p-4 space-y-3">
 
-          {exchangeUnsupported && (
-            <div className="bg-red-50 text-red-700 rounded-xl p-4">
-              برای تبدیل مستقیم بین دو ارز غیر افغانی، لطفاً یکی از ارزها را افغانی انتخاب کنید یا نسخه‌ای با چند نرخ همزمان استفاده کنید.
-            </div>
-          )}
+            <b>خلاصه تبدیل</b>
 
-          {!exchangeUnsupported && exchangeRateCurrency && (
-            <div className="bg-blue-50 rounded-xl p-4 space-y-3">
-
-              <b>نرخ دستی در برابر افغانی</b>
-
-              <div className="flex flex-wrap items-center gap-2">
-
-                <span className="whitespace-nowrap">
-                  {fmt(rateUnits[exchangeRateCurrency])}{" "}
-                  {labels[exchangeRateCurrency]} =
-                </span>
-
-                <input
-                  type="number"
-                  step="any"
-                  value={rate}
-                  onChange={(e) =>
-                    setRate(e.target.value)
-                  }
-                  placeholder="نرخ"
-                  className="h-12 w-40 rounded-xl border px-3"
-                />
-
-                <span>{labels.AFN}</span>
-
-              </div>
-
-              <div className="text-xs text-gray-600">
-                مثال: 1 دلار = 50 افغانی، 1000 تومان = 0.38 افغانی، 1000 کلدار = 250 افغانی
-              </div>
-
-              {exchangeRateValue > 0 && (
-                <div className="font-bold text-blue-700">
-                  نرخ ثبت‌شده:{" "}
-                  {rateDescription(
-                    exchangeRateValue,
-                    exchangeRateCurrency
-                  )}
-                </div>
+            <div className="text-sm text-blue-800">
+              {usedRatesLabel(
+                receivedCurrency,
+                paidCurrency,
+                numericRates
               )}
-
-              {paidAmount && (
-                <div className="text-green-700 font-bold">
-                  نتیجه: {paidAmount}{" "}
-                  {labels[paidCurrency]}
-                </div>
-              )}
-
             </div>
-          )}
+
+            {exchangeCrossPreview && (
+              <div className="text-sm text-blue-700">
+                نرخ تقریبی: {exchangeCrossPreview}
+              </div>
+            )}
+
+            {exchangeMissing.length > 0 && (
+              <div className="text-red-600 text-sm">
+                نرخ‌های واردنشده:{" "}
+                {exchangeMissing
+                  .map((c) => labels[c])
+                  .join("، ")}
+              </div>
+            )}
+
+            {paidAmount && (
+              <div className="text-green-700 font-bold">
+                نتیجه: {paidAmount}{" "}
+                {labels[paidCurrency]}
+              </div>
+            )}
+
+          </div>
 
           <button
             onClick={submitExchange}
@@ -687,6 +772,7 @@ export default function CurrencyExchangePage() {
               <input
                 type="number"
                 step="any"
+                min="0"
                 value={senderAmount}
                 onChange={(e) =>
                   setSenderAmount(e.target.value)
@@ -729,72 +815,46 @@ export default function CurrencyExchangePage() {
 
           </div>
 
-          {senderCurrency === receiverCurrency && (
-            <div className="bg-gray-100 text-gray-700 rounded-xl p-4">
-              ارز فرستنده و گیرنده یکسان است؛ مبلغ گیرنده برابر مبلغ فرستنده خواهد بود.
-            </div>
-          )}
+          <div className="bg-purple-50 rounded-xl p-4 space-y-3">
 
-          {transferUnsupported && (
-            <div className="bg-red-50 text-red-700 rounded-xl p-4">
-              برای تبدیل مستقیم بین دو ارز غیر افغانی، لطفاً یکی از ارزها را افغانی انتخاب کنید یا نسخه‌ای با چند نرخ همزمان استفاده کنید.
-            </div>
-          )}
+            <b>خلاصه تبدیل</b>
 
-          {!transferUnsupported && transferRateCurrency && (
-            <div className="bg-purple-50 rounded-xl p-4 space-y-3">
-
-              <b>نرخ دستی در برابر افغانی</b>
-
-              <div className="flex flex-wrap items-center gap-2">
-
-                <span className="whitespace-nowrap">
-                  {fmt(rateUnits[transferRateCurrency])}{" "}
-                  {labels[transferRateCurrency]} =
-                </span>
-
-                <input
-                  type="number"
-                  step="any"
-                  value={transferRate}
-                  onChange={(e) =>
-                    setTransferRate(e.target.value)
-                  }
-                  placeholder="نرخ"
-                  className="h-12 w-40 rounded-xl border px-3"
-                />
-
-                <span>{labels.AFN}</span>
-
-              </div>
-
-              <div className="text-xs text-gray-600">
-                مثال: 1 دلار = 50 افغانی، 1000 تومان = 0.38 افغانی، 1000 کلدار = 250 افغانی
-              </div>
-
-              {transferRateValue > 0 && (
-                <div className="font-bold text-purple-700">
-                  نرخ ثبت‌شده:{" "}
-                  {rateDescription(
-                    transferRateValue,
-                    transferRateCurrency
-                  )}
-                </div>
+            <div className="text-sm text-purple-800">
+              {usedRatesLabel(
+                senderCurrency,
+                receiverCurrency,
+                numericRates
               )}
-
-              {receiverAmount && (
-                <div className="text-green-700 font-bold">
-                  نتیجه: {receiverAmount}{" "}
-                  {labels[receiverCurrency]}
-                </div>
-              )}
-
             </div>
-          )}
+
+            {transferCrossPreview && (
+              <div className="text-sm text-purple-700">
+                نرخ تقریبی: {transferCrossPreview}
+              </div>
+            )}
+
+            {transferMissing.length > 0 && (
+              <div className="text-red-600 text-sm">
+                نرخ‌های واردنشده:{" "}
+                {transferMissing
+                  .map((c) => labels[c])
+                  .join("، ")}
+              </div>
+            )}
+
+            {receiverAmount && (
+              <div className="text-green-700 font-bold">
+                نتیجه: {receiverAmount}{" "}
+                {labels[receiverCurrency]}
+              </div>
+            )}
+
+          </div>
 
           <input
             type="number"
             step="any"
+            min="0"
             value={commission}
             onChange={(e) =>
               setCommission(e.target.value)
@@ -901,7 +961,7 @@ export default function CurrencyExchangePage() {
               </th>
 
               <th className="p-3 text-right">
-                نرخ
+                نرخ‌های استفاده‌شده
               </th>
 
             </tr>
@@ -942,10 +1002,8 @@ export default function CurrencyExchangePage() {
                   {labels[tx.toCurrency]}
                 </td>
 
-                <td className="p-3">
-                  {tx.rateCurrency
-                    ? rateDescription(tx.rate, tx.rateCurrency)
-                    : fmt(tx.rate)}
+                <td className="p-3 text-xs">
+                  {tx.rateLabel}
                 </td>
 
               </tr>
