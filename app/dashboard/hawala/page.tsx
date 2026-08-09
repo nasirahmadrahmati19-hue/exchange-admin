@@ -1,22 +1,15 @@
-```tsx
 "use client";
 
-import { useMemo, useState, type ChangeEvent } from "react";
+import { useMemo, useState } from "react";
 
-type HawalaStatus = "pending" | "paid" | "cancelled";
+type HawalaStatus = "sent" | "paid" | "cancelled";
 
-type Currency =
-  | "AFN"
-  | "IRR"
-  | "USD"
-  | "EUR"
-  | "PKR";
+type Currency = "AFN" | "IRR" | "USD" | "EUR" | "PKR";
 
 interface Customer {
   id: string;
   name: string;
   phone: string;
-  tazkira: string;
 }
 
 interface Hawala {
@@ -47,7 +40,6 @@ interface Hawala {
 
 interface HawalaForm {
   customerId: string;
-
   currency: Currency;
   amount: string;
   fee: string;
@@ -63,12 +55,13 @@ interface HawalaForm {
 const currencies: {
   value: Currency;
   label: string;
+  symbol: string;
 }[] = [
-  { value: "AFN", label: "افغانی" },
-  { value: "IRR", label: "تومان" },
-  { value: "USD", label: "دالر" },
-  { value: "EUR", label: "یورو" },
-  { value: "PKR", label: "کلدار" }
+  { value: "AFN", label: "افغانی", symbol: "؋" },
+  { value: "IRR", label: "تومان", symbol: "تومان" },
+  { value: "USD", label: "دالر", symbol: "$" },
+  { value: "EUR", label: "یورو", symbol: "€" },
+  { value: "PKR", label: "کلدار", symbol: "₨" },
 ];
 
 const destinations = [
@@ -104,13 +97,13 @@ const destinations = [
   "پنجشیر",
   "لوگر",
   "میدان وردک",
-  "بامیان"
+  "بامیان",
 ];
 
 const statusLabels: Record<HawalaStatus, string> = {
-  pending: "در انتظار پرداخت",
+  sent: "ارسال‌شده",
   paid: "پرداخت‌شده",
-  cancelled: "لغوشده"
+  cancelled: "لغوشده",
 };
 
 const emptyForm: HawalaForm = {
@@ -121,7 +114,7 @@ const emptyForm: HawalaForm = {
   destination: "هرات",
   receiverName: "",
   receiverPhone: "",
-  note: ""
+  note: "",
 };
 
 const initialCustomers: Customer[] = [
@@ -129,20 +122,17 @@ const initialCustomers: Customer[] = [
     id: "C-001",
     name: "احمد احمدی",
     phone: "0700000000",
-    tazkira: "1398-123456"
   },
   {
     id: "C-002",
     name: "ولی ولی",
     phone: "0777777777",
-    tazkira: "1390-555555"
   },
   {
     id: "C-003",
     name: "محمد محمدی",
     phone: "0788888888",
-    tazkira: "1395-222222"
-  }
+  },
 ];
 
 const initialHawalas: Hawala[] = [
@@ -151,574 +141,123 @@ const initialHawalas: Hawala[] = [
     number: "HW-0001",
     date: "1405/05/18",
     time: "10:30",
-
     customerId: "C-001",
     customerName: "احمد احمدی",
-
     currency: "AFN",
     amount: 10000,
     fee: 200,
     totalAmount: 10200,
-
     destination: "کابل",
-
     receiverName: "محمود محمودی",
     receiverPhone: "0788888888",
-
     note: "",
-    status: "pending"
+    status: "sent",
   },
   {
     id: "2",
     number: "HW-0002",
     date: "1405/05/17",
     time: "16:10",
-
     customerId: "C-002",
     customerName: "ولی ولی",
-
     currency: "USD",
     amount: 500,
     fee: 5,
     totalAmount: 505,
-
     destination: "هرات",
-
     receiverName: "کریم کریمی",
     receiverPhone: "0766666666",
-
     note: "",
     status: "paid",
-
-    paidAt: "1405/05/17 — 16:45"
+    paidAt: "1405/05/17 — 16:45",
   },
   {
     id: "3",
     number: "HW-0003",
     date: "1405/05/16",
     time: "11:20",
-
     customerId: "C-003",
     customerName: "محمد محمدی",
-
     currency: "IRR",
     amount: 2000000,
     fee: 50000,
     totalAmount: 2050000,
-
     destination: "مزار شریف",
-
     receiverName: "حسن حسینی",
     receiverPhone: "0701111111",
-
-    note: "حواله لغو شده",
+    note: "درخواست مشتری",
     status: "cancelled",
-
-    cancelReason: "درخواست مشتری"
-  }
+    cancelReason: "درخواست مشتری",
+  },
 ];
 
-const styles = `
-  .hawala-app {
-    min-height: 100vh;
-    background: #f5f6f8;
-    padding: 24px;
-    color: #111827;
-    font-family: Tahoma, Arial, sans-serif;
-  }
-
-  .hawala-app *,
-  .hawala-app *::before,
-  .hawala-app *::after {
-    box-sizing: border-box;
-  }
-
-  .hawala-container {
-    max-width: 1250px;
-    margin: 0 auto;
-  }
-
-  .header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 15px;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
-  }
-
-  .header h1 {
-    margin: 0 0 5px;
-    font-size: 26px;
-    font-weight: 900;
-  }
-
-  .muted {
-    color: #6b7280;
-    font-size: 13px;
-  }
-
-  /* پیگیری حواله */
-
-  .tracking-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 14px;
-    margin-bottom: 20px;
-  }
-
-  .tracking-card {
-    background: white;
-    border: 1px solid #e5e7eb;
-    border-radius: 15px;
-    padding: 17px;
-  }
-
-  .tracking-title {
-    font-size: 13px;
-    color: #6b7280;
-    margin-bottom: 8px;
-    font-weight: 700;
-  }
-
-  .tracking-number {
-    font-size: 24px;
-    font-weight: 900;
-  }
-
-  .currency-box {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 7px;
-    margin-top: 9px;
-  }
-
-  .currency-item {
-    background: #f8fafc;
-    border-radius: 8px;
-    padding: 7px 5px;
-    text-align: center;
-  }
-
-  .currency-code {
-    display: block;
-    color: #6b7280;
-    font-size: 10px;
-    margin-bottom: 3px;
-  }
-
-  .currency-value {
-    display: block;
-    font-size: 12px;
-    font-weight: 900;
-  }
-
-  .tabs {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 18px;
-    flex-wrap: wrap;
-  }
-
-  .tab {
-    border: none;
-    background: #e5e7eb;
-    color: #374151;
-    padding: 10px 16px;
-    border-radius: 10px;
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: 800;
-  }
-
-  .tab.active {
-    background: #111827;
-    color: white;
-  }
-
-  .card {
-    background: white;
-    border: 1px solid #e5e7eb;
-    border-radius: 16px;
-    padding: 20px;
-  }
-
-  .section-title {
-    margin: 8px 0 14px;
-    font-size: 15px;
-    font-weight: 900;
-    border-right: 4px solid #2563eb;
-    padding-right: 9px;
-  }
-
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 14px;
-  }
-
-  .field label {
-    display: block;
-    margin-bottom: 6px;
-    font-size: 13px;
-    font-weight: 800;
-    color: #374151;
-  }
-
-  .field input,
-  .field select,
-  .field textarea {
-    width: 100%;
-    border: 1px solid #d1d5db;
-    border-radius: 10px;
-    padding: 10px 12px;
-    font-size: 14px;
-    background: white;
-    color: #111827;
-    outline: none;
-  }
-
-  .field input:focus,
-  .field select:focus,
-  .field textarea:focus {
-    border-color: #2563eb;
-  }
-
-  .customer-row {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 8px;
-  }
-
-  .summary {
-    margin-top: 18px;
-    padding: 14px;
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 12px;
-  }
-
-  .summary-row {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
-    margin: 7px 0;
-    font-size: 14px;
-  }
-
-  .summary-row.total {
-    border-top: 1px dashed #cbd5e1;
-    margin-top: 12px;
-    padding-top: 12px;
-    font-size: 15px;
-  }
-
-  .actions {
-    display: flex;
-    gap: 7px;
-    flex-wrap: wrap;
-  }
-
-  .btn {
-    border: none;
-    padding: 9px 13px;
-    border-radius: 9px;
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 800;
-  }
-
-  .btn-primary {
-    background: #2563eb;
-    color: white;
-  }
-
-  .btn-success {
-    background: #16a34a;
-    color: white;
-  }
-
-  .btn-danger {
-    background: #dc2626;
-    color: white;
-  }
-
-  .btn-secondary {
-    background: #e5e7eb;
-    color: #111827;
-  }
-
-  .table-wrap {
-    overflow-x: auto;
-  }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-  }
-
-  th {
-    text-align: right;
-    padding: 11px 9px;
-    color: #6b7280;
-    background: #f9fafb;
-    border-bottom: 1px solid #e5e7eb;
-    white-space: nowrap;
-  }
-
-  td {
-    padding: 11px 9px;
-    border-bottom: 1px solid #f1f5f9;
-    white-space: nowrap;
-  }
-
-  .badge {
-    display: inline-block;
-    padding: 5px 9px;
-    border-radius: 999px;
-    font-size: 11px;
-    font-weight: 900;
-  }
-
-  .badge-pending {
-    background: #fef3c7;
-    color: #92400e;
-  }
-
-  .badge-paid {
-    background: #dcfce7;
-    color: #166534;
-  }
-
-  .badge-cancelled {
-    background: #fee2e2;
-    color: #991b1b;
-  }
-
-  .search-bar {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 15px;
-    flex-wrap: wrap;
-  }
-
-  .search-bar input,
-  .search-bar select {
-    flex: 1;
-    min-width: 180px;
-    border: 1px solid #d1d5db;
-    border-radius: 10px;
-    padding: 10px 12px;
-    font-size: 13px;
-  }
-
-  .empty {
-    padding: 35px;
-    text-align: center;
-    color: #6b7280;
-  }
-
-  .modal-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(15, 23, 42, .65);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding: 15px;
-    z-index: 50;
-  }
-
-  .modal {
-    background: white;
-    width: 100%;
-    max-width: 700px;
-    max-height: 90vh;
-    overflow-y: auto;
-    border-radius: 16px;
-    padding: 20px;
-  }
-
-  .modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 15px;
-  }
-
-  .modal-title {
-    margin: 0;
-    font-size: 18px;
-    font-weight: 900;
-  }
-
-  .receipt {
-    border: 1px dashed #94a3b8;
-    border-radius: 12px;
-    padding: 16px;
-  }
-
-  .receipt-title {
-    text-align: center;
-    font-weight: 900;
-    margin-bottom: 15px;
-  }
-
-  .receipt-row {
-    display: flex;
-    justify-content: space-between;
-    gap: 15px;
-    margin: 8px 0;
-    font-size: 13px;
-  }
-
-  .divider {
-    border-top: 1px dashed #cbd5e1;
-    margin: 12px 0;
-  }
-
-  .toast {
-    position: fixed;
-    bottom: 20px;
-    left: 20px;
-    background: #111827;
-    color: white;
-    padding: 11px 15px;
-    border-radius: 10px;
-    z-index: 100;
-  }
-
-  @media (max-width: 1000px) {
-    .tracking-grid {
-      grid-template-columns: repeat(2, 1fr);
-    }
-  }
-
-  @media (max-width: 700px) {
-    .tracking-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .grid {
-      grid-template-columns: 1fr;
-    }
-
-    .currency-box {
-      grid-template-columns: repeat(5, 1fr);
-      overflow-x: auto;
-    }
-  }
-
-  @media print {
-    body * {
-      visibility: hidden;
-    }
-
-    .modal-overlay,
-    .modal-overlay * {
-      visibility: visible;
-    }
-
-    .modal-overlay {
-      position: absolute;
-      background: white;
-    }
-  }
-`;
-
-const badgeClass = (status: HawalaStatus) => {
-  if (status === "paid") {
-    return "badge badge-paid";
-  }
-
-  if (status === "cancelled") {
-    return "badge badge-cancelled";
-  }
-
-  return "badge badge-pending";
-};
-
-const currencyLabel = (currency: Currency) => {
-  return (
-    currencies.find(
-      item => item.value === currency
-    )?.label || currency
-  );
-};
+function formatNumber(value: number) {
+  return new Intl.NumberFormat("fa-AF").format(value);
+}
+
+function getCurrencyLabel(currency: Currency) {
+  return currencies.find((item) => item.value === currency)?.label ?? currency;
+}
+
+function getCurrencySymbol(currency: Currency) {
+  return currencies.find((item) => item.value === currency)?.symbol ?? "";
+}
+
+function getToday() {
+  const date = new Date();
+
+  return new Intl.DateTimeFormat("fa-AF", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+function getTime() {
+  return new Intl.DateTimeFormat("fa-AF", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date());
+}
 
 export default function HawalaPage() {
-  const [activeTab, setActiveTab] =
-    useState<"new" | "current" | "history">("new");
-
-  const [hawalas, setHawalas] =
-    useState<Hawala[]>(initialHawalas);
-
+  const [hawalas, setHawalas] = useState<Hawala[]>(initialHawalas);
   const [customers, setCustomers] =
     useState<Customer[]>(initialCustomers);
 
-  const [form, setForm] =
-    useState<HawalaForm>(emptyForm);
+  const [form, setForm] = useState<HawalaForm>(emptyForm);
+
+  const [showForm, setShowForm] = useState(false);
+  const [showCustomerForm, setShowCustomerForm] = useState(false);
+
+  const [newCustomerName, setNewCustomerName] = useState("");
+  const [newCustomerPhone, setNewCustomerPhone] = useState("");
 
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | HawalaStatus>(
+    "all"
+  );
 
-  const [statusFilter, setStatusFilter] =
-    useState("all");
-
-  const [selected, setSelected] =
+  const [selectedHawala, setSelectedHawala] =
     useState<Hawala | null>(null);
 
-  const [settlement, setSettlement] =
-    useState<Hawala | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
 
-  const [cancelTarget, setCancelTarget] =
-    useState<Hawala | null>(null);
+  const totalSent = useMemo(
+    () => hawalas.filter((item) => item.status === "sent").length,
+    [hawalas]
+  );
 
-  const [paidAmount, setPaidAmount] =
-    useState("");
+  const totalPaid = useMemo(
+    () => hawalas.filter((item) => item.status === "paid").length,
+    [hawalas]
+  );
 
-  const [cancelReason, setCancelReason] =
-    useState("");
-
-  const [toast, setToast] =
-    useState("");
-
-  const [showCustomerModal, setShowCustomerModal] =
-    useState(false);
-
-  const [newCustomer, setNewCustomer] =
-    useState({
-      name: "",
-      phone: "",
-      tazkira: ""
-    });
-
-  const amount =
-    Number(form.amount || 0);
-
-  const fee =
-    Number(form.fee || 0);
-
-  const totalAmount =
-    amount + fee;
-
-  /* ---------------------------
-     پیگیری حواله
-  ---------------------------- */
-
-  const paidCount =
-    hawalas.filter(
-      item => item.status === "paid"
-    ).length;
-
-  const cancelledCount =
-    hawalas.filter(
-      item => item.status === "cancelled"
-    ).length;
-
-  const sentCount =
-    hawalas.length;
+  const totalCancelled = useMemo(
+    () => hawalas.filter((item) => item.status === "cancelled").length,
+    [hawalas]
+  );
 
   const currencyTotals = useMemo(() => {
     const result: Record<Currency, number> = {
@@ -726,2020 +265,1449 @@ export default function HawalaPage() {
       IRR: 0,
       USD: 0,
       EUR: 0,
-      PKR: 0
+      PKR: 0,
     };
 
-    hawalas.forEach(item => {
-      if (item.status !== "cancelled") {
-        result[item.currency] += item.amount;
+    hawalas.forEach((hawala) => {
+      if (hawala.status !== "cancelled") {
+        result[hawala.currency] += hawala.amount;
       }
     });
 
     return result;
   }, [hawalas]);
 
-  const currentHawalas =
-    hawalas.filter(
-      item => item.status === "pending"
-    );
+  const filteredHawalas = useMemo(() => {
+    return hawalas.filter((hawala) => {
+      const searchText = search.trim().toLowerCase();
 
-  const filteredHistory =
-    useMemo(() => {
-      const q =
-        search.trim().toLowerCase();
+      const matchesSearch =
+        searchText === "" ||
+        hawala.number.toLowerCase().includes(searchText) ||
+        hawala.customerName.toLowerCase().includes(searchText) ||
+        hawala.receiverName.toLowerCase().includes(searchText) ||
+        hawala.receiverPhone.includes(searchText);
 
-      return hawalas.filter(item => {
-        const matchesStatus =
-          statusFilter === "all" ||
-          item.status === statusFilter;
+      const matchesStatus =
+        statusFilter === "all" || hawala.status === statusFilter;
 
-        if (!matchesStatus) {
-          return false;
-        }
+      return matchesSearch && matchesStatus;
+    });
+  }, [hawalas, search, statusFilter]);
 
-        if (!q) {
-          return true;
-        }
-
-        const fields = [
-          item.number,
-          item.customerName,
-          item.receiverName,
-          item.receiverPhone,
-          item.destination,
-          item.currency
-        ];
-
-        return fields.some(field =>
-          String(field || "")
-            .toLowerCase()
-            .includes(q)
-        );
-      });
-    }, [
-      hawalas,
-      search,
-      statusFilter
-    ]);
-
-  const showToast = (
-    message: string
-  ) => {
-    setToast(message);
-
-    setTimeout(() => {
-      setToast("");
-    }, 3000);
-  };
-
-  const updateForm = (
-    field: keyof HawalaForm,
-    value: string
-  ) => {
-    setForm(prev => ({
-      ...prev,
-      [field]: value
+  function updateForm<K extends keyof HawalaForm>(
+    key: K,
+    value: HawalaForm[K]
+  ) {
+    setForm((previous) => ({
+      ...previous,
+      [key]: value,
     }));
-  };
+  }
 
-  /* ---------------------------
-     افزودن مشتری
-  ---------------------------- */
+  function generateHawalaNumber() {
+    const maxNumber = hawalas.reduce((max, item) => {
+      const number = Number(item.number.replace("HW-", ""));
+      return Number.isNaN(number) ? max : Math.max(max, number);
+    }, 0);
 
-  const addCustomer = () => {
-    if (!newCustomer.name.trim()) {
-      showToast(
-        "نام مشتری را وارد کنید."
-      );
+    return `HW-${String(maxNumber + 1).padStart(4, "0")}`;
+  }
 
+  function handleAddCustomer() {
+    const name = newCustomerName.trim();
+    const phone = newCustomerPhone.trim();
+
+    if (!name) {
+      alert("نام مشتری را وارد کنید.");
       return;
     }
 
-    if (!newCustomer.phone.trim()) {
-      showToast(
-        "شماره تماس مشتری را وارد کنید."
-      );
-
-      return;
-    }
-
-    const customer: Customer = {
-      id: `C-${Date.now()}`,
-      name: newCustomer.name,
-      phone: newCustomer.phone,
-      tazkira: newCustomer.tazkira
+    const newCustomer: Customer = {
+      id: `C-${String(customers.length + 1).padStart(3, "0")}`,
+      name,
+      phone,
     };
 
-    setCustomers(prev => [
-      ...prev,
-      customer
-    ]);
+    setCustomers((previous) => [...previous, newCustomer]);
 
-    setForm(prev => ({
-      ...prev,
-      customerId: customer.id
-    }));
+    updateForm("customerId", newCustomer.id);
 
-    setNewCustomer({
-      name: "",
-      phone: "",
-      tazkira: ""
-    });
+    setNewCustomerName("");
+    setNewCustomerPhone("");
+    setShowCustomerForm(false);
+  }
 
-    setShowCustomerModal(false);
-
-    showToast(
-      "مشتری با موفقیت اضافه شد."
-    );
-  };
-
-  /* ---------------------------
-     ثبت حواله
-  ---------------------------- */
-
-  const makeHawalaNumber = () => {
-    const nextNumber =
-      hawalas.length + 1;
-
-    return `HW-${String(
-      nextNumber
-    ).padStart(4, "0")}`;
-  };
-
-  const submitForm = () => {
+  function handleCreateHawala() {
     if (!form.customerId) {
-      showToast(
-        "مشتری را انتخاب کنید."
-      );
-
+      alert("لطفاً مشتری را انتخاب کنید.");
       return;
     }
 
-    if (amount <= 0) {
-      showToast(
-        "مبلغ حواله باید بیشتر از صفر باشد."
-      );
-
-      return;
-    }
-
-    if (fee < 0) {
-      showToast(
-        "کارمزد نمی‌تواند منفی باشد."
-      );
-
+    if (!form.amount || Number(form.amount) <= 0) {
+      alert("مبلغ حواله را وارد کنید.");
       return;
     }
 
     if (!form.receiverName.trim()) {
-      showToast(
-        "نام حواله‌گیرنده را وارد کنید."
-      );
-
+      alert("نام حواله‌گیرنده را وارد کنید.");
       return;
     }
 
     if (!form.receiverPhone.trim()) {
-      showToast(
-        "شماره تماس حواله‌گیرنده را وارد کنید."
-      );
-
+      alert("شماره تماس حواله‌گیرنده را وارد کنید.");
       return;
     }
 
-    const customer =
-      customers.find(
-        item =>
-          item.id ===
-          form.customerId
-      );
+    const customer = customers.find(
+      (item) => item.id === form.customerId
+    );
 
     if (!customer) {
-      showToast(
-        "مشتری انتخاب‌شده پیدا نشد."
-      );
-
+      alert("مشتری انتخاب‌شده پیدا نشد.");
       return;
     }
 
-    const now = new Date();
+    const amount = Number(form.amount);
+    const fee = Number(form.fee || 0);
 
     const newHawala: Hawala = {
-      id: String(Date.now()),
+      id: crypto.randomUUID(),
+      number: generateHawalaNumber(),
+      date: getToday(),
+      time: getTime(),
 
-      number: makeHawalaNumber(),
+      customerId: customer.id,
+      customerName: customer.name,
 
-      date: now.toLocaleDateString(
-        "fa-IR"
-      ),
-
-      time: now.toLocaleTimeString(
-        "fa-IR",
-        {
-          hour: "2-digit",
-          minute: "2-digit"
-        }
-      ),
-
-      customerId:
-        customer.id,
-
-      customerName:
-        customer.name,
-
-      currency:
-        form.currency,
-
+      currency: form.currency,
       amount,
-
       fee,
+      totalAmount: amount + fee,
 
-      totalAmount,
+      destination: form.destination,
 
-      destination:
-        form.destination,
+      receiverName: form.receiverName.trim(),
+      receiverPhone: form.receiverPhone.trim(),
 
-      receiverName:
-        form.receiverName,
-
-      receiverPhone:
-        form.receiverPhone,
-
-      note:
-        form.note,
-
-      status: "pending"
+      note: form.note.trim(),
+      status: "sent",
     };
 
-    setHawalas(prev => [
-      newHawala,
-      ...prev
-    ]);
+    setHawalas((previous) => [newHawala, ...previous]);
 
     setForm(emptyForm);
+    setShowForm(false);
+  }
 
-    setActiveTab("current");
-
-    showToast(
-      "حواله با موفقیت ثبت شد."
-    );
-  };
-
-  /* ---------------------------
-     پرداخت حواله
-  ---------------------------- */
-
-  const openSettlement = (
-    item: Hawala
-  ) => {
-    setSettlement(item);
-
-    setPaidAmount(
-      String(item.amount)
-    );
-  };
-
-  const confirmSettlement = () => {
-    if (!settlement) {
-      return;
-    }
-
-    const amountPaid =
-      Number(
-        paidAmount ||
-          settlement.amount
-      );
-
-    if (amountPaid <= 0) {
-      showToast(
-        "مبلغ پرداخت‌شده معتبر نیست."
-      );
-
-      return;
-    }
-
-    const now = new Date();
-
-    const date =
-      now.toLocaleDateString(
-        "fa-IR"
-      );
-
-    const time =
-      now.toLocaleTimeString(
-        "fa-IR",
-        {
-          hour: "2-digit",
-          minute: "2-digit"
-        }
-      );
-
-    setHawalas(prev =>
-      prev.map(item =>
-        item.id ===
-        settlement.id
+  function markAsPaid(id: string) {
+    setHawalas((previous) =>
+      previous.map((item) =>
+        item.id === id
           ? {
               ...item,
               status: "paid",
-              paidAt:
-                `${date} — ${time}`
+              paidAt: `${getToday()} — ${getTime()}`,
             }
           : item
       )
     );
 
-    setSettlement(null);
+    setSelectedHawala(null);
+  }
 
-    showToast(
-      "حواله با موفقیت پرداخت شد."
-    );
-  };
+  function cancelHawala(id: string) {
+    const reason = cancelReason.trim();
 
-  /* ---------------------------
-     لغو حواله
-  ---------------------------- */
-
-  const openCancel = (
-    item: Hawala
-  ) => {
-    setCancelTarget(item);
-
-    setCancelReason("");
-  };
-
-  const confirmCancel = () => {
-    if (!cancelTarget) {
+    if (!reason) {
+      alert("دلیل لغو حواله را وارد کنید.");
       return;
     }
 
-    if (!cancelReason.trim()) {
-      showToast(
-        "دلیل لغو حواله را وارد کنید."
-      );
-
-      return;
-    }
-
-    setHawalas(prev =>
-      prev.map(item =>
-        item.id ===
-        cancelTarget.id
+    setHawalas((previous) =>
+      previous.map((item) =>
+        item.id === id
           ? {
               ...item,
-              status:
-                "cancelled",
-              cancelReason
+              status: "cancelled",
+              cancelReason: reason,
             }
           : item
       )
     );
 
-    setCancelTarget(null);
-
-    showToast(
-      "حواله لغو شد."
-    );
-  };
+    setCancelReason("");
+    setSelectedHawala(null);
+  }
 
   return (
-    <div
-      className="hawala-app"
-      dir="rtl"
-    >
-      <style>
-        {styles}
-      </style>
+    <main className="hawala-app" dir="rtl">
+      <style jsx global>{`
+        * {
+          box-sizing: border-box;
+        }
 
-      <div className="hawala-container">
+        body {
+          margin: 0;
+          font-family:
+            Tahoma,
+            Arial,
+            sans-serif;
+          background: #f5f6f8;
+          color: #172033;
+        }
 
-        {/* Header */}
+        button,
+        input,
+        select,
+        textarea {
+          font: inherit;
+        }
 
-        <div className="header">
+        button {
+          cursor: pointer;
+        }
 
-          <div>
-            <h1>
-              🏦 حواله‌جات
-            </h1>
+        .hawala-app {
+          min-height: 100vh;
+          padding: 24px;
+          background: #f5f6f8;
+        }
 
-            <div className="muted">
-              ثبت، پیگیری و مدیریت حواله‌ها
-            </div>
+        .container {
+          max-width: 1400px;
+          margin: 0 auto;
+        }
+
+        .page-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
+          margin-bottom: 24px;
+        }
+
+        .title-area h1 {
+          margin: 0 0 7px;
+          font-size: 27px;
+          font-weight: 800;
+        }
+
+        .title-area p {
+          margin: 0;
+          color: #687386;
+          font-size: 14px;
+        }
+
+        .primary-button {
+          border: 0;
+          border-radius: 10px;
+          padding: 12px 18px;
+          background: #1769e0;
+          color: white;
+          font-weight: 700;
+          box-shadow: 0 4px 12px rgba(23, 105, 224, 0.18);
+        }
+
+        .primary-button:hover {
+          background: #1259c1;
+        }
+
+        .summary-grid {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 14px;
+          margin-bottom: 16px;
+        }
+
+        .summary-card {
+          background: white;
+          border: 1px solid #e6e9ef;
+          border-radius: 14px;
+          padding: 18px;
+          min-height: 112px;
+        }
+
+        .summary-card .label {
+          color: #6c7789;
+          font-size: 13px;
+          margin-bottom: 12px;
+        }
+
+        .summary-card .value {
+          font-size: 28px;
+          font-weight: 800;
+        }
+
+        .summary-card.sent .value {
+          color: #1769e0;
+        }
+
+        .summary-card.paid .value {
+          color: #16834a;
+        }
+
+        .summary-card.cancelled .value {
+          color: #d43b3b;
+        }
+
+        .summary-card.total .value {
+          color: #202938;
+        }
+
+        .currency-card {
+          background: white;
+          border: 1px solid #e6e9ef;
+          border-radius: 14px;
+          padding: 18px;
+          margin-bottom: 20px;
+        }
+
+        .currency-card-title {
+          font-weight: 800;
+          margin-bottom: 16px;
+        }
+
+        .currency-grid {
+          display: grid;
+          grid-template-columns: repeat(5, 1fr);
+          gap: 10px;
+        }
+
+        .currency-item {
+          border: 1px solid #e7eaf0;
+          background: #fafbfc;
+          border-radius: 10px;
+          padding: 13px;
+        }
+
+        .currency-name {
+          color: #707b8c;
+          font-size: 12px;
+          margin-bottom: 7px;
+        }
+
+        .currency-value {
+          font-size: 18px;
+          font-weight: 800;
+        }
+
+        .toolbar {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          background: white;
+          border: 1px solid #e6e9ef;
+          padding: 14px;
+          border-radius: 14px;
+          margin-bottom: 14px;
+        }
+
+        .search-input {
+          flex: 1;
+          min-width: 220px;
+        }
+
+        .input,
+        .select,
+        .textarea {
+          width: 100%;
+          border: 1px solid #d9dee7;
+          border-radius: 9px;
+          background: white;
+          padding: 11px 12px;
+          outline: none;
+          color: #202938;
+        }
+
+        .input:focus,
+        .select:focus,
+        .textarea:focus {
+          border-color: #1769e0;
+          box-shadow: 0 0 0 3px rgba(23, 105, 224, 0.08);
+        }
+
+        .filter-button {
+          border: 1px solid #d9dee7;
+          background: white;
+          border-radius: 9px;
+          padding: 10px 14px;
+          color: #4c5668;
+        }
+
+        .filter-button.active {
+          border-color: #1769e0;
+          background: #edf4ff;
+          color: #1769e0;
+          font-weight: 700;
+        }
+
+        .table-card {
+          background: white;
+          border: 1px solid #e6e9ef;
+          border-radius: 14px;
+          overflow: hidden;
+        }
+
+        .table-header {
+          padding: 16px 18px;
+          border-bottom: 1px solid #e8ebf0;
+          font-weight: 800;
+        }
+
+        .table-wrapper {
+          overflow-x: auto;
+        }
+
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          min-width: 950px;
+        }
+
+        th {
+          background: #fafbfc;
+          color: #687386;
+          font-size: 12px;
+          font-weight: 700;
+          text-align: right;
+          padding: 13px 15px;
+          border-bottom: 1px solid #e8ebf0;
+          white-space: nowrap;
+        }
+
+        td {
+          padding: 14px 15px;
+          border-bottom: 1px solid #edf0f4;
+          font-size: 13px;
+          vertical-align: middle;
+        }
+
+        tr:last-child td {
+          border-bottom: 0;
+        }
+
+        .hawala-number {
+          font-weight: 800;
+          color: #1769e0;
+        }
+
+        .customer-name {
+          font-weight: 700;
+        }
+
+        .sub-text {
+          color: #7a8493;
+          font-size: 11px;
+          margin-top: 4px;
+        }
+
+        .amount {
+          font-weight: 800;
+          white-space: nowrap;
+        }
+
+        .status {
+          display: inline-flex;
+          align-items: center;
+          border-radius: 20px;
+          padding: 5px 9px;
+          font-size: 11px;
+          font-weight: 700;
+        }
+
+        .status.sent {
+          background: #eaf2ff;
+          color: #1769e0;
+        }
+
+        .status.paid {
+          background: #e8f7ef;
+          color: #16834a;
+        }
+
+        .status.cancelled {
+          background: #fdecec;
+          color: #d43b3b;
+        }
+
+        .action-button {
+          border: 1px solid #dce1e8;
+          background: white;
+          border-radius: 8px;
+          padding: 7px 10px;
+          font-size: 12px;
+        }
+
+        .action-button:hover {
+          background: #f5f7fa;
+        }
+
+        .empty-state {
+          padding: 45px 20px;
+          text-align: center;
+          color: #7a8493;
+        }
+
+        .overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(15, 23, 42, 0.45);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+          z-index: 100;
+        }
+
+        .modal {
+          width: min(720px, 100%);
+          max-height: 90vh;
+          overflow-y: auto;
+          background: white;
+          border-radius: 16px;
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
+        }
+
+        .modal.small {
+          width: min(480px, 100%);
+        }
+
+        .modal-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 18px 20px;
+          border-bottom: 1px solid #e8ebf0;
+        }
+
+        .modal-header h2 {
+          margin: 0;
+          font-size: 18px;
+        }
+
+        .close-button {
+          border: 0;
+          background: transparent;
+          font-size: 23px;
+          color: #6c7789;
+        }
+
+        .modal-body {
+          padding: 20px;
+        }
+
+        .form-section {
+          margin-bottom: 20px;
+        }
+
+        .form-section-title {
+          font-size: 14px;
+          font-weight: 800;
+          margin-bottom: 12px;
+        }
+
+        .form-grid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 13px;
+        }
+
+        .form-group {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .form-group.full {
+          grid-column: 1 / -1;
+        }
+
+        .form-group label {
+          font-size: 12px;
+          color: #5d6879;
+          font-weight: 700;
+        }
+
+        .customer-select-row {
+          display: flex;
+          gap: 8px;
+        }
+
+        .customer-select-row .select {
+          flex: 1;
+        }
+
+        .add-customer-button {
+          width: 43px;
+          border: 1px solid #1769e0;
+          background: #edf4ff;
+          color: #1769e0;
+          border-radius: 9px;
+          font-size: 20px;
+        }
+
+        .modal-footer {
+          display: flex;
+          justify-content: flex-end;
+          gap: 9px;
+          padding: 15px 20px;
+          border-top: 1px solid #e8ebf0;
+        }
+
+        .secondary-button {
+          border: 1px solid #d8dee7;
+          background: white;
+          color: #4d5869;
+          border-radius: 9px;
+          padding: 10px 16px;
+        }
+
+        .danger-button {
+          border: 0;
+          background: #d43b3b;
+          color: white;
+          border-radius: 9px;
+          padding: 10px 16px;
+          font-weight: 700;
+        }
+
+        .success-button {
+          border: 0;
+          background: #16834a;
+          color: white;
+          border-radius: 9px;
+          padding: 10px 16px;
+          font-weight: 700;
+        }
+
+        .detail-grid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 10px;
+        }
+
+        .detail-item {
+          background: #f8f9fb;
+          border-radius: 9px;
+          padding: 12px;
+        }
+
+        .detail-label {
+          color: #737e8e;
+          font-size: 11px;
+          margin-bottom: 5px;
+        }
+
+        .detail-value {
+          font-weight: 700;
+          font-size: 13px;
+        }
+
+        .modal-actions {
+          display: flex;
+          gap: 8px;
+          margin-top: 18px;
+        }
+
+        @media (max-width: 900px) {
+          .summary-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+
+          .currency-grid {
+            grid-template-columns: repeat(3, 1fr);
+          }
+        }
+
+        @media (max-width: 650px) {
+          .hawala-app {
+            padding: 12px;
+          }
+
+          .page-header {
+            align-items: flex-start;
+            flex-direction: column;
+          }
+
+          .summary-grid {
+            grid-template-columns: 1fr 1fr;
+          }
+
+          .currency-grid {
+            grid-template-columns: 1fr 1fr;
+          }
+
+          .toolbar {
+            flex-direction: column;
+            align-items: stretch;
+          }
+
+          .search-input {
+            min-width: 0;
+          }
+
+          .form-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .form-group.full {
+            grid-column: auto;
+          }
+
+          .detail-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
+
+      <div className="container">
+        <div className="page-header">
+          <div className="title-area">
+            <h1>حواله‌جات</h1>
+            <p>
+              ثبت، پیگیری و مدیریت حواله‌های صرافی
+            </p>
           </div>
 
           <button
-            className="btn btn-primary"
-            onClick={() =>
-              setActiveTab("new")
-            }
+            className="primary-button"
+            onClick={() => {
+              setForm(emptyForm);
+              setShowForm(true);
+            }}
           >
-            ➕ حواله جدید
+            + ثبت حواله جدید
           </button>
-
         </div>
 
-        {/* -----------------------
-            پیگیری حواله
-        ----------------------- */}
+        <section className="summary-grid">
+          <div className="summary-card sent">
+            <div className="label">حواله‌های ارسال‌شده</div>
+            <div className="value">{formatNumber(totalSent)}</div>
+          </div>
 
-        <div className="tracking-grid">
+          <div className="summary-card paid">
+            <div className="label">حواله‌های پرداخت‌شده</div>
+            <div className="value">{formatNumber(totalPaid)}</div>
+          </div>
 
-          <div className="tracking-card">
-            <div className="tracking-title">
-              حواله پرداخت‌شده
-            </div>
-
-            <div className="tracking-number">
-              {paidCount.toLocaleString(
-                "fa-IR"
-              )}
+          <div className="summary-card cancelled">
+            <div className="label">حواله‌های لغوشده</div>
+            <div className="value">
+              {formatNumber(totalCancelled)}
             </div>
           </div>
 
-          <div className="tracking-card">
-            <div className="tracking-title">
-              حواله لغوشده
-            </div>
-
-            <div className="tracking-number">
-              {cancelledCount.toLocaleString(
-                "fa-IR"
-              )}
+          <div className="summary-card total">
+            <div className="label">مجموع حواله‌ها</div>
+            <div className="value">
+              {formatNumber(hawalas.length)}
             </div>
           </div>
+        </section>
 
-          <div className="tracking-card">
-            <div className="tracking-title">
-              حواله ارسال‌شده
-            </div>
-
-            <div className="tracking-number">
-              {sentCount.toLocaleString(
-                "fa-IR"
-              )}
-            </div>
+        <section className="currency-card">
+          <div className="currency-card-title">
+            مجموع مبالغ حواله‌ها
           </div>
 
-          {/* مجموع حواله‌ها */}
-
-          <div className="tracking-card">
-
-            <div className="tracking-title">
-              مجموع حواله‌ها
-            </div>
-
-            <div className="currency-box">
-
-              {currencies.map(
-                currency => (
-                  <div
-                    className="currency-item"
-                    key={
-                      currency.value
-                    }
-                  >
-                    <span className="currency-code">
-                      {
-                        currency.label
-                      }
-                    </span>
-
-                    <span className="currency-value">
-                      {currencyTotals[
-                        currency.value
-                      ].toLocaleString(
-                        "fa-IR"
-                      )}
-                    </span>
-                  </div>
-                )
-              )}
-
-            </div>
-
-          </div>
-
-        </div>
-
-        {/* Tabs */}
-
-        <div className="tabs">
-
-          <button
-            className={
-              activeTab === "new"
-                ? "tab active"
-                : "tab"
-            }
-            onClick={() =>
-              setActiveTab("new")
-            }
-          >
-            ➕ حواله جدید
-          </button>
-
-          <button
-            className={
-              activeTab === "current"
-                ? "tab active"
-                : "tab"
-            }
-            onClick={() =>
-              setActiveTab("current")
-            }
-          >
-            📋 پیگیری حواله
-          </button>
-
-          <button
-            className={
-              activeTab === "history"
-                ? "tab active"
-                : "tab"
-            }
-            onClick={() =>
-              setActiveTab("history")
-            }
-          >
-            📜 تاریخچه
-          </button>
-
-        </div>
-
-        {/* -----------------------
-            ثبت حواله جدید
-        ----------------------- */}
-
-        {activeTab === "new" && (
-          <div className="card">
-
-            <div className="section-title">
-              معلومات حواله
-            </div>
-
-            <div className="grid">
-
-              {/* مشتری */}
-
-              <div className="field">
-
-                <label>
-                  مشتری
-                </label>
-
-                <div className="customer-row">
-
-                  <select
-                    value={
-                      form.customerId
-                    }
-                    onChange={e =>
-                      updateForm(
-                        "customerId",
-                        e.target.value
-                      )
-                    }
-                  >
-                    <option value="">
-                      انتخاب مشتری
-                    </option>
-
-                    {customers.map(
-                      customer => (
-                        <option
-                          key={
-                            customer.id
-                          }
-                          value={
-                            customer.id
-                          }
-                        >
-                          {
-                            customer.name
-                          } —{" "}
-                          {
-                            customer.phone
-                          }
-                        </option>
-                      )
-                    )}
-                  </select>
-
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={() =>
-                      setShowCustomerModal(
-                        true
-                      )
-                    }
-                  >
-                    ➕ مشتری
-                  </button>
-
+          <div className="currency-grid">
+            {currencies.map((currency) => (
+              <div className="currency-item" key={currency.value}>
+                <div className="currency-name">
+                  {currency.label}
                 </div>
 
+                <div className="currency-value">
+                  {formatNumber(currencyTotals[currency.value])}{" "}
+                  <span style={{ fontSize: 12 }}>
+                    {currency.symbol}
+                  </span>
+                </div>
               </div>
-
-              {/* ارز */}
-
-              <div className="field">
-
-                <label>
-                  ارز حواله‌شده
-                </label>
-
-                <select
-                  value={
-                    form.currency
-                  }
-                  onChange={e =>
-                    updateForm(
-                      "currency",
-                      e.target.value
-                    )
-                  }
-                >
-                  {currencies.map(
-                    currency => (
-                      <option
-                        key={
-                          currency.value
-                        }
-                        value={
-                          currency.value
-                        }
-                      >
-                        {
-                          currency.label
-                        }{" "}
-                        (
-                        {
-                          currency.value
-                        }
-                        )
-                      </option>
-                    )
-                  )}
-                </select>
-
-              </div>
-
-              {/* مبلغ */}
-
-              <div className="field">
-
-                <label>
-                  مبلغ حواله
-                </label>
-
-                <input
-                  type="number"
-                  min="0"
-                  value={
-                    form.amount
-                  }
-                  onChange={e =>
-                    updateForm(
-                      "amount",
-                      e.target.value
-                    )
-                  }
-                  placeholder="مثلاً 10000"
-                />
-
-              </div>
-
-              {/* کارمزد */}
-
-              <div className="field">
-
-                <label>
-                  کارمزد
-                </label>
-
-                <input
-                  type="number"
-                  min="0"
-                  value={
-                    form.fee
-                  }
-                  onChange={e =>
-                    updateForm(
-                      "fee",
-                      e.target.value
-                    )
-                  }
-                  placeholder="مثلاً 200"
-                />
-
-              </div>
-
-              {/* مقصد */}
-
-              <div className="field">
-
-                <label>
-                  مقصد حواله
-                </label>
-
-                <select
-                  value={
-                    form.destination
-                  }
-                  onChange={e =>
-                    updateForm(
-                      "destination",
-                      e.target.value
-                    )
-                  }
-                >
-                  {destinations.map(
-                    destination => (
-                      <option
-                        key={
-                          destination
-                        }
-                        value={
-                          destination
-                        }
-                      >
-                        {
-                          destination
-                        }
-                      </option>
-                    )
-                  )}
-                </select>
-
-              </div>
-
-            </div>
-
-            {/* حواله گیرنده */}
-
-            <div className="section-title">
-              معلومات حواله‌گیرنده
-            </div>
-
-            <div className="grid">
-
-              <div className="field">
-
-                <label>
-                  نام حواله‌گیرنده
-                </label>
-
-                <input
-                  value={
-                    form.receiverName
-                  }
-                  onChange={e =>
-                    updateForm(
-                      "receiverName",
-                      e.target.value
-                    )
-                  }
-                  placeholder="نام و نام خانوادگی"
-                />
-
-              </div>
-
-              <div className="field">
-
-                <label>
-                  شماره تماس حواله‌گیرنده
-                </label>
-
-                <input
-                  value={
-                    form.receiverPhone
-                  }
-                  onChange={e =>
-                    updateForm(
-                      "receiverPhone",
-                      e.target.value
-                    )
-                  }
-                  placeholder="07xxxxxxxx"
-                />
-
-              </div>
-
-            </div>
-
-            {/* یادداشت */}
-
-            <div
-              className="field"
-              style={{
-                marginTop: "14px"
-              }}
-            >
-
-              <label>
-                یادداشت
-              </label>
-
-              <textarea
-                rows={3}
-                value={
-                  form.note
-                }
-                onChange={e =>
-                  updateForm(
-                    "note",
-                    e.target.value
-                  )
-                }
-                placeholder="اختیاری"
-              />
-
-            </div>
-
-            {/* خلاصه */}
-
-            <div className="summary">
-
-              <div className="summary-row">
-
-                <span>
-                  مبلغ حواله
-                </span>
-
-                <strong>
-                  {amount.toLocaleString(
-                    "fa-IR"
-                  )}{" "}
-                  {
-                    form.currency
-                  }
-                </strong>
-
-              </div>
-
-              <div className="summary-row">
-
-                <span>
-                  کارمزد
-                </span>
-
-                <strong>
-                  {fee.toLocaleString(
-                    "fa-IR"
-                  )}{" "}
-                  {
-                    form.currency
-                  }
-                </strong>
-
-              </div>
-
-              <div className="summary-row total">
-
-                <span>
-                  مجموع دریافتی
-                </span>
-
-                <strong>
-                  {totalAmount.toLocaleString(
-                    "fa-IR"
-                  )}{" "}
-                  {
-                    form.currency
-                  }
-                </strong>
-
-              </div>
-
-            </div>
-
-            <div
-              className="actions"
-              style={{
-                marginTop: "18px"
-              }}
-            >
-
-              <button
-                className="btn btn-primary"
-                onClick={
-                  submitForm
-                }
-              >
-                ثبت حواله
-              </button>
-
-              <button
-                className="btn btn-secondary"
-                onClick={() =>
-                  setForm(
-                    emptyForm
-                  )
-                }
-              >
-                پاک کردن
-              </button>
-
-            </div>
-
+            ))}
           </div>
-        )}
+        </section>
 
-        {/* -----------------------
-            پیگیری حواله
-        ----------------------- */}
-
-        {activeTab === "current" && (
-          <div className="card">
-
-            <div className="section-title">
-              حواله‌های در انتظار پرداخت
-            </div>
-
-            {currentHawalas.length ===
-            0 ? (
-              <div className="empty">
-                هیچ حواله‌ای در انتظار پرداخت نیست.
-              </div>
-            ) : (
-              <div className="table-wrap">
-
-                <table>
-
-                  <thead>
-                    <tr>
-                      <th>
-                        شماره حواله
-                      </th>
-
-                      <th>
-                        مشتری
-                      </th>
-
-                      <th>
-                        ارز
-                      </th>
-
-                      <th>
-                        مبلغ
-                      </th>
-
-                      <th>
-                        مقصد
-                      </th>
-
-                      <th>
-                        حواله‌گیرنده
-                      </th>
-
-                      <th>
-                        وضعیت
-                      </th>
-
-                      <th>
-                        عملیات
-                      </th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-
-                    {currentHawalas.map(
-                      item => (
-                        <tr
-                          key={
-                            item.id
-                          }
-                        >
-
-                          <td>
-                            {
-                              item.number
-                            }
-                          </td>
-
-                          <td>
-                            {
-                              item.customerName
-                            }
-                          </td>
-
-                          <td>
-                            {
-                              currencyLabel(
-                                item.currency
-                              )
-                            }
-                          </td>
-
-                          <td>
-                            {item.amount.toLocaleString(
-                              "fa-IR"
-                            )}
-                          </td>
-
-                          <td>
-                            {
-                              item.destination
-                            }
-                          </td>
-
-                          <td>
-                            {
-                              item.receiverName
-                            }
-                          </td>
-
-                          <td>
-                            <span
-                              className={
-                                badgeClass(
-                                  item.status
-                                )
-                              }
-                            >
-                              {
-                                statusLabels[
-                                  item.status
-                                ]
-                              }
-                            </span>
-                          </td>
-
-                          <td>
-
-                            <div className="actions">
-
-                              <button
-                                className="btn btn-secondary"
-                                onClick={() =>
-                                  setSelected(
-                                    item
-                                  )
-                                }
-                              >
-                                مشاهده
-                              </button>
-
-                              <button
-                                className="btn btn-success"
-                                onClick={() =>
-                                  openSettlement(
-                                    item
-                                  )
-                                }
-                              >
-                                پرداخت
-                              </button>
-
-                              <button
-                                className="btn btn-danger"
-                                onClick={() =>
-                                  openCancel(
-                                    item
-                                  )
-                                }
-                              >
-                                لغو
-                              </button>
-
-                            </div>
-
-                          </td>
-
-                        </tr>
-                      )
-                    )}
-
-                  </tbody>
-
-                </table>
-
-              </div>
-            )}
-
+        <section className="toolbar">
+          <div className="search-input">
+            <input
+              className="input"
+              value={search}
+              onChange={(event) =>
+                setSearch(event.target.value)
+              }
+              placeholder="جستجو بر اساس شماره، مشتری یا گیرنده..."
+            />
           </div>
-        )}
 
-        {/* -----------------------
-            تاریخچه
-        ----------------------- */}
+          <button
+            className={`filter-button ${
+              statusFilter === "all" ? "active" : ""
+            }`}
+            onClick={() => setStatusFilter("all")}
+          >
+            همه
+          </button>
 
-        {activeTab === "history" && (
-          <div className="card">
+          <button
+            className={`filter-button ${
+              statusFilter === "sent" ? "active" : ""
+            }`}
+            onClick={() => setStatusFilter("sent")}
+          >
+            ارسال‌شده
+          </button>
 
-            <div className="section-title">
-              تاریخچه حواله‌ها
-            </div>
+          <button
+            className={`filter-button ${
+              statusFilter === "paid" ? "active" : ""
+            }`}
+            onClick={() => setStatusFilter("paid")}
+          >
+            پرداخت‌شده
+          </button>
 
-            <div className="search-bar">
+          <button
+            className={`filter-button ${
+              statusFilter === "cancelled" ? "active" : ""
+            }`}
+            onClick={() => setStatusFilter("cancelled")}
+          >
+            لغوشده
+          </button>
+        </section>
 
-              <input
-                value={search}
-                onChange={e =>
-                  setSearch(
-                    e.target.value
-                  )
-                }
-                placeholder="جستجو بر اساس شماره، مشتری، گیرنده، تماس یا مقصد..."
-              />
+        <section className="table-card">
+          <div className="table-header">
+            فهرست حواله‌ها
+          </div>
 
-              <select
-                value={
-                  statusFilter
-                }
-                onChange={e =>
-                  setStatusFilter(
-                    e.target.value
-                  )
-                }
-              >
-
-                <option value="all">
-                  همه وضعیت‌ها
-                </option>
-
-                <option value="pending">
-                  در انتظار پرداخت
-                </option>
-
-                <option value="paid">
-                  پرداخت‌شده
-                </option>
-
-                <option value="cancelled">
-                  لغوشده
-                </option>
-
-              </select>
-
-            </div>
-
-            {filteredHistory.length ===
-            0 ? (
-              <div className="empty">
+          <div className="table-wrapper">
+            {filteredHawalas.length === 0 ? (
+              <div className="empty-state">
                 هیچ حواله‌ای پیدا نشد.
               </div>
             ) : (
-              <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>شماره حواله</th>
+                    <th>تاریخ</th>
+                    <th>حواله‌دهنده</th>
+                    <th>مبلغ</th>
+                    <th>گیرنده</th>
+                    <th>مقصد</th>
+                    <th>وضعیت</th>
+                    <th>عملیات</th>
+                  </tr>
+                </thead>
 
-                <table>
+                <tbody>
+                  {filteredHawalas.map((hawala) => (
+                    <tr key={hawala.id}>
+                      <td>
+                        <div className="hawala-number">
+                          {hawala.number}
+                        </div>
+                        <div className="sub-text">
+                          {hawala.time}
+                        </div>
+                      </td>
 
-                  <thead>
+                      <td>{hawala.date}</td>
 
-                    <tr>
+                      <td>
+                        <div className="customer-name">
+                          {hawala.customerName}
+                        </div>
+                      </td>
 
-                      <th>
-                        شماره
-                      </th>
+                      <td>
+                        <div className="amount">
+                          {formatNumber(hawala.amount)}{" "}
+                          {getCurrencySymbol(
+                            hawala.currency
+                          )}
+                        </div>
 
-                      <th>
-                        تاریخ
-                      </th>
+                        {hawala.fee > 0 && (
+                          <div className="sub-text">
+                            کارمزد:{" "}
+                            {formatNumber(hawala.fee)}
+                          </div>
+                        )}
+                      </td>
 
-                      <th>
-                        مشتری
-                      </th>
+                      <td>
+                        <div className="customer-name">
+                          {hawala.receiverName}
+                        </div>
 
-                      <th>
-                        ارز
-                      </th>
+                        <div className="sub-text">
+                          {hawala.receiverPhone}
+                        </div>
+                      </td>
 
-                      <th>
-                        مبلغ
-                      </th>
+                      <td>{hawala.destination}</td>
 
-                      <th>
-                        مقصد
-                      </th>
+                      <td>
+                        <span
+                          className={`status ${hawala.status}`}
+                        >
+                          {statusLabels[hawala.status]}
+                        </span>
+                      </td>
 
-                      <th>
-                        حواله‌گیرنده
-                      </th>
-
-                      <th>
-                        وضعیت
-                      </th>
-
-                      <th>
-                        عملیات
-                      </th>
-
-                    </tr>
-
-                  </thead>
-
-                  <tbody>
-
-                    {filteredHistory.map(
-                      item => (
-                        <tr
-                          key={
-                            item.id
+                      <td>
+                        <button
+                          className="action-button"
+                          onClick={() =>
+                            setSelectedHawala(hawala)
                           }
                         >
-
-                          <td>
-                            {
-                              item.number
-                            }
-                          </td>
-
-                          <td>
-                            {
-                              item.date
-                            }
-                          </td>
-
-                          <td>
-                            {
-                              item.customerName
-                            }
-                          </td>
-
-                          <td>
-                            {
-                              currencyLabel(
-                                item.currency
-                              )
-                            }
-                          </td>
-
-                          <td>
-                            {item.amount.toLocaleString(
-                              "fa-IR"
-                            )}
-                          </td>
-
-                          <td>
-                            {
-                              item.destination
-                            }
-                          </td>
-
-                          <td>
-                            {
-                              item.receiverName
-                            }
-                          </td>
-
-                          <td>
-                            <span
-                              className={
-                                badgeClass(
-                                  item.status
-                                )
-                              }
-                            >
-                              {
-                                statusLabels[
-                                  item.status
-                                ]
-                              }
-                            </span>
-                          </td>
-
-                          <td>
-
-                            <button
-                              className="btn btn-secondary"
-                              onClick={() =>
-                                setSelected(
-                                  item
-                                )
-                              }
-                            >
-                              مشاهده
-                            </button>
-
-                          </td>
-
-                        </tr>
-                      )
-                    )}
-
-                  </tbody>
-
-                </table>
-
-              </div>
+                          مشاهده
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             )}
-
           </div>
-        )}
-
+        </section>
       </div>
 
-      {/* -----------------------
-          افزودن مشتری
-      ----------------------- */}
-
-      {showCustomerModal && (
+      {showForm && (
         <div
-          className="modal-overlay"
-          onClick={() =>
-            setShowCustomerModal(
-              false
-            )
-          }
-        >
-
-          <div
-            className="modal"
-            onClick={e =>
-              e.stopPropagation()
+          className="overlay"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setShowForm(false);
             }
-          >
-
+          }}
+        >
+          <div className="modal">
             <div className="modal-header">
+              <h2>ثبت حواله جدید</h2>
 
-              <h3 className="modal-title">
+              <button
+                className="close-button"
+                onClick={() => setShowForm(false)}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="modal-body">
+              <div className="form-section">
+                <div className="form-section-title">
+                  معلومات حواله‌دهنده
+                </div>
+
+                <div className="form-grid">
+                  <div className="form-group full">
+                    <label>مشتری</label>
+
+                    <div className="customer-select-row">
+                      <select
+                        className="select"
+                        value={form.customerId}
+                        onChange={(event) =>
+                          updateForm(
+                            "customerId",
+                            event.target.value
+                          )
+                        }
+                      >
+                        <option value="">
+                          انتخاب مشتری
+                        </option>
+
+                        {customers.map((customer) => (
+                          <option
+                            key={customer.id}
+                            value={customer.id}
+                          >
+                            {customer.name} —{" "}
+                            {customer.phone}
+                          </option>
+                        ))}
+                      </select>
+
+                      <button
+                        className="add-customer-button"
+                        title="افزودن مشتری"
+                        onClick={() =>
+                          setShowCustomerForm(true)
+                        }
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label>ارز حواله</label>
+
+                    <select
+                      className="select"
+                      value={form.currency}
+                      onChange={(event) =>
+                        updateForm(
+                          "currency",
+                          event.target.value as Currency
+                        )
+                      }
+                    >
+                      {currencies.map((currency) => (
+                        <option
+                          key={currency.value}
+                          value={currency.value}
+                        >
+                          {currency.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label>مبلغ حواله</label>
+
+                    <input
+                      className="input"
+                      type="number"
+                      min="0"
+                      value={form.amount}
+                      onChange={(event) =>
+                        updateForm(
+                          "amount",
+                          event.target.value
+                        )
+                      }
+                      placeholder="مثلاً 10000"
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>کارمزد</label>
+
+                    <input
+                      className="input"
+                      type="number"
+                      min="0"
+                      value={form.fee}
+                      onChange={(event) =>
+                        updateForm(
+                          "fee",
+                          event.target.value
+                        )
+                      }
+                      placeholder="مثلاً 200"
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>مقصد حواله</label>
+
+                    <select
+                      className="select"
+                      value={form.destination}
+                      onChange={(event) =>
+                        updateForm(
+                          "destination",
+                          event.target.value
+                        )
+                      }
+                    >
+                      {destinations.map((destination) => (
+                        <option
+                          key={destination}
+                          value={destination}
+                        >
+                          {destination}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="form-section">
+                <div className="form-section-title">
+                  معلومات حواله‌گیرنده
+                </div>
+
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label>نام حواله‌گیرنده</label>
+
+                    <input
+                      className="input"
+                      value={form.receiverName}
+                      onChange={(event) =>
+                        updateForm(
+                          "receiverName",
+                          event.target.value
+                        )
+                      }
+                      placeholder="نام کامل"
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>شماره تماس حواله‌گیرنده</label>
+
+                    <input
+                      className="input"
+                      type="tel"
+                      value={form.receiverPhone}
+                      onChange={(event) =>
+                        updateForm(
+                          "receiverPhone",
+                          event.target.value
+                        )
+                      }
+                      placeholder="07XXXXXXXX"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="form-section">
+                <div className="form-section-title">
+                  یادداشت
+                </div>
+
+                <textarea
+                  className="textarea"
+                  rows={3}
+                  value={form.note}
+                  onChange={(event) =>
+                    updateForm("note", event.target.value)
+                  }
+                  placeholder="یادداشت اختیاری..."
+                />
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button
+                className="secondary-button"
+                onClick={() => setShowForm(false)}
+              >
+                انصراف
+              </button>
+
+              <button
+                className="primary-button"
+                onClick={handleCreateHawala}
+              >
+                ثبت حواله
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCustomerForm && (
+        <div
+          className="overlay"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setShowCustomerForm(false);
+            }
+          }}
+        >
+          <div className="modal small">
+            <div className="modal-header">
+              <h2>افزودن مشتری</h2>
+
+              <button
+                className="close-button"
+                onClick={() =>
+                  setShowCustomerForm(false)
+                }
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="modal-body">
+              <div className="form-grid">
+                <div className="form-group full">
+                  <label>نام مشتری</label>
+
+                  <input
+                    className="input"
+                    value={newCustomerName}
+                    onChange={(event) =>
+                      setNewCustomerName(
+                        event.target.value
+                      )
+                    }
+                    placeholder="نام کامل مشتری"
+                  />
+                </div>
+
+                <div className="form-group full">
+                  <label>شماره تماس</label>
+
+                  <input
+                    className="input"
+                    value={newCustomerPhone}
+                    onChange={(event) =>
+                      setNewCustomerPhone(
+                        event.target.value
+                      )
+                    }
+                    placeholder="07XXXXXXXX"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button
+                className="secondary-button"
+                onClick={() =>
+                  setShowCustomerForm(false)
+                }
+              >
+                انصراف
+              </button>
+
+              <button
+                className="primary-button"
+                onClick={handleAddCustomer}
+              >
                 افزودن مشتری
-              </h3>
-
-              <button
-                className="btn btn-secondary"
-                onClick={() =>
-                  setShowCustomerModal(
-                    false
-                  )
-                }
-              >
-                بستن
               </button>
-
             </div>
-
-            <div className="grid">
-
-              <div className="field">
-
-                <label>
-                  نام مشتری
-                </label>
-
-                <input
-                  value={
-                    newCustomer.name
-                  }
-                  onChange={e =>
-                    setNewCustomer(
-                      prev => ({
-                        ...prev,
-                        name:
-                          e.target.value
-                      })
-                    )
-                  }
-                  placeholder="نام و نام خانوادگی"
-                />
-
-              </div>
-
-              <div className="field">
-
-                <label>
-                  شماره تماس
-                </label>
-
-                <input
-                  value={
-                    newCustomer.phone
-                  }
-                  onChange={e =>
-                    setNewCustomer(
-                      prev => ({
-                        ...prev,
-                        phone:
-                          e.target.value
-                      })
-                    )
-                  }
-                  placeholder="07xxxxxxxx"
-                />
-
-              </div>
-
-              <div className="field">
-
-                <label>
-                  شماره تذکره
-                </label>
-
-                <input
-                  value={
-                    newCustomer.tazkira
-                  }
-                  onChange={e =>
-                    setNewCustomer(
-                      prev => ({
-                        ...prev,
-                        tazkira:
-                          e.target.value
-                      })
-                    )
-                  }
-                  placeholder="اختیاری"
-                />
-
-              </div>
-
-            </div>
-
-            <div
-              className="actions"
-              style={{
-                marginTop: "18px"
-              }}
-            >
-
-              <button
-                className="btn btn-primary"
-                onClick={
-                  addCustomer
-                }
-              >
-                ذخیره مشتری
-              </button>
-
-              <button
-                className="btn btn-secondary"
-                onClick={() =>
-                  setShowCustomerModal(
-                    false
-                  )
-                }
-              >
-                انصراف
-              </button>
-
-            </div>
-
           </div>
-
         </div>
       )}
 
-      {/* -----------------------
-          مشاهده حواله
-      ----------------------- */}
-
-      {selected && (
+      {selectedHawala && (
         <div
-          className="modal-overlay"
-          onClick={() =>
-            setSelected(null)
-          }
-        >
-
-          <div
-            className="modal"
-            onClick={e =>
-              e.stopPropagation()
+          className="overlay"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setSelectedHawala(null);
             }
-          >
-
+          }}
+        >
+          <div className="modal">
             <div className="modal-header">
+              <div>
+                <h2>
+                  حواله {selectedHawala.number}
+                </h2>
 
-              <h3 className="modal-title">
-                جزئیات حواله{" "}
-                {selected.number}
-              </h3>
+                <div className="sub-text">
+                  {selectedHawala.date} —{" "}
+                  {selectedHawala.time}
+                </div>
+              </div>
 
               <button
-                className="btn btn-secondary"
+                className="close-button"
                 onClick={() =>
-                  setSelected(null)
+                  setSelectedHawala(null)
                 }
               >
-                بستن
+                ×
               </button>
-
             </div>
 
-            <div className="receipt">
+            <div className="modal-body">
+              <div className="detail-grid">
+                <div className="detail-item">
+                  <div className="detail-label">
+                    وضعیت
+                  </div>
 
-              <div className="receipt-title">
-                🧾 رسید حواله
-              </div>
-
-              <div className="receipt-row">
-                <span>
-                  شماره حواله
-                </span>
-
-                <strong>
-                  {
-                    selected.number
-                  }
-                </strong>
-              </div>
-
-              <div className="receipt-row">
-                <span>
-                  تاریخ
-                </span>
-
-                <strong>
-                  {
-                    selected.date
-                  }
-                </strong>
-              </div>
-
-              <div className="receipt-row">
-                <span>
-                  ساعت
-                </span>
-
-                <strong>
-                  {
-                    selected.time
-                  }
-                </strong>
-              </div>
-
-              <div className="divider" />
-
-              <div className="receipt-row">
-                <span>
-                  مشتری
-                </span>
-
-                <strong>
-                  {
-                    selected.customerName
-                  }
-                </strong>
-              </div>
-
-              <div className="receipt-row">
-                <span>
-                  ارز حواله‌شده
-                </span>
-
-                <strong>
-                  {
-                    currencyLabel(
-                      selected.currency
-                    )
-                  }{" "}
-                  (
-                  {
-                    selected.currency
-                  }
-                  )
-                </strong>
-              </div>
-
-              <div className="receipt-row">
-                <span>
-                  مبلغ حواله
-                </span>
-
-                <strong>
-                  {selected.amount.toLocaleString(
-                    "fa-IR"
-                  )}{" "}
-                  {
-                    selected.currency
-                  }
-                </strong>
-              </div>
-
-              <div className="receipt-row">
-                <span>
-                  کارمزد
-                </span>
-
-                <strong>
-                  {selected.fee.toLocaleString(
-                    "fa-IR"
-                  )}{" "}
-                  {
-                    selected.currency
-                  }
-                </strong>
-              </div>
-
-              <div className="receipt-row">
-                <span>
-                  مجموع دریافتی
-                </span>
-
-                <strong>
-                  {selected.totalAmount.toLocaleString(
-                    "fa-IR"
-                  )}{" "}
-                  {
-                    selected.currency
-                  }
-                </strong>
-              </div>
-
-              <div className="divider" />
-
-              <div className="receipt-row">
-                <span>
-                  مقصد حواله
-                </span>
-
-                <strong>
-                  {
-                    selected.destination
-                  }
-                </strong>
-              </div>
-
-              <div className="receipt-row">
-                <span>
-                  حواله‌گیرنده
-                </span>
-
-                <strong>
-                  {
-                    selected.receiverName
-                  }
-                </strong>
-              </div>
-
-              <div className="receipt-row">
-                <span>
-                  شماره تماس
-                </span>
-
-                <strong>
-                  {
-                    selected.receiverPhone
-                  }
-                </strong>
-              </div>
-
-              <div className="receipt-row">
-                <span>
-                  وضعیت
-                </span>
-
-                <strong>
-                  {
-                    statusLabels[
-                      selected.status
-                    ]
-                  }
-                </strong>
-              </div>
-
-              {selected.paidAt && (
-                <div className="receipt-row">
-                  <span>
-                    زمان پرداخت
-                  </span>
-
-                  <strong>
-                    {
-                      selected.paidAt
-                    }
-                  </strong>
+                  <div className="detail-value">
+                    <span
+                      className={`status ${selectedHawala.status}`}
+                    >
+                      {
+                        statusLabels[
+                          selectedHawala.status
+                        ]
+                      }
+                    </span>
+                  </div>
                 </div>
-              )}
 
-              {selected.cancelReason && (
-                <div className="receipt-row">
-                  <span>
-                    دلیل لغو
-                  </span>
+                <div className="detail-item">
+                  <div className="detail-label">
+                    مبلغ حواله
+                  </div>
 
-                  <strong>
-                    {
-                      selected.cancelReason
-                    }
-                  </strong>
+                  <div className="detail-value">
+                    {formatNumber(
+                      selectedHawala.amount
+                    )}{" "}
+                    {getCurrencyLabel(
+                      selectedHawala.currency
+                    )}
+                  </div>
                 </div>
-              )}
 
-              {selected.note && (
-                <div className="receipt-row">
-                  <span>
-                    یادداشت
-                  </span>
+                <div className="detail-item">
+                  <div className="detail-label">
+                    حواله‌دهنده
+                  </div>
 
-                  <strong>
-                    {
-                      selected.note
-                    }
-                  </strong>
+                  <div className="detail-value">
+                    {selectedHawala.customerName}
+                  </div>
                 </div>
-              )}
 
-            </div>
+                <div className="detail-item">
+                  <div className="detail-label">
+                    مقصد
+                  </div>
 
-            <div
-              className="actions"
-              style={{
-                marginTop: "18px"
-              }}
-            >
+                  <div className="detail-value">
+                    {selectedHawala.destination}
+                  </div>
+                </div>
 
-              <button
-                className="btn btn-primary"
-                onClick={() =>
-                  window.print()
-                }
-              >
-                🖨 چاپ رسید
-              </button>
+                <div className="detail-item">
+                  <div className="detail-label">
+                    حواله‌گیرنده
+                  </div>
 
-              {selected.status ===
-                "pending" && (
-                <>
+                  <div className="detail-value">
+                    {selectedHawala.receiverName}
+                  </div>
+                </div>
+
+                <div className="detail-item">
+                  <div className="detail-label">
+                    شماره تماس گیرنده
+                  </div>
+
+                  <div className="detail-value">
+                    {selectedHawala.receiverPhone}
+                  </div>
+                </div>
+
+                <div className="detail-item">
+                  <div className="detail-label">
+                    کارمزد
+                  </div>
+
+                  <div className="detail-value">
+                    {formatNumber(
+                      selectedHawala.fee
+                    )}{" "}
+                    {getCurrencySymbol(
+                      selectedHawala.currency
+                    )}
+                  </div>
+                </div>
+
+                <div className="detail-item">
+                  <div className="detail-label">
+                    مجموع پرداخت
+                  </div>
+
+                  <div className="detail-value">
+                    {formatNumber(
+                      selectedHawala.totalAmount
+                    )}{" "}
+                    {getCurrencySymbol(
+                      selectedHawala.currency
+                    )}
+                  </div>
+                </div>
+
+                {selectedHawala.paidAt && (
+                  <div className="detail-item">
+                    <div className="detail-label">
+                      زمان پرداخت
+                    </div>
+
+                    <div className="detail-value">
+                      {selectedHawala.paidAt}
+                    </div>
+                  </div>
+                )}
+
+                {selectedHawala.cancelReason && (
+                  <div className="detail-item">
+                    <div className="detail-label">
+                      دلیل لغو
+                    </div>
+
+                    <div className="detail-value">
+                      {selectedHawala.cancelReason}
+                    </div>
+                  </div>
+                )}
+
+                {selectedHawala.note && (
+                  <div className="detail-item">
+                    <div className="detail-label">
+                      یادداشت
+                    </div>
+
+                    <div className="detail-value">
+                      {selectedHawala.note}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {selectedHawala.status === "sent" && (
+                <div className="modal-actions">
                   <button
-                    className="btn btn-success"
-                    onClick={() => {
-                      openSettlement(
-                        selected
-                      );
-
-                      setSelected(
-                        null
-                      );
-                    }}
+                    className="success-button"
+                    onClick={() =>
+                      markAsPaid(selectedHawala.id)
+                    }
                   >
-                    پرداخت
+                    ✓ ثبت پرداخت حواله
                   </button>
 
                   <button
-                    className="btn btn-danger"
+                    className="danger-button"
                     onClick={() => {
-                      openCancel(
-                        selected
+                      const reason = window.prompt(
+                        "دلیل لغو حواله را وارد کنید:"
                       );
 
-                      setSelected(
-                        null
-                      );
+                      if (reason?.trim()) {
+                        setCancelReason(reason);
+                        cancelHawala(
+                          selectedHawala.id
+                        );
+                      }
                     }}
                   >
-                    لغو
+                    لغو حواله
                   </button>
-                </>
+                </div>
               )}
-
             </div>
 
-          </div>
-
-        </div>
-      )}
-
-      {/* -----------------------
-          پرداخت حواله
-      ----------------------- */}
-
-      {settlement && (
-        <div
-          className="modal-overlay"
-          onClick={() =>
-            setSettlement(null)
-          }
-        >
-
-          <div
-            className="modal"
-            onClick={e =>
-              e.stopPropagation()
-            }
-          >
-
-            <div className="modal-header">
-
-              <h3 className="modal-title">
-                پرداخت حواله{" "}
-                {
-                  settlement.number
-                }
-              </h3>
-
+            <div className="modal-footer">
               <button
-                className="btn btn-secondary"
+                className="secondary-button"
                 onClick={() =>
-                  setSettlement(
-                    null
-                  )
+                  setSelectedHawala(null)
                 }
               >
                 بستن
               </button>
-
             </div>
-
-            <div className="summary">
-
-              <div className="summary-row">
-                <span>
-                  مشتری
-                </span>
-
-                <strong>
-                  {
-                    settlement.customerName
-                  }
-                </strong>
-              </div>
-
-              <div className="summary-row">
-                <span>
-                  حواله‌گیرنده
-                </span>
-
-                <strong>
-                  {
-                    settlement.receiverName
-                  }
-                </strong>
-              </div>
-
-              <div className="summary-row">
-                <span>
-                  مبلغ قابل پرداخت
-                </span>
-
-                <strong>
-                  {settlement.amount.toLocaleString(
-                    "fa-IR"
-                  )}{" "}
-                  {
-                    settlement.currency
-                  }
-                </strong>
-              </div>
-
-            </div>
-
-            <div
-              className="field"
-              style={{
-                marginTop: "15px"
-              }}
-            >
-
-              <label>
-                مبلغ پرداخت‌شده
-              </label>
-
-              <input
-                type="number"
-                min="0"
-                value={
-                  paidAmount
-                }
-                onChange={e =>
-                  setPaidAmount(
-                    e.target.value
-                  )
-                }
-              />
-
-            </div>
-
-            <div
-              className="actions"
-              style={{
-                marginTop: "18px"
-              }}
-            >
-
-              <button
-                className="btn btn-success"
-                onClick={
-                  confirmSettlement
-                }
-              >
-                تأیید پرداخت
-              </button>
-
-              <button
-                className="btn btn-secondary"
-                onClick={() =>
-                  setSettlement(
-                    null
-                  )
-                }
-              >
-                انصراف
-              </button>
-
-            </div>
-
           </div>
-
         </div>
       )}
-
-      {/* -----------------------
-          لغو حواله
-      ----------------------- */}
-
-      {cancelTarget && (
-        <div
-          className="modal-overlay"
-          onClick={() =>
-            setCancelTarget(
-              null
-            )
-          }
-        >
-
-          <div
-            className="modal"
-            onClick={e =>
-              e.stopPropagation()
-            }
-          >
-
-            <div className="modal-header">
-
-              <h3 className="modal-title">
-                لغو حواله{" "}
-                {
-                  cancelTarget.number
-                }
-              </h3>
-
-              <button
-                className="btn btn-secondary"
-                onClick={() =>
-                  setCancelTarget(
-                    null
-                  )
-                }
-              >
-                بستن
-              </button>
-
-            </div>
-
-            <div className="field">
-
-              <label>
-                دلیل لغو
-              </label>
-
-              <textarea
-                rows={4}
-                value={
-                  cancelReason
-                }
-                onChange={e =>
-                  setCancelReason(
-                    e.target.value
-                  )
-                }
-                placeholder="دلیل لغو حواله را وارد کنید..."
-              />
-
-            </div>
-
-            <div
-              className="actions"
-              style={{
-                marginTop: "18px"
-              }}
-            >
-
-              <button
-                className="btn btn-danger"
-                onClick={
-                  confirmCancel
-                }
-              >
-                لغو حواله
-              </button>
-
-              <button
-                className="btn btn-secondary"
-                onClick={() =>
-                  setCancelTarget(
-                    null
-                  )
-                }
-              >
-                انصراف
-              </button>
-
-            </div>
-
-          </div>
-
-        </div>
-      )}
-
-      {toast && (
-        <div className="toast">
-          {toast}
-        </div>
-      )}
-
-    </div>
+    </main>
   );
 }
-```
