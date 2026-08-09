@@ -126,12 +126,62 @@ function shortId(id: string) {
   return id.slice(-6);
 }
 
+/* ---------------- تاریخ هجری شمسی ---------------- */
+
+function shamsiParts(d: Date) {
+  const parts = new Intl.DateTimeFormat(
+    "en-US-u-ca-persian-nu-latn",
+    {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }
+  ).formatToParts(d);
+
+  const get = (type: string) =>
+    parts.find((p) => p.type === type)?.value || "0";
+
+  return {
+    year: get("year"),
+    month: get("month"),
+    day: get("day"),
+  };
+}
+
 function formatDateTime(d: Date) {
   const pad = (n: number) => String(n).padStart(2, "0");
 
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(
-    d.getDate()
-  )} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  const s = shamsiParts(d);
+
+  return `${s.year}/${s.month}/${s.day} ${pad(d.getHours())}:${pad(
+    d.getMinutes()
+  )}:${pad(d.getSeconds())}`;
+}
+
+const shamsiMonthNames = [
+  "حمل",
+  "ثور",
+  "جوزا",
+  "سرطان",
+  "اسد",
+  "سنبله",
+  "میزان",
+  "عقرب",
+  "قوس",
+  "جدی",
+  "دلو",
+  "حوت",
+];
+
+function shamsiMonthLabel(d: Date) {
+  const s = shamsiParts(d);
+  const m = parseInt(s.month, 10);
+  const day = parseInt(s.day, 10);
+
+  if (!Number.isFinite(m) || m < 1 || m > 12) return "";
+  if (!Number.isFinite(day)) return "";
+
+  return `${day} ${shamsiMonthNames[m - 1]} ${s.year}`;
 }
 
 function dateLabel(s: string) {
@@ -265,7 +315,6 @@ function directRateLabel(
 
 /* ============================================================
    UI ONLY — آیکون‌ها، توکن‌های ظاهری و اجزای نمایشی
-   (هیچ تأثیری بر منطق برنامه ندارند)
    ============================================================ */
 
 const iconPaths = {
@@ -291,8 +340,6 @@ const iconPaths = {
     "M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
   alert:
     "M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z",
-  wallet:
-    "M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z",
   doc: "M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z",
   inbox:
     "M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h3.218a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H6.911a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661Z",
@@ -350,14 +397,6 @@ function DetailRow({
     </div>
   );
 }
-
-const avatarPalette = [
-  "from-teal-500 to-emerald-600",
-  "from-violet-500 to-fuchsia-600",
-  "from-amber-500 to-orange-600",
-  "from-sky-500 to-indigo-600",
-  "from-rose-500 to-pink-600",
-];
 
 const uiCard =
   "rounded-2xl border border-slate-200/90 bg-white/90 shadow-[0_16px_40px_-28px_rgba(9,47,58,0.45)] backdrop-blur transition-colors duration-300 dark:border-slate-800 dark:bg-[#0e1a28]/90 dark:shadow-[0_16px_40px_-24px_rgba(0,0,0,0.75)]";
@@ -1045,64 +1084,7 @@ export default function CurrencyExchangePage() {
     resetTransferForm();
   }
 
-  /* ---------------- Balance ---------------- */
-
-  function balances() {
-    const result: Record<string, Record<Currency, number>> =
-      {} as Record<string, Record<Currency, number>>;
-
-    customers.forEach((c) => {
-      result[c.id] = { ...c.balances };
-    });
-
-    transactions.forEach((tx) => {
-      if (tx.status === "voided") return;
-
-      if (tx.type === "exchange" && tx.customerId) {
-        const b = result[tx.customerId];
-        if (!b) return;
-
-        b[tx.fromCurrency] =
-          (b[tx.fromCurrency] || 0) - tx.fromAmount;
-
-        if (tx.commission && tx.commissionCurrency) {
-          b[tx.commissionCurrency] =
-            (b[tx.commissionCurrency] || 0) - tx.commission;
-        }
-
-        b[tx.toCurrency] =
-          (b[tx.toCurrency] || 0) + tx.toAmount;
-      }
-
-      if (
-        tx.type === "transfer" &&
-        tx.senderId &&
-        tx.receiverId
-      ) {
-        const s = result[tx.senderId];
-        const r = result[tx.receiverId];
-
-        if (s) {
-          s[tx.fromCurrency] =
-            (s[tx.fromCurrency] || 0) - tx.fromAmount;
-
-          if (tx.commission) {
-            s[tx.fromCurrency] =
-              (s[tx.fromCurrency] || 0) - tx.commission;
-          }
-        }
-
-        if (r) {
-          r[tx.toCurrency] =
-            (r[tx.toCurrency] || 0) + tx.toAmount;
-        }
-      }
-    });
-
-    return result;
-  }
-
-  const currentBalances = balances();
+  /* ---------------- Names & Labels ---------------- */
 
   function customerName(id?: string) {
     return customers.find((c) => c.id === id)?.name || "-";
@@ -1370,7 +1352,7 @@ export default function CurrencyExchangePage() {
               <td>${tx.id}</td>
             </tr>
             <tr>
-              <th>تاریخ</th>
+              <th>تاریخ (هجری شمسی)</th>
               <td>${dateLabel(tx.date)}</td>
             </tr>
             <tr>
@@ -1494,6 +1476,14 @@ export default function CurrencyExchangePage() {
                 <span dir="ltr" className="text-xs font-bold tabular-nums text-slate-600 dark:text-slate-300">
                   {currentDateTime || "--:--:--"}
                 </span>
+                {now && (
+                  <>
+                    <span className="h-4 w-px bg-slate-200 dark:bg-slate-700" />
+                    <span className="whitespace-nowrap text-[10px] font-black text-teal-700 dark:text-teal-300">
+                      {shamsiMonthLabel(now)}
+                    </span>
+                  </>
+                )}
               </div>
 
               <button
@@ -1616,7 +1606,7 @@ export default function CurrencyExchangePage() {
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 <div>
                   <label className={uiLabel}>
-                    تاریخ و ساعت {editingExchangeId ? "(اصل)" : "(خودکار)"}
+                    تاریخ و ساعت (هجری شمسی) {editingExchangeId ? "(اصل)" : "(خودکار)"}
                   </label>
                   <div className="relative">
                     <input
@@ -2015,7 +2005,7 @@ export default function CurrencyExchangePage() {
               {exchangeErrorList.length > 0 && (
                 <div className="fx-pop space-y-2 rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-rose-700 dark:border-rose-400/25 dark:bg-rose-400/10 dark:text-rose-300">
                   <b className="flex items-center gap-2 text-sm">
-                    <Ic n="alert" className="h-4.5 w-4.5 h-5 w-5 shrink-0" />
+                    <Ic n="alert" className="h-5 w-5 shrink-0" />
                     لطفاً این فیلدها را تکمیل کنید:
                   </b>
 
@@ -2080,7 +2070,7 @@ export default function CurrencyExchangePage() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <label className={uiLabel}>
-                    تاریخ و ساعت {editingTransferId ? "(اصل)" : "(خودکار)"}
+                    تاریخ و ساعت (هجری شمسی) {editingTransferId ? "(اصل)" : "(خودکار)"}
                   </label>
                   <div className="relative">
                     <input
@@ -2506,92 +2496,6 @@ export default function CurrencyExchangePage() {
             </section>
           )}
 
-          {/* ================= Balances ================= */}
-
-          <section
-            className={`fx-up overflow-hidden ${uiCard}`}
-            style={{ animationDelay: "80ms" }}
-          >
-            <div className="flex flex-wrap items-center gap-3 p-5 pb-4 md:px-7 md:pt-6">
-              <span className="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-amber-500/15 to-orange-400/15 text-amber-600 ring-1 ring-amber-500/25 dark:from-amber-400/15 dark:to-orange-400/10 dark:text-amber-300 dark:ring-amber-400/20">
-                <Ic n="wallet" className="h-5 w-5" />
-              </span>
-              <div className="flex-1">
-                <h2 className="fx-display text-2xl leading-none text-slate-900 dark:text-white">
-                  موجودی مشتریان
-                </h2>
-                <p className="mt-1 text-[11px] font-bold text-slate-400 dark:text-slate-500">
-                  به‌روزرسانی‌شده بر اساس معاملات فعال
-                </p>
-              </div>
-              <span className="rounded-full bg-slate-500/10 px-3 py-1.5 text-[10px] font-black text-slate-600 ring-1 ring-slate-500/20 dark:bg-slate-400/10 dark:text-slate-300 dark:ring-slate-400/20">
-                {customers.length} مشتری
-              </span>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] text-sm">
-                <thead>
-                  <tr className="border-y border-slate-100 bg-slate-50/80 dark:border-slate-800 dark:bg-[#0b1520]/80">
-                    <th className="px-5 py-3 text-right text-[11px] font-black text-slate-500 dark:text-slate-400 md:px-7">
-                      مشتری
-                    </th>
-
-                    {currencies.map((c) => (
-                      <th key={c} className="px-4 py-3 text-right">
-                        <span className="inline-flex items-center gap-1.5 text-[11px] font-black text-slate-500 dark:text-slate-400">
-                          <span className="h-1.5 w-1.5 rounded-full bg-gradient-to-br from-teal-500 to-emerald-400" />
-                          {labels[c]}
-                        </span>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
-                  {customers.map((c, ci) => {
-                    const b = currentBalances[c.id] || c.balances;
-
-                    return (
-                      <tr
-                        key={c.id}
-                        className="transition-colors hover:bg-teal-500/[0.045] dark:hover:bg-teal-400/[0.05]"
-                      >
-                        <td className="px-5 py-3.5 md:px-7">
-                          <div className="flex items-center gap-3">
-                            <span
-                              className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br text-xs font-black text-white shadow-sm ${
-                                avatarPalette[ci % avatarPalette.length]
-                              }`}
-                            >
-                              {c.name.charAt(0)}
-                            </span>
-                            <span className="font-bold text-slate-700 dark:text-slate-200">
-                              {c.name}
-                            </span>
-                          </div>
-                        </td>
-
-                        {currencies.map((cur) => (
-                          <td
-                            key={cur}
-                            className={`px-4 py-3.5 text-sm font-bold tabular-nums transition-colors ${
-                              b[cur]
-                                ? "text-slate-700 dark:text-slate-200"
-                                : "text-slate-300 dark:text-slate-600"
-                            }`}
-                          >
-                            {fmt(b[cur] || 0)}
-                          </td>
-                        ))}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </section>
-
           {/* ================= Transactions ================= */}
 
           <section
@@ -2628,7 +2532,7 @@ export default function CurrencyExchangePage() {
                   <tr className="border-y border-slate-100 bg-slate-50/80 dark:border-slate-800 dark:bg-[#0b1520]/80">
                     <th className="px-4 py-3 text-right text-[11px] font-black text-slate-500 dark:text-slate-400 md:px-7">شماره</th>
                     <th className="px-4 py-3 text-right text-[11px] font-black text-slate-500 dark:text-slate-400">نام مشتری</th>
-                    <th className="px-4 py-3 text-right text-[11px] font-black text-slate-500 dark:text-slate-400">تاریخ</th>
+                    <th className="px-4 py-3 text-right text-[11px] font-black text-slate-500 dark:text-slate-400">تاریخ (شمسی)</th>
                     <th className="px-4 py-3 text-right text-[11px] font-black text-slate-500 dark:text-slate-400">نوع معامله</th>
                     <th className="px-4 py-3 text-right text-[11px] font-black text-slate-500 dark:text-slate-400">دریافت</th>
                     <th className="px-4 py-3 text-right text-[11px] font-black text-slate-500 dark:text-slate-400">پرداخت</th>
@@ -2829,7 +2733,10 @@ export default function CurrencyExchangePage() {
 
             <div className="max-h-[70vh] overflow-y-auto px-5 py-2">
               <DetailRow label="شماره" value={selectedTransaction.id} />
-              <DetailRow label="تاریخ" value={dateLabel(selectedTransaction.date)} />
+              <DetailRow
+                label="تاریخ (هجری شمسی)"
+                value={dateLabel(selectedTransaction.date)}
+              />
               <DetailRow
                 label="نوع معامله"
                 value={transactionTypeLabel(selectedTransaction)}
