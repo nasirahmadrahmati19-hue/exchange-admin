@@ -34,6 +34,7 @@ type Transaction = {
 };
 
 type ExchangeFormErrors = {
+  dealType?: string;
   customer?: string;
   receivedAmount?: string;
   rate?: string;
@@ -58,14 +59,6 @@ const labels: Record<Currency, string> = {
   PKR: "کلدار",
 };
 
-/*
-  واحد ارزها:
-
-  1 دلار
-  1 یورو
-  1000 تومان
-  1000 کلدار
-*/
 const rateUnits: Record<Currency, number> = {
   AFN: 1,
   USD: 1,
@@ -146,10 +139,6 @@ function getAfnForeign(
   return null;
 }
 
-/*
-  برای نرخ مستقیم، بهتر است معمولاً ارز قوی‌تر به عنوان مبنا انتخاب شود:
-  USD > EUR > PKR > IRR
-*/
 function preferredDirectBase(
   a: Currency,
   b: Currency
@@ -183,14 +172,6 @@ function getDirectCounter(
   return null;
 }
 
-/*
-  وقتی یک طرف افغانی است:
-
-  مثال:
-  1 USD = 50 AFN
-  1000 IRR = 0.38 AFN
-  1000 PKR = 250 AFN
-*/
 function convertAfnRate(
   amount: number,
   from: Currency,
@@ -217,26 +198,6 @@ function convertAfnRate(
   return 0;
 }
 
-/*
-  نرخ مستقیم:
-
-  rate یعنی:
-  rateUnits[base] از ارز base = rate از ارز counter
-
-  مثال:
-  base = USD
-  counter = IRR
-  rate = 131578.95
-
-  یعنی:
-  1 USD = 131578.95 IRR
-
-  اگر base = IRR:
-  rate = 0.0076
-
-  یعنی:
-  1000 IRR = 0.0076 USD
-*/
 function convertDirectRate(
   amount: number,
   from: Currency,
@@ -304,8 +265,10 @@ export default function CurrencyExchangePage() {
 
   const [customer, setCustomer] = useState("");
 
-  const [exchangeDealType, setExchangeDealType] =
-    useState<DealType>("buy");
+  const [exchangeDealType, setExchangeDealType] = useState<
+    DealType | ""
+  >("");
+
   const [exchangeCommission, setExchangeCommission] = useState("0");
 
   const [receivedCurrency, setReceivedCurrency] =
@@ -568,6 +531,10 @@ export default function CurrencyExchangePage() {
   function validateExchange(): ExchangeFormErrors {
     const errs: ExchangeFormErrors = {};
 
+    if (!exchangeDealType) {
+      errs.dealType = "فیلد نوع معامله خالی است.";
+    }
+
     if (!customer) {
       errs.customer = "فیلد مشتری خالی است.";
     }
@@ -706,7 +673,7 @@ export default function CurrencyExchangePage() {
     const tx: Transaction = {
       id: newId(),
       type: "exchange",
-      dealType: exchangeDealType,
+      dealType: exchangeDealType as DealType,
       date: new Date().toISOString(),
       customerId: customer,
       fromCurrency: receivedCurrency,
@@ -723,6 +690,7 @@ export default function CurrencyExchangePage() {
     setTransactions((x) => [tx, ...x]);
 
     setCustomer("");
+    setExchangeDealType("");
     setReceivedAmount("");
     setPaidAmount("");
     setRate("");
@@ -964,13 +932,23 @@ export default function CurrencyExchangePage() {
 
               <select
                 value={exchangeDealType}
-                onChange={(e) =>
+                onChange={(e) => {
                   setExchangeDealType(
-                    e.target.value as DealType
-                  )
-                }
-                className="h-12 w-full rounded-xl border px-3"
+                    e.target.value as DealType | ""
+                  );
+
+                  setExchangeErrors((prev) => ({
+                    ...prev,
+                    dealType: undefined,
+                  }));
+                }}
+                className={`h-12 w-full md:w-40 rounded-xl border px-3 ${
+                  exchangeErrors.dealType
+                    ? "border-red-500"
+                    : ""
+                }`}
               >
+                <option value="">انتخاب نوع معامله</option>
                 <option value="buy">خرید</option>
                 <option value="sell">فروش</option>
               </select>
@@ -988,6 +966,7 @@ export default function CurrencyExchangePage() {
               value={customer}
               onChange={(e) => {
                 setCustomer(e.target.value);
+
                 setExchangeErrors((prev) => ({
                   ...prev,
                   customer: undefined,
@@ -1012,67 +991,96 @@ export default function CurrencyExchangePage() {
           <div className="grid md:grid-cols-2 gap-4">
 
             <div className="space-y-3">
+
               <b>دریافت از مشتری</b>
 
-              {currencySelect(
-                receivedCurrency,
-                (v) => {
-                  setReceivedCurrency(v);
-                  setExchangeErrors((prev) => ({
-                    ...prev,
-                    rate: undefined,
-                    paidAmount: undefined,
-                  }));
-                }
-              )}
+              <div className="space-y-2">
+                <label className="text-sm font-bold">
+                  ارز دریافتی
+                </label>
 
-              <input
-                type="number"
-                step="any"
-                min="0"
-                value={receivedAmount}
-                onChange={(e) => {
-                  setReceivedAmount(e.target.value);
-                  setExchangeErrors((prev) => ({
-                    ...prev,
-                    receivedAmount: undefined,
-                    paidAmount: undefined,
-                  }));
-                }}
-                placeholder="مبلغ دریافتی"
-                className={`h-12 w-full rounded-xl border px-3 ${
-                  exchangeErrors.receivedAmount
-                    ? "border-red-500"
-                    : ""
-                }`}
-              />
+                {currencySelect(
+                  receivedCurrency,
+                  (v) => {
+                    setReceivedCurrency(v);
+
+                    setExchangeErrors((prev) => ({
+                      ...prev,
+                      rate: undefined,
+                      paidAmount: undefined,
+                    }));
+                  }
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-bold">
+                  مبلغ دریافتی
+                </label>
+
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  value={receivedAmount}
+                  onChange={(e) => {
+                    setReceivedAmount(e.target.value);
+
+                    setExchangeErrors((prev) => ({
+                      ...prev,
+                      receivedAmount: undefined,
+                      paidAmount: undefined,
+                    }));
+                  }}
+                  className={`h-12 w-full rounded-xl border px-3 ${
+                    exchangeErrors.receivedAmount
+                      ? "border-red-500"
+                      : ""
+                  }`}
+                />
+              </div>
+
             </div>
 
             <div className="space-y-3">
+
               <b>پرداخت به مشتری</b>
 
-              {currencySelect(
-                paidCurrency,
-                (v) => {
-                  setPaidCurrency(v);
-                  setExchangeErrors((prev) => ({
-                    ...prev,
-                    rate: undefined,
-                    paidAmount: undefined,
-                  }));
-                }
-              )}
+              <div className="space-y-2">
+                <label className="text-sm font-bold">
+                  ارز پرداختی
+                </label>
 
-              <input
-                readOnly
-                value={paidAmount}
-                placeholder="مبلغ پرداختی"
-                className={`h-12 w-full rounded-xl border px-3 bg-gray-100 ${
-                  exchangeErrors.paidAmount
-                    ? "border-red-500"
-                    : ""
-                }`}
-              />
+                {currencySelect(
+                  paidCurrency,
+                  (v) => {
+                    setPaidCurrency(v);
+
+                    setExchangeErrors((prev) => ({
+                      ...prev,
+                      rate: undefined,
+                      paidAmount: undefined,
+                    }));
+                  }
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-bold">
+                  مبلغ پرداختی
+                </label>
+
+                <input
+                  readOnly
+                  value={paidAmount}
+                  className={`h-12 w-full rounded-xl border px-3 bg-gray-100 ${
+                    exchangeErrors.paidAmount
+                      ? "border-red-500"
+                      : ""
+                  }`}
+                />
+              </div>
+
             </div>
 
           </div>
@@ -1088,35 +1096,43 @@ export default function CurrencyExchangePage() {
 
               <b>نرخ دستی در برابر افغانی</b>
 
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="space-y-2">
 
-                <span className="whitespace-nowrap">
-                  {fmt(rateUnits[exchangeForeign])}{" "}
-                  {labels[exchangeForeign]} =
-                </span>
+                <label className="text-sm font-bold">
+                  نرخ
+                </label>
 
-                <input
-                  type="number"
-                  step="any"
-                  min="0"
-                  value={rate}
-                  onChange={(e) => {
-                    setRate(e.target.value);
-                    setExchangeErrors((prev) => ({
-                      ...prev,
-                      rate: undefined,
-                      paidAmount: undefined,
-                    }));
-                  }}
-                  placeholder="نرخ"
-                  className={`h-12 w-44 rounded-xl border px-3 ${
-                    exchangeErrors.rate
-                      ? "border-red-500"
-                      : ""
-                  }`}
-                />
+                <div className="flex flex-wrap items-center gap-2">
 
-                <span>{labels.AFN}</span>
+                  <span className="whitespace-nowrap">
+                    {fmt(rateUnits[exchangeForeign])}{" "}
+                    {labels[exchangeForeign]} =
+                  </span>
+
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={rate}
+                    onChange={(e) => {
+                      setRate(e.target.value);
+
+                      setExchangeErrors((prev) => ({
+                        ...prev,
+                        rate: undefined,
+                        paidAmount: undefined,
+                      }));
+                    }}
+                    className={`h-12 w-44 rounded-xl border px-3 ${
+                      exchangeErrors.rate
+                        ? "border-red-500"
+                        : ""
+                    }`}
+                  />
+
+                  <span>{labels.AFN}</span>
+
+                </div>
 
               </div>
 
@@ -1163,6 +1179,7 @@ export default function CurrencyExchangePage() {
                       setExchangeDirectBase(
                         e.target.value as Currency
                       );
+
                       setExchangeErrors((prev) => ({
                         ...prev,
                         rate: undefined,
@@ -1200,13 +1217,13 @@ export default function CurrencyExchangePage() {
                       value={rate}
                       onChange={(e) => {
                         setRate(e.target.value);
+
                         setExchangeErrors((prev) => ({
                           ...prev,
                           rate: undefined,
                           paidAmount: undefined,
                         }));
                       }}
-                      placeholder="نرخ مستقیم"
                       className={`h-12 w-44 rounded-xl border px-3 ${
                         exchangeErrors.rate
                           ? "border-red-500"
@@ -1266,7 +1283,6 @@ export default function CurrencyExchangePage() {
               onChange={(e) =>
                 setExchangeCommission(e.target.value)
               }
-              placeholder="کارمزد"
               className="h-12 w-full rounded-xl border px-3"
             />
 
@@ -1326,113 +1342,168 @@ export default function CurrencyExchangePage() {
           <div className="grid md:grid-cols-2 gap-4">
 
             <div className="space-y-3">
+
               <b>فرستنده</b>
 
-              <select
-                value={sender}
-                onChange={(e) => {
-                  setSender(e.target.value);
-                  setTransferErrors((prev) => ({
-                    ...prev,
-                    sender: undefined,
-                  }));
-                }}
-                className={`h-12 w-full rounded-xl border px-3 ${
-                  transferErrors.sender
-                    ? "border-red-500"
-                    : ""
-                }`}
-              >
-                <option value="">انتخاب مشتری</option>
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+              <div className="space-y-2">
 
-              {currencySelect(
-                senderCurrency,
-                (v) => {
-                  setSenderCurrency(v);
-                  setTransferErrors((prev) => ({
-                    ...prev,
-                    transferRate: undefined,
-                    receiverAmount: undefined,
-                  }));
-                }
-              )}
+                <label className="text-sm font-bold">
+                  مشتری فرستنده
+                </label>
 
-              <input
-                type="number"
-                step="any"
-                min="0"
-                value={senderAmount}
-                onChange={(e) => {
-                  setSenderAmount(e.target.value);
-                  setTransferErrors((prev) => ({
-                    ...prev,
-                    senderAmount: undefined,
-                    receiverAmount: undefined,
-                  }));
-                }}
-                placeholder="مبلغ فرستنده"
-                className={`h-12 w-full rounded-xl border px-3 ${
-                  transferErrors.senderAmount
-                    ? "border-red-500"
-                    : ""
-                }`}
-              />
+                <select
+                  value={sender}
+                  onChange={(e) => {
+                    setSender(e.target.value);
+
+                    setTransferErrors((prev) => ({
+                      ...prev,
+                      sender: undefined,
+                    }));
+                  }}
+                  className={`h-12 w-full rounded-xl border px-3 ${
+                    transferErrors.sender
+                      ? "border-red-500"
+                      : ""
+                  }`}
+                >
+                  <option value="">انتخاب مشتری</option>
+                  {customers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+
+              </div>
+
+              <div className="space-y-2">
+
+                <label className="text-sm font-bold">
+                  ارز فرستنده
+                </label>
+
+                {currencySelect(
+                  senderCurrency,
+                  (v) => {
+                    setSenderCurrency(v);
+
+                    setTransferErrors((prev) => ({
+                      ...prev,
+                      transferRate: undefined,
+                      receiverAmount: undefined,
+                    }));
+                  }
+                )}
+
+              </div>
+
+              <div className="space-y-2">
+
+                <label className="text-sm font-bold">
+                  مبلغ فرستنده
+                </label>
+
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  value={senderAmount}
+                  onChange={(e) => {
+                    setSenderAmount(e.target.value);
+
+                    setTransferErrors((prev) => ({
+                      ...prev,
+                      senderAmount: undefined,
+                      receiverAmount: undefined,
+                    }));
+                  }}
+                  className={`h-12 w-full rounded-xl border px-3 ${
+                    transferErrors.senderAmount
+                      ? "border-red-500"
+                      : ""
+                  }`}
+                />
+
+              </div>
+
             </div>
 
             <div className="space-y-3">
+
               <b>گیرنده</b>
 
-              <select
-                value={receiver}
-                onChange={(e) => {
-                  setReceiver(e.target.value);
-                  setTransferErrors((prev) => ({
-                    ...prev,
-                    receiver: undefined,
-                  }));
-                }}
-                className={`h-12 w-full rounded-xl border px-3 ${
-                  transferErrors.receiver
-                    ? "border-red-500"
-                    : ""
-                }`}
-              >
-                <option value="">انتخاب مشتری</option>
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+              <div className="space-y-2">
 
-              {currencySelect(
-                receiverCurrency,
-                (v) => {
-                  setReceiverCurrency(v);
-                  setTransferErrors((prev) => ({
-                    ...prev,
-                    transferRate: undefined,
-                    receiverAmount: undefined,
-                  }));
-                }
-              )}
+                <label className="text-sm font-bold">
+                  مشتری گیرنده
+                </label>
 
-              <input
-                readOnly
-                value={receiverAmount}
-                placeholder="مبلغ گیرنده"
-                className={`h-12 w-full rounded-xl border px-3 bg-gray-100 ${
-                  transferErrors.receiverAmount
-                    ? "border-red-500"
-                    : ""
-                }`}
-              />
+                <select
+                  value={receiver}
+                  onChange={(e) => {
+                    setReceiver(e.target.value);
+
+                    setTransferErrors((prev) => ({
+                      ...prev,
+                      receiver: undefined,
+                    }));
+                  }}
+                  className={`h-12 w-full rounded-xl border px-3 ${
+                    transferErrors.receiver
+                      ? "border-red-500"
+                      : ""
+                  }`}
+                >
+                  <option value="">انتخاب مشتری</option>
+                  {customers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+
+              </div>
+
+              <div className="space-y-2">
+
+                <label className="text-sm font-bold">
+                  ارز گیرنده
+                </label>
+
+                {currencySelect(
+                  receiverCurrency,
+                  (v) => {
+                    setReceiverCurrency(v);
+
+                    setTransferErrors((prev) => ({
+                      ...prev,
+                      transferRate: undefined,
+                      receiverAmount: undefined,
+                    }));
+                  }
+                )}
+
+              </div>
+
+              <div className="space-y-2">
+
+                <label className="text-sm font-bold">
+                  مبلغ گیرنده
+                </label>
+
+                <input
+                  readOnly
+                  value={receiverAmount}
+                  className={`h-12 w-full rounded-xl border px-3 bg-gray-100 ${
+                    transferErrors.receiverAmount
+                      ? "border-red-500"
+                      : ""
+                  }`}
+                />
+
+              </div>
+
             </div>
 
           </div>
@@ -1448,35 +1519,43 @@ export default function CurrencyExchangePage() {
 
               <b>نرخ دستی در برابر افغانی</b>
 
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="space-y-2">
 
-                <span className="whitespace-nowrap">
-                  {fmt(rateUnits[transferForeign])}{" "}
-                  {labels[transferForeign]} =
-                </span>
+                <label className="text-sm font-bold">
+                  نرخ
+                </label>
 
-                <input
-                  type="number"
-                  step="any"
-                  min="0"
-                  value={transferRate}
-                  onChange={(e) => {
-                    setTransferRate(e.target.value);
-                    setTransferErrors((prev) => ({
-                      ...prev,
-                      transferRate: undefined,
-                      receiverAmount: undefined,
-                    }));
-                  }}
-                  placeholder="نرخ"
-                  className={`h-12 w-44 rounded-xl border px-3 ${
-                    transferErrors.transferRate
-                      ? "border-red-500"
-                      : ""
-                  }`}
-                />
+                <div className="flex flex-wrap items-center gap-2">
 
-                <span>{labels.AFN}</span>
+                  <span className="whitespace-nowrap">
+                    {fmt(rateUnits[transferForeign])}{" "}
+                    {labels[transferForeign]} =
+                  </span>
+
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={transferRate}
+                    onChange={(e) => {
+                      setTransferRate(e.target.value);
+
+                      setTransferErrors((prev) => ({
+                        ...prev,
+                        transferRate: undefined,
+                        receiverAmount: undefined,
+                      }));
+                    }}
+                    className={`h-12 w-44 rounded-xl border px-3 ${
+                      transferErrors.transferRate
+                        ? "border-red-500"
+                        : ""
+                    }`}
+                  />
+
+                  <span>{labels.AFN}</span>
+
+                </div>
 
               </div>
 
@@ -1523,6 +1602,7 @@ export default function CurrencyExchangePage() {
                       setTransferDirectBase(
                         e.target.value as Currency
                       );
+
                       setTransferErrors((prev) => ({
                         ...prev,
                         transferRate: undefined,
@@ -1560,13 +1640,13 @@ export default function CurrencyExchangePage() {
                       value={transferRate}
                       onChange={(e) => {
                         setTransferRate(e.target.value);
+
                         setTransferErrors((prev) => ({
                           ...prev,
                           transferRate: undefined,
                           receiverAmount: undefined,
                         }));
                       }}
-                      placeholder="نرخ مستقیم"
                       className={`h-12 w-44 rounded-xl border px-3 ${
                         transferErrors.transferRate
                           ? "border-red-500"
@@ -1626,7 +1706,6 @@ export default function CurrencyExchangePage() {
               onChange={(e) =>
                 setCommission(e.target.value)
               }
-              placeholder="کارمزد"
               className="h-12 w-full rounded-xl border px-3"
             />
 
