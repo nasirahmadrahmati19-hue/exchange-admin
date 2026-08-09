@@ -41,6 +41,7 @@ type ExchangeFormErrors = {
   receivedAmount?: string;
   rate?: string;
   paidAmount?: string;
+  exchangeCommission?: string;
 };
 
 type TransferFormErrors = {
@@ -49,6 +50,7 @@ type TransferFormErrors = {
   senderAmount?: string;
   transferRate?: string;
   receiverAmount?: string;
+  commission?: string;
 };
 
 const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
@@ -632,6 +634,10 @@ export default function CurrencyExchangePage() {
       }
     }
 
+    if (exchangeCommission.trim().length === 0) {
+      errs.exchangeCommission = "فیلد کارمزد خالی است.";
+    }
+
     return errs;
   }
 
@@ -682,6 +688,10 @@ export default function CurrencyExchangePage() {
             ? "مبلغ گیرنده محاسبه نشد."
             : "مبلغ گیرنده محاسبه نشد؛ لطفاً نرخ را بررسی کنید.";
       }
+    }
+
+    if (commission.trim().length === 0) {
+      errs.commission = "فیلد کارمزد خالی است.";
     }
 
     return errs;
@@ -967,6 +977,16 @@ export default function CurrencyExchangePage() {
     return "انتقال";
   }
 
+  function transactionCommissionLabel(tx: Transaction) {
+    if (tx.commission === undefined) return "-";
+
+    return `${fmt(tx.commission)} ${
+      tx.commissionCurrency
+        ? labels[tx.commissionCurrency]
+        : ""
+    }`;
+  }
+
   /* ---------------- Search ---------------- */
 
   const rawSearch = normalizeDigits(search.trim()).toLowerCase();
@@ -1071,7 +1091,7 @@ export default function CurrencyExchangePage() {
       setPaidCurrency(tx.toCurrency);
       setReceivedAmount(String(tx.fromAmount));
       setExchangeCommission(
-        tx.commission ? String(tx.commission) : ""
+        tx.commission ? String(tx.commission) : "0"
       );
       setExchangeDescription(tx.description || "");
       setRate(String(tx.rate));
@@ -1098,7 +1118,7 @@ export default function CurrencyExchangePage() {
       setSenderCurrency(tx.fromCurrency);
       setReceiverCurrency(tx.toCurrency);
       setSenderAmount(String(tx.fromAmount));
-      setCommission(tx.commission ? String(tx.commission) : "");
+      setCommission(tx.commission ? String(tx.commission) : "0");
       setTransferDescription(tx.description || "");
       setTransferRate(String(tx.rate));
 
@@ -1153,18 +1173,9 @@ export default function CurrencyExchangePage() {
     if (!win) return;
 
     const customerLabel = transactionCustomerLabel(tx);
-
-    const commissionLabel = tx.commission
-      ? `${fmt(tx.commission)} ${
-          tx.commissionCurrency
-            ? labels[tx.commissionCurrency]
-            : ""
-        }`
-      : "-";
-
+    const commissionLabel = transactionCommissionLabel(tx);
     const statusLabel =
       tx.status === "voided" ? "لغو شده" : "فعال";
-
     const descriptionLabel = tx.description || "-";
 
     const html = `
@@ -1703,17 +1714,22 @@ export default function CurrencyExchangePage() {
                 inputMode="decimal"
                 dir="ltr"
                 value={exchangeCommission}
-                onChange={(e) =>
+                onChange={(e) => {
                   setExchangeCommission(
                     toNumericText(e.target.value)
-                  )
-                }
-                className="h-12 w-full md:w-40 rounded-xl border px-3 text-left"
-              />
+                  );
 
-              <div className="text-xs text-gray-600">
-                کارمزد از ارز دریافتی ({labels[receivedCurrency]}) کسر می‌شود.
-              </div>
+                  setExchangeErrors((prev) => ({
+                    ...prev,
+                    exchangeCommission: undefined,
+                  }));
+                }}
+                className={`h-12 w-full md:w-40 rounded-xl border px-3 text-left ${
+                  exchangeErrors.exchangeCommission
+                    ? "border-red-500"
+                    : ""
+                }`}
+              />
 
             </div>
 
@@ -2186,15 +2202,20 @@ export default function CurrencyExchangePage() {
                 inputMode="decimal"
                 dir="ltr"
                 value={commission}
-                onChange={(e) =>
-                  setCommission(toNumericText(e.target.value))
-                }
-                className="h-12 w-full md:w-40 rounded-xl border px-3 text-left"
-              />
+                onChange={(e) => {
+                  setCommission(toNumericText(e.target.value));
 
-              <div className="text-xs text-gray-600">
-                کارمزد از ارز فرستنده ({labels[senderCurrency]}) کسر می‌شود.
-              </div>
+                  setTransferErrors((prev) => ({
+                    ...prev,
+                    commission: undefined,
+                  }));
+                }}
+                className={`h-12 w-full md:w-40 rounded-xl border px-3 text-left ${
+                  transferErrors.commission
+                    ? "border-red-500"
+                    : ""
+                }`}
+              />
 
             </div>
 
@@ -2416,13 +2437,7 @@ export default function CurrencyExchangePage() {
                   </td>
 
                   <td className="p-3">
-                    {tx.commission
-                      ? `${fmt(tx.commission)} ${
-                          tx.commissionCurrency
-                            ? labels[tx.commissionCurrency]
-                            : ""
-                        }`
-                      : "-"}
+                    {transactionCommissionLabel(tx)}
                   </td>
 
                   <td className="p-3">
@@ -2565,16 +2580,7 @@ export default function CurrencyExchangePage() {
               <div className="flex justify-between gap-4">
                 <span className="text-gray-500">کارمزد:</span>
                 <span>
-                  {selectedTransaction.commission
-                    ? `${fmt(selectedTransaction.commission)} ${
-                        selectedTransaction.commissionCurrency
-                          ? labels[
-                              selectedTransaction
-                                .commissionCurrency
-                            ]
-                          : ""
-                      }`
-                    : "-"}
+                  {transactionCommissionLabel(selectedTransaction)}
                 </span>
               </div>
 
