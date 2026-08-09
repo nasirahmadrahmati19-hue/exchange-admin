@@ -1,10 +1,6 @@
 "use client";
 
-import {
-  useEffect,
-  useState,
-  type KeyboardEvent,
-} from "react";
+import { useEffect, useState } from "react";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 
@@ -35,6 +31,7 @@ type Transaction = {
   rateBase?: Currency;
   commission?: number;
   commissionCurrency?: Currency;
+  description?: string;
   status: "active" | "voided";
 };
 
@@ -95,6 +92,20 @@ const normalizeDigits = (s: string) =>
     .replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
     .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
 
+function toNumericText(v: string) {
+  let s = normalizeDigits(String(v || "")).replace(/[^0-9.]/g, "");
+
+  const firstDot = s.indexOf(".");
+
+  if (firstDot !== -1) {
+    s =
+      s.slice(0, firstDot + 1) +
+      s.slice(firstDot + 1).replace(/\./g, "");
+  }
+
+  return s;
+}
+
 const parseAmount = (v: string) => {
   const s = normalizeDigits(String(v || "")).replace(/,/g, "");
   const n = Number(s);
@@ -111,14 +122,6 @@ const newId = () =>
 
 function shortId(id: string) {
   return id.slice(-6);
-}
-
-function preventNumberArrows(
-  e: KeyboardEvent<HTMLInputElement>
-) {
-  if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-    e.preventDefault();
-  }
 }
 
 function formatDateTime(d: Date) {
@@ -278,7 +281,6 @@ export default function CurrencyExchangePage() {
 
   const currentDateTime = now ? formatDateTime(now) : "";
 
-  const [actionMessage, setActionMessage] = useState("");
   const [selectedTransaction, setSelectedTransaction] =
     useState<Transaction | null>(null);
 
@@ -298,7 +300,8 @@ export default function CurrencyExchangePage() {
     DealType | ""
   >("");
 
-  const [exchangeCommission, setExchangeCommission] = useState("0");
+  const [exchangeCommission, setExchangeCommission] = useState("");
+  const [exchangeDescription, setExchangeDescription] = useState("");
 
   const [receivedCurrency, setReceivedCurrency] =
     useState<Currency>("AFN");
@@ -332,7 +335,8 @@ export default function CurrencyExchangePage() {
   const [transferDirectBase, setTransferDirectBase] =
     useState<Currency>("USD");
 
-  const [commission, setCommission] = useState("0");
+  const [commission, setCommission] = useState("");
+  const [transferDescription, setTransferDescription] = useState("");
 
   const [transferErrors, setTransferErrors] =
     useState<TransferFormErrors>({});
@@ -563,7 +567,8 @@ export default function CurrencyExchangePage() {
     setReceivedAmount("");
     setPaidAmount("");
     setRate("");
-    setExchangeCommission("0");
+    setExchangeCommission("");
+    setExchangeDescription("");
     setExchangeErrors({});
     setEditingExchangeId(null);
   }
@@ -574,7 +579,8 @@ export default function CurrencyExchangePage() {
     setSenderAmount("");
     setReceiverAmount("");
     setTransferRate("");
-    setCommission("0");
+    setCommission("");
+    setTransferDescription("");
     setTransferErrors({});
     setEditingTransferId(null);
   }
@@ -728,6 +734,9 @@ export default function CurrencyExchangePage() {
       );
     }
 
+    const description =
+      exchangeDescription.trim() || undefined;
+
     if (editingExchangeId) {
       setTransactions((prev) =>
         prev.map((t) =>
@@ -746,13 +755,10 @@ export default function CurrencyExchangePage() {
                 rateBase: exchangeRateBase,
                 commission: exchangeCommissionValue,
                 commissionCurrency: receivedCurrency,
+                description,
               }
             : t
         )
-      );
-
-      setActionMessage(
-        `معامله ${shortId(editingExchangeId)} به‌روزرسانی شد.`
       );
     } else {
       const tx: Transaction = {
@@ -770,14 +776,11 @@ export default function CurrencyExchangePage() {
         rateBase: exchangeRateBase,
         commission: exchangeCommissionValue,
         commissionCurrency: receivedCurrency,
+        description,
         status: "active",
       };
 
       setTransactions((x) => [tx, ...x]);
-
-      setActionMessage(
-        `معامله ${shortId(tx.id)} ثبت شد.`
-      );
     }
 
     resetExchangeForm();
@@ -829,6 +832,9 @@ export default function CurrencyExchangePage() {
       );
     }
 
+    const description =
+      transferDescription.trim() || undefined;
+
     if (editingTransferId) {
       setTransactions((prev) =>
         prev.map((t) =>
@@ -847,13 +853,10 @@ export default function CurrencyExchangePage() {
                 rateBase: transferRateBase,
                 commission: commissionValue,
                 commissionCurrency: senderCurrency,
+                description,
               }
             : t
         )
-      );
-
-      setActionMessage(
-        `انتقال ${shortId(editingTransferId)} به‌روزرسانی شد.`
       );
     } else {
       const tx: Transaction = {
@@ -871,12 +874,11 @@ export default function CurrencyExchangePage() {
         rateBase: transferRateBase,
         commission: commissionValue,
         commissionCurrency: senderCurrency,
+        description,
         status: "active",
       };
 
       setTransactions((x) => [tx, ...x]);
-
-      setActionMessage(`انتقال ${shortId(tx.id)} ثبت شد.`);
     }
 
     resetTransferForm();
@@ -1011,10 +1013,7 @@ export default function CurrencyExchangePage() {
   /* ---------------- Transactions Actions ---------------- */
 
   function editTransaction(tx: Transaction) {
-    if (tx.status === "voided") {
-      setActionMessage("معامله لغو شده قابل ویرایش نیست.");
-      return;
-    }
+    if (tx.status === "voided") return;
 
     if (tx.type === "exchange") {
       setTab("exchange");
@@ -1026,7 +1025,10 @@ export default function CurrencyExchangePage() {
       setReceivedCurrency(tx.fromCurrency);
       setPaidCurrency(tx.toCurrency);
       setReceivedAmount(String(tx.fromAmount));
-      setExchangeCommission(String(tx.commission || 0));
+      setExchangeCommission(
+        tx.commission ? String(tx.commission) : ""
+      );
+      setExchangeDescription(tx.description || "");
       setRate(String(tx.rate));
 
       const mode = getRateMode(tx.fromCurrency, tx.toCurrency);
@@ -1039,12 +1041,6 @@ export default function CurrencyExchangePage() {
       }
 
       setExchangeErrors({});
-
-      setActionMessage(
-        `ویرایش معامله ${shortId(
-          tx.id
-        )} فعال شد. پس از تغییرات، دکمه ثبت را بزنید.`
-      );
     }
 
     if (tx.type === "transfer") {
@@ -1057,7 +1053,8 @@ export default function CurrencyExchangePage() {
       setSenderCurrency(tx.fromCurrency);
       setReceiverCurrency(tx.toCurrency);
       setSenderAmount(String(tx.fromAmount));
-      setCommission(String(tx.commission || 0));
+      setCommission(tx.commission ? String(tx.commission) : "");
+      setTransferDescription(tx.description || "");
       setTransferRate(String(tx.rate));
 
       const mode = getRateMode(tx.fromCurrency, tx.toCurrency);
@@ -1070,12 +1067,6 @@ export default function CurrencyExchangePage() {
       }
 
       setTransferErrors({});
-
-      setActionMessage(
-        `ویرایش انتقال ${shortId(
-          tx.id
-        )} فعال شد. پس از تغییرات، دکمه ثبت را بزنید.`
-      );
     }
   }
 
@@ -1105,8 +1096,6 @@ export default function CurrencyExchangePage() {
     if (editingTransferId === tx.id) {
       setEditingTransferId(null);
     }
-
-    setActionMessage(`معامله ${shortId(tx.id)} لغو شد.`);
   }
 
   function printReceipt(tx: Transaction) {
@@ -1116,14 +1105,10 @@ export default function CurrencyExchangePage() {
       "width=650,height=800"
     );
 
-    if (!win) {
-      setActionMessage(
-        "پنجره چاپ باز نشد. لطفاً اجازه پاپ‌آپ را فعال کنید."
-      );
-      return;
-    }
+    if (!win) return;
 
     const customerLabel = transactionCustomerLabel(tx);
+
     const commissionLabel = tx.commission
       ? `${fmt(tx.commission)} ${
           tx.commissionCurrency
@@ -1134,6 +1119,8 @@ export default function CurrencyExchangePage() {
 
     const statusLabel =
       tx.status === "voided" ? "لغو شده" : "فعال";
+
+    const descriptionLabel = tx.description || "-";
 
     const html = `
       <html dir="rtl">
@@ -1196,6 +1183,10 @@ export default function CurrencyExchangePage() {
               <td>${commissionLabel}</td>
             </tr>
             <tr>
+              <th>توضیحات</th>
+              <td>${descriptionLabel}</td>
+            </tr>
+            <tr>
               <th>وضعیت</th>
               <td>${statusLabel}</td>
             </tr>
@@ -1216,19 +1207,6 @@ export default function CurrencyExchangePage() {
   return (
     <div dir="rtl" className="p-5 space-y-5 bg-gray-50 min-h-screen">
 
-      <style>{`
-        input[type="number"]::-webkit-inner-spin-button,
-        input[type="number"]::-webkit-outer-spin-button {
-          -webkit-appearance: none;
-          margin: 0;
-        }
-
-        input[type="number"] {
-          -moz-appearance: textfield;
-          appearance: textfield;
-        }
-      `}</style>
-
       <h1 className="text-2xl font-bold">
         معاملات ارزی
       </h1>
@@ -1238,10 +1216,7 @@ export default function CurrencyExchangePage() {
       <div className="flex gap-2">
 
         <button
-          onClick={() => {
-            setTab("exchange");
-            setActionMessage("");
-          }}
+          onClick={() => setTab("exchange")}
           className={`px-5 py-3 rounded-xl ${
             tab === "exchange"
               ? "bg-cyan-600 text-white"
@@ -1252,10 +1227,7 @@ export default function CurrencyExchangePage() {
         </button>
 
         <button
-          onClick={() => {
-            setTab("transfer");
-            setActionMessage("");
-          }}
+          onClick={() => setTab("transfer")}
           className={`px-5 py-3 rounded-xl ${
             tab === "transfer"
               ? "bg-purple-600 text-white"
@@ -1409,13 +1381,14 @@ export default function CurrencyExchangePage() {
                 </label>
 
                 <input
-                  type="number"
-                  step="any"
-                  min="0"
+                  type="text"
+                  inputMode="decimal"
+                  dir="ltr"
                   value={receivedAmount}
-                  onKeyDown={preventNumberArrows}
                   onChange={(e) => {
-                    setReceivedAmount(e.target.value);
+                    setReceivedAmount(
+                      toNumericText(e.target.value)
+                    );
 
                     setExchangeErrors((prev) => ({
                       ...prev,
@@ -1423,7 +1396,7 @@ export default function CurrencyExchangePage() {
                       paidAmount: undefined,
                     }));
                   }}
-                  className={`h-12 w-full rounded-xl border px-3 ${
+                  className={`h-12 w-full rounded-xl border px-3 text-left ${
                     exchangeErrors.receivedAmount
                       ? "border-red-500"
                       : ""
@@ -1468,7 +1441,7 @@ export default function CurrencyExchangePage() {
                 <input
                   readOnly
                   value={paidAmount}
-                  className={`h-12 w-full rounded-xl border px-3 bg-gray-100 ${
+                  className={`h-12 w-full rounded-xl border px-3 bg-gray-100 text-left ${
                     exchangeErrors.paidAmount
                       ? "border-red-500"
                       : ""
@@ -1506,13 +1479,12 @@ export default function CurrencyExchangePage() {
                   </span>
 
                   <input
-                    type="number"
-                    step="any"
-                    min="0"
+                    type="text"
+                    inputMode="decimal"
+                    dir="ltr"
                     value={rate}
-                    onKeyDown={preventNumberArrows}
                     onChange={(e) => {
-                      setRate(e.target.value);
+                      setRate(toNumericText(e.target.value));
 
                       setExchangeErrors((prev) => ({
                         ...prev,
@@ -1520,7 +1492,7 @@ export default function CurrencyExchangePage() {
                         paidAmount: undefined,
                       }));
                     }}
-                    className={`h-12 w-44 rounded-xl border px-3 ${
+                    className={`h-12 w-44 rounded-xl border px-3 text-left ${
                       exchangeErrors.rate
                         ? "border-red-500"
                         : ""
@@ -1608,13 +1580,12 @@ export default function CurrencyExchangePage() {
                     </span>
 
                     <input
-                      type="number"
-                      step="any"
-                      min="0"
+                      type="text"
+                      inputMode="decimal"
+                      dir="ltr"
                       value={rate}
-                      onKeyDown={preventNumberArrows}
                       onChange={(e) => {
-                        setRate(e.target.value);
+                        setRate(toNumericText(e.target.value));
 
                         setExchangeErrors((prev) => ({
                           ...prev,
@@ -1622,7 +1593,7 @@ export default function CurrencyExchangePage() {
                           paidAmount: undefined,
                         }));
                       }}
-                      className={`h-12 w-44 rounded-xl border px-3 ${
+                      className={`h-12 w-44 rounded-xl border px-3 text-left ${
                         exchangeErrors.rate
                           ? "border-red-500"
                           : ""
@@ -1667,26 +1638,48 @@ export default function CurrencyExchangePage() {
             </div>
           )}
 
-          <div className="space-y-2">
+          <div className="grid md:grid-cols-2 gap-4">
 
-            <label className="text-sm font-bold">
-              کارمزد
-            </label>
+            <div className="space-y-2">
 
-            <input
-              type="number"
-              step="any"
-              min="0"
-              value={exchangeCommission}
-              onKeyDown={preventNumberArrows}
-              onChange={(e) =>
-                setExchangeCommission(e.target.value)
-              }
-              className="h-12 w-full rounded-xl border px-3"
-            />
+              <label className="text-sm font-bold">
+                کارمزد
+              </label>
 
-            <div className="text-xs text-gray-600">
-              کارمزد از ارز دریافتی ({labels[receivedCurrency]}) کسر می‌شود و روی محاسبه اصلی تبدیل اثر ندارد.
+              <input
+                type="text"
+                inputMode="decimal"
+                dir="ltr"
+                value={exchangeCommission}
+                onChange={(e) =>
+                  setExchangeCommission(
+                    toNumericText(e.target.value)
+                  )
+                }
+                className="h-12 w-full md:w-40 rounded-xl border px-3 text-left"
+              />
+
+              <div className="text-xs text-gray-600">
+                کارمزد از ارز دریافتی ({labels[receivedCurrency]}) کسر می‌شود.
+              </div>
+
+            </div>
+
+            <div className="space-y-2">
+
+              <label className="text-sm font-bold">
+                توضیحات
+              </label>
+
+              <input
+                type="text"
+                value={exchangeDescription}
+                onChange={(e) =>
+                  setExchangeDescription(e.target.value)
+                }
+                className="h-12 w-full rounded-xl border px-3"
+              />
+
             </div>
 
           </div>
@@ -1824,13 +1817,14 @@ export default function CurrencyExchangePage() {
                 </label>
 
                 <input
-                  type="number"
-                  step="any"
-                  min="0"
+                  type="text"
+                  inputMode="decimal"
+                  dir="ltr"
                   value={senderAmount}
-                  onKeyDown={preventNumberArrows}
                   onChange={(e) => {
-                    setSenderAmount(e.target.value);
+                    setSenderAmount(
+                      toNumericText(e.target.value)
+                    );
 
                     setTransferErrors((prev) => ({
                       ...prev,
@@ -1838,7 +1832,7 @@ export default function CurrencyExchangePage() {
                       receiverAmount: undefined,
                     }));
                   }}
-                  className={`h-12 w-full rounded-xl border px-3 ${
+                  className={`h-12 w-full rounded-xl border px-3 text-left ${
                     transferErrors.senderAmount
                       ? "border-red-500"
                       : ""
@@ -1915,7 +1909,7 @@ export default function CurrencyExchangePage() {
                 <input
                   readOnly
                   value={receiverAmount}
-                  className={`h-12 w-full rounded-xl border px-3 bg-gray-100 ${
+                  className={`h-12 w-full rounded-xl border px-3 bg-gray-100 text-left ${
                     transferErrors.receiverAmount
                       ? "border-red-500"
                       : ""
@@ -1953,13 +1947,14 @@ export default function CurrencyExchangePage() {
                   </span>
 
                   <input
-                    type="number"
-                    step="any"
-                    min="0"
+                    type="text"
+                    inputMode="decimal"
+                    dir="ltr"
                     value={transferRate}
-                    onKeyDown={preventNumberArrows}
                     onChange={(e) => {
-                      setTransferRate(e.target.value);
+                      setTransferRate(
+                        toNumericText(e.target.value)
+                      );
 
                       setTransferErrors((prev) => ({
                         ...prev,
@@ -1967,7 +1962,7 @@ export default function CurrencyExchangePage() {
                         receiverAmount: undefined,
                       }));
                     }}
-                    className={`h-12 w-44 rounded-xl border px-3 ${
+                    className={`h-12 w-44 rounded-xl border px-3 text-left ${
                       transferErrors.transferRate
                         ? "border-red-500"
                         : ""
@@ -2055,13 +2050,14 @@ export default function CurrencyExchangePage() {
                     </span>
 
                     <input
-                      type="number"
-                      step="any"
-                      min="0"
+                      type="text"
+                      inputMode="decimal"
+                      dir="ltr"
                       value={transferRate}
-                      onKeyDown={preventNumberArrows}
                       onChange={(e) => {
-                        setTransferRate(e.target.value);
+                        setTransferRate(
+                          toNumericText(e.target.value)
+                        );
 
                         setTransferErrors((prev) => ({
                           ...prev,
@@ -2069,7 +2065,7 @@ export default function CurrencyExchangePage() {
                           receiverAmount: undefined,
                         }));
                       }}
-                      className={`h-12 w-44 rounded-xl border px-3 ${
+                      className={`h-12 w-44 rounded-xl border px-3 text-left ${
                         transferErrors.transferRate
                           ? "border-red-500"
                           : ""
@@ -2114,26 +2110,46 @@ export default function CurrencyExchangePage() {
             </div>
           )}
 
-          <div className="space-y-2">
+          <div className="grid md:grid-cols-2 gap-4">
 
-            <label className="text-sm font-bold">
-              کارمزد
-            </label>
+            <div className="space-y-2">
 
-            <input
-              type="number"
-              step="any"
-              min="0"
-              value={commission}
-              onKeyDown={preventNumberArrows}
-              onChange={(e) =>
-                setCommission(e.target.value)
-              }
-              className="h-12 w-full rounded-xl border px-3"
-            />
+              <label className="text-sm font-bold">
+                کارمزد
+              </label>
 
-            <div className="text-xs text-gray-600">
-              کارمزد از ارز فرستنده ({labels[senderCurrency]}) کسر می‌شود و روی محاسبه اصلی تبدیل اثر ندارد.
+              <input
+                type="text"
+                inputMode="decimal"
+                dir="ltr"
+                value={commission}
+                onChange={(e) =>
+                  setCommission(toNumericText(e.target.value))
+                }
+                className="h-12 w-full md:w-40 rounded-xl border px-3 text-left"
+              />
+
+              <div className="text-xs text-gray-600">
+                کارمزد از ارز فرستنده ({labels[senderCurrency]}) کسر می‌شود.
+              </div>
+
+            </div>
+
+            <div className="space-y-2">
+
+              <label className="text-sm font-bold">
+                توضیحات
+              </label>
+
+              <input
+                type="text"
+                value={transferDescription}
+                onChange={(e) =>
+                  setTransferDescription(e.target.value)
+                }
+                className="h-12 w-full rounded-xl border px-3"
+              />
+
             </div>
 
           </div>
@@ -2225,21 +2241,6 @@ export default function CurrencyExchangePage() {
           آخرین معاملات
         </h2>
 
-        {actionMessage && (
-          <div className="bg-blue-50 text-blue-800 rounded-xl p-4 flex items-start justify-between gap-3">
-
-            <span>{actionMessage}</span>
-
-            <button
-              onClick={() => setActionMessage("")}
-              className="shrink-0 font-bold"
-            >
-              بستن
-            </button>
-
-          </div>
-        )}
-
         <table className="w-full text-sm">
 
           <thead>
@@ -2286,7 +2287,7 @@ export default function CurrencyExchangePage() {
 
           <tbody>
 
-            {transactions.map((tx) => (
+            {transactions.map((tx, index) => (
 
               <tr
                 key={tx.id}
@@ -2297,8 +2298,8 @@ export default function CurrencyExchangePage() {
                 }`}
               >
 
-                <td className="p-3" title={tx.id}>
-                  {shortId(tx.id)}
+                <td className="p-3">
+                  {transactions.length - index}
                 </td>
 
                 <td className="p-3">
@@ -2494,6 +2495,13 @@ export default function CurrencyExchangePage() {
                           : ""
                       }`
                     : "-"}
+                </span>
+              </div>
+
+              <div className="flex justify-between gap-4">
+                <span className="text-gray-500">توضیحات:</span>
+                <span>
+                  {selectedTransaction.description || "-"}
                 </span>
               </div>
 
