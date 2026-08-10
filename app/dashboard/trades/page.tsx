@@ -31,6 +31,8 @@ type Transaction = {
   commissionCurrency?: Currency;
   description?: string;
   status: "active" | "voided";
+  profit?: number;           // ✅ جدید: سود صرافی
+  profitCurrency?: Currency; // ✅ جدید: ارز سود
 };
 
 type ExchangeFormErrors = {
@@ -77,7 +79,9 @@ const parseAmount = (v: string) => {
 };
 
 const fmt = (n: number) => (Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 8 }) : "0");
-const newId = () => `EX-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+// ✅ تغییر ۱: UUID استاندارد به‌جای EX-... (آمادگی برای Supabase)
+const newId = () => crypto.randomUUID();
 const shortId = (id: string) => id.slice(-6);
 
 function shamsiParts(d: Date) {
@@ -231,7 +235,25 @@ const currencyBadge: Record<Currency, string> = {
 
 export default function CurrencyExchangePage() {
   const [customers] = useState<Customer[]>(initialCustomers);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+
+  // ✅ تغییر ۳: بازیابی transactions از localStorage
+  const [transactions, setTransactions] = useState<Transaction[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const saved = window.localStorage.getItem("fx-transactions");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // ✅ تغییر ۳: ذخیره خودکار در localStorage پس از هر تغییر
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("fx-transactions", JSON.stringify(transactions));
+    } catch {}
+  }, [transactions]);
+
   const [tab, setTab] = useState<"exchange" | "transfer">("exchange");
   const [now, setNow] = useState<Date | null>(null);
 
@@ -412,12 +434,18 @@ export default function CurrencyExchangePage() {
     if (exchangeMode === "afn" && exchangeForeign) rateLabel = afnRateLabel(exchangeForeign, txRate);
     if (exchangeMode === "direct" && exchangeDirectCounter) rateLabel = directRateLabel(exchangeDirectBaseValue, exchangeDirectCounter, txRate);
     const description = exchangeDescription.trim() || undefined;
+
+    // ✅ تغییر ۴: محاسبه سود (کارمزد = سود صرافی)
+    const calculatedProfit = exchangeCommissionValue;
+    const calculatedProfitCurrency: Currency | undefined = receivedCurrency;
+
     if (editingExchangeId) {
       setTransactions((prev) => prev.map((t) => t.id === editingExchangeId ? {
         ...t, type: "exchange", dealType: exchangeDealType as DealType, customerId: customer,
         fromCurrency: receivedCurrency, fromAmount, toCurrency: paidCurrency, toAmount, rate: txRate,
         rateLabel, rateBase: exchangeRateBase, commission: exchangeCommissionValue,
         commissionCurrency: receivedCurrency, description,
+        profit: calculatedProfit, profitCurrency: calculatedProfitCurrency, // ✅
       } : t));
     } else {
       const tx: Transaction = {
@@ -425,6 +453,7 @@ export default function CurrencyExchangePage() {
         customerId: customer, fromCurrency: receivedCurrency, fromAmount, toCurrency: paidCurrency, toAmount,
         rate: txRate, rateLabel, rateBase: exchangeRateBase, commission: exchangeCommissionValue,
         commissionCurrency: receivedCurrency, description, status: "active",
+        profit: calculatedProfit, profitCurrency: calculatedProfitCurrency, // ✅
       };
       setTransactions((x) => [tx, ...x]);
     }
@@ -449,12 +478,18 @@ export default function CurrencyExchangePage() {
     if (transferMode === "afn" && transferForeign) rateLabel = afnRateLabel(transferForeign, txRate);
     if (transferMode === "direct" && transferDirectCounter) rateLabel = directRateLabel(transferDirectBaseValue, transferDirectCounter, txRate);
     const description = transferDescription.trim() || undefined;
+
+    // ✅ تغییر ۴: محاسبه سود (کارمزد = سود صرافی)
+    const calculatedProfit = commissionValue;
+    const calculatedProfitCurrency: Currency | undefined = senderCurrency;
+
     if (editingTransferId) {
       setTransactions((prev) => prev.map((t) => t.id === editingTransferId ? {
         ...t, type: "transfer", senderId: sender, receiverId: receiver, fromCurrency: senderCurrency,
         fromAmount, toCurrency: receiverCurrency, toAmount, rate: txRate, rateLabel,
         rateBase: transferRateBase, commission: commissionValue,
         commissionCurrency: senderCurrency, description,
+        profit: calculatedProfit, profitCurrency: calculatedProfitCurrency, // ✅
       } : t));
     } else {
       const tx: Transaction = {
@@ -462,6 +497,7 @@ export default function CurrencyExchangePage() {
         fromCurrency: senderCurrency, fromAmount, toCurrency: receiverCurrency, toAmount, rate: txRate,
         rateLabel, rateBase: transferRateBase, commission: commissionValue,
         commissionCurrency: senderCurrency, description, status: "active",
+        profit: calculatedProfit, profitCurrency: calculatedProfitCurrency, // ✅
       };
       setTransactions((x) => [tx, ...x]);
     }
@@ -483,6 +519,12 @@ export default function CurrencyExchangePage() {
   function transactionCommissionLabel(tx: Transaction) {
     if (tx.commission === undefined) return "-";
     return `${fmt(tx.commission)} ${tx.commissionCurrency ? labels[tx.commissionCurrency] : ""}`;
+  }
+
+  // ✅ جدید: برچسب سود
+  function transactionProfitLabel(tx: Transaction) {
+    if (tx.profit === undefined) return "-";
+    return `${fmt(tx.profit)} ${tx.profitCurrency ? labels[tx.profitCurrency] : ""}`;
   }
 
   const rawSearch = normalizeDigits(search.trim()).toLowerCase();
@@ -571,6 +613,7 @@ export default function CurrencyExchangePage() {
             <tr><th>پرداخت</th><td>${fmt(tx.toAmount)} ${labels[tx.toCurrency]}</td></tr>
             <tr><th>نرخ ارز</th><td>${tx.rateLabel}</td></tr>
             <tr><th>کارمزد</th><td>${transactionCommissionLabel(tx)}</td></tr>
+            <tr><th>سود صرافی</th><td>${transactionProfitLabel(tx)}</td></tr>
             <tr><th>توضیحات</th><td>${tx.description || "-"}</td></tr>
             <tr><th>وضعیت</th><td>${tx.status === "voided" ? "لغو شده" : "فعال"}</td></tr>
           </table>
@@ -774,7 +817,6 @@ export default function CurrencyExchangePage() {
     </div>
   );
 
-  // فلش عمودی برای موبایل بین دو پنل
   const midBadgeMobile = (icon: IconName, cls: string) => (
     <div className="flex items-center justify-center lg:hidden py-1">
       <span className={`grid h-10 w-10 place-items-center rounded-full border shadow-md ${cls}`}>
@@ -896,7 +938,6 @@ export default function CurrencyExchangePage() {
         </div>
 
         <div className="relative z-10 mx-auto w-full max-w-7xl space-y-4 md:space-y-6 px-3 pb-16 pt-5 md:px-8 md:pt-9">
-          {/* سربرگ - بهینه برای موبایل */}
           <header className="fx-up flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 md:gap-3.5 min-w-0">
               <div className="relative grid h-11 w-11 md:h-14 md:w-14 shrink-0 place-items-center rounded-xl md:rounded-2xl bg-gradient-to-br from-sky-500 via-cyan-500 to-emerald-400 text-white shadow-lg shadow-sky-500/30 ring-1 ring-white/30">
@@ -930,7 +971,6 @@ export default function CurrencyExchangePage() {
                 )}
               </div>
 
-              {/* ساعت کوچک برای موبایل */}
               <div className={`sm:hidden flex items-center gap-1.5 rounded-lg border px-2 py-1.5 shadow-sm backdrop-blur ${glassChip}`}>
                 <span className="relative flex h-2 w-2">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-70" />
@@ -961,7 +1001,6 @@ export default function CurrencyExchangePage() {
             </div>
           </header>
 
-          {/* نوار ارزها و آمار - قابل اسکرول افقی در موبایل */}
           <div className="fx-up space-y-2" style={{ animationDelay: "70ms" }}>
             <div className="fx-scroll flex gap-2 overflow-x-auto -mx-3 px-3 pb-1 md:mx-0 md:px-0 md:pb-0">
               {currencies.map((c) => (
@@ -990,7 +1029,6 @@ export default function CurrencyExchangePage() {
             </div>
           </div>
 
-          {/* تب‌ها */}
           <div className={`fx-up flex gap-1.5 md:gap-2 rounded-xl md:rounded-2xl border p-1.5 md:p-2 shadow-sm backdrop-blur ${glassChip}`} style={{ animationDelay: "140ms" }}>
             <button
               onClick={() => setTab("exchange")}
@@ -1022,8 +1060,6 @@ export default function CurrencyExchangePage() {
               <span className="xs:hidden md:hidden inline">بین مشتریان</span>
             </button>
           </div>
-
-          {/* ================= Exchange ================= */}
 
           {tab === "exchange" && (
             <section className={`fx-up space-y-4 md:space-y-5 p-4 md:p-7 ${uiCard}`}>
@@ -1165,8 +1201,6 @@ export default function CurrencyExchangePage() {
             </section>
           )}
 
-          {/* ================= Transfer ================= */}
-
           {tab === "transfer" && (
             <section className={`fx-up space-y-4 md:space-y-5 p-4 md:p-7 ${uiCard}`}>
               {secHead(
@@ -1307,8 +1341,6 @@ export default function CurrencyExchangePage() {
             </section>
           )}
 
-          {/* ================= Transactions ================= */}
-
           <section className={`fx-up overflow-hidden ${uiCard}`} style={{ animationDelay: "160ms" }}>
             <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
               <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identExIcon}`}>
@@ -1332,7 +1364,6 @@ export default function CurrencyExchangePage() {
               )}
             </div>
 
-            {/* ===== MOBILE: کارت‌های تاشونده ===== */}
             <div className="md:hidden px-3 md:px-5 pb-4 space-y-2">
               {transactions.length === 0 ? (
                 <div className={`flex flex-col items-center gap-3 px-6 py-12 ${dk ? "text-slate-500" : "text-slate-400"}`}>
@@ -1418,6 +1449,13 @@ export default function CurrencyExchangePage() {
                           </span>
                         </div>
 
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className={`font-bold ${subText}`}>سود صرافی</span>
+                          <span className={`font-black tabular-nums ${dk ? "text-emerald-300" : "text-emerald-700"}`}>
+                            {transactionProfitLabel(tx)}
+                          </span>
+                        </div>
+
                         <div className="grid grid-cols-2 gap-1.5 pt-1">
                           <button
                             onClick={() => editTransaction(tx)}
@@ -1476,7 +1514,6 @@ export default function CurrencyExchangePage() {
               )}
             </div>
 
-            {/* ===== DESKTOP: جدول ===== */}
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full min-w-[980px] text-sm">
                 <thead>
@@ -1608,8 +1645,6 @@ export default function CurrencyExchangePage() {
         </div>
       </div>
 
-      {/* ================= View Modal ================= */}
-
       {selectedTransaction && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => setSelectedTransaction(null)}>
           <div
@@ -1640,6 +1675,12 @@ export default function CurrencyExchangePage() {
               <DetailRow dark={dk} label="پرداخت" value={`${fmt(selectedTransaction.toAmount)} ${labels[selectedTransaction.toCurrency]}`} />
               <DetailRow dark={dk} label="نرخ ارز" value={selectedTransaction.rateLabel} />
               <DetailRow dark={dk} label="کارمزد" value={transactionCommissionLabel(selectedTransaction)} />
+              <DetailRow
+                dark={dk}
+                label="سود صرافی"
+                value={transactionProfitLabel(selectedTransaction)}
+                valueClass={dk ? "text-emerald-300" : "text-emerald-700"}
+              />
               <DetailRow dark={dk} label="توضیحات" value={selectedTransaction.description || "-"} />
               <DetailRow
                 dark={dk}
