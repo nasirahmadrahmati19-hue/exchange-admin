@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState, type ReactNode, type ChangeEvent } from "
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type RateMode = "same" | "afn" | "direct";
 type HawalaStatus = "pending" | "sent" | "paid" | "cancelled";
+type CommissionPayer = "sender" | "receiver";
 
 type Customer = {
   id: string;
@@ -29,6 +30,8 @@ interface Hawala {
   rateLabel: string;
   rateBase?: Currency;
   fee: number;
+  feeCurrency: Currency;
+  feePayer: CommissionPayer;
   finalAmount: number;
   balance: string;
   note: string;
@@ -58,6 +61,8 @@ interface FormState {
   amountFrom: string;
   rate: string;
   fee: string;
+  feeCurrency: Currency;
+  feePayer: CommissionPayer;
   balance: string;
   province: string;
   district: string;
@@ -103,16 +108,40 @@ const rateUnits: Record<Currency, number> = {
   AFN: 1, USD: 1, EUR: 1, IRR: 1000, PKR: 1000,
 };
 
-// ✅ کلید مشترک با تب تبادل ارز
 const CUSTOMERS_KEY = "fx-customers";
 const HAWALAS_KEY = "hawalas";
 
-// ✅ FIX: defaultCustomers به‌صورت Customer[] تعریف شده (نه string[])
 const defaultCustomers: Customer[] = [
   { id: "1", name: "احمد رحیمی", balances: { AFN: 500000, USD: 10000, EUR: 0, IRR: 0, PKR: 0 } },
   { id: "2", name: "محمد ظاهر", balances: { AFN: 200000, USD: 5000, EUR: 0, IRR: 0, PKR: 0 } },
   { id: "3", name: "فاطمه حسینی", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 50000000, PKR: 0 } },
 ];
+
+function getStoredCustomers(): Customer[] {
+  if (typeof window === "undefined") return defaultCustomers;
+  try {
+    const raw = localStorage.getItem(CUSTOMERS_KEY);
+    if (!raw) return defaultCustomers;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0 &&
+        typeof parsed[0] === "object" && parsed[0] !== null &&
+        "id" in parsed[0] && "name" in parsed[0]) {
+      return parsed as Customer[];
+    }
+    if (Array.isArray(parsed) && typeof parsed[0] === "string") {
+      const migrated = (parsed as string[]).map((name, i) => ({
+        id: `cust-migrated-${i}`,
+        name,
+        balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } as Record<Currency, number>,
+      }));
+      localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(migrated));
+      return migrated;
+    }
+    return defaultCustomers;
+  } catch {
+    return defaultCustomers;
+  }
+}
 
 const baseEmptyForm: FormState = {
   type: "",
@@ -124,6 +153,8 @@ const baseEmptyForm: FormState = {
   amountFrom: "",
   rate: "",
   fee: "",
+  feeCurrency: "AFN",
+  feePayer: "sender",
   balance: "",
   province: "هرات",
   district: "گلران",
@@ -331,42 +362,6 @@ const getStoredLastNames = (): LastNames => {
   }
 };
 
-// ✅ FIX: خواندن مشتریان با migration خودکار از string[] به Customer[]
-function getStoredCustomers(): Customer[] {
-  if (typeof window === "undefined") return defaultCustomers;
-  try {
-    const raw = localStorage.getItem(CUSTOMERS_KEY);
-    if (!raw) return defaultCustomers;
-    const parsed = JSON.parse(raw);
-
-    // حالت ۱: ساختار درست Customer[]
-    if (Array.isArray(parsed) && parsed.length > 0 &&
-        typeof parsed[0] === "object" &&
-        parsed[0] !== null &&
-        "id" in parsed[0] &&
-        "name" in parsed[0]) {
-      return parsed as Customer[];
-    }
-
-    // حالت ۲: آرایه string (نسخه قدیمی) - migration خودکار
-    if (Array.isArray(parsed) && typeof parsed[0] === "string") {
-      const migrated = (parsed as string[]).map((name, i) => ({
-        id: `cust-migrated-${i}`,
-        name,
-        balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } as Record<Currency, number>,
-      }));
-      // ذخیره مجدد با ساختار جدید
-      localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(migrated));
-      return migrated;
-    }
-
-    return defaultCustomers;
-  } catch (e) {
-    console.error("Error reading customers:", e);
-    return defaultCustomers;
-  }
-}
-
 const getStoredHawalas = (): Hawala[] => {
   if (typeof window === "undefined") return [];
   try {
@@ -379,10 +374,13 @@ const getStoredHawalas = (): Hawala[] => {
   }
 };
 
-// ✅ فیلدهای پیش‌فرض خالی
 const createInitialForm = (): FormState => {
   return { ...baseEmptyForm };
 };
+
+function commissionPayerLabel(payer: CommissionPayer): string {
+  return payer === "sender" ? "حواله‌دهنده" : "حواله‌گیرنده";
+}
 
 /* ---------------- Icons ---------------- */
 
@@ -421,10 +419,7 @@ function Ic({ n, className = "h-5 w-5" }: { n: IconName; className?: string }) {
 
 export default function HawalaPage() {
   const [lastNames, setLastNames] = useState<LastNames>(getStoredLastNames);
-
-  // ✅ FIX: customers به‌صورت Customer[] خوانده می‌شود
   const [customers, setCustomers] = useState<Customer[]>(getStoredCustomers);
-
   const [activeTab, setActiveTab] = useState<"new" | "current" | "history">("new");
   const [hawalas, setHawalas] = useState<Hawala[]>(getStoredHawalas);
   const [form, setForm] = useState<FormState>(() => createInitialForm());
@@ -462,14 +457,12 @@ export default function HawalaPage() {
     } catch {}
   }, [lastNames]);
 
-  // ✅ ذخیره خودکار مشتریان در localStorage (کلید مشترک با تب تبادل ارز)
   useEffect(() => {
     try {
       localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers));
     } catch {}
   }, [customers]);
 
-  // ✅ ذخیره خودکار حواله‌ها در localStorage
   useEffect(() => {
     try {
       localStorage.setItem(HAWALAS_KEY, JSON.stringify(hawalas));
@@ -494,7 +487,6 @@ export default function HawalaPage() {
   const [toast, setToast] = useState("");
 
   /* ---------------- Rate Mode ---------------- */
-
   const rateMode = getRateMode(form.currencyFrom, form.currencyTo);
   const afnForeign = getAfnForeign(form.currencyFrom, form.currencyTo);
   const directBaseValue = rateMode === "direct"
@@ -617,7 +609,6 @@ export default function HawalaPage() {
     const senderName = form.senderName.trim();
     const receiverName = form.receiverName.trim();
 
-    // ✅ FIX: بررسی با customer.name و افزودن Customer کامل
     if (senderName && !customers.some(c => c.name === senderName)) {
       const newCustomer: Customer = {
         id: crypto.randomUUID(),
@@ -651,11 +642,13 @@ export default function HawalaPage() {
       rateLabel,
       rateBase: rateMode === "direct" ? directBaseValue : undefined,
       fee: feeValue,
+      feeCurrency: form.feeCurrency,
+      feePayer: form.feePayer,
       finalAmount,
       balance: form.balance,
       note: form.note,
       profit: feeValue,
-      profitCurrency: form.currencyTo,
+      profitCurrency: form.feeCurrency,
       senderName,
       senderPhone: form.senderPhone,
       senderTelegram: form.senderTelegram,
@@ -738,7 +731,6 @@ export default function HawalaPage() {
   };
 
   /* ---------------- Theme Tokens ---------------- */
-
   const heading = dk ? "text-white" : "text-slate-900";
   const subText = dk ? "text-slate-500" : "text-slate-400";
   const glassChip = dk ? "border-slate-600/70 bg-slate-800/80" : "border-sky-100 bg-white/85";
@@ -1003,7 +995,6 @@ export default function HawalaPage() {
           </div>
 
           {/* ================= ثبت حواله جدید ================= */}
-
           {activeTab === "new" && (
             <section className={`hw-up space-y-4 md:space-y-5 p-4 md:p-7 ${uiCard}`}>
               <div className="flex flex-wrap items-center gap-3">
@@ -1036,7 +1027,6 @@ export default function HawalaPage() {
                     <input readOnly value={currentDateTime} className={`${uiInput} ${roInput}`} />
                   ))}
 
-                  {/* ✅ FIX: datalist با value={customer.name} و محتوای {customer.name} */}
                   {fld("نام حواله‌دهنده *", (
                     <div className="relative">
                       <input
@@ -1215,6 +1205,62 @@ export default function HawalaPage() {
                 )}
               </div>
 
+              {/* ✅ فیلدهای کارمزد */}
+              <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
+                <div className="flex items-center gap-2.5 mb-4">
+                  <span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}>
+                    <Ic n="rate" className="h-4 w-4" />
+                  </span>
+                  <b className={`text-sm font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>تنظیمات کارمزد</b>
+                </div>
+
+                <div className="grid gap-3 md:gap-4 sm:grid-cols-2">
+                  {fld("کارمزد از حساب", (
+                    <div className={`flex rounded-xl border p-1 ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`}>
+                      <button
+                        type="button"
+                        onClick={() => setField("feePayer", "sender")}
+                        className={`flex-1 rounded-lg px-3 py-2 text-xs font-black transition-all ${
+                          form.feePayer === "sender"
+                            ? dk ? "bg-cyan-400 text-slate-950 shadow" : "bg-sky-500 text-white shadow"
+                            : dk ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-700"
+                        }`}
+                      >
+                        حواله‌دهنده
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setField("feePayer", "receiver")}
+                        className={`flex-1 rounded-lg px-3 py-2 text-xs font-black transition-all ${
+                          form.feePayer === "receiver"
+                            ? dk ? "bg-cyan-400 text-slate-950 shadow" : "bg-sky-500 text-white shadow"
+                            : dk ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-700"
+                        }`}
+                      >
+                        حواله‌گیرنده
+                      </button>
+                    </div>
+                  ))}
+
+                  {fld("ارز کارمزد", (
+                    <div className="relative">
+                      <select
+                        value={form.feeCurrency}
+                        onChange={(e) => setField("feeCurrency", e.target.value)}
+                        className={`${uiInput} cursor-pointer appearance-none pl-9`}
+                      >
+                        {currencies.map((c) => (
+                          <option key={c} value={c}>{labels[c]}</option>
+                        ))}
+                      </select>
+                      <span className={chevPos}>
+                        <Ic n="chevron" className="h-4 w-4" />
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               {/* معلومات مقصد */}
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4">
@@ -1331,7 +1377,6 @@ export default function HawalaPage() {
           )}
 
           {/* ================= حواله‌های جاری ================= */}
-
           {activeTab === "current" && (
             <section className={`hw-up overflow-hidden ${uiCard}`}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
@@ -1378,10 +1423,10 @@ export default function HawalaPage() {
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[900px] text-sm">
+                    <table className="w-full min-w-[1000px] text-sm">
                       <thead>
                         <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
-                          {["شماره", "شماره حواله", "تاریخ", "حواله‌دهنده", "حواله‌گیرنده", "مبلغ نهایی", "ارز", "مقصد", "وضعیت", "عملیات"].map((h, i) => (
+                          {["شماره", "شماره حواله", "تاریخ", "حواله‌دهنده", "حواله‌گیرنده", "مبلغ نهایی", "ارز", "کارمزد", "پرداخت‌کننده کارمزد", "مقصد", "وضعیت", "عملیات"].map((h, i) => (
                             <th key={h} className={`px-4 py-3 text-right text-[11px] font-black text-slate-400 ${i === 0 ? "md:px-7" : ""}`}>
                               {h}
                             </th>
@@ -1408,6 +1453,12 @@ export default function HawalaPage() {
                               <div className={`text-[10px] font-bold ${subText}`}>{labels[item.currencyTo]}</div>
                             </td>
                             <td className={`px-4 py-3.5 text-xs ${subText}`}>{labels[item.currencyTo]}</td>
+                            <td className="px-4 py-3.5 text-xs font-bold tabular-nums">
+                              {fmt(item.fee)} {labels[item.feeCurrency]}
+                            </td>
+                            <td className={`px-4 py-3.5 text-xs font-bold ${dk ? "text-slate-300" : "text-slate-600"}`}>
+                              {commissionPayerLabel(item.feePayer)}
+                            </td>
                             <td className={`px-4 py-3.5 text-xs ${subText}`}>{item.destinationText}</td>
                             <td className="px-4 py-3.5">
                               <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${statusColors[item.status][dk ? "dark" : "light"]}`}>
@@ -1455,7 +1506,6 @@ export default function HawalaPage() {
           )}
 
           {/* ================= تاریخچه حواله‌ها ================= */}
-
           {activeTab === "history" && (
             <section className={`hw-up overflow-hidden ${uiCard}`}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
@@ -1502,10 +1552,10 @@ export default function HawalaPage() {
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[800px] text-sm">
+                    <table className="w-full min-w-[900px] text-sm">
                       <thead>
                         <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
-                          {["شماره", "شماره حواله", "تاریخ", "حواله‌دهنده", "حواله‌گیرنده", "مبلغ نهایی", "ارز", "مقصد", "وضعیت"].map((h, i) => (
+                          {["شماره", "شماره حواله", "تاریخ", "حواله‌دهنده", "حواله‌گیرنده", "مبلغ نهایی", "ارز", "کارمزد", "پرداخت‌کننده کارمزد", "مقصد", "وضعیت"].map((h, i) => (
                             <th key={h} className={`px-4 py-3 text-right text-[11px] font-black text-slate-400 ${i === 0 ? "md:px-7" : ""}`}>
                               {h}
                             </th>
@@ -1532,6 +1582,12 @@ export default function HawalaPage() {
                               <div className={`text-[10px] font-bold ${subText}`}>{labels[item.currencyTo]}</div>
                             </td>
                             <td className={`px-4 py-3.5 text-xs ${subText}`}>{labels[item.currencyTo]}</td>
+                            <td className="px-4 py-3.5 text-xs font-bold tabular-nums">
+                              {fmt(item.fee)} {labels[item.feeCurrency]}
+                            </td>
+                            <td className={`px-4 py-3.5 text-xs font-bold ${dk ? "text-slate-300" : "text-slate-600"}`}>
+                              {commissionPayerLabel(item.feePayer)}
+                            </td>
                             <td className={`px-4 py-3.5 text-xs ${subText}`}>{item.destinationText}</td>
                             <td className="px-4 py-3.5">
                               <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${statusColors[item.status][dk ? "dark" : "light"]}`}>
@@ -1551,7 +1607,6 @@ export default function HawalaPage() {
       </div>
 
       {/* ================= Modal پیش‌نمایش کامل ================= */}
-
       {previewOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm"
@@ -1606,8 +1661,28 @@ export default function HawalaPage() {
                   <div><span className={subText}>تبدیل ارز: </span><b>{labels[form.currencyFrom]} ← {labels[form.currencyTo]}</b></div>
                   <div><span className={subText}>مبلغ حواله: </span><b>{fmt(amountFrom)} {labels[form.currencyFrom]}</b></div>
                   <div><span className={subText}>نرخ: </span><b>{form.rate || "بدون تبدیل"}</b></div>
-                  <div><span className={subText}>کمیشن: </span><b>{fmt(feeValue)} {labels[form.currencyTo]}</b></div>
                   <div><span className={subText}>مبلغ نهایی: </span><b className={dk ? "text-emerald-300" : "text-emerald-700"}>{fmt(finalAmount)} {labels[form.currencyTo]}</b></div>
+                </div>
+              </div>
+
+              {/* ✅ معلومات کارمزد */}
+              <div className={`rounded-xl border p-4 ${
+                dk ? "border-amber-400/25 bg-amber-400/[0.05]" : "border-amber-300 bg-amber-50"
+              }`}>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className={`grid h-7 w-7 place-items-center rounded-lg ${
+                    dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"
+                  }`}>
+                    <Ic n="rate" className="h-3.5 w-3.5" />
+                  </span>
+                  <b className={`text-xs font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>
+                    معلومات کارمزد
+                  </b>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div><span className={subText}>مبلغ کارمزد: </span><b>{fmt(feeValue)} {labels[form.feeCurrency]}</b></div>
+                  <div><span className={subText}>پرداخت‌کننده: </span><b>{commissionPayerLabel(form.feePayer)}</b></div>
+                  <div><span className={subText}>ارز کارمزد: </span><b>{labels[form.feeCurrency]}</b></div>
                 </div>
               </div>
 
@@ -1699,7 +1774,6 @@ export default function HawalaPage() {
       )}
 
       {/* ================= Modal تسویه ================= */}
-
       {settleTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => setSettleTarget(null)}>
           <div
@@ -1723,6 +1797,8 @@ export default function HawalaPage() {
                   <div><span className={subText}>شماره تذکره: </span><b dir="ltr">{settleTarget.receiverTazkira}</b></div>
                   <div><span className={subText}>شماره تماس: </span><b dir="ltr">{settleTarget.receiverPhone}</b></div>
                   <div><span className={subText}>مبلغ نهایی: </span><b className={dk ? "text-emerald-300" : "text-emerald-700"}>{fmt(settleTarget.finalAmount)} {labels[settleTarget.currencyTo]}</b></div>
+                  <div><span className={subText}>کارمزد: </span><b>{fmt(settleTarget.fee)} {labels[settleTarget.feeCurrency]}</b></div>
+                  <div><span className={subText}>پرداخت‌کننده کارمزد: </span><b>{commissionPayerLabel(settleTarget.feePayer)}</b></div>
                 </div>
               </div>
 
@@ -1774,7 +1850,6 @@ export default function HawalaPage() {
       )}
 
       {/* ================= Modal لغو ================= */}
-
       {cancelTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => setCancelTarget(null)}>
           <div
