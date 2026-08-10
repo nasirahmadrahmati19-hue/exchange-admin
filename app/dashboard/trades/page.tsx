@@ -31,8 +31,8 @@ type Transaction = {
   commissionCurrency?: Currency;
   description?: string;
   status: "active" | "voided";
-  profit?: number;           // ✅ جدید: سود صرافی
-  profitCurrency?: Currency; // ✅ جدید: ارز سود
+  profit?: number;
+  profitCurrency?: Currency;
 };
 
 type ExchangeFormErrors = {
@@ -57,6 +57,10 @@ const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
 const labels: Record<Currency, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
 const rateUnits: Record<Currency, number> = { AFN: 1, USD: 1, EUR: 1, IRR: 1000, PKR: 1000 };
 
+// ✅ کلید مشترک با تب حواله‌جات
+const CUSTOMERS_KEY = "fx-customers";
+const TRANSACTIONS_KEY = "fx-transactions";
+
 const initialCustomers: Customer[] = [
   { id: "1", name: "احمد رحیمی", balances: { AFN: 500000, USD: 10000, EUR: 0, IRR: 0, PKR: 0 } },
   { id: "2", name: "محمد ظاهر", balances: { AFN: 200000, USD: 5000, EUR: 0, IRR: 0, PKR: 0 } },
@@ -80,7 +84,6 @@ const parseAmount = (v: string) => {
 
 const fmt = (n: number) => (Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 8 }) : "0");
 
-// ✅ تغییر ۱: UUID استاندارد به‌جای EX-... (آمادگی برای Supabase)
 const newId = () => crypto.randomUUID();
 const shortId = (id: string) => id.slice(-6);
 
@@ -182,6 +185,30 @@ const afnRateLabel = (foreign: Currency, rate: number) =>
 const directRateLabel = (base: Currency, counter: Currency, rate: number) =>
   `${fmt(rateUnits[base])} ${labels[base]} = ${fmt(rate)} ${labels[counter]}`;
 
+// ✅ خواندن مشتریان از localStorage با پشتیبانی از migration
+function getStoredCustomers(): Customer[] {
+  if (typeof window === "undefined") return initialCustomers;
+  try {
+    const raw = localStorage.getItem(CUSTOMERS_KEY);
+    if (!raw) return initialCustomers;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === "object") {
+      return parsed as Customer[];
+    }
+    // Migration: اگر آرایه string بود (نسخه قدیمی تب حواله‌جات)
+    if (Array.isArray(parsed) && typeof parsed[0] === "string") {
+      return (parsed as string[]).map((name, i) => ({
+        id: String(i + 1),
+        name,
+        balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 },
+      }));
+    }
+    return initialCustomers;
+  } catch {
+    return initialCustomers;
+  }
+}
+
 const iconPaths = {
   swap: "M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5",
   users: "M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z",
@@ -234,23 +261,31 @@ const currencyBadge: Record<Currency, string> = {
 };
 
 export default function CurrencyExchangePage() {
-  const [customers] = useState<Customer[]>(initialCustomers);
+  // ✅ خواندن مشتریان از localStorage (مشترک با تب حواله‌جات)
+  const [customers, setCustomers] = useState<Customer[]>(getStoredCustomers);
 
-  // ✅ تغییر ۳: بازیابی transactions از localStorage
+  // ✅ بازیابی transactions از localStorage
   const [transactions, setTransactions] = useState<Transaction[]>(() => {
     if (typeof window === "undefined") return [];
     try {
-      const saved = window.localStorage.getItem("fx-transactions");
+      const saved = window.localStorage.getItem(TRANSACTIONS_KEY);
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
     }
   });
 
-  // ✅ تغییر ۳: ذخیره خودکار در localStorage پس از هر تغییر
+  // ✅ ذخیره خودکار مشتریان در localStorage
   useEffect(() => {
     try {
-      window.localStorage.setItem("fx-transactions", JSON.stringify(transactions));
+      localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers));
+    } catch {}
+  }, [customers]);
+
+  // ✅ ذخیره خودکار transactions در localStorage
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(transactions));
     } catch {}
   }, [transactions]);
 
@@ -435,7 +470,6 @@ export default function CurrencyExchangePage() {
     if (exchangeMode === "direct" && exchangeDirectCounter) rateLabel = directRateLabel(exchangeDirectBaseValue, exchangeDirectCounter, txRate);
     const description = exchangeDescription.trim() || undefined;
 
-    // ✅ تغییر ۴: محاسبه سود (کارمزد = سود صرافی)
     const calculatedProfit = exchangeCommissionValue;
     const calculatedProfitCurrency: Currency | undefined = receivedCurrency;
 
@@ -445,7 +479,7 @@ export default function CurrencyExchangePage() {
         fromCurrency: receivedCurrency, fromAmount, toCurrency: paidCurrency, toAmount, rate: txRate,
         rateLabel, rateBase: exchangeRateBase, commission: exchangeCommissionValue,
         commissionCurrency: receivedCurrency, description,
-        profit: calculatedProfit, profitCurrency: calculatedProfitCurrency, // ✅
+        profit: calculatedProfit, profitCurrency: calculatedProfitCurrency,
       } : t));
     } else {
       const tx: Transaction = {
@@ -453,7 +487,7 @@ export default function CurrencyExchangePage() {
         customerId: customer, fromCurrency: receivedCurrency, fromAmount, toCurrency: paidCurrency, toAmount,
         rate: txRate, rateLabel, rateBase: exchangeRateBase, commission: exchangeCommissionValue,
         commissionCurrency: receivedCurrency, description, status: "active",
-        profit: calculatedProfit, profitCurrency: calculatedProfitCurrency, // ✅
+        profit: calculatedProfit, profitCurrency: calculatedProfitCurrency,
       };
       setTransactions((x) => [tx, ...x]);
     }
@@ -479,7 +513,6 @@ export default function CurrencyExchangePage() {
     if (transferMode === "direct" && transferDirectCounter) rateLabel = directRateLabel(transferDirectBaseValue, transferDirectCounter, txRate);
     const description = transferDescription.trim() || undefined;
 
-    // ✅ تغییر ۴: محاسبه سود (کارمزد = سود صرافی)
     const calculatedProfit = commissionValue;
     const calculatedProfitCurrency: Currency | undefined = senderCurrency;
 
@@ -489,7 +522,7 @@ export default function CurrencyExchangePage() {
         fromAmount, toCurrency: receiverCurrency, toAmount, rate: txRate, rateLabel,
         rateBase: transferRateBase, commission: commissionValue,
         commissionCurrency: senderCurrency, description,
-        profit: calculatedProfit, profitCurrency: calculatedProfitCurrency, // ✅
+        profit: calculatedProfit, profitCurrency: calculatedProfitCurrency,
       } : t));
     } else {
       const tx: Transaction = {
@@ -497,7 +530,7 @@ export default function CurrencyExchangePage() {
         fromCurrency: senderCurrency, fromAmount, toCurrency: receiverCurrency, toAmount, rate: txRate,
         rateLabel, rateBase: transferRateBase, commission: commissionValue,
         commissionCurrency: senderCurrency, description, status: "active",
-        profit: calculatedProfit, profitCurrency: calculatedProfitCurrency, // ✅
+        profit: calculatedProfit, profitCurrency: calculatedProfitCurrency,
       };
       setTransactions((x) => [tx, ...x]);
     }
@@ -521,7 +554,6 @@ export default function CurrencyExchangePage() {
     return `${fmt(tx.commission)} ${tx.commissionCurrency ? labels[tx.commissionCurrency] : ""}`;
   }
 
-  // ✅ جدید: برچسب سود
   function transactionProfitLabel(tx: Transaction) {
     if (tx.profit === undefined) return "-";
     return `${fmt(tx.profit)} ${tx.profitCurrency ? labels[tx.profitCurrency] : ""}`;
@@ -876,6 +908,7 @@ export default function CurrencyExchangePage() {
       </div>
     );
 
+  // ✅ ساخت options برای dropdown مشتریان
   const customerOpts = [["", "انتخاب مشتری"], ...customers.map((c) => [c.id, c.name])];
 
   function currencySelect(value: Currency, change: (v: Currency) => void) {
