@@ -52,15 +52,7 @@ type TransferFormErrors = {
 };
 
 const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
-
-const labels: Record<Currency, string> = {
-  AFN: "افغانی",
-  USD: "دالر",
-  EUR: "یورو",
-  IRR: "تومان",
-  PKR: "کلدار",
-};
-
+const labels: Record<Currency, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
 const rateUnits: Record<Currency, number> = { AFN: 1, USD: 1, EUR: 1, IRR: 1000, PKR: 1000 };
 
 const initialCustomers: Customer[] = [
@@ -70,9 +62,7 @@ const initialCustomers: Customer[] = [
 ];
 
 const normalizeDigits = (s: string) =>
-  s
-    .replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
-    .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
+  s.replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))).replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
 
 function toNumericText(v: string) {
   let s = normalizeDigits(String(v || "")).replace(/[^0-9.]/g, "");
@@ -86,18 +76,13 @@ const parseAmount = (v: string) => {
   return Number.isFinite(n) && n >= 0 ? n : 0;
 };
 
-const fmt = (n: number) =>
-  Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 8 }) : "0";
-
+const fmt = (n: number) => (Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 8 }) : "0");
 const newId = () => `EX-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-
 const shortId = (id: string) => id.slice(-6);
 
 function shamsiParts(d: Date) {
   const parts = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
+    year: "numeric", month: "2-digit", day: "2-digit",
   }).formatToParts(d);
   const get = (type: string) => parts.find((p) => p.type === type)?.value || "0";
   return { year: get("year"), month: get("month"), day: get("day") };
@@ -340,19 +325,10 @@ export default function CurrencyExchangePage() {
 
   useEffect(() => {
     const amount = parseAmount(receivedAmount);
-    if (!amount) {
-      setPaidAmount("");
-      return;
-    }
-    if (exchangeMode === "same") {
-      setPaidAmount(fmt(amount));
-      return;
-    }
+    if (!amount) { setPaidAmount(""); return; }
+    if (exchangeMode === "same") { setPaidAmount(fmt(amount)); return; }
     const r = parseAmount(rate);
-    if (!r) {
-      setPaidAmount("");
-      return;
-    }
+    if (!r) { setPaidAmount(""); return; }
     let result = 0;
     if (exchangeMode === "afn") result = convertAfnRate(amount, receivedCurrency, paidCurrency, r);
     if (exchangeMode === "direct" && exchangeDirectCounter)
@@ -362,19 +338,10 @@ export default function CurrencyExchangePage() {
 
   useEffect(() => {
     const amount = parseAmount(senderAmount);
-    if (!amount) {
-      setReceiverAmount("");
-      return;
-    }
-    if (transferMode === "same") {
-      setReceiverAmount(fmt(amount));
-      return;
-    }
+    if (!amount) { setReceiverAmount(""); return; }
+    if (transferMode === "same") { setReceiverAmount(fmt(amount)); return; }
     const r = parseAmount(transferRate);
-    if (!r) {
-      setReceiverAmount("");
-      return;
-    }
+    if (!r) { setReceiverAmount(""); return; }
     let result = 0;
     if (transferMode === "afn") result = convertAfnRate(amount, senderCurrency, receiverCurrency, r);
     if (transferMode === "direct" && transferDirectCounter)
@@ -383,27 +350,13 @@ export default function CurrencyExchangePage() {
   }, [senderAmount, senderCurrency, receiverCurrency, transferRate, transferMode, transferDirectBaseValue, transferDirectCounter]);
 
   function resetExchangeForm() {
-    setCustomer("");
-    setExchangeDealType("");
-    setReceivedAmount("");
-    setPaidAmount("");
-    setRate("");
-    setExchangeCommission("");
-    setExchangeDescription("");
-    setExchangeErrors({});
-    setEditingExchangeId(null);
+    setCustomer(""); setExchangeDealType(""); setReceivedAmount(""); setPaidAmount(""); setRate("");
+    setExchangeCommission(""); setExchangeDescription(""); setExchangeErrors({}); setEditingExchangeId(null);
   }
 
   function resetTransferForm() {
-    setSender("");
-    setReceiver("");
-    setSenderAmount("");
-    setReceiverAmount("");
-    setTransferRate("");
-    setCommission("");
-    setTransferDescription("");
-    setTransferErrors({});
-    setEditingTransferId(null);
+    setSender(""); setReceiver(""); setSenderAmount(""); setReceiverAmount(""); setTransferRate("");
+    setCommission(""); setTransferDescription(""); setTransferErrors({}); setEditingTransferId(null);
   }
 
   function validateExchange(): ExchangeFormErrors {
@@ -413,9 +366,7 @@ export default function CurrencyExchangePage() {
     const amount = parseAmount(receivedAmount);
     if (!amount) errs.receivedAmount = "مبلغ دریافتی خالی یا صفر است.";
     if (exchangeMode !== "same") {
-      if (!parseAmount(rate)) {
-        errs.rate = exchangeMode === "afn" ? "نرخ در برابر افغانی خالی است." : "نرخ مستقیم خالی است.";
-      }
+      if (!parseAmount(rate)) errs.rate = exchangeMode === "afn" ? "نرخ در برابر افغانی خالی است." : "نرخ مستقیم خالی است.";
       if (exchangeMode === "direct" && !exchangeDirectCounter) errs.rate = "مبنای نرخ مستقیم معتبر نیست.";
     }
     if (amount && !parseAmount(paidAmount)) {
@@ -433,9 +384,7 @@ export default function CurrencyExchangePage() {
     const amount = parseAmount(senderAmount);
     if (!amount) errs.senderAmount = "مبلغ فرستنده خالی یا صفر است.";
     if (transferMode !== "same") {
-      if (!parseAmount(transferRate)) {
-        errs.transferRate = transferMode === "afn" ? "نرخ در برابر افغانی خالی است." : "نرخ مستقیم خالی است.";
-      }
+      if (!parseAmount(transferRate)) errs.transferRate = transferMode === "afn" ? "نرخ در برابر افغانی خالی است." : "نرخ مستقیم خالی است.";
       if (transferMode === "direct" && !transferDirectCounter) errs.transferRate = "مبنای نرخ مستقیم معتبر نیست.";
     }
     if (amount && !parseAmount(receiverAmount)) {
@@ -461,50 +410,21 @@ export default function CurrencyExchangePage() {
     let rateLabel = "";
     if (exchangeMode === "same") rateLabel = "بدون تبدیل";
     if (exchangeMode === "afn" && exchangeForeign) rateLabel = afnRateLabel(exchangeForeign, txRate);
-    if (exchangeMode === "direct" && exchangeDirectCounter)
-      rateLabel = directRateLabel(exchangeDirectBaseValue, exchangeDirectCounter, txRate);
+    if (exchangeMode === "direct" && exchangeDirectCounter) rateLabel = directRateLabel(exchangeDirectBaseValue, exchangeDirectCounter, txRate);
     const description = exchangeDescription.trim() || undefined;
     if (editingExchangeId) {
-      setTransactions((prev) =>
-        prev.map((t) =>
-          t.id === editingExchangeId
-            ? {
-                ...t,
-                type: "exchange",
-                dealType: exchangeDealType as DealType,
-                customerId: customer,
-                fromCurrency: receivedCurrency,
-                fromAmount,
-                toCurrency: paidCurrency,
-                toAmount,
-                rate: txRate,
-                rateLabel,
-                rateBase: exchangeRateBase,
-                commission: exchangeCommissionValue,
-                commissionCurrency: receivedCurrency,
-                description,
-              }
-            : t
-        )
-      );
+      setTransactions((prev) => prev.map((t) => t.id === editingExchangeId ? {
+        ...t, type: "exchange", dealType: exchangeDealType as DealType, customerId: customer,
+        fromCurrency: receivedCurrency, fromAmount, toCurrency: paidCurrency, toAmount, rate: txRate,
+        rateLabel, rateBase: exchangeRateBase, commission: exchangeCommissionValue,
+        commissionCurrency: receivedCurrency, description,
+      } : t));
     } else {
       const tx: Transaction = {
-        id: newId(),
-        type: "exchange",
-        dealType: exchangeDealType as DealType,
-        date: new Date().toISOString(),
-        customerId: customer,
-        fromCurrency: receivedCurrency,
-        fromAmount,
-        toCurrency: paidCurrency,
-        toAmount,
-        rate: txRate,
-        rateLabel,
-        rateBase: exchangeRateBase,
-        commission: exchangeCommissionValue,
-        commissionCurrency: receivedCurrency,
-        description,
-        status: "active",
+        id: newId(), type: "exchange", dealType: exchangeDealType as DealType, date: new Date().toISOString(),
+        customerId: customer, fromCurrency: receivedCurrency, fromAmount, toCurrency: paidCurrency, toAmount,
+        rate: txRate, rateLabel, rateBase: exchangeRateBase, commission: exchangeCommissionValue,
+        commissionCurrency: receivedCurrency, description, status: "active",
       };
       setTransactions((x) => [tx, ...x]);
     }
@@ -527,50 +447,21 @@ export default function CurrencyExchangePage() {
     let rateLabel = "";
     if (transferMode === "same") rateLabel = "بدون تبدیل";
     if (transferMode === "afn" && transferForeign) rateLabel = afnRateLabel(transferForeign, txRate);
-    if (transferMode === "direct" && transferDirectCounter)
-      rateLabel = directRateLabel(transferDirectBaseValue, transferDirectCounter, txRate);
+    if (transferMode === "direct" && transferDirectCounter) rateLabel = directRateLabel(transferDirectBaseValue, transferDirectCounter, txRate);
     const description = transferDescription.trim() || undefined;
     if (editingTransferId) {
-      setTransactions((prev) =>
-        prev.map((t) =>
-          t.id === editingTransferId
-            ? {
-                ...t,
-                type: "transfer",
-                senderId: sender,
-                receiverId: receiver,
-                fromCurrency: senderCurrency,
-                fromAmount,
-                toCurrency: receiverCurrency,
-                toAmount,
-                rate: txRate,
-                rateLabel,
-                rateBase: transferRateBase,
-                commission: commissionValue,
-                commissionCurrency: senderCurrency,
-                description,
-              }
-            : t
-        )
-      );
+      setTransactions((prev) => prev.map((t) => t.id === editingTransferId ? {
+        ...t, type: "transfer", senderId: sender, receiverId: receiver, fromCurrency: senderCurrency,
+        fromAmount, toCurrency: receiverCurrency, toAmount, rate: txRate, rateLabel,
+        rateBase: transferRateBase, commission: commissionValue,
+        commissionCurrency: senderCurrency, description,
+      } : t));
     } else {
       const tx: Transaction = {
-        id: newId(),
-        type: "transfer",
-        date: new Date().toISOString(),
-        senderId: sender,
-        receiverId: receiver,
-        fromCurrency: senderCurrency,
-        fromAmount,
-        toCurrency: receiverCurrency,
-        toAmount,
-        rate: txRate,
-        rateLabel,
-        rateBase: transferRateBase,
-        commission: commissionValue,
-        commissionCurrency: senderCurrency,
-        description,
-        status: "active",
+        id: newId(), type: "transfer", date: new Date().toISOString(), senderId: sender, receiverId: receiver,
+        fromCurrency: senderCurrency, fromAmount, toCurrency: receiverCurrency, toAmount, rate: txRate,
+        rateLabel, rateBase: transferRateBase, commission: commissionValue,
+        commissionCurrency: senderCurrency, description, status: "active",
       };
       setTransactions((x) => [tx, ...x]);
     }
@@ -602,12 +493,7 @@ export default function CurrencyExchangePage() {
 
   function transactionMatchesSearch(tx: Transaction) {
     if (!isSearching) return true;
-    const names = [
-      customerName(tx.customerId),
-      customerName(tx.senderId),
-      customerName(tx.receiverId),
-      transactionCustomerLabel(tx),
-    ];
+    const names = [customerName(tx.customerId), customerName(tx.senderId), customerName(tx.receiverId), transactionCustomerLabel(tx)];
     if (names.some((n) => normalizeDigits(n).toLowerCase().includes(rawSearch))) return true;
     return [tx.fromAmount, tx.toAmount, tx.commission || 0].some((a) => {
       const plain = normalizeDigits(String(a));
@@ -626,34 +512,24 @@ export default function CurrencyExchangePage() {
   function editTransaction(tx: Transaction) {
     if (tx.status === "voided") return;
     if (tx.type === "exchange") {
-      setTab("exchange");
-      setEditingTransferId(null);
-      setEditingExchangeId(tx.id);
-      setCustomer(tx.customerId || "");
-      setExchangeDealType(tx.dealType || "");
-      setReceivedCurrency(tx.fromCurrency);
-      setPaidCurrency(tx.toCurrency);
+      setTab("exchange"); setEditingTransferId(null); setEditingExchangeId(tx.id);
+      setCustomer(tx.customerId || ""); setExchangeDealType(tx.dealType || "");
+      setReceivedCurrency(tx.fromCurrency); setPaidCurrency(tx.toCurrency);
       setReceivedAmount(String(tx.fromAmount));
       setExchangeCommission(tx.commission ? String(tx.commission) : "0");
-      setExchangeDescription(tx.description || "");
-      setRate(String(tx.rate));
+      setExchangeDescription(tx.description || ""); setRate(String(tx.rate));
       if (getRateMode(tx.fromCurrency, tx.toCurrency) === "direct") {
         setExchangeDirectBase(tx.rateBase || preferredDirectBase(tx.fromCurrency, tx.toCurrency));
       }
       setExchangeErrors({});
     }
     if (tx.type === "transfer") {
-      setTab("transfer");
-      setEditingExchangeId(null);
-      setEditingTransferId(tx.id);
-      setSender(tx.senderId || "");
-      setReceiver(tx.receiverId || "");
-      setSenderCurrency(tx.fromCurrency);
-      setReceiverCurrency(tx.toCurrency);
+      setTab("transfer"); setEditingExchangeId(null); setEditingTransferId(tx.id);
+      setSender(tx.senderId || ""); setReceiver(tx.receiverId || "");
+      setSenderCurrency(tx.fromCurrency); setReceiverCurrency(tx.toCurrency);
       setSenderAmount(String(tx.fromAmount));
       setCommission(tx.commission ? String(tx.commission) : "0");
-      setTransferDescription(tx.description || "");
-      setTransferRate(String(tx.rate));
+      setTransferDescription(tx.description || ""); setTransferRate(String(tx.rate));
       if (getRateMode(tx.fromCurrency, tx.toCurrency) === "direct") {
         setTransferDirectBase(tx.rateBase || preferredDirectBase(tx.fromCurrency, tx.toCurrency));
       }
@@ -661,9 +537,7 @@ export default function CurrencyExchangePage() {
     }
   }
 
-  function viewTransaction(tx: Transaction) {
-    setSelectedTransaction(tx);
-  }
+  function viewTransaction(tx: Transaction) { setSelectedTransaction(tx); }
 
   function voidTransaction(tx: Transaction) {
     if (tx.status === "voided") return;
@@ -678,9 +552,7 @@ export default function CurrencyExchangePage() {
     if (!win) return;
     const html = `
       <html dir="rtl">
-        <head>
-          <meta charset="utf-8" />
-          <title>رسید معامله</title>
+        <head><meta charset="utf-8" /><title>رسید معامله</title>
           <style>
             body { font-family: Tahoma, Arial, sans-serif; padding: 24px; direction: rtl; }
             h2 { margin-bottom: 16px; }
@@ -839,13 +711,7 @@ export default function CurrencyExchangePage() {
 
   const searchField = (
     <div className="relative">
-      <input
-        type="text"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="نام مشتری یا مبلغ…"
-        className={`${uiInput} pr-10`}
-      />
+      <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="نام مشتری یا مبلغ…" className={`${uiInput} pr-10`} />
       <span className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 ${iconMuted}`}>
         <Ic n="search" className="h-4 w-4" />
       </span>
@@ -853,28 +719,14 @@ export default function CurrencyExchangePage() {
   );
 
   const rateInput = (val: string, onCh: (s: string) => void, err: boolean, w: string) => (
-    <input
-      type="text"
-      inputMode="decimal"
-      dir="ltr"
-      value={val}
-      onChange={(e) => onCh(toNumericText(e.target.value))}
-      placeholder="0"
-      className={`h-12 ${w} px-3 text-left text-sm font-bold tabular-nums ${inputShell} ${err ? errInput : ""}`}
-    />
+    <input type="text" inputMode="decimal" dir="ltr" value={val} onChange={(e) => onCh(toNumericText(e.target.value))} placeholder="0"
+      className={`h-12 ${w} px-3 text-left text-sm font-bold tabular-nums ${inputShell} ${err ? errInput : ""}`} />
   );
 
   const moneyField = (val: string, onCh: (s: string) => void, err: boolean, suffix: string, suffixCls: string) => (
     <div className="relative">
-      <input
-        type="text"
-        inputMode="decimal"
-        dir="ltr"
-        value={val}
-        onChange={(e) => onCh(toNumericText(e.target.value))}
-        placeholder="0"
-        className={`${uiInput} pl-24 text-left tabular-nums ${err ? errInput : ""}`}
-      />
+      <input type="text" inputMode="decimal" dir="ltr" value={val} onChange={(e) => onCh(toNumericText(e.target.value))} placeholder="0"
+        className={`${uiInput} pl-24 text-left tabular-nums ${err ? errInput : ""}`} />
       <span className={`pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 rounded-lg px-2 py-1 text-[10px] font-black ${suffixCls}`}>
         {suffix}
       </span>
@@ -922,13 +774,22 @@ export default function CurrencyExchangePage() {
     </div>
   );
 
+  // فلش عمودی برای موبایل بین دو پنل
+  const midBadgeMobile = (icon: IconName, cls: string) => (
+    <div className="flex items-center justify-center lg:hidden py-1">
+      <span className={`grid h-10 w-10 place-items-center rounded-full border shadow-md ${cls}`}>
+        <Ic n={icon} className="h-4 w-4" />
+      </span>
+    </div>
+  );
+
   const secHead = (iconCls: string, icon: IconName, title: string, sub: string, chipCls: string, chipTxt: string) => (
     <div className="flex flex-wrap items-center gap-3">
       <span className={`grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${iconCls}`}>
         <Ic n={icon} className="h-5 w-5" />
       </span>
-      <div className="flex-1">
-        <h2 className={`fx-display text-2xl leading-none ${heading}`}>{title}</h2>
+      <div className="flex-1 min-w-0">
+        <h2 className={`fx-display text-xl leading-tight md:text-2xl ${heading}`}>{title}</h2>
         <p className={`mt-1 text-[11px] font-bold ${subText}`}>{sub}</p>
       </div>
       <span className={`rounded-full px-3 py-1.5 text-[10px] font-black ring-1 ${chipCls}`}>{chipTxt}</span>
@@ -936,11 +797,9 @@ export default function CurrencyExchangePage() {
   );
 
   const editBanner = (txt: ReactNode, cancel: () => void) => (
-    <div
-      className={`fx-pop flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm font-bold ${
-        dk ? "border-amber-400/30 bg-amber-400/10 text-amber-300" : "border-amber-300 bg-amber-100/70 text-amber-800"
-      }`}
-    >
+    <div className={`fx-pop flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm font-bold ${
+      dk ? "border-amber-400/30 bg-amber-400/10 text-amber-300" : "border-amber-300 bg-amber-100/70 text-amber-800"
+    }`}>
       <span className="flex items-center gap-2">
         <Ic n="pencil" className="h-4 w-4 shrink-0" />
         {txt}
@@ -952,13 +811,11 @@ export default function CurrencyExchangePage() {
   );
 
   const sameBox = (txt: string) => (
-    <div
-      className={`flex items-center gap-3 rounded-2xl border p-4 text-sm font-bold ${
-        dk ? "border-slate-600 bg-slate-700/40 text-slate-300" : "border-slate-200 bg-slate-100 text-slate-600"
-      }`}
-    >
-      <Ic n="info" className="h-5 w-5 shrink-0 opacity-70" />
-      {txt}
+    <div className={`flex items-start gap-3 rounded-2xl border p-4 text-sm font-bold ${
+      dk ? "border-slate-600 bg-slate-700/40 text-slate-300" : "border-slate-200 bg-slate-100 text-slate-600"
+    }`}>
+      <Ic n="info" className="h-5 w-5 shrink-0 opacity-70 mt-0.5" />
+      <span className="leading-6">{txt}</span>
     </div>
   );
 
@@ -1022,6 +879,9 @@ export default function CurrencyExchangePage() {
         details > summary { list-style: none; }
         details > summary::-webkit-details-marker { display: none; }
 
+        .fx-scroll::-webkit-scrollbar { height: 0; width: 0; }
+        .fx-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+
         ::selection { background: rgba(14,165,233,0.25); }
       `}</style>
 
@@ -1035,23 +895,24 @@ export default function CurrencyExchangePage() {
           <div className={`absolute bottom-[-10rem] right-1/3 h-[24rem] w-[24rem] rounded-full blur-[100px] ${dk ? "bg-orange-500/10" : "bg-orange-300/20"}`} />
         </div>
 
-        <div className="relative z-10 mx-auto w-full max-w-7xl space-y-5 px-4 pb-16 pt-9 md:space-y-6 md:px-8">
-          <header className="fx-up flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-3.5">
-              <div className="relative grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-sky-500 via-cyan-500 to-emerald-400 text-white shadow-lg shadow-sky-500/30 ring-1 ring-white/30">
-                <Ic n="swap" className="h-6 w-6" />
-                <span className={`absolute -bottom-1.5 -left-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-gradient-to-br from-amber-400 to-orange-400 px-1 text-[8px] font-black text-white ring-2 ${dk ? "ring-[#0f172a]" : "ring-[#eef6fa]"}`}>
+        <div className="relative z-10 mx-auto w-full max-w-7xl space-y-4 md:space-y-6 px-3 pb-16 pt-5 md:px-8 md:pt-9">
+          {/* سربرگ - بهینه برای موبایل */}
+          <header className="fx-up flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 md:gap-3.5 min-w-0">
+              <div className="relative grid h-11 w-11 md:h-14 md:w-14 shrink-0 place-items-center rounded-xl md:rounded-2xl bg-gradient-to-br from-sky-500 via-cyan-500 to-emerald-400 text-white shadow-lg shadow-sky-500/30 ring-1 ring-white/30">
+                <Ic n="swap" className="h-5 w-5 md:h-6 md:w-6" />
+                <span className={`absolute -bottom-1 -left-1 md:-bottom-1.5 md:-left-1.5 grid h-4 min-w-4 md:h-5 md:min-w-5 place-items-center rounded-full bg-gradient-to-br from-amber-400 to-orange-400 px-1 text-[7px] md:text-[8px] font-black text-white ring-2 ${dk ? "ring-[#0f172a]" : "ring-[#eef6fa]"}`}>
                   AFN
                 </span>
               </div>
-              <div>
-                <h1 className={`fx-display text-3xl leading-none md:text-4xl ${heading}`}>معاملات ارزی</h1>
-                <p className={`mt-1.5 text-[11px] font-bold md:text-xs ${subText}`}>سامانهٔ تبادل و حوالهٔ صرافی — پنج ارز فعال</p>
+              <div className="min-w-0">
+                <h1 className={`fx-display text-2xl md:text-4xl leading-none ${heading}`}>معاملات ارزی</h1>
+                <p className={`mt-1 text-[10px] md:text-xs font-bold ${subText}`}>سامانهٔ تبادل و حوالهٔ صرافی</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2.5">
-              <div className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 shadow-sm backdrop-blur ${glassChip}`}>
+            <div className="flex items-center gap-1.5 md:gap-2.5">
+              <div className={`hidden sm:flex items-center gap-2 rounded-xl border px-3 py-2 shadow-sm backdrop-blur ${glassChip}`}>
                 <span className="relative flex h-2.5 w-2.5">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-70" />
                   <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
@@ -1069,55 +930,71 @@ export default function CurrencyExchangePage() {
                 )}
               </div>
 
+              {/* ساعت کوچک برای موبایل */}
+              <div className={`sm:hidden flex items-center gap-1.5 rounded-lg border px-2 py-1.5 shadow-sm backdrop-blur ${glassChip}`}>
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-70" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                </span>
+                {now && (
+                  <span className={`whitespace-nowrap text-[10px] font-black ${dk ? "text-cyan-300" : "text-sky-600"}`}>
+                    {shamsiMonthLabel(now)}
+                  </span>
+                )}
+              </div>
+
               <button
                 onClick={() => setTheme(dk ? "light" : "dark")}
                 title={dk ? "پوستهٔ روشن" : "پوستهٔ تیره"}
-                className={`group grid h-11 w-11 cursor-pointer place-items-center rounded-xl border shadow-sm backdrop-blur transition-all duration-300 active:scale-90 ${
+                className={`group grid h-10 w-10 md:h-11 md:w-11 cursor-pointer place-items-center rounded-lg md:rounded-xl border shadow-sm backdrop-blur transition-all duration-300 active:scale-90 ${
                   dk
                     ? "border-slate-600 bg-slate-800/85 text-amber-300 hover:border-amber-300 hover:text-amber-200"
                     : "border-slate-200 bg-white/85 text-slate-600 hover:border-sky-400 hover:text-sky-600"
                 }`}
               >
                 {dk ? (
-                  <Ic n="sun" className="h-5 w-5 transition-transform duration-500 group-hover:rotate-45" />
+                  <Ic n="sun" className="h-4 w-4 md:h-5 md:w-5 transition-transform duration-500 group-hover:rotate-45" />
                 ) : (
-                  <Ic n="moon" className="h-5 w-5 transition-transform duration-500 group-hover:-rotate-12" />
+                  <Ic n="moon" className="h-4 w-4 md:h-5 md:w-5 transition-transform duration-500 group-hover:-rotate-12" />
                 )}
               </button>
             </div>
           </header>
 
-          <div className="fx-up flex flex-wrap items-center gap-2" style={{ animationDelay: "70ms" }}>
-            {currencies.map((c) => (
-              <span
-                key={c}
-                className={`flex cursor-default items-center gap-2 rounded-full border py-1.5 pl-3.5 pr-1.5 text-xs font-bold shadow-sm backdrop-blur transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md ${glassChip} ${
-                  dk ? "text-slate-300 hover:border-cyan-400/50" : "text-slate-600 hover:border-sky-400/60"
-                }`}
-              >
-                <span className={`grid h-6 w-6 place-items-center rounded-full bg-gradient-to-br text-[8px] font-black text-white ${currencyBadge[c]}`}>{c}</span>
-                {labels[c]}
-              </span>
-            ))}
+          {/* نوار ارزها و آمار - قابل اسکرول افقی در موبایل */}
+          <div className="fx-up space-y-2" style={{ animationDelay: "70ms" }}>
+            <div className="fx-scroll flex gap-2 overflow-x-auto -mx-3 px-3 pb-1 md:mx-0 md:px-0 md:pb-0">
+              {currencies.map((c) => (
+                <span
+                  key={c}
+                  className={`flex shrink-0 cursor-default items-center gap-1.5 rounded-full border py-1 pl-3 pr-1.5 md:py-1.5 md:pl-3.5 text-xs font-bold shadow-sm backdrop-blur transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md ${glassChip} ${
+                    dk ? "text-slate-300 hover:border-cyan-400/50" : "text-slate-600 hover:border-sky-400/60"
+                  }`}
+                >
+                  <span className={`grid h-5 w-5 md:h-6 md:w-6 place-items-center rounded-full bg-gradient-to-br text-[7px] md:text-[8px] font-black text-white ${currencyBadge[c]}`}>{c}</span>
+                  {labels[c]}
+                </span>
+              ))}
+            </div>
 
-            <div className="mr-auto flex flex-wrap items-center gap-2 text-[11px] font-black">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] font-black">
               <span className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 shadow-sm backdrop-blur ${glassChip} ${dk ? "text-slate-300" : "text-slate-600"}`}>
-                کل معاملات
-                <b className={`tabular-nums ${dk ? "text-cyan-300" : "text-sky-600"}`}>{transactions.length}</b>
+                کل <b className={`tabular-nums ${dk ? "text-cyan-300" : "text-sky-600"}`}>{transactions.length}</b>
               </span>
               <span className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 ring-1 ${dk ? "bg-emerald-400/15 text-emerald-300 ring-emerald-400/25" : "bg-emerald-400/15 text-emerald-700 ring-emerald-400/40"}`}>
                 فعال <b className="tabular-nums">{activeCount}</b>
               </span>
               <span className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 ring-1 ${dk ? "bg-rose-400/15 text-rose-300 ring-rose-400/25" : "bg-rose-400/15 text-rose-600 ring-rose-400/40"}`}>
-                لغو شده <b className="tabular-nums">{voidedCount}</b>
+                لغو <b className="tabular-nums">{voidedCount}</b>
               </span>
             </div>
           </div>
 
-          <div className={`fx-up flex flex-wrap items-center gap-2 rounded-2xl border p-2 shadow-sm backdrop-blur sm:w-fit ${glassChip}`} style={{ animationDelay: "140ms" }}>
+          {/* تب‌ها */}
+          <div className={`fx-up flex gap-1.5 md:gap-2 rounded-xl md:rounded-2xl border p-1.5 md:p-2 shadow-sm backdrop-blur ${glassChip}`} style={{ animationDelay: "140ms" }}>
             <button
               onClick={() => setTab("exchange")}
-              className={`flex cursor-pointer items-center gap-2 rounded-xl px-5 py-3 text-sm font-black transition-all duration-300 active:scale-[0.97] ${
+              className={`flex flex-1 md:flex-initial cursor-pointer items-center justify-center md:justify-start gap-1.5 md:gap-2 rounded-lg md:rounded-xl px-3 md:px-5 py-2.5 md:py-3 text-xs md:text-sm font-black transition-all duration-300 active:scale-[0.97] ${
                 tab === "exchange"
                   ? `bg-gradient-to-l shadow-lg ${dk ? "from-cyan-400 to-emerald-400 text-slate-950 shadow-cyan-400/25" : "from-sky-500 via-cyan-500 to-emerald-400 text-white shadow-sky-500/30"}`
                   : dk
@@ -1126,12 +1003,13 @@ export default function CurrencyExchangePage() {
               }`}
             >
               <Ic n="swap" className="h-4 w-4" />
-              تبادل ارز
+              <span className="hidden xs:inline md:inline">تبادل ارز</span>
+              <span className="xs:hidden md:hidden inline">تبادل</span>
             </button>
 
             <button
               onClick={() => setTab("transfer")}
-              className={`flex cursor-pointer items-center gap-2 rounded-xl px-5 py-3 text-sm font-black transition-all duration-300 active:scale-[0.97] ${
+              className={`flex flex-1 md:flex-initial cursor-pointer items-center justify-center md:justify-start gap-1.5 md:gap-2 rounded-lg md:rounded-xl px-3 md:px-5 py-2.5 md:py-3 text-xs md:text-sm font-black transition-all duration-300 active:scale-[0.97] ${
                 tab === "transfer"
                   ? `bg-gradient-to-l shadow-lg ${dk ? "from-orange-400 to-amber-300 text-slate-950 shadow-orange-400/25" : "from-orange-500 via-orange-400 to-amber-400 text-white shadow-orange-500/30"}`
                   : dk
@@ -1140,14 +1018,15 @@ export default function CurrencyExchangePage() {
               }`}
             >
               <Ic n="users" className="h-4 w-4" />
-              تبادل بین مشتریان
+              <span className="hidden xs:inline md:inline">تبادل بین مشتریان</span>
+              <span className="xs:hidden md:hidden inline">بین مشتریان</span>
             </button>
           </div>
 
           {/* ================= Exchange ================= */}
 
           {tab === "exchange" && (
-            <section className={`fx-up space-y-5 p-5 md:p-7 ${uiCard}`}>
+            <section className={`fx-up space-y-4 md:space-y-5 p-4 md:p-7 ${uiCard}`}>
               {secHead(
                 identExIcon, "swap", "تبادل ارز صرافی با مشتری", "دریافت یک ارز از مشتری و پرداخت ارز دیگر", identExChip,
                 editingExchangeId ? `ویرایش ${shortId(editingExchangeId)}` : "معاملهٔ جدید"
@@ -1159,39 +1038,20 @@ export default function CurrencyExchangePage() {
                   resetExchangeForm
                 )}
 
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                {fld(`تاریخ و ساعت (هجری شمسی) ${editingExchangeId ? "(اصل)" : "(خودکار)"}`, dateField(exchangeDateDisplay))}
-
-                {fld(
-                  "نوع معامله",
-                  sel(
-                    exchangeDealType,
-                    (v) => {
-                      setExchangeDealType(v as DealType | "");
-                      setExchangeErrors((p) => ({ ...p, dealType: undefined }));
-                    },
-                    [["", "انتخاب نوع معامله"], ["buy", "خرید"], ["sell", "فروش"]],
-                    exchangeErrors.dealType ? errInput : ""
-                  )
-                )}
-
-                {fld(
-                  "مشتری",
-                  sel(
-                    customer,
-                    (v) => {
-                      setCustomer(v);
-                      setExchangeErrors((p) => ({ ...p, customer: undefined }));
-                    },
-                    customerOpts,
-                    exchangeErrors.customer ? errInput : ""
-                  )
-                )}
-
+              <div className="grid gap-3 md:gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                {fld(`تاریخ و ساعت (شمسی) ${editingExchangeId ? "(اصل)" : "(خودکار)"}`, dateField(exchangeDateDisplay))}
+                {fld("نوع معامله", sel(exchangeDealType, (v) => {
+                  setExchangeDealType(v as DealType | "");
+                  setExchangeErrors((p) => ({ ...p, dealType: undefined }));
+                }, [["", "انتخاب نوع معامله"], ["buy", "خرید"], ["sell", "فروش"]], exchangeErrors.dealType ? errInput : ""))}
+                {fld("مشتری", sel(customer, (v) => {
+                  setCustomer(v);
+                  setExchangeErrors((p) => ({ ...p, customer: undefined }));
+                }, customerOpts, exchangeErrors.customer ? errInput : ""))}
                 {fld("جستجو", searchField)}
               </div>
 
-              <div className="grid gap-4 lg:grid-cols-[1fr_auto_1fr]">
+              <div className="grid gap-3 md:gap-4 lg:grid-cols-[1fr_auto_1fr]">
                 {panel(cEmerald, "down", "دریافت از مشتری", (
                   <>
                     {fld("ارز دریافتی", currencySelect(receivedCurrency, (v) => {
@@ -1199,22 +1059,18 @@ export default function CurrencyExchangePage() {
                       setExchangeErrors((p) => ({ ...p, rate: undefined, paidAmount: undefined }));
                     }))}
                     {fld("مبلغ دریافتی", (
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        dir="ltr"
-                        value={receivedAmount}
+                      <input type="text" inputMode="decimal" dir="ltr" value={receivedAmount}
                         onChange={(e) => {
                           setReceivedAmount(toNumericText(e.target.value));
                           setExchangeErrors((p) => ({ ...p, receivedAmount: undefined, paidAmount: undefined }));
                         }}
                         placeholder="0.00"
-                        className={`${uiInput} text-left tabular-nums ${exchangeErrors.receivedAmount ? errInput : ""}`}
-                      />
+                        className={`${uiInput} text-left tabular-nums ${exchangeErrors.receivedAmount ? errInput : ""}`} />
                     ))}
                   </>
                 ))}
 
+                {midBadgeMobile("down", dk ? "border-slate-600 bg-slate-900 text-emerald-300" : "border-slate-200 bg-white text-emerald-600")}
                 {midBadge("swap", dk ? "border-slate-600 bg-slate-900 text-cyan-300" : "border-slate-200 bg-white text-sky-600")}
 
                 {panel(cSky, "up", "پرداخت به مشتری", (
@@ -1241,7 +1097,7 @@ export default function CurrencyExchangePage() {
                       {rateInput(rate, (s) => {
                         setRate(s);
                         setExchangeErrors((p) => ({ ...p, rate: undefined, paidAmount: undefined }));
-                      }, !!exchangeErrors.rate, "w-44")}
+                      }, !!exchangeErrors.rate, "w-32 md:w-44")}
                       <span className={rateChip}>{labels.AFN}</span>
                     </div>
                   </div>
@@ -1254,7 +1110,7 @@ export default function CurrencyExchangePage() {
 
               {exchangeMode === "direct" &&
                 rateBox(cAmber, "نرخ مستقیم جفت‌ارز", (
-                  <div className="grid items-end gap-4 md:grid-cols-2">
+                  <div className="grid items-end gap-3 md:gap-4 md:grid-cols-2">
                     {fld("مبنای نرخ", sel(exchangeDirectBaseValue, (v) => {
                       setExchangeDirectBase(v as Currency);
                       setExchangeErrors((p) => ({ ...p, rate: undefined, paidAmount: undefined }));
@@ -1266,7 +1122,7 @@ export default function CurrencyExchangePage() {
                         {rateInput(rate, (s) => {
                           setRate(s);
                           setExchangeErrors((p) => ({ ...p, rate: undefined, paidAmount: undefined }));
-                        }, !!exchangeErrors.rate, "w-40")}
+                        }, !!exchangeErrors.rate, "w-28 md:w-40")}
                         <span className={rateChip}>{exchangeDirectCounter ? labels[exchangeDirectCounter] : ""}</span>
                       </div>
                     </div>
@@ -1284,7 +1140,7 @@ export default function CurrencyExchangePage() {
                   </>
                 ))}
 
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-3 md:gap-4 md:grid-cols-2">
                 {fld("کارمزد", moneyField(exchangeCommission, (s) => {
                   setExchangeCommission(s);
                   setExchangeErrors((p) => ({ ...p, exchangeCommission: undefined }));
@@ -1299,7 +1155,7 @@ export default function CurrencyExchangePage() {
 
               <button
                 onClick={submitExchange}
-                className={`group flex h-[52px] w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-base font-black shadow-lg transition-all duration-300 hover:shadow-xl hover:brightness-110 active:scale-[0.985] ${
+                className={`group flex h-[50px] md:h-[52px] w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-base font-black shadow-lg transition-all duration-300 hover:shadow-xl hover:brightness-110 active:scale-[0.985] ${
                   dk ? "from-cyan-400 to-emerald-400 text-slate-950 shadow-cyan-400/25" : "from-sky-500 via-cyan-500 to-emerald-400 text-white shadow-sky-500/30"
                 }`}
               >
@@ -1312,7 +1168,7 @@ export default function CurrencyExchangePage() {
           {/* ================= Transfer ================= */}
 
           {tab === "transfer" && (
-            <section className={`fx-up space-y-5 p-5 md:p-7 ${uiCard}`}>
+            <section className={`fx-up space-y-4 md:space-y-5 p-4 md:p-7 ${uiCard}`}>
               {secHead(
                 identTrIcon, "users", "تبادل بین حساب مشتریان", "انتقال موجودی از حساب مشتری به مشتری دیگر", identTrChip,
                 editingTransferId ? `ویرایش ${shortId(editingTransferId)}` : "انتقال جدید"
@@ -1324,12 +1180,12 @@ export default function CurrencyExchangePage() {
                   resetTransferForm
                 )}
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                {fld(`تاریخ و ساعت (هجری شمسی) ${editingTransferId ? "(اصل)" : "(خودکار)"}`, dateField(transferDateDisplay))}
+              <div className="grid gap-3 md:gap-4 sm:grid-cols-2">
+                {fld(`تاریخ و ساعت (شمسی) ${editingTransferId ? "(اصل)" : "(خودکار)"}`, dateField(transferDateDisplay))}
                 {fld("جستجو", searchField)}
               </div>
 
-              <div className="grid gap-4 lg:grid-cols-[1fr_auto_1fr]">
+              <div className="grid gap-3 md:gap-4 lg:grid-cols-[1fr_auto_1fr]">
                 {panel(cOrange, "up", "فرستنده", (
                   <>
                     {fld("مشتری فرستنده", sel(sender, (v) => {
@@ -1341,22 +1197,18 @@ export default function CurrencyExchangePage() {
                       setTransferErrors((p) => ({ ...p, transferRate: undefined, receiverAmount: undefined }));
                     }))}
                     {fld("مبلغ فرستنده", (
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        dir="ltr"
-                        value={senderAmount}
+                      <input type="text" inputMode="decimal" dir="ltr" value={senderAmount}
                         onChange={(e) => {
                           setSenderAmount(toNumericText(e.target.value));
                           setTransferErrors((p) => ({ ...p, senderAmount: undefined, receiverAmount: undefined }));
                         }}
                         placeholder="0.00"
-                        className={`${uiInput} text-left tabular-nums ${transferErrors.senderAmount ? errInput : ""}`}
-                      />
+                        className={`${uiInput} text-left tabular-nums ${transferErrors.senderAmount ? errInput : ""}`} />
                     ))}
                   </>
                 ))}
 
+                {midBadgeMobile("arrowLeft", dk ? "border-slate-600 bg-slate-900 text-orange-300" : "border-slate-200 bg-white text-orange-500")}
                 {midBadge("arrowLeft", dk ? "border-slate-600 bg-slate-900 text-orange-300" : "border-slate-200 bg-white text-orange-500")}
 
                 {panel(cEmerald, "down", "گیرنده", (
@@ -1387,7 +1239,7 @@ export default function CurrencyExchangePage() {
                       {rateInput(transferRate, (s) => {
                         setTransferRate(s);
                         setTransferErrors((p) => ({ ...p, transferRate: undefined, receiverAmount: undefined }));
-                      }, !!transferErrors.transferRate, "w-44")}
+                      }, !!transferErrors.transferRate, "w-32 md:w-44")}
                       <span className={rateChip}>{labels.AFN}</span>
                     </div>
                   </div>
@@ -1400,7 +1252,7 @@ export default function CurrencyExchangePage() {
 
               {transferMode === "direct" &&
                 rateBox(cOrange, "نرخ مستقیم جفت‌ارز", (
-                  <div className="grid items-end gap-4 md:grid-cols-2">
+                  <div className="grid items-end gap-3 md:gap-4 md:grid-cols-2">
                     {fld("مبنای نرخ", sel(transferDirectBaseValue, (v) => {
                       setTransferDirectBase(v as Currency);
                       setTransferErrors((p) => ({ ...p, transferRate: undefined, receiverAmount: undefined }));
@@ -1412,7 +1264,7 @@ export default function CurrencyExchangePage() {
                         {rateInput(transferRate, (s) => {
                           setTransferRate(s);
                           setTransferErrors((p) => ({ ...p, transferRate: undefined, receiverAmount: undefined }));
-                        }, !!transferErrors.transferRate, "w-40")}
+                        }, !!transferErrors.transferRate, "w-28 md:w-40")}
                         <span className={rateChip}>{transferDirectCounter ? labels[transferDirectCounter] : ""}</span>
                       </div>
                     </div>
@@ -1430,7 +1282,7 @@ export default function CurrencyExchangePage() {
                   </>
                 ))}
 
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-3 md:gap-4 md:grid-cols-2">
                 {fld("کارمزد", moneyField(commission, (s) => {
                   setCommission(s);
                   setTransferErrors((p) => ({ ...p, commission: undefined }));
@@ -1445,7 +1297,7 @@ export default function CurrencyExchangePage() {
 
               <button
                 onClick={submitTransfer}
-                className={`group flex h-[52px] w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-base font-black shadow-lg transition-all duration-300 hover:shadow-xl hover:brightness-110 active:scale-[0.985] ${
+                className={`group flex h-[50px] md:h-[52px] w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-base font-black shadow-lg transition-all duration-300 hover:shadow-xl hover:brightness-110 active:scale-[0.985] ${
                   dk ? "from-orange-400 to-amber-300 text-slate-950 shadow-orange-400/25" : "from-orange-500 via-orange-400 to-amber-400 text-white shadow-orange-500/30"
                 }`}
               >
@@ -1458,12 +1310,12 @@ export default function CurrencyExchangePage() {
           {/* ================= Transactions ================= */}
 
           <section className={`fx-up overflow-hidden ${uiCard}`} style={{ animationDelay: "160ms" }}>
-            <div className="flex flex-wrap items-center gap-3 p-5 pb-4 md:px-7 md:pt-6">
-              <span className={`grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identExIcon}`}>
+            <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
+              <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identExIcon}`}>
                 <Ic n="doc" className="h-5 w-5" />
               </span>
-              <div className="flex-1">
-                <h2 className={`fx-display text-2xl leading-none ${heading}`}>آخرین معاملات</h2>
+              <div className="flex-1 min-w-0">
+                <h2 className={`fx-display text-xl md:text-2xl leading-none ${heading}`}>آخرین معاملات</h2>
                 <p className={`mt-1 text-[11px] font-bold ${subText}`}>ثبت، ویرایش، چاپ رسید و لغو معاملات</p>
               </div>
 
@@ -1480,7 +1332,152 @@ export default function CurrencyExchangePage() {
               )}
             </div>
 
-            <div className="overflow-x-auto">
+            {/* ===== MOBILE: کارت‌های تاشونده ===== */}
+            <div className="md:hidden px-3 md:px-5 pb-4 space-y-2">
+              {transactions.length === 0 ? (
+                <div className={`flex flex-col items-center gap-3 px-6 py-12 ${dk ? "text-slate-500" : "text-slate-400"}`}>
+                  <span className={`grid h-14 w-14 place-items-center rounded-2xl border border-dashed ${dk ? "border-slate-600 bg-slate-800/40" : "border-slate-300 bg-slate-50"}`}>
+                    <Ic n="inbox" className="h-6 w-6 opacity-70" />
+                  </span>
+                  <p className="text-sm font-black text-center">هنوز معامله‌ای ثبت نشده است</p>
+                  <p className="text-xs font-medium text-center">اولین معامله را از فرم بالا ثبت کنید؛ جزئیات آن اینجا نمایش داده می‌شود.</p>
+                </div>
+              ) : (
+                transactions.map((tx, index) => {
+                  const matchesSearch = transactionMatchesSearch(tx);
+                  const isVoided = tx.status === "voided";
+
+                  let cardClass = `rounded-xl border transition-all ${dk ? "bg-slate-800/50 border-slate-700" : "bg-white border-slate-200"}`;
+
+                  if (isSearching) {
+                    if (matchesSearch) {
+                      cardClass += dk ? " bg-amber-400/10 border-amber-400/40" : " bg-amber-50 border-amber-300";
+                    } else {
+                      cardClass += " opacity-30";
+                    }
+                  }
+
+                  if (isVoided) {
+                    cardClass += dk ? " opacity-70" : " opacity-75";
+                  }
+
+                  const fromColor = dk ? "text-emerald-300" : "text-emerald-700";
+                  const toColor = dk ? "text-sky-300" : "text-sky-700";
+
+                  return (
+                    <details key={tx.id} className={`${cardClass} group`}>
+                      <summary className={`cursor-pointer select-none p-3 flex items-center gap-2.5 ${dk ? "hover:bg-slate-700/30" : "hover:bg-slate-50"}`}>
+                        <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[10px] font-black tabular-nums ${dk ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>
+                          {transactions.length - index}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                            <span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${typeChipClass(tx)}`}>
+                              {transactionTypeLabel(tx)}
+                            </span>
+                            {isVoided && (
+                              <span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ring-1 ${dk ? "bg-rose-400/10 text-rose-300 ring-rose-400/20" : "bg-rose-100 text-rose-600 ring-rose-300/60"}`}>
+                                لغو شده
+                              </span>
+                            )}
+                          </div>
+                          <div className={`text-[12px] font-bold truncate ${dk ? "text-slate-100" : "text-slate-800"}`}>
+                            {transactionCustomerLabel(tx)}
+                          </div>
+                        </div>
+                        <Ic n="chevron" className={`h-4 w-4 shrink-0 transition-transform group-open:rotate-180 ${iconMuted}`} />
+                      </summary>
+
+                      <div className={`px-3 pb-3 pt-1 space-y-2.5 border-t ${dk ? "border-slate-700" : "border-slate-100"}`}>
+                        <div className={`text-[11px] tabular-nums ${subText}`} dir="ltr">
+                          {dateLabel(tx.date)}
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className={`rounded-lg p-2 ${dk ? "bg-emerald-400/10" : "bg-emerald-50"}`}>
+                            <div className={`text-[10px] font-bold ${subText} mb-0.5`}>دریافت</div>
+                            <div className={`text-[13px] font-black tabular-nums ${fromColor}`}>{fmt(tx.fromAmount)}</div>
+                            <div className={`text-[10px] font-bold ${subText}`}>{labels[tx.fromCurrency]}</div>
+                          </div>
+                          <div className={`rounded-lg p-2 ${dk ? "bg-sky-400/10" : "bg-sky-50"}`}>
+                            <div className={`text-[10px] font-bold ${subText} mb-0.5`}>پرداخت</div>
+                            <div className={`text-[13px] font-black tabular-nums ${toColor}`}>{fmt(tx.toAmount)}</div>
+                            <div className={`text-[10px] font-bold ${subText}`}>{labels[tx.toCurrency]}</div>
+                          </div>
+                        </div>
+
+                        <div className={`text-[11px] font-bold rounded-lg px-2.5 py-2 ${dk ? "bg-slate-900/60 text-slate-300" : "bg-slate-50 text-slate-600"}`}>
+                          <span className={`block text-[9px] font-black ${subText} mb-0.5`}>نرخ ارز</span>
+                          {tx.rateLabel}
+                        </div>
+
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className={`font-bold ${subText}`}>کارمزد</span>
+                          <span className={`font-black tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`}>
+                            {transactionCommissionLabel(tx)}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-1.5 pt-1">
+                          <button
+                            onClick={() => editTransaction(tx)}
+                            disabled={isVoided}
+                            className={`flex items-center justify-center gap-1 rounded-lg border px-2 py-2 text-[11px] font-bold transition active:scale-95 ${
+                              dk
+                                ? "border-slate-600 text-slate-300 disabled:opacity-40 active:bg-slate-700"
+                                : "border-slate-200 text-slate-600 disabled:opacity-40 active:bg-slate-50"
+                            }`}
+                          >
+                            <Ic n="pencil" className="h-3.5 w-3.5" />
+                            ویرایش
+                          </button>
+
+                          <button
+                            onClick={() => printReceipt(tx)}
+                            className={`flex items-center justify-center gap-1 rounded-lg border px-2 py-2 text-[11px] font-bold transition active:scale-95 ${
+                              dk
+                                ? "border-slate-600 text-slate-300 active:bg-slate-700"
+                                : "border-slate-200 text-slate-600 active:bg-slate-50"
+                            }`}
+                          >
+                            <Ic n="printer" className="h-3.5 w-3.5" />
+                            چاپ رسید
+                          </button>
+
+                          <button
+                            onClick={() => viewTransaction(tx)}
+                            className={`flex items-center justify-center gap-1 rounded-lg border px-2 py-2 text-[11px] font-bold transition active:scale-95 ${
+                              dk
+                                ? "border-slate-600 text-slate-300 active:bg-slate-700"
+                                : "border-slate-200 text-slate-600 active:bg-slate-50"
+                            }`}
+                          >
+                            <Ic n="eye" className="h-3.5 w-3.5" />
+                            مشاهده
+                          </button>
+
+                          <button
+                            onClick={() => voidTransaction(tx)}
+                            disabled={isVoided}
+                            className={`flex items-center justify-center gap-1 rounded-lg border px-2 py-2 text-[11px] font-bold transition active:scale-95 disabled:opacity-40 ${
+                              dk
+                                ? "border-rose-400/30 text-rose-300 active:bg-rose-400/10"
+                                : "border-rose-300 text-rose-600 active:bg-rose-50"
+                            }`}
+                          >
+                            <Ic n="xCircle" className="h-3.5 w-3.5" />
+                            لغو
+                          </button>
+                        </div>
+                      </div>
+                    </details>
+                  );
+                })
+              )}
+            </div>
+
+            {/* ===== DESKTOP: جدول ===== */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full min-w-[980px] text-sm">
                 <thead>
                   <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
@@ -1614,12 +1611,12 @@ export default function CurrencyExchangePage() {
       {/* ================= View Modal ================= */}
 
       {selectedTransaction && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" onClick={() => setSelectedTransaction(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => setSelectedTransaction(null)}>
           <div
-            className={`fx-pop w-full max-w-lg overflow-hidden rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`}
+            className={`fx-pop w-full max-w-lg overflow-hidden rounded-xl md:rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className={`flex items-center justify-between border-b px-5 py-4 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
+            <div className={`flex items-center justify-between border-b px-4 md:px-5 py-3 md:py-4 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
               <b className={`flex items-center gap-2 text-sm ${dk ? "text-slate-100" : "text-slate-800"}`}>
                 <span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-cyan-400/10 text-cyan-300" : "bg-sky-100 text-sky-600"}`}>
                   <Ic n="doc" className="h-4 w-4" />
@@ -1634,7 +1631,7 @@ export default function CurrencyExchangePage() {
               </button>
             </div>
 
-            <div className="max-h-[70vh] overflow-y-auto px-5 py-2">
+            <div className="max-h-[70vh] overflow-y-auto px-4 md:px-5 py-2">
               <DetailRow dark={dk} label="شماره" value={selectedTransaction.id} />
               <DetailRow dark={dk} label="تاریخ (هجری شمسی)" value={dateLabel(selectedTransaction.date)} />
               <DetailRow dark={dk} label="نوع معامله" value={transactionTypeLabel(selectedTransaction)} />
