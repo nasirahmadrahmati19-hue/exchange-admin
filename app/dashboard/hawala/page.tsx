@@ -57,7 +57,6 @@ function getStoredCustomers(): Customer[] {
   } catch { return defaultCustomers; }
 }
 
-/* ✅ ماژول کد پیگیری مشترک */
 const SHARED_COUNTER_KEY = "shared-tracking-counter";
 function getSharedCounter(): number {
   if (typeof window === "undefined") return 0;
@@ -159,11 +158,6 @@ function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): C
 function FeePayerBadge({ payer, dk }: { payer: CommissionPayer; dk: boolean }) {
   if (payer === "sender") return (<span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black ring-1 ${dk ? "bg-sky-400/15 text-sky-300 ring-sky-400/25" : "bg-sky-100 text-sky-700 ring-sky-300/60"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3 w-3"><path d="M6 12 3.269 3.126A59.768 59.768 0 0 1 21.485 12 59.77 59.77 0 0 1 3.27 20.876L5.999 12Zm0 0h7.5" /></svg>از فرستنده</span>);
   return (<span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black ring-1 ${dk ? "bg-amber-400/15 text-amber-300 ring-amber-400/25" : "bg-amber-100 text-amber-700 ring-amber-300/60"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3 w-3"><path d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" /></svg>از گیرنده</span>);
-}
-
-function TrackingBadge({ code, dk, size = "sm" }: { code: string; dk: boolean; size?: "sm" | "lg" }) {
-  const cls = size === "lg" ? `inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-black tabular-nums ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-sky-300 bg-sky-50 text-sky-700"}` : `inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-black tabular-nums ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-sky-300 bg-sky-50 text-sky-700"}`;
-  return (<span className={cls} dir="ltr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className={size === "lg" ? "h-3.5 w-3.5" : "h-3 w-3"}><path d="M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z" /><path d="M6 6h.008v.008H6V6Z" /></svg>{code}</span>);
 }
 
 const iconPaths = {
@@ -458,7 +452,7 @@ export default function HawalaPage() {
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-600"}`}><Ic n="send" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-blue-300" : "text-blue-700"}`}>معلومات حواله‌دهنده</b></div>
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {fld("کد پیگیری", (<div className="relative"><input readOnly dir="ltr" value={nextHawalaNumber} className={`${uiInput} ${roInput} pl-14 text-left tabular-nums font-black text-[15px]`} /><span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 px-2 py-1 text-[9px] font-black text-white">HW</span></div>))}
+                  {fld("شماره حواله", (<div className="relative"><input readOnly dir="ltr" value={nextHawalaNumber} className={`${uiInput} ${roInput} pl-14 text-left tabular-nums font-black text-[15px]`} /><span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 px-2 py-1 text-[9px] font-black text-white">HW</span></div>))}
                   {fld("نوع حواله *", sel(form.type, (v) => setField("type", v), [["", "انتخاب کنید"], ["send", "ارسال"], ["receive", "دریافت"]], errors.type ? errInput : ""))}
                   {fld("تاریخ (شمسی)", (<input readOnly value={currentDateTime} className={`${uiInput} ${roInput}`} />))}
                   {fld("نام حواله‌دهنده *", (<div className="relative"><input list="customers-list" className={`${uiInput} ${errors.senderName ? errInput : ""}`} value={form.senderName} onChange={e => setField("senderName", e.target.value)} placeholder="انتخاب از مشتری‌ها یا نوشتن نام جدید" /><datalist id="customers-list">{customers.map(c => (<option key={c.id} value={c.name}>{c.name}</option>))}</datalist></div>))}
@@ -535,7 +529,7 @@ export default function HawalaPage() {
               </div>
               <div className="px-4 md:px-7 pb-4 space-y-4">
                 <div className="flex flex-wrap gap-3">
-                  <input value={currentNameSearch} onChange={e => setCurrentNameSearch(e.target.value)} placeholder="نام، کد پیگیری، تلفن یا تذکره…" className={`${uiInput} flex-1 min-w-[200px]`} />
+                  <input value={currentNameSearch} onChange={e => setCurrentNameSearch(e.target.value)} placeholder="نام، شماره حواله، تلفن یا تذکره…" className={`${uiInput} flex-1 min-w-[200px]`} />
                   <input value={currentAmountSearch} onChange={e => setCurrentAmountSearch(e.target.value)} placeholder="جستجو بر اساس مبلغ…" inputMode="numeric" className={`${uiInput} flex-1 min-w-[150px]`} />
                   <select value={currentSortOrder} onChange={e => setCurrentSortOrder(e.target.value as "asc" | "desc")} className={`${uiInput} w-auto min-w-[180px] cursor-pointer appearance-none pl-9`}><option value="desc">جدیدترین شماره</option><option value="asc">قدیمی‌ترین شماره</option></select>
                 </div>
@@ -543,18 +537,21 @@ export default function HawalaPage() {
                   <div className={`flex flex-col items-center gap-3 px-6 py-12 ${dk ? "text-slate-500" : "text-slate-400"}`}><span className={`grid h-14 w-14 place-items-center rounded-2xl border border-dashed ${dk ? "border-slate-600 bg-slate-800/40" : "border-slate-300 bg-slate-50"}`}><Ic n="inbox" className="h-6 w-6 opacity-70" /></span><p className="text-sm font-black text-center">هیچ حواله جاری پیدا نشد.</p></div>
                 ) : (
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[1100px] text-sm">
+                    <table className="w-full min-w-[1000px] text-sm">
                       <thead>
                         <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
-                          {["شماره", "شماره حواله", "کد پیگیری", "تاریخ", "حواله‌دهنده", "حواله‌گیرنده", "مبلغ نهایی", "کارمزد", "پرداخت‌کننده کارمزد", "مقصد", "وضعیت", "عملیات"].map((h, i) => (<th key={h} className={`px-4 py-3 text-right text-[11px] font-black text-slate-400 ${i === 0 ? "md:px-7" : ""}`}>{h}</th>))}
+                          {/* ✅ سربرگ بدون ستون تکراری کد پیگیری */}
+                          {["شماره", "شماره حواله", "تاریخ", "حواله‌دهنده", "حواله‌گیرنده", "مبلغ نهایی", "کارمزد", "پرداخت‌کننده کارمزد", "مقصد", "وضعیت", "عملیات"].map((h, i) => (<th key={h} className={`px-4 py-3 text-right text-[11px] font-black text-slate-400 ${i === 0 ? "md:px-7" : ""} ${i === 10 ? "md:px-7" : ""}`}>{h}</th>))}
                         </tr>
                       </thead>
                       <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
                         {currentHawalas.map((item, index) => (
                           <tr key={item.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-blue-50/70"}`}>
                             <td className="px-4 py-3.5 md:px-7"><span className={`grid h-8 w-8 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500"}`}>{index + 1}</span></td>
-                            <td className={`px-4 py-3.5 text-[13px] font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>{item.number}</td>
-                            <td className="px-4 py-3.5"><TrackingBadge code={item.number} dk={dk} /></td>
+                            {/* ✅ ستون شماره حواله با استایل badge */}
+                            <td className="px-4 py-3.5">
+                              <span className={`inline-flex items-center rounded-lg border px-2.5 py-1.5 text-[12px] font-black tabular-nums ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-sky-300 bg-sky-50 text-sky-700"}`} dir="ltr">{item.number}</span>
+                            </td>
                             <td className={`whitespace-nowrap px-4 py-3.5 text-xs tabular-nums ${dk ? "text-slate-400" : "text-slate-500"}`}><span dir="ltr">{dateLabel(item.date)}</span></td>
                             <td className={`px-4 py-3.5 text-[13px] font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>{item.senderName}</td>
                             <td className={`px-4 py-3.5 text-[13px] font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>{item.receiverName}</td>
@@ -565,185 +562,4 @@ export default function HawalaPage() {
                             <td className="px-4 py-3.5"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${statusColors[item.status][dk ? "dark" : "light"]}`}>{statusLabels[item.status]}</span></td>
                             <td className="px-4 py-3.5">
                               <div className="flex flex-wrap gap-1.5">
-                                {item.status === "pending" && (<button onClick={() => markAsSent(item)} className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition active:scale-95 ${dk ? "border-blue-400/30 text-blue-300 hover:bg-blue-400/10" : "border-blue-300 text-blue-600 hover:bg-blue-50"}`}>ارسال</button>)}
-                                <button onClick={() => openSettlement(item)} className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition active:scale-95 ${dk ? "border-emerald-400/30 text-emerald-300 hover:bg-emerald-400/10" : "border-emerald-300 text-emerald-600 hover:bg-emerald-50"}`}>تسویه</button>
-                                <button onClick={() => openCancel(item)} className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition active:scale-95 ${dk ? "border-rose-400/30 text-rose-300 hover:bg-rose-400/10" : "border-rose-300 text-rose-600 hover:bg-rose-50"}`}>لغو</button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </section>
-          )}
-
-          {activeTab === "history" && (
-            <section className={`hw-up overflow-hidden ${uiCard}`}>
-              <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
-                <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identHwIcon}`}><Ic n="doc" className="h-5 w-5" /></span>
-                <div className="flex-1 min-w-0"><h2 className={`hw-display text-xl md:text-2xl leading-none ${heading}`}>تاریخچه حواله‌ها</h2><p className={`mt-1 text-[11px] font-bold ${subText}`}>مشاهده تمام حواله‌های ثبت‌شده</p></div>
-              </div>
-              <div className="px-4 md:px-7 pb-4 space-y-4">
-                <div className="flex flex-wrap gap-3">
-                  <input value={historyNameSearch} onChange={e => setHistoryNameSearch(e.target.value)} placeholder="نام، کد پیگیری، تلفن یا تذکره…" className={`${uiInput} flex-1 min-w-[200px]`} />
-                  <input value={historyAmountSearch} onChange={e => setHistoryAmountSearch(e.target.value)} placeholder="جستجو بر اساس مبلغ…" inputMode="numeric" className={`${uiInput} flex-1 min-w-[150px]`} />
-                  <select value={historySortOrder} onChange={e => setHistorySortOrder(e.target.value as "asc" | "desc")} className={`${uiInput} w-auto min-w-[180px] cursor-pointer appearance-none pl-9`}><option value="desc">جدیدترین شماره</option><option value="asc">قدیمی‌ترین شماره</option></select>
-                </div>
-                {filteredHistory.length === 0 ? (
-                  <div className={`flex flex-col items-center gap-3 px-6 py-12 ${dk ? "text-slate-500" : "text-slate-400"}`}><span className={`grid h-14 w-14 place-items-center rounded-2xl border border-dashed ${dk ? "border-slate-600 bg-slate-800/40" : "border-slate-300 bg-slate-50"}`}><Ic n="inbox" className="h-6 w-6 opacity-70" /></span><p className="text-sm font-black text-center">هیچ حواله‌ای پیدا نشد.</p></div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[1100px] text-sm">
-                      <thead>
-                        <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
-                          {["شماره", "شماره حواله", "کد پیگیری", "تاریخ", "حواله‌دهنده", "حواله‌گیرنده", "مبلغ نهایی", "کارمزد", "پرداخت‌کننده کارمزد", "مقصد", "وضعیت"].map((h, i) => (<th key={h} className={`px-4 py-3 text-right text-[11px] font-black text-slate-400 ${i === 0 ? "md:px-7" : ""}`}>{h}</th>))}
-                        </tr>
-                      </thead>
-                      <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
-                        {filteredHistory.map((item, index) => (
-                          <tr key={item.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-blue-50/70"}`}>
-                            <td className="px-4 py-3.5 md:px-7"><span className={`grid h-8 w-8 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500"}`}>{index + 1}</span></td>
-                            <td className={`px-4 py-3.5 text-[13px] font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>{item.number}</td>
-                            <td className="px-4 py-3.5"><TrackingBadge code={item.number} dk={dk} /></td>
-                            <td className={`whitespace-nowrap px-4 py-3.5 text-xs tabular-nums ${dk ? "text-slate-400" : "text-slate-500"}`}><span dir="ltr">{dateLabel(item.date)}</span></td>
-                            <td className={`px-4 py-3.5 text-[13px] font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>{item.senderName}</td>
-                            <td className={`px-4 py-3.5 text-[13px] font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>{item.receiverName}</td>
-                            <td className="px-4 py-3.5"><div className="text-[13px] font-black tabular-nums">{fmt(item.finalAmount)}</div><div className={`text-[10px] font-bold ${subText}`}>{labels[item.currencyTo]}</div></td>
-                            <td className="px-4 py-3.5 text-xs font-bold tabular-nums">{fmt(item.fee)} {labels[item.feeCurrency]}</td>
-                            <td className="px-4 py-3.5"><FeePayerBadge payer={item.feePayer} dk={dk} /></td>
-                            <td className={`px-4 py-3.5 text-xs ${subText}`}>{item.destinationText}</td>
-                            <td className="px-4 py-3.5"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${statusColors[item.status][dk ? "dark" : "light"]}`}>{statusLabels[item.status]}</span></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </section>
-          )}
-        </div>
-      </div>
-
-      {previewOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => setPreviewOpen(false)}>
-          <div className={`hw-up w-full max-w-2xl overflow-hidden rounded-xl md:rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={(e) => e.stopPropagation()}>
-            <div className={`flex items-center justify-between border-b px-4 md:px-5 py-3 md:py-4 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
-              <b className={`flex items-center gap-2 text-sm ${dk ? "text-slate-100" : "text-slate-800"}`}><span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-blue-400/10 text-blue-300" : "bg-blue-100 text-blue-600"}`}><Ic n="doc" className="h-4 w-4" /></span>جزئیات حواله قبل از ثبت</b>
-              <button onClick={() => setPreviewOpen(false)} className={`grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-all duration-300 hover:rotate-90 ${dk ? "hover:bg-slate-700 hover:text-white" : "hover:bg-slate-100 hover:text-slate-700"}`}><Ic n="x" className="h-4 w-4" /></button>
-            </div>
-            <div className="max-h-[70vh] overflow-y-auto px-4 md:px-5 py-4 space-y-4">
-              <div className={`flex items-center justify-between rounded-xl border p-3 ${dk ? "border-cyan-400/30 bg-cyan-400/10" : "border-sky-300 bg-sky-50"}`}>
-                <b className={`text-xs font-black ${dk ? "text-cyan-300" : "text-sky-700"}`}>کد پیگیری</b>
-                <TrackingBadge code={nextHawalaNumber} dk={dk} size="lg" />
-              </div>
-              <div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"}`}>
-                <div className="flex items-center gap-2 mb-3"><span className={`grid h-7 w-7 place-items-center rounded-lg ${dk ? "bg-cyan-400/15 text-cyan-300" : "bg-cyan-100 text-cyan-600"}`}><Ic n="swap" className="h-3.5 w-3.5" /></span><b className={`text-xs font-black ${dk ? "text-cyan-300" : "text-cyan-700"}`}>معلومات حواله</b></div>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div><span className={subText}>تاریخ: </span><b>{currentDateTime}</b></div>
-                  <div><span className={subText}>نوع: </span><b>{form.type === "send" ? "ارسال" : "دریافت"}</b></div>
-                  <div><span className={subText}>مقصد: </span><b>{destinationText}</b></div>
-                  <div><span className={subText}>تبدیل: </span><b>{labels[form.currencyFrom]} ← {labels[form.currencyTo]}</b></div>
-                  <div><span className={subText}>مبلغ: </span><b>{fmt(amountFrom)} {labels[form.currencyFrom]}</b></div>
-                  <div><span className={subText}>نرخ: </span><b>{form.rate || "بدون تبدیل"}</b></div>
-                  <div><span className={subText}>مبلغ نهایی: </span><b className={dk ? "text-emerald-300" : "text-emerald-700"}>{fmt(finalAmount)} {labels[form.currencyTo]}</b></div>
-                </div>
-              </div>
-              <div className={`rounded-xl border p-4 ${dk ? "border-amber-400/25 bg-amber-400/[0.05]" : "border-amber-300 bg-amber-50"}`}>
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2"><span className={`grid h-7 w-7 place-items-center rounded-lg ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="rate" className="h-3.5 w-3.5" /></span><b className={`text-xs font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>کارمزد</b></div>
-                  <FeePayerBadge payer={form.feePayer} dk={dk} />
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div><span className={subText}>مبلغ: </span><b>{fmt(feeValue)} {labels[form.feeCurrency]}</b></div>
-                  <div><span className={subText}>پرداخت‌کننده: </span><b>{commissionPayerLabel(form.feePayer)}</b></div>
-                </div>
-              </div>
-              <div className={`rounded-xl border p-4 ${dk ? "border-blue-400/25 bg-blue-400/[0.05]" : "border-blue-300 bg-blue-50"}`}>
-                <div className="flex items-center gap-2 mb-3"><span className={`grid h-7 w-7 place-items-center rounded-lg ${dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-600"}`}><Ic n="send" className="h-3.5 w-3.5" /></span><b className={`text-xs font-black ${dk ? "text-blue-300" : "text-blue-700"}`}>حواله‌دهنده</b></div>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div><span className={subText}>نام: </span><b>{form.senderName || "—"}</b></div>
-                  <div><span className={subText}>تلفن: </span><b dir="ltr">{form.senderPhone || "—"}</b></div>
-                </div>
-              </div>
-              <div className={`rounded-xl border p-4 ${dk ? "border-amber-400/25 bg-amber-400/[0.05]" : "border-amber-300 bg-amber-50"}`}>
-                <div className="flex items-center gap-2 mb-3"><span className={`grid h-7 w-7 place-items-center rounded-lg ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="receive" className="h-3.5 w-3.5" /></span><b className={`text-xs font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>حواله‌گیرنده</b></div>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div><span className={subText}>نام: </span><b>{form.receiverName || "—"}</b></div>
-                  <div><span className={subText}>تذکره: </span><b dir="ltr">{form.receiverTazkira || "—"}</b></div>
-                  <div><span className={subText}>تلفن: </span><b dir="ltr">{form.receiverPhone || "—"}</b></div>
-                </div>
-              </div>
-              {form.note && (<div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"}`}><b className={`text-xs font-black ${dk ? "text-slate-300" : "text-slate-700"}`}>یادداشت</b><p className={`text-sm leading-6 mt-2 ${dk ? "text-slate-300" : "text-slate-600"}`}>{form.note}</p></div>)}
-              <div className="flex flex-wrap gap-3 pt-2">
-                <button onClick={confirmRegister} className={`flex h-[48px] flex-1 min-w-[180px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-sm font-black shadow-lg transition-all hover:brightness-110 active:scale-[0.98] ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 to-teal-500 text-white"}`}>ثبت نهایی حواله<Ic n="check" className="h-4 w-4" /></button>
-                <button onClick={() => setPreviewOpen(false)} className={`flex h-[48px] px-6 cursor-pointer items-center justify-center rounded-xl border text-sm font-bold transition-all active:scale-95 ${dk ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>انصراف</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {settleTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => setSettleTarget(null)}>
-          <div className={`hw-up w-full max-w-lg overflow-hidden rounded-xl md:rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={(e) => e.stopPropagation()}>
-            <div className={`flex items-center justify-between border-b px-4 md:px-5 py-3 md:py-4 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
-              <b className={`text-sm ${dk ? "text-slate-100" : "text-slate-800"}`}>تسویه حواله {settleTarget.number}</b>
-              <button onClick={() => setSettleTarget(null)} className={`grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-all hover:rotate-90 ${dk ? "hover:bg-slate-700 hover:text-white" : "hover:bg-slate-100 hover:text-slate-700"}`}><Ic n="x" className="h-4 w-4" /></button>
-            </div>
-            <div className="px-4 md:px-5 py-4 space-y-4">
-              <div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"}`}>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div><span className={subText}>گیرنده: </span><b>{settleTarget.receiverName}</b></div>
-                  <div><span className={subText}>تذکره: </span><b dir="ltr">{settleTarget.receiverTazkira}</b></div>
-                  <div><span className={subText}>مبلغ نهایی: </span><b className={dk ? "text-emerald-300" : "text-emerald-700"}>{fmt(settleTarget.finalAmount)} {labels[settleTarget.currencyTo]}</b></div>
-                </div>
-                <div className={`mt-3 flex items-center justify-between rounded-xl border p-3 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-white"}`}>
-                  <div><div className={`text-[11px] font-black ${dk ? "text-slate-200" : "text-slate-700"}`}>کارمزد: {fmt(settleTarget.fee)} {labels[settleTarget.feeCurrency]}</div></div>
-                  <FeePayerBadge payer={settleTarget.feePayer} dk={dk} />
-                </div>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div><label className={uiLabel}>نام پرداخت‌کننده</label><input value={paidBy} onChange={e => setPaidBy(e.target.value)} placeholder="مثلاً صندوقکار" className={uiInput} /></div>
-                <div><label className={uiLabel}>مبلغ پرداخت‌شده</label><input type="text" inputMode="decimal" dir="ltr" value={paidAmount} onChange={e => setPaidAmount(toNumericText(e.target.value))} className={`${uiInput} text-left tabular-nums`} /></div>
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <button onClick={confirmSettlement} className={`flex h-[48px] flex-1 min-w-[150px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-sm font-black shadow-lg transition-all hover:brightness-110 active:scale-[0.98] ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 to-teal-500 text-white"}`}>تأیید پرداخت<Ic n="check" className="h-4 w-4" /></button>
-                <button onClick={() => setSettleTarget(null)} className={`flex h-[48px] px-6 cursor-pointer items-center justify-center rounded-xl border text-sm font-bold transition-all active:scale-95 ${dk ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>انصراف</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {cancelTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => setCancelTarget(null)}>
-          <div className={`hw-up w-full max-w-lg overflow-hidden rounded-xl md:rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={(e) => e.stopPropagation()}>
-            <div className={`flex items-center justify-between border-b px-4 md:px-5 py-3 md:py-4 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
-              <b className={`text-sm ${dk ? "text-slate-100" : "text-slate-800"}`}>لغو حواله {cancelTarget.number}</b>
-              <button onClick={() => setCancelTarget(null)} className={`grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-all hover:rotate-90 ${dk ? "hover:bg-slate-700 hover:text-white" : "hover:bg-slate-100 hover:text-slate-700"}`}><Ic n="x" className="h-4 w-4" /></button>
-            </div>
-            <div className="px-4 md:px-5 py-4 space-y-4">
-              <div className={`rounded-xl border p-3 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"}`}>
-                <div className="flex items-center justify-between">
-                  <div className={`text-[11px] font-black ${dk ? "text-slate-200" : "text-slate-700"}`}>کارمزد: {fmt(cancelTarget.fee)} {labels[cancelTarget.feeCurrency]}</div>
-                  <FeePayerBadge payer={cancelTarget.feePayer} dk={dk} />
-                </div>
-              </div>
-              <div><label className={uiLabel}>دلیل لغو حواله</label><textarea rows={4} value={cancelReason} onChange={e => setCancelReason(e.target.value)} placeholder="دلیل لغو را بنویسید..." className={`${uiInput} h-auto py-3 resize-none`} /></div>
-              <div className="flex flex-wrap gap-3">
-                <button onClick={confirmCancel} className={`flex h-[48px] flex-1 min-w-[150px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-sm font-black shadow-lg transition-all hover:brightness-110 active:scale-[0.98] ${dk ? "from-rose-400 to-red-400 text-slate-950" : "from-rose-500 to-red-500 text-white"}`}>لغو حواله<Ic n="xCircle" className="h-4 w-4" /></button>
-                <button onClick={() => setCancelTarget(null)} className={`flex h-[48px] px-6 cursor-pointer items-center justify-center rounded-xl border text-sm font-bold transition-all active:scale-95 ${dk ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>انصراف</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {toast && (<div className={`fixed bottom-6 left-6 z-[99] rounded-xl px-4 py-3 text-sm font-bold shadow-lg ${dk ? "bg-slate-800 text-slate-100 border border-slate-600" : "bg-slate-900 text-white"}`}>{toast}</div>)}
-    </div>
-  );
-}
+                                {item.status === "pending" && (<button onClick={() => markAsSent(item)} className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition active:scale-95 ${dk ? "border-blue-400/30 text-blue-300 hover:bg-blue-
