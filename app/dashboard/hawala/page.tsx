@@ -6,6 +6,12 @@ type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type RateMode = "same" | "afn" | "direct";
 type HawalaStatus = "pending" | "sent" | "paid" | "cancelled";
 
+type Customer = {
+  id: string;
+  name: string;
+  balances: Record<Currency, number>;
+};
+
 interface Hawala {
   id: string;
   number: string;
@@ -97,14 +103,16 @@ const rateUnits: Record<Currency, number> = {
   AFN: 1, USD: 1, EUR: 1, IRR: 1000, PKR: 1000,
 };
 
-const defaultCustomers = [
-  "احمد احمدی", "محمود محمودی", "ولی ولی",
-  "کریم کریمی", "نور نور", "عبدالله عبداللهی"
-];
-
 // ✅ کلید مشترک با تب تبادل ارز
 const CUSTOMERS_KEY = "fx-customers";
 const HAWALAS_KEY = "hawalas";
+
+// ✅ FIX: defaultCustomers به‌صورت Customer[] تعریف شده (نه string[])
+const defaultCustomers: Customer[] = [
+  { id: "1", name: "احمد رحیمی", balances: { AFN: 500000, USD: 10000, EUR: 0, IRR: 0, PKR: 0 } },
+  { id: "2", name: "محمد ظاهر", balances: { AFN: 200000, USD: 5000, EUR: 0, IRR: 0, PKR: 0 } },
+  { id: "3", name: "فاطمه حسینی", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 50000000, PKR: 0 } },
+];
 
 const baseEmptyForm: FormState = {
   type: "",
@@ -323,18 +331,41 @@ const getStoredLastNames = (): LastNames => {
   }
 };
 
-// ✅ لیست مشتریان مشترک با تب تبادل ارز
-const getStoredCustomers = (): string[] => {
+// ✅ FIX: خواندن مشتریان با migration خودکار از string[] به Customer[]
+function getStoredCustomers(): Customer[] {
   if (typeof window === "undefined") return defaultCustomers;
   try {
     const raw = localStorage.getItem(CUSTOMERS_KEY);
     if (!raw) return defaultCustomers;
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : defaultCustomers;
-  } catch {
+
+    // حالت ۱: ساختار درست Customer[]
+    if (Array.isArray(parsed) && parsed.length > 0 &&
+        typeof parsed[0] === "object" &&
+        parsed[0] !== null &&
+        "id" in parsed[0] &&
+        "name" in parsed[0]) {
+      return parsed as Customer[];
+    }
+
+    // حالت ۲: آرایه string (نسخه قدیمی) - migration خودکار
+    if (Array.isArray(parsed) && typeof parsed[0] === "string") {
+      const migrated = (parsed as string[]).map((name, i) => ({
+        id: `cust-migrated-${i}`,
+        name,
+        balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } as Record<Currency, number>,
+      }));
+      // ذخیره مجدد با ساختار جدید
+      localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(migrated));
+      return migrated;
+    }
+
+    return defaultCustomers;
+  } catch (e) {
+    console.error("Error reading customers:", e);
     return defaultCustomers;
   }
-};
+}
 
 const getStoredHawalas = (): Hawala[] => {
   if (typeof window === "undefined") return [];
@@ -348,7 +379,7 @@ const getStoredHawalas = (): Hawala[] => {
   }
 };
 
-// ✅ فیلدهای پیش‌فرض خالی (بدون پر کردن نام‌ها)
+// ✅ فیلدهای پیش‌فرض خالی
 const createInitialForm = (): FormState => {
   return { ...baseEmptyForm };
 };
@@ -390,7 +421,10 @@ function Ic({ n, className = "h-5 w-5" }: { n: IconName; className?: string }) {
 
 export default function HawalaPage() {
   const [lastNames, setLastNames] = useState<LastNames>(getStoredLastNames);
-  const [customers, setCustomers] = useState<string[]>(getStoredCustomers);
+
+  // ✅ FIX: customers به‌صورت Customer[] خوانده می‌شود
+  const [customers, setCustomers] = useState<Customer[]>(getStoredCustomers);
+
   const [activeTab, setActiveTab] = useState<"new" | "current" | "history">("new");
   const [hawalas, setHawalas] = useState<Hawala[]>(getStoredHawalas);
   const [form, setForm] = useState<FormState>(() => createInitialForm());
@@ -428,13 +462,14 @@ export default function HawalaPage() {
     } catch {}
   }, [lastNames]);
 
-  // ✅ ذخیره لیست مشتریان با کلید مشترک
+  // ✅ ذخیره خودکار مشتریان در localStorage (کلید مشترک با تب تبادل ارز)
   useEffect(() => {
     try {
       localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers));
     } catch {}
   }, [customers]);
 
+  // ✅ ذخیره خودکار حواله‌ها در localStorage
   useEffect(() => {
     try {
       localStorage.setItem(HAWALAS_KEY, JSON.stringify(hawalas));
@@ -582,8 +617,14 @@ export default function HawalaPage() {
     const senderName = form.senderName.trim();
     const receiverName = form.receiverName.trim();
 
-    if (senderName && !customers.includes(senderName)) {
-      setCustomers(prev => [...prev, senderName]);
+    // ✅ FIX: بررسی با customer.name و افزودن Customer کامل
+    if (senderName && !customers.some(c => c.name === senderName)) {
+      const newCustomer: Customer = {
+        id: crypto.randomUUID(),
+        name: senderName,
+        balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 },
+      };
+      setCustomers(prev => [...prev, newCustomer]);
     }
 
     let rateLabel = "";
@@ -995,6 +1036,7 @@ export default function HawalaPage() {
                     <input readOnly value={currentDateTime} className={`${uiInput} ${roInput}`} />
                   ))}
 
+                  {/* ✅ FIX: datalist با value={customer.name} و محتوای {customer.name} */}
                   {fld("نام حواله‌دهنده *", (
                     <div className="relative">
                       <input
@@ -1006,7 +1048,9 @@ export default function HawalaPage() {
                       />
                       <datalist id="customers-list">
                         {customers.map(customer => (
-                          <option key={customer} value={customer} />
+                          <option key={customer.id} value={customer.name}>
+                            {customer.name}
+                          </option>
                         ))}
                       </datalist>
                     </div>
@@ -1541,7 +1585,6 @@ export default function HawalaPage() {
             </div>
 
             <div className="max-h-[70vh] overflow-y-auto px-4 md:px-5 py-4 space-y-4">
-
               {/* معلومات حواله */}
               <div className={`rounded-xl border p-4 ${
                 dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"
