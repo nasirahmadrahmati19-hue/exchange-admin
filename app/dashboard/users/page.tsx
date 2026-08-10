@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState, type ReactNode, type ChangeEvent } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type CustomerStatus = "active" | "inactive";
@@ -41,14 +41,55 @@ type FormState = {
   status: CustomerStatus;
 };
 
+// ✅ تایپ‌های دقیق برای تراکنش‌ها و حواله‌ها
+type StoredTransaction = {
+  id: string;
+  trackingCode?: string;
+  type: string;
+  date: string;
+  customerId?: string;
+  senderId?: string;
+  receiverId?: string;
+  fromCurrency: Currency;
+  fromAmount: number;
+  toCurrency: Currency;
+  toAmount: number;
+  rate: number;
+  rateLabel: string;
+  commission?: number;
+  commissionCurrency?: Currency;
+  commissionPayer?: string;
+  status?: string;
+};
+
+type StoredHawala = {
+  id: string;
+  number: string;
+  date: string;
+  senderName: string;
+  receiverName: string;
+  currencyFrom: Currency;
+  currencyTo: Currency;
+  amountFrom: number;
+  finalAmount: number;
+  fee: number;
+  feeCurrency: Currency;
+  feePayer: string;
+  destinationText: string;
+  status: string;
+  paidAt?: string;
+};
+
+type FormErrors = Partial<Record<keyof FormState, string>>;
+
 const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
 const labels: Record<Currency, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
-const currencyColors: Record<Currency, { light: string; dark: string; gradient: string; icon: string }> = {
-  AFN: { light: "text-emerald-700", dark: "text-emerald-300", gradient: "from-emerald-500 to-teal-400", icon: "🇦🇫" },
-  USD: { light: "text-sky-700", dark: "text-sky-300", gradient: "from-sky-500 to-cyan-400", icon: "$" },
-  EUR: { light: "text-blue-700", dark: "text-blue-300", gradient: "from-blue-600 to-blue-400", icon: "€" },
-  IRR: { light: "text-amber-700", dark: "text-amber-300", gradient: "from-amber-500 to-orange-400", icon: "﷼" },
-  PKR: { light: "text-rose-700", dark: "text-rose-300", gradient: "from-rose-500 to-pink-400", icon: "₨" },
+const currencyColors: Record<Currency, { light: string; dark: string; gradient: string }> = {
+  AFN: { light: "text-emerald-700", dark: "text-emerald-300", gradient: "from-emerald-500 to-teal-400" },
+  USD: { light: "text-sky-700", dark: "text-sky-300", gradient: "from-sky-500 to-cyan-400" },
+  EUR: { light: "text-blue-700", dark: "text-blue-300", gradient: "from-blue-600 to-blue-400" },
+  IRR: { light: "text-amber-700", dark: "text-amber-300", gradient: "from-amber-500 to-orange-400" },
+  PKR: { light: "text-rose-700", dark: "text-rose-300", gradient: "from-rose-500 to-pink-400" },
 };
 
 const txLabels: Record<TxType, string> = {
@@ -101,7 +142,7 @@ function getStoredCustomers(): Customer[] {
   } catch { return defaultCustomers; }
 }
 
-function getStoredTransactions(): any[] {
+function getStoredTransactions(): StoredTransaction[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(TRANSACTIONS_KEY);
@@ -111,7 +152,7 @@ function getStoredTransactions(): any[] {
   } catch { return []; }
 }
 
-function getStoredHawalas(): any[] {
+function getStoredHawalas(): StoredHawala[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(HAWALAS_KEY);
@@ -178,9 +219,6 @@ const iconPaths = {
   history: "M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
   chart: "M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z",
   printer: "M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0 1 10.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0 .229 2.523a1.125 1.125 0 0 1-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0 0 21 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 0 0-1.913-.247M6.34 18H5.25A2.25 2.25 0 0 1 3 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 0 1 1.913-.247m10.5 0a48.536 48.536 0 0 0-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5Zm-3 0h.008v.008H15V10.5Z",
-  phone: "M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 0 0 2.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.276.37-.71.568-1.174.568-.465 0-.9-.198-1.173-.568l-.97-1.293c-.271-.362-.732-.527-1.172-.417l-4.423 1.106c-.5.125-.852.575-.852 1.091V19.5a2.25 2.25 0 0 1-2.25-2.25V6.75Z",
-  id: "M15 9h3.75M15 12h3.75M15 15h3.75M4.5 19.5h15a2.25 2.25 0 0 0 2.25-2.25V6.75A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25v10.5A2.25 2.25 0 0 0 4.5 19.5Zm6-10.125a1.875 1.875 0 1 1-3.75 0 1.875 1.875 0 0 1 3.75 0Zm1.294 6.336a6.721 6.721 0 0 1-3.17.789 6.721 6.721 0 0 1-3.168-.789 3.376 3.376 0 0 1 6.338 0Z",
-  location: "M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
   filter: "M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.406a1.5 1.5 0 0 1-.44 1.061l-4.67 4.66V19.5a1.5 1.5 0 0 1-.64 1.235l-3 2A1.5 1.5 0 0 1 10.5 21.5v-8.404l-4.67-4.66a1.5 1.5 0 0 1-.44-1.06V5.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0 1 12 3Z",
   arrowUp: "M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18",
   arrowDown: "M19.5 13.5 12 21m0 0-7.5-7.5M12 21V3",
@@ -191,10 +229,8 @@ const iconPaths = {
   info: "m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z",
   sun: "M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z",
   moon: "M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z",
-  shield: "M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z",
-  star: "M11.48 3.499a.562.562 0 0 1 1.04 0l2.125 5.111a.563.563 0 0 0 .475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 0 0-.182.557l1.285 5.385a.562.562 0 0 1-.84.61l-4.725-2.885a.562.562 0 0 0-.586 0L6.982 20.54a.562.562 0 0 1-.84-.61l1.285-5.386a.562.562 0 0 0-.182-.557l-4.204-3.602a.562.562 0 0 1 .321-.988l5.518-.442a.563.563 0 0 0 .475-.345L11.48 3.5Z",
-  calendar: "M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5",
   sparkle: "M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z",
+  arrowLeft: "M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18",
 };
 
 type IconName = keyof typeof iconPaths;
@@ -207,8 +243,8 @@ function Ic({ n, className = "h-5 w-5" }: { n: IconName; className?: string }) {
   );
 }
 
-// Build ledger entries from transactions and hawalas
-function buildLedger(customers: Customer[], transactions: any[], hawalas: any[]): LedgerEntry[] {
+// ✅ Build ledger entries with proper types
+function buildLedger(customers: Customer[], transactions: StoredTransaction[], hawalas: StoredHawala[]): LedgerEntry[] {
   const entries: LedgerEntry[] = [];
 
   for (const tx of transactions) {
@@ -339,10 +375,8 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[])
     }
   }
 
-  // Sort by date
   entries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-  // Calculate running balance per customer per currency
   const runningBal: Record<string, Record<Currency, number>> = {};
   for (const c of customers) {
     runningBal[c.id] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
@@ -369,20 +403,14 @@ function computeBalances(entries: LedgerEntry[], customerId: string): Record<Cur
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>(getStoredCustomers);
-  const [transactions, setTransactions] = useState<any[]>(() => {
-    if (typeof window === "undefined") return [];
-    try { const saved = window.localStorage.getItem(TRANSACTIONS_KEY); return saved ? JSON.parse(saved) : []; } catch { return []; }
-  });
-  const [hawalas, setHawalas] = useState<any[]>(() => {
-    if (typeof window === "undefined") return [];
-    try { const saved = window.localStorage.getItem(HAWALAS_KEY); return saved ? JSON.parse(saved) : []; } catch { return []; }
-  });
+  const [transactions, setTransactions] = useState<StoredTransaction[]>(getStoredTransactions);
+  const [hawalas, setHawalas] = useState<StoredHawala[]>(getStoredHawalas);
 
   const [activeTab, setActiveTab] = useState<"list" | "new" | "profile">("list");
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [profileTab, setProfileTab] = useState<"info" | "balances" | "ledger" | "statement">("info");
   const [form, setForm] = useState<FormState>(emptyForm);
-  const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
+  const [errors, setErrors] = useState<FormErrors>({});
   const [toast, setToast] = useState("");
   const [theme, setTheme] = useState<"light" | "dark">("light");
 
@@ -400,7 +428,6 @@ export default function CustomersPage() {
   }, []);
   const currentDateTime = now ? formatDateTime(now) : "";
 
-  // Filters
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | CustomerStatus>("all");
   const [ledgerSearch, setLedgerSearch] = useState("");
@@ -453,7 +480,7 @@ export default function CustomersPage() {
   const backToList = () => { setActiveTab("list"); setSelectedCustomerId(null); };
 
   const validateForm = () => {
-    const errs: Partial<Record<keyof FormState, string>> = {};
+    const errs: FormErrors = {};
     if (!form.name.trim()) errs.name = "نام و نام خانوادگی ضروری است.";
     if (!form.phone.trim()) errs.phone = "شماره تماس ضروری است.";
     const dupPhone = customers.find(c => c.phone === form.phone.trim());
@@ -627,7 +654,6 @@ export default function CustomersPage() {
             </div>
           </header>
 
-          {/* Stats */}
           <div className="cu-up grid grid-cols-2 md:grid-cols-4 gap-3" style={{ animationDelay: "70ms" }}>
             {[
               { label: "کل مشتریان", value: customers.length, icon: "users", color: dk ? "from-indigo-500 to-violet-500" : "from-indigo-500 to-violet-500", text: dk ? "text-violet-300" : "text-violet-600" },
@@ -650,7 +676,6 @@ export default function CustomersPage() {
             ))}
           </div>
 
-          {/* Tabs */}
           <div className={`cu-up flex gap-1.5 md:gap-2 rounded-xl md:rounded-2xl border p-1.5 md:p-2 shadow-sm backdrop-blur ${glassChip}`} style={{ animationDelay: "140ms" }}>
             {tabs.map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 md:gap-2 rounded-lg md:rounded-xl px-3 md:px-5 py-2.5 md:py-3 text-xs md:text-sm font-black transition-all duration-300 active:scale-[0.97] ${activeTab === tab.id ? `bg-gradient-to-l shadow-lg ${dk ? "from-indigo-400 to-violet-400 text-slate-950" : "from-indigo-500 via-violet-500 to-fuchsia-500 text-white"}` : dk ? "text-slate-400 hover:bg-slate-700/60 hover:text-slate-100" : "text-slate-500 hover:bg-violet-50 hover:text-slate-800"}`}>
@@ -668,7 +693,6 @@ export default function CustomersPage() {
             )}
           </div>
 
-          {/* ============ LIST ============ */}
           {activeTab === "list" && (
             <section className={`cu-up overflow-hidden ${uiCard}`} style={{ animationDelay: "160ms" }}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
@@ -704,11 +728,9 @@ export default function CustomersPage() {
                   </div>
                 ) : (
                   <>
-                    {/* Mobile cards */}
                     <div className="md:hidden space-y-2">
                       {filteredCustomers.map(c => {
                         const bal = computeBalances(ledger, c.id);
-                        const totalTx = ledger.filter(e => e.customerId === c.id).length;
                         return (
                           <div key={c.id} className={`rounded-2xl border p-4 transition-all hover:shadow-md ${glassCard}`}>
                             <div className="flex items-start gap-3">
@@ -749,7 +771,6 @@ export default function CustomersPage() {
                       })}
                     </div>
 
-                    {/* Desktop table */}
                     <div className="hidden md:block overflow-x-auto cu-scroll">
                       <table className="w-full min-w-[1000px] text-sm">
                         <thead>
@@ -819,7 +840,6 @@ export default function CustomersPage() {
             </section>
           )}
 
-          {/* ============ NEW ============ */}
           {activeTab === "new" && (
             <section className={`cu-up space-y-4 md:space-y-5 p-4 md:p-7 ${uiCard}`} style={{ animationDelay: "160ms" }}>
               <div className="flex flex-wrap items-center gap-3">
@@ -860,10 +880,8 @@ export default function CustomersPage() {
             </section>
           )}
 
-          {/* ============ PROFILE ============ */}
           {activeTab === "profile" && selectedCustomer && customerBalances && (
             <section className="cu-up space-y-4 md:space-y-5" style={{ animationDelay: "160ms" }}>
-              {/* Header card */}
               <div className={`relative overflow-hidden rounded-2xl border p-5 md:p-7 ${uiCard}`}>
                 <div className={`absolute inset-0 bg-gradient-to-br opacity-30 ${dk ? "from-violet-500/10 via-transparent to-fuchsia-500/10" : "from-violet-200/40 via-transparent to-fuchsia-200/40"}`} />
                 <div className="relative">
@@ -905,7 +923,6 @@ export default function CustomersPage() {
                 </div>
               </div>
 
-              {/* Balance strip */}
               <div className={`rounded-2xl border p-4 md:p-5 ${uiCard}`}>
                 <div className="flex items-center gap-2 mb-3">
                   <span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}><Ic n="wallet" className="h-4 w-4" /></span>
@@ -934,7 +951,6 @@ export default function CustomersPage() {
                 </div>
               </div>
 
-              {/* Profile tabs */}
               <div className={`flex flex-wrap gap-1.5 rounded-xl border p-1.5 ${glassChip}`}>
                 {profileTabs.map(pt => (
                   <button key={pt.id} onClick={() => setProfileTab(pt.id)} className={`flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-black transition-all ${profileTab === pt.id ? dk ? "bg-violet-400/15 text-violet-300 ring-1 ring-violet-400/30" : "bg-violet-100 text-violet-700 ring-1 ring-violet-300" : dk ? "text-slate-400 hover:bg-slate-700/60" : "text-slate-500 hover:bg-slate-50"}`}>
@@ -944,7 +960,6 @@ export default function CustomersPage() {
                 ))}
               </div>
 
-              {/* Info tab */}
               {profileTab === "info" && (
                 <div className={`rounded-2xl border p-4 md:p-6 ${uiCard}`}>
                   <div className="flex items-center gap-2 mb-4">
@@ -965,7 +980,6 @@ export default function CustomersPage() {
                 </div>
               )}
 
-              {/* Balances tab */}
               {profileTab === "balances" && (
                 <div className={`rounded-2xl border p-4 md:p-6 ${uiCard}`}>
                   <div className="flex items-center gap-2 mb-4">
@@ -1024,7 +1038,6 @@ export default function CustomersPage() {
                 </div>
               )}
 
-              {/* Ledger tab */}
               {profileTab === "ledger" && (
                 <div className={`rounded-2xl border p-4 md:p-6 ${uiCard}`}>
                   <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -1062,7 +1075,6 @@ export default function CustomersPage() {
                     </div>
                   ) : (
                     <>
-                      {/* Mobile ledger */}
                       <div className="md:hidden space-y-2">
                         {filteredLedger.map(e => {
                           const isOut = e.direction === "out";
@@ -1070,7 +1082,7 @@ export default function CustomersPage() {
                             <div key={e.id} className={`rounded-xl border p-3 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-200 bg-white"}`}>
                               <div className="flex items-start justify-between gap-2 mb-2">
                                 <div className="flex items-center gap-2 flex-1 min-w-0">
-                                  <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${txColors[e.type][dk ? "dark" : "light"]} ${dk ? "bg-opacity-15" : ""}`}>
+                                  <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${txColors[e.type][dk ? "dark" : "light"]}`}>
                                     <Ic n={isOut ? "arrowUp" : "arrowDown"} className="h-4 w-4" />
                                   </span>
                                   <div className="min-w-0 flex-1">
@@ -1102,7 +1114,6 @@ export default function CustomersPage() {
                         })}
                       </div>
 
-                      {/* Desktop ledger */}
                       <div className="hidden md:block overflow-x-auto cu-scroll">
                         <table className="w-full min-w-[900px] text-sm">
                           <thead>
@@ -1144,7 +1155,6 @@ export default function CustomersPage() {
                 </div>
               )}
 
-              {/* Statement tab */}
               {profileTab === "statement" && (
                 <div className={`rounded-2xl border p-4 md:p-6 ${uiCard}`}>
                   <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
