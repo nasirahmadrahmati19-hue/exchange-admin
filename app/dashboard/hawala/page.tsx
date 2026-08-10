@@ -1,6 +1,5 @@
 "use client";
 import { useEffect, useMemo, useState, type ReactNode, type ChangeEvent } from "react";
-import { getNextSharedCode, consumeSharedCode, getSharedCounter, setSharedCounter, initSharedCounterFromExisting } from "./tracking";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type RateMode = "same" | "afn" | "direct";
@@ -58,6 +57,27 @@ function getStoredCustomers(): Customer[] {
   } catch { return defaultCustomers; }
 }
 
+/* ✅ ماژول کد پیگیری مشترک */
+const SHARED_COUNTER_KEY = "shared-tracking-counter";
+function getSharedCounter(): number {
+  if (typeof window === "undefined") return 0;
+  try { const v = localStorage.getItem(SHARED_COUNTER_KEY); return v ? parseInt(v, 10) : 0; } catch { return 0; }
+}
+function setSharedCounter(value: number) {
+  try { localStorage.setItem(SHARED_COUNTER_KEY, String(value)); } catch {}
+}
+function getNextSharedCode(prefix: string): string {
+  return `${prefix}-${String(getSharedCounter() + 1).padStart(4, "0")}`;
+}
+function consumeSharedCode(prefix: string): string {
+  const next = getSharedCounter() + 1;
+  setSharedCounter(next);
+  return `${prefix}-${String(next).padStart(4, "0")}`;
+}
+function initSharedCounterFromExisting(maxExisting: number) {
+  if (getSharedCounter() < maxExisting) setSharedCounter(maxExisting);
+}
+
 const baseEmptyForm: FormState = { type: "", currencyFrom: "AFN", currencyTo: "USD", senderName: "", senderPhone: "", senderTelegram: "", amountFrom: "", rate: "", fee: "", feeCurrency: "AFN", feePayer: "sender", balance: "", province: "هرات", district: "گلران", receiverName: "", receiverTazkira: "", receiverPhone: "", receiverAddress: "", note: "" };
 const statusLabels: Record<HawalaStatus, string> = { pending: "در انتظار", sent: "ارسال‌شده", paid: "پرداخت‌شده", cancelled: "لغوشده" };
 const statusColors: Record<HawalaStatus, { light: string; dark: string }> = {
@@ -113,9 +133,7 @@ const getStoredLastNames = (): LastNames => { if (typeof window === "undefined")
 const getStoredHawalas = (): Hawala[] => { if (typeof window === "undefined") return []; try { const raw = localStorage.getItem(HAWALAS_KEY); if (!raw) return []; const parsed = JSON.parse(raw); return Array.isArray(parsed) ? (parsed as Hawala[]) : []; } catch { return []; } };
 const createInitialForm = (): FormState => ({ ...baseEmptyForm });
 
-/* ✅ مدیریت موجودی - روش اصلی کارمزد */
 type BalanceChange = { customerName: string; currency: Currency; amount: number; };
-
 function getBalanceChangesForHawala(h: Hawala, action: "register" | "settle" | "cancel"): BalanceChange[] {
   const changes: BalanceChange[] = [];
   if (action === "register") {
@@ -138,13 +156,11 @@ function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): C
   });
 }
 
-/* ✅ نشانی کارمزد */
 function FeePayerBadge({ payer, dk }: { payer: CommissionPayer; dk: boolean }) {
   if (payer === "sender") return (<span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black ring-1 ${dk ? "bg-sky-400/15 text-sky-300 ring-sky-400/25" : "bg-sky-100 text-sky-700 ring-sky-300/60"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3 w-3"><path d="M6 12 3.269 3.126A59.768 59.768 0 0 1 21.485 12 59.77 59.77 0 0 1 3.27 20.876L5.999 12Zm0 0h7.5" /></svg>از فرستنده</span>);
   return (<span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black ring-1 ${dk ? "bg-amber-400/15 text-amber-300 ring-amber-400/25" : "bg-amber-100 text-amber-700 ring-amber-300/60"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3 w-3"><path d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" /></svg>از گیرنده</span>);
 }
 
-/* ✅ نشانی کد پیگیری */
 function TrackingBadge({ code, dk, size = "sm" }: { code: string; dk: boolean; size?: "sm" | "lg" }) {
   const cls = size === "lg" ? `inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-black tabular-nums ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-sky-300 bg-sky-50 text-sky-700"}` : `inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-black tabular-nums ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-sky-300 bg-sky-50 text-sky-700"}`;
   return (<span className={cls} dir="ltr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className={size === "lg" ? "h-3.5 w-3.5" : "h-3 w-3"}><path d="M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z" /><path d="M6 6h.008v.008H6V6Z" /></svg>{code}</span>);
@@ -169,7 +185,6 @@ const iconPaths = {
   sun: "M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z",
   moon: "M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z",
   plus: "M12 4.5v15m7.5-7.5h-15",
-  tag: "M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z M6 6h.008v.008H6V6Z",
 };
 type IconName = keyof typeof iconPaths;
 function Ic({ n, className = "h-5 w-5" }: { n: IconName; className?: string }) {
@@ -198,7 +213,6 @@ export default function HawalaPage() {
   useEffect(() => { try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); } catch {} }, [customers]);
   useEffect(() => { try { localStorage.setItem(HAWALAS_KEY, JSON.stringify(hawalas)); } catch {} }, [hawalas]);
 
-  /* ✅ مقداردهی اولیه شمارنده مشترک از داده‌های موجود */
   useEffect(() => {
     const maxNum = hawalas.reduce((max, h) => Math.max(max, getHawalaNumberValue(h.number)), 0);
     initSharedCounterFromExisting(maxNum);
@@ -238,7 +252,6 @@ export default function HawalaPage() {
     return 0;
   }, [amountFrom, rateValue, rateMode, form.currencyFrom, form.currencyTo, directCounter, directBaseValue]);
 
-  /* ✅ روش اصلی کارمزد: همیشه از مبلغ نهایی کسر می‌شود */
   const finalAmount = Math.max(0, convertedAmount - feeValue);
 
   const nextHawalaNumber = getNextSharedCode("HW");
@@ -306,7 +319,6 @@ export default function HawalaPage() {
     if (rateMode === "same") rateLabel = "بدون تبدیل";
     if (rateMode === "afn" && afnForeign) rateLabel = afnRateLabel(afnForeign, txRate);
     if (rateMode === "direct" && directCounter) rateLabel = directRateLabel(directBaseValue, directCounter, txRate);
-    /* ✅ کد پیگیری مشترک */
     const trackingNumber = consumeSharedCode("HW");
     const newHawala: Hawala = { id: newId(), number: trackingNumber, date: nowDate.toISOString(), time: "", type: form.type, destinationCountry: "افغانستان", province: form.province, district: form.province === "هرات" ? form.district : form.province, destinationText, currencyFrom: form.currencyFrom, currencyTo: form.currencyTo, amountFrom, rate: txRate, rateLabel, rateBase: rateMode === "direct" ? directBaseValue : undefined, fee: feeValue, feeCurrency: form.feeCurrency, feePayer: form.feePayer, finalAmount, balance: form.balance, note: form.note, profit: feeValue, profitCurrency: form.feeCurrency, senderName, senderPhone: form.senderPhone, senderTelegram: form.senderTelegram, receiverName, receiverTazkira: form.receiverTazkira, receiverPhone: form.receiverPhone, receiverAddress: form.receiverAddress, status: "pending" as HawalaStatus };
     setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForHawala(newHawala, "register")));
@@ -338,7 +350,6 @@ export default function HawalaPage() {
     setCancelTarget(null); showToast("حواله لغو شد و موجودی حساب به حالت قبل برگشت.");
   };
 
-  /* Theme */
   const heading = dk ? "text-white" : "text-slate-900";
   const subText = dk ? "text-slate-500" : "text-slate-400";
   const glassChip = dk ? "border-slate-600/70 bg-slate-800/80" : "border-sky-100 bg-white/85";
@@ -428,7 +439,6 @@ export default function HawalaPage() {
             ))}
           </div>
 
-          {/* ================= ثبت حواله جدید ================= */}
           {activeTab === "new" && (
             <section className={`hw-up space-y-4 md:space-y-5 p-4 md:p-7 ${uiCard}`}>
               <div className="flex flex-wrap items-center gap-3">
@@ -448,7 +458,6 @@ export default function HawalaPage() {
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-600"}`}><Ic n="send" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-blue-300" : "text-blue-700"}`}>معلومات حواله‌دهنده</b></div>
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {/* ✅ کد پیگیری مشترک */}
                   {fld("کد پیگیری", (<div className="relative"><input readOnly dir="ltr" value={nextHawalaNumber} className={`${uiInput} ${roInput} pl-14 text-left tabular-nums font-black text-[15px]`} /><span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 px-2 py-1 text-[9px] font-black text-white">HW</span></div>))}
                   {fld("نوع حواله *", sel(form.type, (v) => setField("type", v), [["", "انتخاب کنید"], ["send", "ارسال"], ["receive", "دریافت"]], errors.type ? errInput : ""))}
                   {fld("تاریخ (شمسی)", (<input readOnly value={currentDateTime} className={`${uiInput} ${roInput}`} />))}
@@ -473,7 +482,6 @@ export default function HawalaPage() {
                 {rateMode === "direct" && (<div className="mt-4">{rateBox(cAmber, "نرخ مستقیم جفت‌ارز", (<div className="grid items-end gap-3 md:gap-4 md:grid-cols-2">{fld("مبنای نرخ", sel(directBaseValue, (v) => setDirectBase(v as Currency), [[form.currencyFrom, labels[form.currencyFrom]], [form.currencyTo, labels[form.currencyTo]]]))}<div><label className={uiLabel}>نرخ مستقیم</label><div className="flex flex-wrap items-center gap-2"><span className={rateChip}>{rateUnits[directBaseValue]} {labels[directBaseValue]} =</span><input type="text" inputMode="decimal" dir="ltr" value={form.rate} onChange={(e) => setField("rate", toNumericText(e.target.value))} placeholder="0" className={`h-12 w-28 md:w-40 px-3 text-left text-sm font-bold tabular-nums ${inputShell} ${errors.rate ? errInput : ""}`} /><span className={rateChip}>{directCounter ? labels[directCounter] : ""}</span></div></div></div>), (<>{pill(cAmber.badge, rateValue > 0 && directCounter ? `نرخ ثبت‌شده: ${directRateLabel(directBaseValue, directCounter, rateValue)}` : "", true)}{pill(cEmerald.badge, convertedAmount > 0 ? `نتیجه: ${fmt(convertedAmount)} ${labels[form.currencyTo]}` : "")}</>))}</div>)}
               </div>
 
-              {/* ✅ کارمزد - بدون کلمه تنظیمات */}
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="rate" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>کارمزد</b></div>
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-2">
@@ -519,7 +527,6 @@ export default function HawalaPage() {
             </section>
           )}
 
-          {/* ================= حواله‌های جاری ================= */}
           {activeTab === "current" && (
             <section className={`hw-up overflow-hidden ${uiCard}`}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
@@ -573,7 +580,6 @@ export default function HawalaPage() {
             </section>
           )}
 
-          {/* ================= تاریخچه ================= */}
           {activeTab === "history" && (
             <section className={`hw-up overflow-hidden ${uiCard}`}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
@@ -622,7 +628,6 @@ export default function HawalaPage() {
         </div>
       </div>
 
-      {/* ================= مودال پیش‌نمایش ================= */}
       {previewOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => setPreviewOpen(false)}>
           <div className={`hw-up w-full max-w-2xl overflow-hidden rounded-xl md:rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={(e) => e.stopPropagation()}>
@@ -647,7 +652,6 @@ export default function HawalaPage() {
                   <div><span className={subText}>مبلغ نهایی: </span><b className={dk ? "text-emerald-300" : "text-emerald-700"}>{fmt(finalAmount)} {labels[form.currencyTo]}</b></div>
                 </div>
               </div>
-              {/* ✅ کارمزد با نشانی */}
               <div className={`rounded-xl border p-4 ${dk ? "border-amber-400/25 bg-amber-400/[0.05]" : "border-amber-300 bg-amber-50"}`}>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2"><span className={`grid h-7 w-7 place-items-center rounded-lg ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="rate" className="h-3.5 w-3.5" /></span><b className={`text-xs font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>کارمزد</b></div>
@@ -683,7 +687,6 @@ export default function HawalaPage() {
         </div>
       )}
 
-      {/* ================= مودال تسویه ================= */}
       {settleTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => setSettleTarget(null)}>
           <div className={`hw-up w-full max-w-lg overflow-hidden rounded-xl md:rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={(e) => e.stopPropagation()}>
@@ -716,7 +719,6 @@ export default function HawalaPage() {
         </div>
       )}
 
-      {/* ================= مودال لغو ================= */}
       {cancelTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => setCancelTarget(null)}>
           <div className={`hw-up w-full max-w-lg overflow-hidden rounded-xl md:rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={(e) => e.stopPropagation()}>
