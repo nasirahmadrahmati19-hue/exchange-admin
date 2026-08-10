@@ -1,11 +1,11 @@
 "use client";
 import { useEffect, useMemo, useState, type ReactNode, type ChangeEvent } from "react";
+import { getNextSharedCode, consumeSharedCode, getSharedCounter, setSharedCounter, initSharedCounterFromExisting } from "./tracking";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type RateMode = "same" | "afn" | "direct";
 type HawalaStatus = "pending" | "sent" | "paid" | "cancelled";
 type CommissionPayer = "sender" | "receiver";
-
 type Customer = { id: string; name: string; phone?: string; tazkira?: string; balances: Record<Currency, number>; };
 
 interface Hawala {
@@ -20,7 +20,6 @@ interface Hawala {
   receiverName: string; receiverTazkira: string; receiverPhone: string; receiverAddress: string;
   status: HawalaStatus; paidAt?: string; paidBy?: string; paidAmount?: number; cancelReason?: string;
 }
-
 interface FormState {
   type: string; currencyFrom: Currency; currencyTo: Currency;
   senderName: string; senderPhone: string; senderTelegram: string;
@@ -108,33 +107,24 @@ function dateLabel(s: string) { const d = new Date(s); return Number.isNaN(d.get
 
 const getHawalaNumberValue = (number: string) => { const match = String(number || "").match(/(\d+)$/); return match ? Number(match[1]) : 0; };
 const sortByHawalaNumber = (items: Hawala[], order: "asc" | "desc") => [...items].sort((a, b) => { const an = getHawalaNumberValue(a.number); const bn = getHawalaNumberValue(b.number); return order === "asc" ? an - bn : bn - an; });
-const getNextHawalaNumber = (items: Hawala[]) => { const maxNumber = items.reduce((max, item) => Math.max(max, getHawalaNumberValue(item.number)), 0); return `HW-${String(maxNumber + 1).padStart(4, "0")}`; };
 const formatDestination = (province: string, district: string) => province === "هرات" ? `${province} — ${district}` : province;
 const commissionPayerLabel = (payer: CommissionPayer): string => payer === "sender" ? "حواله‌دهنده" : "حواله‌گیرنده";
-
 const getStoredLastNames = (): LastNames => { if (typeof window === "undefined") return { senderName: "", receiverName: "" }; try { const raw = localStorage.getItem("hawalaLastNames"); if (!raw) return { senderName: "", receiverName: "" }; const parsed = JSON.parse(raw); return { senderName: parsed?.senderName || "", receiverName: parsed?.receiverName || "" }; } catch { return { senderName: "", receiverName: "" }; } };
 const getStoredHawalas = (): Hawala[] => { if (typeof window === "undefined") return []; try { const raw = localStorage.getItem(HAWALAS_KEY); if (!raw) return []; const parsed = JSON.parse(raw); return Array.isArray(parsed) ? (parsed as Hawala[]) : []; } catch { return []; } };
 const createInitialForm = (): FormState => ({ ...baseEmptyForm });
 
-/* ✅ مدیریت موجودی - منطق گزینه ۲ */
+/* ✅ مدیریت موجودی - روش اصلی کارمزد */
 type BalanceChange = { customerName: string; currency: Currency; amount: number; };
 
 function getBalanceChangesForHawala(h: Hawala, action: "register" | "settle" | "cancel"): BalanceChange[] {
   const changes: BalanceChange[] = [];
-  const feeSameAsTo = h.feeCurrency === h.currencyTo;
   if (action === "register") {
     changes.push({ customerName: h.senderName, currency: h.currencyFrom, amount: -h.amountFrom });
-    if (h.feePayer === "sender" && h.fee > 0) changes.push({ customerName: h.senderName, currency: h.feeCurrency, amount: -h.fee });
   } else if (action === "settle") {
     changes.push({ customerName: h.receiverName, currency: h.currencyTo, amount: h.finalAmount });
-    if (h.feePayer === "receiver" && h.fee > 0 && !feeSameAsTo) changes.push({ customerName: h.receiverName, currency: h.feeCurrency, amount: -h.fee });
   } else if (action === "cancel") {
     changes.push({ customerName: h.senderName, currency: h.currencyFrom, amount: h.amountFrom });
-    if (h.feePayer === "sender" && h.fee > 0) changes.push({ customerName: h.senderName, currency: h.feeCurrency, amount: h.fee });
-    if (h.status === "paid") {
-      changes.push({ customerName: h.receiverName, currency: h.currencyTo, amount: -h.finalAmount });
-      if (h.feePayer === "receiver" && h.fee > 0 && !feeSameAsTo) changes.push({ customerName: h.receiverName, currency: h.feeCurrency, amount: h.fee });
-    }
+    if (h.status === "paid") changes.push({ customerName: h.receiverName, currency: h.currencyTo, amount: -h.finalAmount });
   }
   return changes;
 }
@@ -208,6 +198,12 @@ export default function HawalaPage() {
   useEffect(() => { try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); } catch {} }, [customers]);
   useEffect(() => { try { localStorage.setItem(HAWALAS_KEY, JSON.stringify(hawalas)); } catch {} }, [hawalas]);
 
+  /* ✅ مقداردهی اولیه شمارنده مشترک از داده‌های موجود */
+  useEffect(() => {
+    const maxNum = hawalas.reduce((max, h) => Math.max(max, getHawalaNumberValue(h.number)), 0);
+    initSharedCounterFromExisting(maxNum);
+  }, []);
+
   const [currentNameSearch, setCurrentNameSearch] = useState("");
   const [currentAmountSearch, setCurrentAmountSearch] = useState("");
   const [currentSortOrder, setCurrentSortOrder] = useState<"asc" | "desc">("desc");
@@ -242,14 +238,10 @@ export default function HawalaPage() {
     return 0;
   }, [amountFrom, rateValue, rateMode, form.currencyFrom, form.currencyTo, directCounter, directBaseValue]);
 
-  /* ✅ منطق گزینه ۲ کارمزد */
-  const feeSameAsTo = form.feeCurrency === form.currencyTo;
-  const finalAmount = useMemo(() => {
-    if (form.feePayer === "sender") return convertedAmount;
-    return feeSameAsTo ? Math.max(0, convertedAmount - feeValue) : convertedAmount;
-  }, [form.feePayer, feeSameAsTo, convertedAmount, feeValue]);
+  /* ✅ روش اصلی کارمزد: همیشه از مبلغ نهایی کسر می‌شود */
+  const finalAmount = Math.max(0, convertedAmount - feeValue);
 
-  const nextHawalaNumber = getNextHawalaNumber(hawalas);
+  const nextHawalaNumber = getNextSharedCode("HW");
   const isHerat = form.province === "هرات";
   const destinationText = formatDestination(form.province, form.district);
   const totalCount = hawalas.length;
@@ -257,7 +249,6 @@ export default function HawalaPage() {
   const receiveCount = hawalas.filter(item => item.type === "receive").length;
   const pendingCount = hawalas.filter(item => item.status === "pending").length;
 
-  /* ✅ جستجوی پیشرفته */
   const matchesNameSearch = (item: Hawala, query: string) => {
     const q = normalizeDigits(query).trim().toLowerCase(); if (!q) return true;
     if ([item.senderName, item.receiverName].some(f => String(f || "").toLowerCase().includes(q))) return true;
@@ -298,15 +289,10 @@ export default function HawalaPage() {
     if (!form.receiverPhone.trim()) newErrors.receiverPhone = "شماره تماس حواله‌گیرنده ضروری است.";
     if (!form.amountFrom.trim() || amountFrom <= 0) newErrors.amountFrom = "مبلغ حواله ضروری است.";
     if (feeValue < 0) newErrors.fee = "کمیشن نمی‌تواند منفی باشد.";
-    if (form.feePayer === "receiver" && feeSameAsTo && feeValue > convertedAmount) newErrors.fee = "کمیشن نمی‌تواند بیشتر از مبلغ تبدیل‌شده باشد.";
+    if (amountFrom > 0 && feeValue >= convertedAmount) newErrors.fee = "کمیشن نمی‌تواند بیشتر یا برابر مبلغ تبدیل‌شده باشد.";
     if (!form.province.trim()) newErrors.province = "ولایت مقصد ضروری است.";
     if (rateMode !== "same") { if (!rateValue) newErrors.rate = rateMode === "afn" ? "نرخ در برابر افغانی خالی است." : "نرخ مستقیم خالی است."; if (rateMode === "direct" && !directCounter) newErrors.rate = "مبنای نرخ مستقیم معتبر نیست."; }
     if (amountFrom > 0 && rateMode !== "same" && !convertedAmount) newErrors.rate = "مبلغ تبدیل محاسبه نشد؛ لطفاً نرخ را بررسی کنید.";
-    const senderCustomer = customers.find(c => c.name === form.senderName.trim());
-    if (senderCustomer && form.type === "send") {
-      if (amountFrom > (senderCustomer.balances[form.currencyFrom] || 0)) newErrors.amountFrom = `موجودی کافی نیست. موجودی فعلی: ${fmt(senderCustomer.balances[form.currencyFrom] || 0)} ${labels[form.currencyFrom]}`;
-      if (form.feePayer === "sender" && feeValue > 0 && feeValue > (senderCustomer.balances[form.feeCurrency] || 0)) newErrors.fee = `موجودی کافی برای کارمزد نیست. موجودی: ${fmt(senderCustomer.balances[form.feeCurrency] || 0)} ${labels[form.feeCurrency]}`;
-    }
     return newErrors;
   };
 
@@ -320,7 +306,9 @@ export default function HawalaPage() {
     if (rateMode === "same") rateLabel = "بدون تبدیل";
     if (rateMode === "afn" && afnForeign) rateLabel = afnRateLabel(afnForeign, txRate);
     if (rateMode === "direct" && directCounter) rateLabel = directRateLabel(directBaseValue, directCounter, txRate);
-    const newHawala: Hawala = { id: newId(), number: getNextHawalaNumber(hawalas), date: nowDate.toISOString(), time: "", type: form.type, destinationCountry: "افغانستان", province: form.province, district: form.province === "هرات" ? form.district : form.province, destinationText, currencyFrom: form.currencyFrom, currencyTo: form.currencyTo, amountFrom, rate: txRate, rateLabel, rateBase: rateMode === "direct" ? directBaseValue : undefined, fee: feeValue, feeCurrency: form.feeCurrency, feePayer: form.feePayer, finalAmount, balance: form.balance, note: form.note, profit: feeValue, profitCurrency: form.feeCurrency, senderName, senderPhone: form.senderPhone, senderTelegram: form.senderTelegram, receiverName, receiverTazkira: form.receiverTazkira, receiverPhone: form.receiverPhone, receiverAddress: form.receiverAddress, status: "pending" as HawalaStatus };
+    /* ✅ کد پیگیری مشترک */
+    const trackingNumber = consumeSharedCode("HW");
+    const newHawala: Hawala = { id: newId(), number: trackingNumber, date: nowDate.toISOString(), time: "", type: form.type, destinationCountry: "افغانستان", province: form.province, district: form.province === "هرات" ? form.district : form.province, destinationText, currencyFrom: form.currencyFrom, currencyTo: form.currencyTo, amountFrom, rate: txRate, rateLabel, rateBase: rateMode === "direct" ? directBaseValue : undefined, fee: feeValue, feeCurrency: form.feeCurrency, feePayer: form.feePayer, finalAmount, balance: form.balance, note: form.note, profit: feeValue, profitCurrency: form.feeCurrency, senderName, senderPhone: form.senderPhone, senderTelegram: form.senderTelegram, receiverName, receiverTazkira: form.receiverTazkira, receiverPhone: form.receiverPhone, receiverAddress: form.receiverAddress, status: "pending" as HawalaStatus };
     setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForHawala(newHawala, "register")));
     setHawalas(prev => [newHawala, ...prev]);
     setLastNames({ senderName, receiverName });
@@ -331,7 +319,6 @@ export default function HawalaPage() {
   const resetForm = () => { setForm(createInitialForm()); setErrors({}); showToast("فورم پاک شد."); };
   const markAsSent = (item: Hawala) => { setHawalas(prev => prev.map(h => h.id === item.id ? { ...h, status: "sent" as HawalaStatus } : h)); showToast("وضعیت حواله به ارسال‌شده تغییر کرد."); };
   const openSettlement = (item: Hawala) => { setSettleTarget(item); setPaidAmount(String(item.finalAmount)); setPaidBy(""); };
-
   const confirmSettlement = () => {
     if (!settleTarget) return;
     if (!paidBy.trim()) { showToast("نام پرداخت‌کننده را بنویسید."); return; }
@@ -342,7 +329,6 @@ export default function HawalaPage() {
     setHawalas(prev => prev.map(item => item.id === settleTarget.id ? { ...item, status: "paid" as HawalaStatus, paidAt: new Date().toISOString(), paidBy, paidAmount: amountPaid } : item));
     setSettleTarget(null); showToast("حواله با موفقیت تسویه شد و موجودی حساب به‌روز شد.");
   };
-
   const openCancel = (item: Hawala) => { setCancelTarget(item); setCancelReason(""); };
   const confirmCancel = () => {
     if (!cancelTarget) return;
@@ -405,7 +391,6 @@ export default function HawalaPage() {
           <div className={`absolute bottom-[-10rem] right-1/3 h-[24rem] w-[24rem] rounded-full blur-[100px] ${dk ? "bg-cyan-500/10" : "bg-cyan-300/20"}`} />
         </div>
         <div className="relative z-10 mx-auto w-full max-w-7xl space-y-4 md:space-y-6 px-3 pb-16 pt-5 md:px-8 md:pt-9">
-          {/* سربرگ */}
           <header className="hw-up flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 md:gap-3.5 min-w-0">
               <div className="relative grid h-11 w-11 md:h-14 md:w-14 shrink-0 place-items-center rounded-xl md:rounded-2xl bg-gradient-to-br from-blue-500 via-cyan-500 to-emerald-400 text-white shadow-lg shadow-blue-500/30 ring-1 ring-white/30">
@@ -426,7 +411,6 @@ export default function HawalaPage() {
             </div>
           </header>
 
-          {/* آمار */}
           <div className="hw-up grid grid-cols-2 md:grid-cols-4 gap-3" style={{ animationDelay: "70ms" }}>
             {[{ label: "تعداد حواله‌ها", value: totalCount, color: dk ? "text-blue-300" : "text-blue-600" }, { label: "ارسال‌شده", value: sendCount, color: dk ? "text-emerald-300" : "text-emerald-600" }, { label: "دریافت‌شده", value: receiveCount, color: dk ? "text-cyan-300" : "text-cyan-600" }, { label: "در انتظار", value: pendingCount, color: dk ? "text-amber-300" : "text-amber-600" }].map((stat, i) => (
               <div key={i} className={`rounded-xl border p-3 text-center ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-white"}`}>
@@ -436,7 +420,6 @@ export default function HawalaPage() {
             ))}
           </div>
 
-          {/* تب‌ها */}
           <div className={`hw-up flex gap-1.5 md:gap-2 rounded-xl md:rounded-2xl border p-1.5 md:p-2 shadow-sm backdrop-blur ${glassChip}`} style={{ animationDelay: "140ms" }}>
             {tabs.map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex flex-1 md:flex-initial cursor-pointer items-center justify-center md:justify-start gap-1.5 md:gap-2 rounded-lg md:rounded-xl px-3 md:px-5 py-2.5 md:py-3 text-xs md:text-sm font-black transition-all duration-300 active:scale-[0.97] ${activeTab === tab.id ? `bg-gradient-to-l shadow-lg ${dk ? "from-blue-400 to-cyan-400 text-slate-950 shadow-blue-400/25" : "from-blue-500 via-cyan-500 to-emerald-400 text-white shadow-blue-500/30"}` : dk ? "text-slate-400 hover:bg-slate-700/60 hover:text-slate-100" : "text-slate-500 hover:bg-blue-50 hover:text-slate-800"}`}>
@@ -453,7 +436,6 @@ export default function HawalaPage() {
                 <div className="flex-1 min-w-0"><h2 className={`hw-display text-xl md:text-2xl leading-none ${heading}`}>ثبت حواله جدید</h2><p className={`mt-1 text-[11px] font-bold ${subText}`}>معلومات حواله‌دهنده، مقصد و حواله‌گیرنده</p></div>
               </div>
 
-              {/* موجودی فرستنده */}
               {form.senderName && (() => { const sc = customers.find(c => c.name === form.senderName.trim()); if (!sc) return null; return (
                 <div className={`rounded-xl border p-3 ${dk ? "border-blue-400/30 bg-blue-400/10" : "border-blue-200 bg-blue-50"}`}>
                   <div className="flex items-center gap-2 mb-2"><Ic n="info" className={`h-4 w-4 ${dk ? "text-blue-300" : "text-blue-600"}`} /><b className={`text-xs font-black ${dk ? "text-blue-300" : "text-blue-700"}`}>موجودی حساب {sc.name}</b></div>
@@ -463,11 +445,10 @@ export default function HawalaPage() {
                 </div>
               ); })()}
 
-              {/* معلومات حواله‌دهنده */}
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-600"}`}><Ic n="send" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-blue-300" : "text-blue-700"}`}>معلومات حواله‌دهنده</b></div>
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {/* ✅ کد پیگیری */}
+                  {/* ✅ کد پیگیری مشترک */}
                   {fld("کد پیگیری", (<div className="relative"><input readOnly dir="ltr" value={nextHawalaNumber} className={`${uiInput} ${roInput} pl-14 text-left tabular-nums font-black text-[15px]`} /><span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 px-2 py-1 text-[9px] font-black text-white">HW</span></div>))}
                   {fld("نوع حواله *", sel(form.type, (v) => setField("type", v), [["", "انتخاب کنید"], ["send", "ارسال"], ["receive", "دریافت"]], errors.type ? errInput : ""))}
                   {fld("تاریخ (شمسی)", (<input readOnly value={currentDateTime} className={`${uiInput} ${roInput}`} />))}
@@ -477,7 +458,6 @@ export default function HawalaPage() {
                 </div>
               </div>
 
-              {/* معلومات حواله */}
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-cyan-400/15 text-cyan-300" : "bg-cyan-100 text-cyan-600"}`}><Ic n="swap" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-cyan-300" : "text-cyan-700"}`}>معلومات حواله</b></div>
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -485,7 +465,7 @@ export default function HawalaPage() {
                   {fld("ارز مقصد *", sel(form.currencyTo, (v) => setField("currencyTo", v), currencies.map(c => [c, labels[c]])))}
                   {fld("مبلغ حواله *", (<input type="text" inputMode="decimal" dir="ltr" className={`${uiInput} text-left tabular-nums ${errors.amountFrom ? errInput : ""}`} value={form.amountFrom} onChange={e => setField("amountFrom", toNumericText(e.target.value))} placeholder="مثلاً 10000" />))}
                   {fld("کمیشن حواله", (<input type="text" inputMode="decimal" dir="ltr" className={`${uiInput} text-left tabular-nums ${errors.fee ? errInput : ""}`} value={form.fee} onChange={e => setField("fee", toNumericText(e.target.value))} placeholder="مثلاً 200" />))}
-                  {fld("مبلغ نهایی", (<input readOnly value={`${fmt(finalAmount)} ${labels[form.currencyTo]}${!feeSameAsTo && feeValue > 0 && form.feePayer === "sender" ? "" : ""}`} className={`${uiInput} ${roInput} text-left tabular-nums`} />))}
+                  {fld("مبلغ نهایی", (<input readOnly value={`${fmt(finalAmount)} ${labels[form.currencyTo]}`} className={`${uiInput} ${roInput} text-left tabular-nums`} />))}
                   {fld("باقی مانده حساب مشتری", (<input className={uiInput} value={form.balance} onChange={e => setField("balance", e.target.value)} placeholder="اختیاری" />))}
                 </div>
                 {rateMode === "same" && (<div className="mt-4">{sameBox("ارز مبدا و مقصد یکسان است؛ مبلغ نهایی برابر مبلغ حواله خواهد بود.")}</div>)}
@@ -493,13 +473,9 @@ export default function HawalaPage() {
                 {rateMode === "direct" && (<div className="mt-4">{rateBox(cAmber, "نرخ مستقیم جفت‌ارز", (<div className="grid items-end gap-3 md:gap-4 md:grid-cols-2">{fld("مبنای نرخ", sel(directBaseValue, (v) => setDirectBase(v as Currency), [[form.currencyFrom, labels[form.currencyFrom]], [form.currencyTo, labels[form.currencyTo]]]))}<div><label className={uiLabel}>نرخ مستقیم</label><div className="flex flex-wrap items-center gap-2"><span className={rateChip}>{rateUnits[directBaseValue]} {labels[directBaseValue]} =</span><input type="text" inputMode="decimal" dir="ltr" value={form.rate} onChange={(e) => setField("rate", toNumericText(e.target.value))} placeholder="0" className={`h-12 w-28 md:w-40 px-3 text-left text-sm font-bold tabular-nums ${inputShell} ${errors.rate ? errInput : ""}`} /><span className={rateChip}>{directCounter ? labels[directCounter] : ""}</span></div></div></div>), (<>{pill(cAmber.badge, rateValue > 0 && directCounter ? `نرخ ثبت‌شده: ${directRateLabel(directBaseValue, directCounter, rateValue)}` : "", true)}{pill(cEmerald.badge, convertedAmount > 0 ? `نتیجه: ${fmt(convertedAmount)} ${labels[form.currencyTo]}` : "")}</>))}</div>)}
               </div>
 
-              {/* تنظیمات کارمزد */}
+              {/* ✅ کارمزد - بدون کلمه تنظیمات */}
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
-                <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="rate" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>تنظیمات کارمزد</b></div>
-                {/* ✅ هشدار هوشمند */}
-                {form.feePayer === "sender" && feeValue > 0 && (<div className={`mb-4 rounded-xl border p-3 text-xs font-bold ${dk ? "border-sky-400/30 bg-sky-400/10 text-sky-300" : "border-sky-300 bg-sky-50 text-sky-800"}`}><div className="flex items-start gap-2"><Ic n="info" className="h-4 w-4 shrink-0 mt-0.5" /><span>کارمزد ({fmt(feeValue)} {labels[form.feeCurrency]}) جداگانه از حساب فرستنده کسر می‌شود. گیرنده {fmt(finalAmount)} {labels[form.currencyTo]} کامل دریافت می‌کند.</span></div></div>)}
-                {form.feePayer === "receiver" && feeSameAsTo && feeValue > 0 && (<div className={`mb-4 rounded-xl border p-3 text-xs font-bold ${dk ? "border-amber-400/30 bg-amber-400/10 text-amber-300" : "border-amber-300 bg-amber-50 text-amber-800"}`}><div className="flex items-start gap-2"><Ic n="info" className="h-4 w-4 shrink-0 mt-0.5" /><span>کارمزد از مبلغ نهایی کسر شده. گیرنده {fmt(finalAmount)} {labels[form.currencyTo]} دریافت می‌کند.</span></div></div>)}
-                {form.feePayer === "receiver" && !feeSameAsTo && feeValue > 0 && (<div className={`mb-4 rounded-xl border p-3 text-xs font-bold ${dk ? "border-amber-400/30 bg-amber-400/10 text-amber-300" : "border-amber-300 bg-amber-50 text-amber-800"}`}><div className="flex items-start gap-2"><Ic n="info" className="h-4 w-4 shrink-0 mt-0.5" /><span>کارمزد ({fmt(feeValue)} {labels[form.feeCurrency]}) جداگانه از حساب گیرنده کسر می‌شود.</span></div></div>)}
+                <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="rate" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>کارمزد</b></div>
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-2">
                   {fld("کارمزد از حساب", (
                     <div className={`flex rounded-xl border p-1 ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`}>
@@ -511,7 +487,6 @@ export default function HawalaPage() {
                 </div>
               </div>
 
-              {/* معلومات مقصد */}
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}><Ic n="doc" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}>معلومات مقصد</b></div>
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -521,7 +496,6 @@ export default function HawalaPage() {
                 </div>
               </div>
 
-              {/* معلومات حواله‌گیرنده */}
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="receive" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>معلومات حواله‌گیرنده</b></div>
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -532,7 +506,6 @@ export default function HawalaPage() {
                 </div>
               </div>
 
-              {/* یادداشت */}
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-slate-400/15 text-slate-300" : "bg-slate-100 text-slate-600"}`}><Ic n="info" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-slate-300" : "text-slate-700"}`}>یادداشت</b></div>
                 <textarea rows={4} value={form.note} onChange={e => setField("note", e.target.value)} placeholder="یادداشت اختیاری..." className={`${uiInput} h-auto py-3 resize-none`} />
@@ -658,12 +631,10 @@ export default function HawalaPage() {
               <button onClick={() => setPreviewOpen(false)} className={`grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-all duration-300 hover:rotate-90 ${dk ? "hover:bg-slate-700 hover:text-white" : "hover:bg-slate-100 hover:text-slate-700"}`}><Ic n="x" className="h-4 w-4" /></button>
             </div>
             <div className="max-h-[70vh] overflow-y-auto px-4 md:px-5 py-4 space-y-4">
-              {/* کد پیگیری */}
               <div className={`flex items-center justify-between rounded-xl border p-3 ${dk ? "border-cyan-400/30 bg-cyan-400/10" : "border-sky-300 bg-sky-50"}`}>
                 <b className={`text-xs font-black ${dk ? "text-cyan-300" : "text-sky-700"}`}>کد پیگیری</b>
                 <TrackingBadge code={nextHawalaNumber} dk={dk} size="lg" />
               </div>
-              {/* معلومات حواله */}
               <div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2 mb-3"><span className={`grid h-7 w-7 place-items-center rounded-lg ${dk ? "bg-cyan-400/15 text-cyan-300" : "bg-cyan-100 text-cyan-600"}`}><Ic n="swap" className="h-3.5 w-3.5" /></span><b className={`text-xs font-black ${dk ? "text-cyan-300" : "text-cyan-700"}`}>معلومات حواله</b></div>
                 <div className="grid grid-cols-2 gap-2 text-sm">
@@ -679,16 +650,14 @@ export default function HawalaPage() {
               {/* ✅ کارمزد با نشانی */}
               <div className={`rounded-xl border p-4 ${dk ? "border-amber-400/25 bg-amber-400/[0.05]" : "border-amber-300 bg-amber-50"}`}>
                 <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2"><span className={`grid h-7 w-7 place-items-center rounded-lg ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="rate" className="h-3.5 w-3.5" /></span><b className={`text-xs font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>معلومات کارمزد</b></div>
+                  <div className="flex items-center gap-2"><span className={`grid h-7 w-7 place-items-center rounded-lg ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="rate" className="h-3.5 w-3.5" /></span><b className={`text-xs font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>کارمزد</b></div>
                   <FeePayerBadge payer={form.feePayer} dk={dk} />
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div><span className={subText}>مبلغ: </span><b>{fmt(feeValue)} {labels[form.feeCurrency]}</b></div>
                   <div><span className={subText}>پرداخت‌کننده: </span><b>{commissionPayerLabel(form.feePayer)}</b></div>
-                  <div><span className={subText}>حالت: </span><b>{form.feePayer === "sender" ? "جداگانه از فرستنده" : feeSameAsTo ? "کسر از مبلغ نهایی" : "جداگانه از گیرنده"}</b></div>
                 </div>
               </div>
-              {/* حواله‌دهنده */}
               <div className={`rounded-xl border p-4 ${dk ? "border-blue-400/25 bg-blue-400/[0.05]" : "border-blue-300 bg-blue-50"}`}>
                 <div className="flex items-center gap-2 mb-3"><span className={`grid h-7 w-7 place-items-center rounded-lg ${dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-600"}`}><Ic n="send" className="h-3.5 w-3.5" /></span><b className={`text-xs font-black ${dk ? "text-blue-300" : "text-blue-700"}`}>حواله‌دهنده</b></div>
                 <div className="grid grid-cols-2 gap-2 text-sm">
@@ -696,7 +665,6 @@ export default function HawalaPage() {
                   <div><span className={subText}>تلفن: </span><b dir="ltr">{form.senderPhone || "—"}</b></div>
                 </div>
               </div>
-              {/* حواله‌گیرنده */}
               <div className={`rounded-xl border p-4 ${dk ? "border-amber-400/25 bg-amber-400/[0.05]" : "border-amber-300 bg-amber-50"}`}>
                 <div className="flex items-center gap-2 mb-3"><span className={`grid h-7 w-7 place-items-center rounded-lg ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="receive" className="h-3.5 w-3.5" /></span><b className={`text-xs font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>حواله‌گیرنده</b></div>
                 <div className="grid grid-cols-2 gap-2 text-sm">
@@ -730,8 +698,8 @@ export default function HawalaPage() {
                   <div><span className={subText}>تذکره: </span><b dir="ltr">{settleTarget.receiverTazkira}</b></div>
                   <div><span className={subText}>مبلغ نهایی: </span><b className={dk ? "text-emerald-300" : "text-emerald-700"}>{fmt(settleTarget.finalAmount)} {labels[settleTarget.currencyTo]}</b></div>
                 </div>
-                <div className={`mt-3 flex items-center justify-between rounded-xl border p-3 ${settleTarget.feePayer === "sender" ? dk ? "border-sky-400/30 bg-sky-400/10" : "border-sky-300 bg-sky-50" : dk ? "border-amber-400/30 bg-amber-400/10" : "border-amber-300 bg-amber-50"}`}>
-                  <div><div className={`text-[11px] font-black ${dk ? "text-slate-200" : "text-slate-700"}`}>کارمزد: {fmt(settleTarget.fee)} {labels[settleTarget.feeCurrency]}</div><div className={`text-[10px] font-bold ${subText}`}>{settleTarget.feePayer === "sender" ? "از حساب فرستنده کسر شده" : "از مبلغ گیرنده کسر شده"}</div></div>
+                <div className={`mt-3 flex items-center justify-between rounded-xl border p-3 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-white"}`}>
+                  <div><div className={`text-[11px] font-black ${dk ? "text-slate-200" : "text-slate-700"}`}>کارمزد: {fmt(settleTarget.fee)} {labels[settleTarget.feeCurrency]}</div></div>
                   <FeePayerBadge payer={settleTarget.feePayer} dk={dk} />
                 </div>
               </div>
@@ -759,7 +727,7 @@ export default function HawalaPage() {
             <div className="px-4 md:px-5 py-4 space-y-4">
               <div className={`rounded-xl border p-3 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center justify-between">
-                  <div><div className={`text-[11px] font-black ${dk ? "text-slate-200" : "text-slate-700"}`}>کارمزد: {fmt(cancelTarget.fee)} {labels[cancelTarget.feeCurrency]}</div><div className={`text-[10px] font-bold ${subText}`}>{cancelTarget.feePayer === "sender" ? "از فرستنده کسر شده بود → برگردانده می‌شود" : "از گیرنده کسر شده بود → برگردانده می‌شود"}</div></div>
+                  <div className={`text-[11px] font-black ${dk ? "text-slate-200" : "text-slate-700"}`}>کارمزد: {fmt(cancelTarget.fee)} {labels[cancelTarget.feeCurrency]}</div>
                   <FeePayerBadge payer={cancelTarget.feePayer} dk={dk} />
                 </div>
               </div>
@@ -773,7 +741,6 @@ export default function HawalaPage() {
         </div>
       )}
 
-      {/* Toast */}
       {toast && (<div className={`fixed bottom-6 left-6 z-[99] rounded-xl px-4 py-3 text-sm font-bold shadow-lg ${dk ? "bg-slate-800 text-slate-100 border border-slate-600" : "bg-slate-900 text-white"}`}>{toast}</div>)}
     </div>
   );
