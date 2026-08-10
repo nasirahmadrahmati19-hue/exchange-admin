@@ -12,12 +12,10 @@ interface Hawala {
   date: string;
   time: string;
   type: string;
-
   destinationCountry: string;
   province: string;
   district: string;
   destinationText: string;
-
   currencyFrom: Currency;
   currencyTo: Currency;
   amountFrom: number;
@@ -28,19 +26,15 @@ interface Hawala {
   finalAmount: number;
   balance: string;
   note: string;
-
   profit: number;
   profitCurrency: Currency;
-
   senderName: string;
   senderPhone: string;
   senderTelegram: string;
-
   receiverName: string;
   receiverTazkira: string;
   receiverPhone: string;
   receiverAddress: string;
-
   status: HawalaStatus;
   paidAt?: string;
   paidBy?: string;
@@ -108,6 +102,10 @@ const defaultCustomers = [
   "کریم کریمی", "نور نور", "عبدالله عبداللهی"
 ];
 
+// ✅ کلید مشترک با تب تبادل ارز
+const CUSTOMERS_KEY = "fx-customers";
+const HAWALAS_KEY = "hawalas";
+
 const baseEmptyForm: FormState = {
   type: "",
   currencyFrom: "AFN",
@@ -142,7 +140,7 @@ const statusColors: Record<HawalaStatus, { light: string; dark: string }> = {
   cancelled: { light: "bg-rose-100 text-rose-700", dark: "bg-rose-400/15 text-rose-300" },
 };
 
-/* ---------------- Rate Calculation (مثل تب تبادل ارز) ---------------- */
+/* ---------------- Rate Calculation ---------------- */
 
 function getRateMode(from: Currency, to: Currency): RateMode {
   if (from === to) return "same";
@@ -325,10 +323,11 @@ const getStoredLastNames = (): LastNames => {
   }
 };
 
+// ✅ لیست مشتریان مشترک با تب تبادل ارز
 const getStoredCustomers = (): string[] => {
   if (typeof window === "undefined") return defaultCustomers;
   try {
-    const raw = localStorage.getItem("hawalaCustomers");
+    const raw = localStorage.getItem(CUSTOMERS_KEY);
     if (!raw) return defaultCustomers;
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : defaultCustomers;
@@ -340,7 +339,7 @@ const getStoredCustomers = (): string[] => {
 const getStoredHawalas = (): Hawala[] => {
   if (typeof window === "undefined") return [];
   try {
-    const raw = localStorage.getItem("hawalas");
+    const raw = localStorage.getItem(HAWALAS_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? (parsed as Hawala[]) : [];
@@ -349,15 +348,12 @@ const getStoredHawalas = (): Hawala[] => {
   }
 };
 
-const createInitialForm = (lastNames: LastNames): FormState => {
-  return {
-    ...baseEmptyForm,
-    senderName: lastNames.senderName || "",
-    receiverName: lastNames.receiverName || ""
-  };
+// ✅ فیلدهای پیش‌فرض خالی (بدون پر کردن نام‌ها)
+const createInitialForm = (): FormState => {
+  return { ...baseEmptyForm };
 };
 
-/* ---------------- Icons (مثل تب تبادل ارز) ---------------- */
+/* ---------------- Icons ---------------- */
 
 const iconPaths = {
   send: "M6 12 3.269 3.126A59.768 59.768 0 0 1 21.485 12 59.77 59.77 0 0 1 3.27 20.876L5.999 12Zm0 0h7.5",
@@ -377,7 +373,6 @@ const iconPaths = {
   info: "m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z",
   sun: "M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z",
   moon: "M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z",
-  eye: "M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
   plus: "M12 4.5v15m7.5-7.5h-15",
 };
 
@@ -398,7 +393,7 @@ export default function HawalaPage() {
   const [customers, setCustomers] = useState<string[]>(getStoredCustomers);
   const [activeTab, setActiveTab] = useState<"new" | "current" | "history">("new");
   const [hawalas, setHawalas] = useState<Hawala[]>(getStoredHawalas);
-  const [form, setForm] = useState<FormState>(() => createInitialForm(lastNames));
+  const [form, setForm] = useState<FormState>(() => createInitialForm());
   const [errors, setErrors] = useState<FormErrors>({});
   const [previewOpen, setPreviewOpen] = useState(false);
 
@@ -433,15 +428,16 @@ export default function HawalaPage() {
     } catch {}
   }, [lastNames]);
 
+  // ✅ ذخیره لیست مشتریان با کلید مشترک
   useEffect(() => {
     try {
-      localStorage.setItem("hawalaCustomers", JSON.stringify(customers));
+      localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers));
     } catch {}
   }, [customers]);
 
   useEffect(() => {
     try {
-      localStorage.setItem("hawalas", JSON.stringify(hawalas));
+      localStorage.setItem(HAWALAS_KEY, JSON.stringify(hawalas));
     } catch {}
   }, [hawalas]);
 
@@ -462,7 +458,7 @@ export default function HawalaPage() {
 
   const [toast, setToast] = useState("");
 
-  /* ---------------- Rate Mode (مثل تب تبادل ارز) ---------------- */
+  /* ---------------- Rate Mode ---------------- */
 
   const rateMode = getRateMode(form.currencyFrom, form.currencyTo);
   const afnForeign = getAfnForeign(form.currencyFrom, form.currencyTo);
@@ -633,7 +629,7 @@ export default function HawalaPage() {
 
     setHawalas(prev => [newHawala, ...prev]);
     setLastNames(newLastNames);
-    setForm(createInitialForm(newLastNames));
+    setForm(createInitialForm());
     setErrors({});
     setPreviewOpen(false);
     setActiveTab("current");
@@ -641,7 +637,7 @@ export default function HawalaPage() {
   };
 
   const resetForm = () => {
-    setForm(createInitialForm(lastNames));
+    setForm(createInitialForm());
     setErrors({});
     showToast("فورم پاک شد.");
   };
@@ -981,7 +977,7 @@ export default function HawalaPage() {
 
               {/* معلومات حواله‌دهنده */}
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
-                <div className={`flex items-center gap-2.5 mb-4`}>
+                <div className="flex items-center gap-2.5 mb-4">
                   <span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-600"}`}>
                     <Ic n="send" className="h-4 w-4" />
                   </span>
@@ -1042,7 +1038,7 @@ export default function HawalaPage() {
 
               {/* معلومات حواله */}
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
-                <div className={`flex items-center gap-2.5 mb-4`}>
+                <div className="flex items-center gap-2.5 mb-4">
                   <span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-cyan-400/15 text-cyan-300" : "bg-cyan-100 text-cyan-600"}`}>
                     <Ic n="swap" className="h-4 w-4" />
                   </span>
@@ -1177,7 +1173,7 @@ export default function HawalaPage() {
 
               {/* معلومات مقصد */}
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
-                <div className={`flex items-center gap-2.5 mb-4`}>
+                <div className="flex items-center gap-2.5 mb-4">
                   <span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}>
                     <Ic n="doc" className="h-4 w-4" />
                   </span>
@@ -1201,7 +1197,7 @@ export default function HawalaPage() {
 
               {/* معلومات حواله‌گیرنده */}
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
-                <div className={`flex items-center gap-2.5 mb-4`}>
+                <div className="flex items-center gap-2.5 mb-4">
                   <span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}>
                     <Ic n="receive" className="h-4 w-4" />
                   </span>
@@ -1249,7 +1245,7 @@ export default function HawalaPage() {
 
               {/* یادداشت */}
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
-                <div className={`flex items-center gap-2.5 mb-4`}>
+                <div className="flex items-center gap-2.5 mb-4">
                   <span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-slate-400/15 text-slate-300" : "bg-slate-100 text-slate-600"}`}>
                     <Ic n="info" className="h-4 w-4" />
                   </span>
@@ -1510,45 +1506,131 @@ export default function HawalaPage() {
         </div>
       </div>
 
-      {/* ================= Modal پیش‌نمایش ================= */}
+      {/* ================= Modal پیش‌نمایش کامل ================= */}
 
       {previewOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => setPreviewOpen(false)}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm"
+          onClick={() => setPreviewOpen(false)}
+        >
           <div
-            className={`hw-up w-full max-w-2xl overflow-hidden rounded-xl md:rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`}
+            className={`hw-up w-full max-w-2xl overflow-hidden rounded-xl md:rounded-2xl border shadow-2xl ${
+              dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"
+            }`}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className={`flex items-center justify-between border-b px-4 md:px-5 py-3 md:py-4 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
+            <div className={`flex items-center justify-between border-b px-4 md:px-5 py-3 md:py-4 ${
+              dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"
+            }`}>
               <b className={`flex items-center gap-2 text-sm ${dk ? "text-slate-100" : "text-slate-800"}`}>
-                <span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-blue-400/10 text-blue-300" : "bg-blue-100 text-blue-600"}`}>
+                <span className={`grid h-8 w-8 place-items-center rounded-lg ${
+                  dk ? "bg-blue-400/10 text-blue-300" : "bg-blue-100 text-blue-600"
+                }`}>
                   <Ic n="doc" className="h-4 w-4" />
                 </span>
                 جزئیات حواله قبل از ثبت
               </b>
               <button
                 onClick={() => setPreviewOpen(false)}
-                className={`grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-all duration-300 hover:rotate-90 ${dk ? "hover:bg-slate-700 hover:text-white" : "hover:bg-slate-100 hover:text-slate-700"}`}
+                className={`grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-all duration-300 hover:rotate-90 ${
+                  dk ? "hover:bg-slate-700 hover:text-white" : "hover:bg-slate-100 hover:text-slate-700"
+                }`}
               >
                 <Ic n="x" className="h-4 w-4" />
               </button>
             </div>
 
             <div className="max-h-[70vh] overflow-y-auto px-4 md:px-5 py-4 space-y-4">
-              <div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"}`}>
-                <div className={`text-center font-black mb-3 ${heading}`}>🏦 پیش‌نمایش حواله</div>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div><span className={subText}>تاریخ:</span> <b>{currentDateTime}</b></div>
-                  <div><span className={subText}>نوع:</span> <b>{form.type === "send" ? "ارسال" : "دریافت"}</b></div>
-                  <div><span className={subText}>مقصد:</span> <b>{destinationText}</b></div>
-                  <div><span className={subText}>ارز:</span> <b>{labels[form.currencyFrom]} → {labels[form.currencyTo]}</b></div>
-                  <div><span className={subText}>مبلغ:</span> <b>{fmt(amountFrom)} {labels[form.currencyFrom]}</b></div>
-                  <div><span className={subText}>نرخ:</span> <b>{form.rate || "بدون تبدیل"}</b></div>
-                  <div><span className={subText}>کمیشن:</span> <b>{fmt(feeValue)} {labels[form.currencyTo]}</b></div>
-                  <div><span className={subText}>مبلغ نهایی:</span> <b className={dk ? "text-emerald-300" : "text-emerald-700"}>{fmt(finalAmount)} {labels[form.currencyTo]}</b></div>
+
+              {/* معلومات حواله */}
+              <div className={`rounded-xl border p-4 ${
+                dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"
+              }`}>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className={`grid h-7 w-7 place-items-center rounded-lg ${
+                    dk ? "bg-cyan-400/15 text-cyan-300" : "bg-cyan-100 text-cyan-600"
+                  }`}>
+                    <Ic n="swap" className="h-3.5 w-3.5" />
+                  </span>
+                  <b className={`text-xs font-black ${dk ? "text-cyan-300" : "text-cyan-700"}`}>
+                    معلومات حواله
+                  </b>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div><span className={subText}>تاریخ: </span><b>{currentDateTime}</b></div>
+                  <div><span className={subText}>نوع حواله: </span><b>{form.type === "send" ? "ارسال" : "دریافت"}</b></div>
+                  <div><span className={subText}>مقصد: </span><b>{destinationText}</b></div>
+                  <div><span className={subText}>تبدیل ارز: </span><b>{labels[form.currencyFrom]} ← {labels[form.currencyTo]}</b></div>
+                  <div><span className={subText}>مبلغ حواله: </span><b>{fmt(amountFrom)} {labels[form.currencyFrom]}</b></div>
+                  <div><span className={subText}>نرخ: </span><b>{form.rate || "بدون تبدیل"}</b></div>
+                  <div><span className={subText}>کمیشن: </span><b>{fmt(feeValue)} {labels[form.currencyTo]}</b></div>
+                  <div><span className={subText}>مبلغ نهایی: </span><b className={dk ? "text-emerald-300" : "text-emerald-700"}>{fmt(finalAmount)} {labels[form.currencyTo]}</b></div>
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-3">
+              {/* معلومات حواله‌دهنده */}
+              <div className={`rounded-xl border p-4 ${
+                dk ? "border-blue-400/25 bg-blue-400/[0.05]" : "border-blue-300 bg-blue-50"
+              }`}>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className={`grid h-7 w-7 place-items-center rounded-lg ${
+                    dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-600"
+                  }`}>
+                    <Ic n="send" className="h-3.5 w-3.5" />
+                  </span>
+                  <b className={`text-xs font-black ${dk ? "text-blue-300" : "text-blue-700"}`}>
+                    معلومات حواله‌دهنده
+                  </b>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div><span className={subText}>نام و نام خانوادگی: </span><b>{form.senderName || "—"}</b></div>
+                  <div><span className={subText}>شماره تماس: </span><b dir="ltr">{form.senderPhone || "—"}</b></div>
+                  <div><span className={subText}>چت آی‌دی تلگرام: </span><b dir="ltr">{form.senderTelegram || "—"}</b></div>
+                  <div><span className={subText}>باقی مانده حساب: </span><b className={dk ? "text-amber-300" : "text-amber-700"}>{form.balance || "—"}</b></div>
+                </div>
+              </div>
+
+              {/* معلومات حواله‌گیرنده */}
+              <div className={`rounded-xl border p-4 ${
+                dk ? "border-amber-400/25 bg-amber-400/[0.05]" : "border-amber-300 bg-amber-50"
+              }`}>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className={`grid h-7 w-7 place-items-center rounded-lg ${
+                    dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"
+                  }`}>
+                    <Ic n="receive" className="h-3.5 w-3.5" />
+                  </span>
+                  <b className={`text-xs font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>
+                    معلومات حواله‌گیرنده
+                  </b>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div><span className={subText}>نام و نام خانوادگی: </span><b>{form.receiverName || "—"}</b></div>
+                  <div><span className={subText}>شماره تذکره: </span><b dir="ltr">{form.receiverTazkira || "—"}</b></div>
+                  <div><span className={subText}>شماره تماس: </span><b dir="ltr">{form.receiverPhone || "—"}</b></div>
+                  <div><span className={subText}>آدرس: </span><b>{form.receiverAddress || "—"}</b></div>
+                </div>
+              </div>
+
+              {/* یادداشت */}
+              {form.note && (
+                <div className={`rounded-xl border p-4 ${
+                  dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"
+                }`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className={`grid h-7 w-7 place-items-center rounded-lg ${
+                      dk ? "bg-slate-400/15 text-slate-300" : "bg-slate-100 text-slate-600"
+                    }`}>
+                      <Ic n="info" className="h-3.5 w-3.5" />
+                    </span>
+                    <b className={`text-xs font-black ${dk ? "text-slate-300" : "text-slate-700"}`}>یادداشت</b>
+                  </div>
+                  <p className={`text-sm leading-6 ${dk ? "text-slate-300" : "text-slate-600"}`}>{form.note}</p>
+                </div>
+              )}
+
+              {/* دکمه‌ها */}
+              <div className="flex flex-wrap gap-3 pt-2">
                 <button
                   onClick={confirmRegister}
                   className={`flex h-[48px] flex-1 min-w-[180px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-sm font-black shadow-lg transition-all hover:brightness-110 active:scale-[0.98] ${
@@ -1558,6 +1640,7 @@ export default function HawalaPage() {
                   ثبت نهایی حواله
                   <Ic n="check" className="h-4 w-4" />
                 </button>
+
                 <button
                   onClick={() => setPreviewOpen(false)}
                   className={`flex h-[48px] px-6 cursor-pointer items-center justify-center rounded-xl border text-sm font-bold transition-all active:scale-95 ${
@@ -1593,9 +1676,10 @@ export default function HawalaPage() {
             <div className="px-4 md:px-5 py-4 space-y-4">
               <div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div><span className={subText}>حواله‌گیرنده:</span> <b>{settleTarget.receiverName}</b></div>
-                  <div><span className={subText}>شماره تذکره:</span> <b>{settleTarget.receiverTazkira}</b></div>
-                  <div><span className={subText}>مبلغ نهایی:</span> <b className={dk ? "text-emerald-300" : "text-emerald-700"}>{fmt(settleTarget.finalAmount)} {labels[settleTarget.currencyTo]}</b></div>
+                  <div><span className={subText}>حواله‌گیرنده: </span><b>{settleTarget.receiverName}</b></div>
+                  <div><span className={subText}>شماره تذکره: </span><b dir="ltr">{settleTarget.receiverTazkira}</b></div>
+                  <div><span className={subText}>شماره تماس: </span><b dir="ltr">{settleTarget.receiverPhone}</b></div>
+                  <div><span className={subText}>مبلغ نهایی: </span><b className={dk ? "text-emerald-300" : "text-emerald-700"}>{fmt(settleTarget.finalAmount)} {labels[settleTarget.currencyTo]}</b></div>
                 </div>
               </div>
 
