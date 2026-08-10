@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from "react";
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type RateMode = "same" | "afn" | "direct";
 type DealType = "buy" | "sell";
+type CommissionPayer = "sender" | "receiver";
 
 type Customer = {
   id: string;
@@ -14,7 +15,7 @@ type Customer = {
 
 type Transaction = {
   id: string;
-  type: "exchange" | "transfer";
+  type: "exchange" | "transfer" | "convert";
   dealType?: DealType;
   date: string;
   customerId?: string;
@@ -29,6 +30,7 @@ type Transaction = {
   rateBase?: Currency;
   commission?: number;
   commissionCurrency?: Currency;
+  commissionPayer?: CommissionPayer;
   description?: string;
   status: "active" | "voided";
   profit?: number;
@@ -53,11 +55,18 @@ type TransferFormErrors = {
   commission?: string;
 };
 
+type ConvertFormErrors = {
+  customer?: string;
+  amount?: string;
+  rate?: string;
+  convertedAmount?: string;
+  commission?: string;
+};
+
 const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
 const labels: Record<Currency, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
 const rateUnits: Record<Currency, number> = { AFN: 1, USD: 1, EUR: 1, IRR: 1000, PKR: 1000 };
 
-// ✅ کلید مشترک با تب حواله‌جات
 const CUSTOMERS_KEY = "fx-customers";
 const TRANSACTIONS_KEY = "fx-transactions";
 
@@ -66,6 +75,32 @@ const initialCustomers: Customer[] = [
   { id: "2", name: "محمد ظاهر", balances: { AFN: 200000, USD: 5000, EUR: 0, IRR: 0, PKR: 0 } },
   { id: "3", name: "فاطمه حسینی", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 50000000, PKR: 0 } },
 ];
+
+function getStoredCustomers(): Customer[] {
+  if (typeof window === "undefined") return initialCustomers;
+  try {
+    const raw = localStorage.getItem(CUSTOMERS_KEY);
+    if (!raw) return initialCustomers;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0 &&
+        typeof parsed[0] === "object" && parsed[0] !== null &&
+        "id" in parsed[0] && "name" in parsed[0]) {
+      return parsed as Customer[];
+    }
+    if (Array.isArray(parsed) && typeof parsed[0] === "string") {
+      const migrated = (parsed as string[]).map((name, i) => ({
+        id: `cust-migrated-${i}`,
+        name,
+        balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } as Record<Currency, number>,
+      }));
+      localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(migrated));
+      return migrated;
+    }
+    return initialCustomers;
+  } catch {
+    return initialCustomers;
+  }
+}
 
 const normalizeDigits = (s: string) =>
   s.replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))).replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
@@ -185,33 +220,10 @@ const afnRateLabel = (foreign: Currency, rate: number) =>
 const directRateLabel = (base: Currency, counter: Currency, rate: number) =>
   `${fmt(rateUnits[base])} ${labels[base]} = ${fmt(rate)} ${labels[counter]}`;
 
-// ✅ خواندن مشتریان از localStorage با پشتیبانی از migration
-function getStoredCustomers(): Customer[] {
-  if (typeof window === "undefined") return initialCustomers;
-  try {
-    const raw = localStorage.getItem(CUSTOMERS_KEY);
-    if (!raw) return initialCustomers;
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === "object") {
-      return parsed as Customer[];
-    }
-    // Migration: اگر آرایه string بود (نسخه قدیمی تب حواله‌جات)
-    if (Array.isArray(parsed) && typeof parsed[0] === "string") {
-      return (parsed as string[]).map((name, i) => ({
-        id: String(i + 1),
-        name,
-        balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 },
-      }));
-    }
-    return initialCustomers;
-  } catch {
-    return initialCustomers;
-  }
-}
-
 const iconPaths = {
   swap: "M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5",
   users: "M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z",
+  convert: "M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5",
   sun: "M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z",
   moon: "M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z",
   clock: "M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
@@ -231,6 +243,7 @@ const iconPaths = {
   up: "M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18",
   rate: "M2.25 18 9 11.25l4.306 4.306a11.95 11.95 0 0 1 5.814-5.518l2.74-1.22m0 0-5.94-2.281m5.94 2.28-2.28 5.941",
   info: "m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z",
+  user: "M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z",
 };
 
 type IconName = keyof typeof iconPaths;
@@ -261,10 +274,8 @@ const currencyBadge: Record<Currency, string> = {
 };
 
 export default function CurrencyExchangePage() {
-  // ✅ خواندن مشتریان از localStorage (مشترک با تب حواله‌جات)
   const [customers, setCustomers] = useState<Customer[]>(getStoredCustomers);
 
-  // ✅ بازیابی transactions از localStorage
   const [transactions, setTransactions] = useState<Transaction[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -275,21 +286,19 @@ export default function CurrencyExchangePage() {
     }
   });
 
-  // ✅ ذخیره خودکار مشتریان در localStorage
   useEffect(() => {
     try {
       localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers));
     } catch {}
   }, [customers]);
 
-  // ✅ ذخیره خودکار transactions در localStorage
   useEffect(() => {
     try {
       window.localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(transactions));
     } catch {}
   }, [transactions]);
 
-  const [tab, setTab] = useState<"exchange" | "transfer">("exchange");
+  const [tab, setTab] = useState<"exchange" | "transfer" | "convert">("exchange");
   const [now, setNow] = useState<Date | null>(null);
 
   const [theme, setTheme] = useState<"light" | "dark">("light");
@@ -320,11 +329,15 @@ export default function CurrencyExchangePage() {
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [editingExchangeId, setEditingExchangeId] = useState<string | null>(null);
   const [editingTransferId, setEditingTransferId] = useState<string | null>(null);
+  const [editingConvertId, setEditingConvertId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
+  /* ---------------- Exchange State ---------------- */
   const [customer, setCustomer] = useState("");
   const [exchangeDealType, setExchangeDealType] = useState<DealType | "">("");
   const [exchangeCommission, setExchangeCommission] = useState("");
+  const [exchangeCommissionPayer, setExchangeCommissionPayer] = useState<CommissionPayer>("sender");
+  const [exchangeCommissionCurrency, setExchangeCommissionCurrency] = useState<Currency>("AFN");
   const [exchangeDescription, setExchangeDescription] = useState("");
   const [receivedCurrency, setReceivedCurrency] = useState<Currency>("AFN");
   const [receivedAmount, setReceivedAmount] = useState("");
@@ -334,6 +347,7 @@ export default function CurrencyExchangePage() {
   const [exchangeDirectBase, setExchangeDirectBase] = useState<Currency>("USD");
   const [exchangeErrors, setExchangeErrors] = useState<ExchangeFormErrors>({});
 
+  /* ---------------- Transfer State ---------------- */
   const [sender, setSender] = useState("");
   const [receiver, setReceiver] = useState("");
   const [senderCurrency, setSenderCurrency] = useState<Currency>("AFN");
@@ -343,9 +357,25 @@ export default function CurrencyExchangePage() {
   const [transferRate, setTransferRate] = useState("");
   const [transferDirectBase, setTransferDirectBase] = useState<Currency>("USD");
   const [commission, setCommission] = useState("");
+  const [transferCommissionPayer, setTransferCommissionPayer] = useState<CommissionPayer>("sender");
+  const [transferCommissionCurrency, setTransferCommissionCurrency] = useState<Currency>("AFN");
   const [transferDescription, setTransferDescription] = useState("");
   const [transferErrors, setTransferErrors] = useState<TransferFormErrors>({});
 
+  /* ---------------- Convert State (جدید) ---------------- */
+  const [convertCustomer, setConvertCustomer] = useState("");
+  const [convertFromCurrency, setConvertFromCurrency] = useState<Currency>("AFN");
+  const [convertToCurrency, setConvertToCurrency] = useState<Currency>("USD");
+  const [convertAmount, setConvertAmount] = useState("");
+  const [convertRate, setConvertRate] = useState("");
+  const [convertDirectBase, setConvertDirectBase] = useState<Currency>("USD");
+  const [convertCommission, setConvertCommission] = useState("");
+  const [convertCommissionCurrency, setConvertCommissionCurrency] = useState<Currency>("AFN");
+  const [convertDescription, setConvertDescription] = useState("");
+  const [convertErrors, setConvertErrors] = useState<ConvertFormErrors>({});
+  const [convertedAmount, setConvertedAmount] = useState("");
+
+  /* ---------------- Exchange Mode ---------------- */
   const exchangeMode = getRateMode(receivedCurrency, paidCurrency);
   const exchangeForeign = getAfnForeign(receivedCurrency, paidCurrency);
   const exchangeDirectBaseValue =
@@ -363,6 +393,7 @@ export default function CurrencyExchangePage() {
     setRate("");
   }, [exchangeMode, exchangeForeign, exchangeDirectBaseValue, exchangeDirectCounter]);
 
+  /* ---------------- Transfer Mode ---------------- */
   const transferMode = getRateMode(senderCurrency, receiverCurrency);
   const transferForeign = getAfnForeign(senderCurrency, receiverCurrency);
   const transferDirectBaseValue =
@@ -380,6 +411,25 @@ export default function CurrencyExchangePage() {
     setTransferRate("");
   }, [transferMode, transferForeign, transferDirectBaseValue, transferDirectCounter]);
 
+  /* ---------------- Convert Mode (جدید) ---------------- */
+  const convertMode = getRateMode(convertFromCurrency, convertToCurrency);
+  const convertForeign = getAfnForeign(convertFromCurrency, convertToCurrency);
+  const convertDirectBaseValue =
+    convertMode === "direct" ? getSafeDirectBase(convertDirectBase, convertFromCurrency, convertToCurrency) : convertFromCurrency;
+  const convertDirectCounter =
+    convertMode === "direct" ? getDirectCounter(convertDirectBaseValue, convertFromCurrency, convertToCurrency) : null;
+
+  useEffect(() => {
+    if (convertMode === "direct" && convertDirectBase !== convertDirectBaseValue) {
+      setConvertDirectBase(convertDirectBaseValue);
+    }
+  }, [convertMode, convertDirectBase, convertDirectBaseValue]);
+
+  useEffect(() => {
+    setConvertRate("");
+  }, [convertMode, convertForeign, convertDirectBaseValue, convertDirectCounter]);
+
+  /* ---------------- Exchange Calculation ---------------- */
   useEffect(() => {
     const amount = parseAmount(receivedAmount);
     if (!amount) { setPaidAmount(""); return; }
@@ -393,6 +443,7 @@ export default function CurrencyExchangePage() {
     setPaidAmount(result ? fmt(result) : "");
   }, [receivedAmount, receivedCurrency, paidCurrency, rate, exchangeMode, exchangeDirectBaseValue, exchangeDirectCounter]);
 
+  /* ---------------- Transfer Calculation ---------------- */
   useEffect(() => {
     const amount = parseAmount(senderAmount);
     if (!amount) { setReceiverAmount(""); return; }
@@ -406,16 +457,41 @@ export default function CurrencyExchangePage() {
     setReceiverAmount(result ? fmt(result) : "");
   }, [senderAmount, senderCurrency, receiverCurrency, transferRate, transferMode, transferDirectBaseValue, transferDirectCounter]);
 
+  /* ---------------- Convert Calculation (جدید) ---------------- */
+  useEffect(() => {
+    const amount = parseAmount(convertAmount);
+    if (!amount) { setConvertedAmount(""); return; }
+    if (convertMode === "same") { setConvertedAmount(fmt(amount)); return; }
+    const r = parseAmount(convertRate);
+    if (!r) { setConvertedAmount(""); return; }
+    let result = 0;
+    if (convertMode === "afn") result = convertAfnRate(amount, convertFromCurrency, convertToCurrency, r);
+    if (convertMode === "direct" && convertDirectCounter)
+      result = convertDirectRate(amount, convertFromCurrency, convertToCurrency, convertDirectBaseValue, r);
+    setConvertedAmount(result ? fmt(result) : "");
+  }, [convertAmount, convertFromCurrency, convertToCurrency, convertRate, convertMode, convertDirectBaseValue, convertDirectCounter]);
+
+  /* ---------------- Reset Forms ---------------- */
   function resetExchangeForm() {
     setCustomer(""); setExchangeDealType(""); setReceivedAmount(""); setPaidAmount(""); setRate("");
-    setExchangeCommission(""); setExchangeDescription(""); setExchangeErrors({}); setEditingExchangeId(null);
+    setExchangeCommission(""); setExchangeCommissionPayer("sender"); setExchangeCommissionCurrency("AFN");
+    setExchangeDescription(""); setExchangeErrors({}); setEditingExchangeId(null);
   }
 
   function resetTransferForm() {
     setSender(""); setReceiver(""); setSenderAmount(""); setReceiverAmount(""); setTransferRate("");
-    setCommission(""); setTransferDescription(""); setTransferErrors({}); setEditingTransferId(null);
+    setCommission(""); setTransferCommissionPayer("sender"); setTransferCommissionCurrency("AFN");
+    setTransferDescription(""); setTransferErrors({}); setEditingTransferId(null);
   }
 
+  function resetConvertForm() {
+    setConvertCustomer(""); setConvertFromCurrency("AFN"); setConvertToCurrency("USD");
+    setConvertAmount(""); setConvertRate(""); setConvertedAmount("");
+    setConvertCommission(""); setConvertCommissionCurrency("AFN");
+    setConvertDescription(""); setConvertErrors({}); setEditingConvertId(null);
+  }
+
+  /* ---------------- Exchange Validation ---------------- */
   function validateExchange(): ExchangeFormErrors {
     const errs: ExchangeFormErrors = {};
     if (!exchangeDealType) errs.dealType = "فیلد نوع معامله خالی است.";
@@ -433,6 +509,7 @@ export default function CurrencyExchangePage() {
     return errs;
   }
 
+  /* ---------------- Transfer Validation ---------------- */
   function validateTransfer(): TransferFormErrors {
     const errs: TransferFormErrors = {};
     if (!sender) errs.sender = "فیلد فرستنده خالی است.";
@@ -451,6 +528,24 @@ export default function CurrencyExchangePage() {
     return errs;
   }
 
+  /* ---------------- Convert Validation (جدید) ---------------- */
+  function validateConvert(): ConvertFormErrors {
+    const errs: ConvertFormErrors = {};
+    if (!convertCustomer) errs.customer = "فیلد مشتری خالی است.";
+    const amount = parseAmount(convertAmount);
+    if (!amount) errs.amount = "مبلغ خالی یا صفر است.";
+    if (convertMode !== "same") {
+      if (!parseAmount(convertRate)) errs.rate = convertMode === "afn" ? "نرخ در برابر افغانی خالی است." : "نرخ مستقیم خالی است.";
+      if (convertMode === "direct" && !convertDirectCounter) errs.rate = "مبنای نرخ مستقیم معتبر نیست.";
+    }
+    if (amount && !parseAmount(convertedAmount)) {
+      errs.convertedAmount = convertMode === "same" ? "مبلغ تبدیل محاسبه نشد." : "مبلغ تبدیل محاسبه نشد؛ لطفاً نرخ را بررسی کنید.";
+    }
+    if (convertCommission.trim().length === 0) errs.commission = "فیلد کارمزد خالی است.";
+    return errs;
+  }
+
+  /* ---------------- Exchange Submit ---------------- */
   const exchangeFromAmount = parseAmount(receivedAmount);
   const exchangeToAmount = parseAmount(paidAmount);
   const exchangeRateValue = parseAmount(rate);
@@ -469,31 +564,31 @@ export default function CurrencyExchangePage() {
     if (exchangeMode === "afn" && exchangeForeign) rateLabel = afnRateLabel(exchangeForeign, txRate);
     if (exchangeMode === "direct" && exchangeDirectCounter) rateLabel = directRateLabel(exchangeDirectBaseValue, exchangeDirectCounter, txRate);
     const description = exchangeDescription.trim() || undefined;
-
     const calculatedProfit = exchangeCommissionValue;
-    const calculatedProfitCurrency: Currency | undefined = receivedCurrency;
+    const calculatedProfitCurrency: Currency | undefined = exchangeCommissionCurrency;
 
     if (editingExchangeId) {
       setTransactions((prev) => prev.map((t) => t.id === editingExchangeId ? {
         ...t, type: "exchange", dealType: exchangeDealType as DealType, customerId: customer,
         fromCurrency: receivedCurrency, fromAmount, toCurrency: paidCurrency, toAmount, rate: txRate,
         rateLabel, rateBase: exchangeRateBase, commission: exchangeCommissionValue,
-        commissionCurrency: receivedCurrency, description,
-        profit: calculatedProfit, profitCurrency: calculatedProfitCurrency,
+        commissionCurrency: exchangeCommissionCurrency, commissionPayer: exchangeCommissionPayer,
+        description, profit: calculatedProfit, profitCurrency: calculatedProfitCurrency,
       } : t));
     } else {
       const tx: Transaction = {
         id: newId(), type: "exchange", dealType: exchangeDealType as DealType, date: new Date().toISOString(),
         customerId: customer, fromCurrency: receivedCurrency, fromAmount, toCurrency: paidCurrency, toAmount,
         rate: txRate, rateLabel, rateBase: exchangeRateBase, commission: exchangeCommissionValue,
-        commissionCurrency: receivedCurrency, description, status: "active",
-        profit: calculatedProfit, profitCurrency: calculatedProfitCurrency,
+        commissionCurrency: exchangeCommissionCurrency, commissionPayer: exchangeCommissionPayer,
+        description, status: "active", profit: calculatedProfit, profitCurrency: calculatedProfitCurrency,
       };
       setTransactions((x) => [tx, ...x]);
     }
     resetExchangeForm();
   }
 
+  /* ---------------- Transfer Submit ---------------- */
   const transferFromAmount = parseAmount(senderAmount);
   const transferToAmount = parseAmount(receiverAmount);
   const transferRateValue = parseAmount(transferRate);
@@ -512,40 +607,87 @@ export default function CurrencyExchangePage() {
     if (transferMode === "afn" && transferForeign) rateLabel = afnRateLabel(transferForeign, txRate);
     if (transferMode === "direct" && transferDirectCounter) rateLabel = directRateLabel(transferDirectBaseValue, transferDirectCounter, txRate);
     const description = transferDescription.trim() || undefined;
-
     const calculatedProfit = commissionValue;
-    const calculatedProfitCurrency: Currency | undefined = senderCurrency;
+    const calculatedProfitCurrency: Currency | undefined = transferCommissionCurrency;
 
     if (editingTransferId) {
       setTransactions((prev) => prev.map((t) => t.id === editingTransferId ? {
         ...t, type: "transfer", senderId: sender, receiverId: receiver, fromCurrency: senderCurrency,
         fromAmount, toCurrency: receiverCurrency, toAmount, rate: txRate, rateLabel,
         rateBase: transferRateBase, commission: commissionValue,
-        commissionCurrency: senderCurrency, description,
-        profit: calculatedProfit, profitCurrency: calculatedProfitCurrency,
+        commissionCurrency: transferCommissionCurrency, commissionPayer: transferCommissionPayer,
+        description, profit: calculatedProfit, profitCurrency: calculatedProfitCurrency,
       } : t));
     } else {
       const tx: Transaction = {
         id: newId(), type: "transfer", date: new Date().toISOString(), senderId: sender, receiverId: receiver,
         fromCurrency: senderCurrency, fromAmount, toCurrency: receiverCurrency, toAmount, rate: txRate,
         rateLabel, rateBase: transferRateBase, commission: commissionValue,
-        commissionCurrency: senderCurrency, description, status: "active",
-        profit: calculatedProfit, profitCurrency: calculatedProfitCurrency,
+        commissionCurrency: transferCommissionCurrency, commissionPayer: transferCommissionPayer,
+        description, status: "active", profit: calculatedProfit, profitCurrency: calculatedProfitCurrency,
       };
       setTransactions((x) => [tx, ...x]);
     }
     resetTransferForm();
   }
 
+  /* ---------------- Convert Submit (جدید) ---------------- */
+  const convertFromAmount = parseAmount(convertAmount);
+  const convertToAmount = parseAmount(convertedAmount);
+  const convertRateValue = parseAmount(convertRate);
+  const convertCommissionValue = Math.max(0, parseAmount(convertCommission));
+  const convertRateBase = convertMode === "direct" ? convertDirectBaseValue : undefined;
+
+  function submitConvert() {
+    const errs = validateConvert();
+    setConvertErrors(errs);
+    if (Object.values(errs).some((x) => Boolean(x))) return;
+    const fromAmount = convertFromAmount;
+    const toAmount = convertToAmount;
+    const txRate = convertMode === "same" ? 1 : convertRateValue;
+    let rateLabel = "";
+    if (convertMode === "same") rateLabel = "بدون تبدیل";
+    if (convertMode === "afn" && convertForeign) rateLabel = afnRateLabel(convertForeign, txRate);
+    if (convertMode === "direct" && convertDirectCounter) rateLabel = directRateLabel(convertDirectBaseValue, convertDirectCounter, txRate);
+    const description = convertDescription.trim() || undefined;
+    const calculatedProfit = convertCommissionValue;
+    const calculatedProfitCurrency: Currency | undefined = convertCommissionCurrency;
+
+    if (editingConvertId) {
+      setTransactions((prev) => prev.map((t) => t.id === editingConvertId ? {
+        ...t, type: "convert", customerId: convertCustomer,
+        fromCurrency: convertFromCurrency, fromAmount, toCurrency: convertToCurrency, toAmount,
+        rate: txRate, rateLabel, rateBase: convertRateBase,
+        commission: convertCommissionValue, commissionCurrency: convertCommissionCurrency,
+        commissionPayer: "sender" as CommissionPayer,
+        description, profit: calculatedProfit, profitCurrency: calculatedProfitCurrency,
+      } : t));
+    } else {
+      const tx: Transaction = {
+        id: newId(), type: "convert", date: new Date().toISOString(),
+        customerId: convertCustomer, fromCurrency: convertFromCurrency, fromAmount,
+        toCurrency: convertToCurrency, toAmount, rate: txRate, rateLabel,
+        rateBase: convertRateBase, commission: convertCommissionValue,
+        commissionCurrency: convertCommissionCurrency, commissionPayer: "sender",
+        description, status: "active", profit: calculatedProfit, profitCurrency: calculatedProfitCurrency,
+      };
+      setTransactions((x) => [tx, ...x]);
+    }
+    resetConvertForm();
+  }
+
+  /* ---------------- Helpers ---------------- */
   const customerName = (id?: string) => customers.find((c) => c.id === id)?.name || "-";
 
   function transactionCustomerLabel(tx: Transaction) {
     if (tx.type === "exchange") return customerName(tx.customerId);
+    if (tx.type === "convert") return customerName(tx.customerId);
     return `${customerName(tx.senderId)} - ${customerName(tx.receiverId)}`;
   }
 
   function transactionTypeLabel(tx: Transaction) {
     if (tx.type === "exchange") return dealTypeLabel(tx.dealType);
+    if (tx.type === "convert") return "تبدیل ارز";
     return "انتقال";
   }
 
@@ -557,6 +699,12 @@ export default function CurrencyExchangePage() {
   function transactionProfitLabel(tx: Transaction) {
     if (tx.profit === undefined) return "-";
     return `${fmt(tx.profit)} ${tx.profitCurrency ? labels[tx.profitCurrency] : ""}`;
+  }
+
+  function commissionPayerLabel(tx: Transaction) {
+    if (!tx.commissionPayer) return "-";
+    if (tx.type === "convert") return "خود مشتری";
+    return tx.commissionPayer === "sender" ? "فرستنده" : "گیرنده";
   }
 
   const rawSearch = normalizeDigits(search.trim()).toLowerCase();
@@ -578,19 +726,24 @@ export default function CurrencyExchangePage() {
 
   const exchangeErrorList = Object.values(exchangeErrors).filter((msg): msg is string => Boolean(msg));
   const transferErrorList = Object.values(transferErrors).filter((msg): msg is string => Boolean(msg));
+  const convertErrorList = Object.values(convertErrors).filter((msg): msg is string => Boolean(msg));
   const editingExchangeTransaction = transactions.find((t) => t.id === editingExchangeId);
   const editingTransferTransaction = transactions.find((t) => t.id === editingTransferId);
+  const editingConvertTransaction = transactions.find((t) => t.id === editingConvertId);
   const exchangeDateDisplay = editingExchangeTransaction ? dateLabel(editingExchangeTransaction.date) : currentDateTime;
   const transferDateDisplay = editingTransferTransaction ? dateLabel(editingTransferTransaction.date) : currentDateTime;
+  const convertDateDisplay = editingConvertTransaction ? dateLabel(editingConvertTransaction.date) : currentDateTime;
 
   function editTransaction(tx: Transaction) {
     if (tx.status === "voided") return;
     if (tx.type === "exchange") {
-      setTab("exchange"); setEditingTransferId(null); setEditingExchangeId(tx.id);
+      setTab("exchange"); setEditingTransferId(null); setEditingConvertId(null); setEditingExchangeId(tx.id);
       setCustomer(tx.customerId || ""); setExchangeDealType(tx.dealType || "");
       setReceivedCurrency(tx.fromCurrency); setPaidCurrency(tx.toCurrency);
       setReceivedAmount(String(tx.fromAmount));
       setExchangeCommission(tx.commission ? String(tx.commission) : "0");
+      setExchangeCommissionPayer(tx.commissionPayer || "sender");
+      setExchangeCommissionCurrency(tx.commissionCurrency || "AFN");
       setExchangeDescription(tx.description || ""); setRate(String(tx.rate));
       if (getRateMode(tx.fromCurrency, tx.toCurrency) === "direct") {
         setExchangeDirectBase(tx.rateBase || preferredDirectBase(tx.fromCurrency, tx.toCurrency));
@@ -598,16 +751,31 @@ export default function CurrencyExchangePage() {
       setExchangeErrors({});
     }
     if (tx.type === "transfer") {
-      setTab("transfer"); setEditingExchangeId(null); setEditingTransferId(tx.id);
+      setTab("transfer"); setEditingExchangeId(null); setEditingConvertId(null); setEditingTransferId(tx.id);
       setSender(tx.senderId || ""); setReceiver(tx.receiverId || "");
       setSenderCurrency(tx.fromCurrency); setReceiverCurrency(tx.toCurrency);
       setSenderAmount(String(tx.fromAmount));
       setCommission(tx.commission ? String(tx.commission) : "0");
+      setTransferCommissionPayer(tx.commissionPayer || "sender");
+      setTransferCommissionCurrency(tx.commissionCurrency || "AFN");
       setTransferDescription(tx.description || ""); setTransferRate(String(tx.rate));
       if (getRateMode(tx.fromCurrency, tx.toCurrency) === "direct") {
         setTransferDirectBase(tx.rateBase || preferredDirectBase(tx.fromCurrency, tx.toCurrency));
       }
       setTransferErrors({});
+    }
+    if (tx.type === "convert") {
+      setTab("convert"); setEditingExchangeId(null); setEditingTransferId(null); setEditingConvertId(tx.id);
+      setConvertCustomer(tx.customerId || "");
+      setConvertFromCurrency(tx.fromCurrency); setConvertToCurrency(tx.toCurrency);
+      setConvertAmount(String(tx.fromAmount));
+      setConvertCommission(tx.commission ? String(tx.commission) : "0");
+      setConvertCommissionCurrency(tx.commissionCurrency || "AFN");
+      setConvertDescription(tx.description || ""); setConvertRate(String(tx.rate));
+      if (getRateMode(tx.fromCurrency, tx.toCurrency) === "direct") {
+        setConvertDirectBase(tx.rateBase || preferredDirectBase(tx.fromCurrency, tx.toCurrency));
+      }
+      setConvertErrors({});
     }
   }
 
@@ -619,6 +787,7 @@ export default function CurrencyExchangePage() {
     setTransactions((prev) => prev.map((t) => (t.id === tx.id ? { ...t, status: "voided" } : t)));
     if (editingExchangeId === tx.id) setEditingExchangeId(null);
     if (editingTransferId === tx.id) setEditingTransferId(null);
+    if (editingConvertId === tx.id) setEditingConvertId(null);
   }
 
   function printReceipt(tx: Transaction) {
@@ -645,6 +814,7 @@ export default function CurrencyExchangePage() {
             <tr><th>پرداخت</th><td>${fmt(tx.toAmount)} ${labels[tx.toCurrency]}</td></tr>
             <tr><th>نرخ ارز</th><td>${tx.rateLabel}</td></tr>
             <tr><th>کارمزد</th><td>${transactionCommissionLabel(tx)}</td></tr>
+            <tr><th>پرداخت‌کننده کارمزد</th><td>${commissionPayerLabel(tx)}</td></tr>
             <tr><th>سود صرافی</th><td>${transactionProfitLabel(tx)}</td></tr>
             <tr><th>توضیحات</th><td>${tx.description || "-"}</td></tr>
             <tr><th>وضعیت</th><td>${tx.status === "voided" ? "لغو شده" : "فعال"}</td></tr>
@@ -658,8 +828,7 @@ export default function CurrencyExchangePage() {
     win.print();
   }
 
-  /* ---------------- Theme Tokens (UI only) ---------------- */
-
+  /* ---------------- Theme Tokens ---------------- */
   const heading = dk ? "text-white" : "text-slate-900";
   const subText = dk ? "text-slate-500" : "text-slate-400";
   const iconMuted = dk ? "text-slate-500" : "text-slate-400";
@@ -723,6 +892,12 @@ export default function CurrencyExchangePage() {
     title: dk ? "text-teal-300" : "text-teal-700",
     badge: dk ? "bg-teal-400/15 text-teal-300" : "bg-teal-100 text-teal-700",
   };
+  const cViolet = {
+    wrap: dk ? "border-violet-400/25 bg-violet-400/[0.07]" : "border-violet-300 bg-violet-50",
+    icon: dk ? "bg-violet-400/15 text-violet-300" : "bg-violet-100 text-violet-600",
+    title: dk ? "text-violet-300" : "text-violet-700",
+    badge: dk ? "bg-violet-400/15 text-violet-300" : "bg-violet-100 text-violet-700",
+  };
 
   const identExIcon = dk
     ? "from-cyan-400/20 to-cyan-400/5 text-cyan-300 ring-cyan-400/25"
@@ -732,10 +907,16 @@ export default function CurrencyExchangePage() {
     ? "from-orange-400/20 to-orange-400/5 text-orange-300 ring-orange-400/25"
     : "from-orange-400/20 to-amber-400/10 text-orange-600 ring-orange-400/30";
   const identTrChip = dk ? "bg-orange-400/10 text-orange-300 ring-orange-400/25" : "bg-orange-100 text-orange-700 ring-orange-300/60";
+  const identCvIcon = dk
+    ? "from-violet-400/20 to-violet-400/5 text-violet-300 ring-violet-400/25"
+    : "from-violet-400/20 to-purple-400/10 text-violet-600 ring-violet-400/30";
+  const identCvChip = dk ? "bg-violet-400/10 text-violet-300 ring-violet-400/25" : "bg-violet-100 text-violet-700 ring-violet-300/60";
 
   function typeChipClass(tx: Transaction) {
     if (tx.type === "transfer")
       return dk ? "bg-orange-400/15 text-orange-300 ring-1 ring-orange-400/25" : "bg-orange-100 text-orange-700 ring-1 ring-orange-300/60";
+    if (tx.type === "convert")
+      return dk ? "bg-violet-400/15 text-violet-300 ring-1 ring-violet-400/25" : "bg-violet-100 text-violet-700 ring-1 ring-violet-300/60";
     if (tx.dealType === "buy")
       return dk ? "bg-emerald-400/15 text-emerald-300 ring-1 ring-emerald-400/25" : "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-300/60";
     if (tx.dealType === "sell")
@@ -752,7 +933,6 @@ export default function CurrencyExchangePage() {
   }`;
 
   /* ---------------- UI helper builders ---------------- */
-
   const chevPos = `pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${iconMuted}`;
 
   const fld = (label: string, node: ReactNode) => (
@@ -908,7 +1088,61 @@ export default function CurrencyExchangePage() {
       </div>
     );
 
-  // ✅ ساخت options برای dropdown مشتریان
+  /* ✅ فیلد انتخاب کارمزد - قابل استفاده در هر سه تب */
+  const commissionFields = (
+    payerValue: CommissionPayer,
+    onPayerChange: (v: CommissionPayer) => void,
+    currencyValue: Currency,
+    onCurrencyChange: (v: Currency) => void,
+    showPayer: boolean = true
+  ) => (
+    <div className="grid gap-3 md:gap-4 sm:grid-cols-2">
+      {showPayer && fld("کارمزد از حساب", (
+        <div className={`flex rounded-xl border p-1 ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-slate-50"}`}>
+          <button
+            type="button"
+            onClick={() => onPayerChange("sender")}
+            className={`flex-1 rounded-lg px-3 py-2 text-xs font-black transition-all ${
+              payerValue === "sender"
+                ? dk ? "bg-cyan-400 text-slate-950 shadow" : "bg-sky-500 text-white shadow"
+                : dk ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            فرستنده
+          </button>
+          <button
+            type="button"
+            onClick={() => onPayerChange("receiver")}
+            className={`flex-1 rounded-lg px-3 py-2 text-xs font-black transition-all ${
+              payerValue === "receiver"
+                ? dk ? "bg-cyan-400 text-slate-950 shadow" : "bg-sky-500 text-white shadow"
+                : dk ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            گیرنده
+          </button>
+        </div>
+      ))}
+
+      {fld("ارز کارمزد", (
+        <div className="relative">
+          <select
+            value={currencyValue}
+            onChange={(e) => onCurrencyChange(e.target.value as Currency)}
+            className={`${uiInput} cursor-pointer appearance-none pl-9`}
+          >
+            {currencies.map((c) => (
+              <option key={c} value={c}>{labels[c]}</option>
+            ))}
+          </select>
+          <span className={chevPos}>
+            <Ic n="chevron" className="h-4 w-4" />
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+
   const customerOpts = [["", "انتخاب مشتری"], ...customers.map((c) => [c.id, c.name])];
 
   function currencySelect(value: Currency, change: (v: Currency) => void) {
@@ -967,10 +1201,11 @@ export default function CurrencyExchangePage() {
           <div className="fx-grid absolute inset-0" />
           <div className={`absolute -top-36 right-[-12rem] h-[30rem] w-[30rem] rounded-full blur-[110px] ${dk ? "bg-cyan-500/10" : "bg-sky-400/20"}`} />
           <div className={`absolute left-[-12rem] top-1/4 h-[26rem] w-[26rem] rounded-full blur-[110px] ${dk ? "bg-emerald-500/10" : "bg-emerald-300/20"}`} />
-          <div className={`absolute bottom-[-10rem] right-1/3 h-[24rem] w-[24rem] rounded-full blur-[100px] ${dk ? "bg-orange-500/10" : "bg-orange-300/20"}`} />
+          <div className={`absolute bottom-[-10rem] right-1/3 h-[24rem] w-[24rem] rounded-full blur-[100px] ${dk ? "bg-violet-500/10" : "bg-violet-300/20"}`} />
         </div>
 
         <div className="relative z-10 mx-auto w-full max-w-7xl space-y-4 md:space-y-6 px-3 pb-16 pt-5 md:px-8 md:pt-9">
+          {/* سربرگ */}
           <header className="fx-up flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 md:gap-3.5 min-w-0">
               <div className="relative grid h-11 w-11 md:h-14 md:w-14 shrink-0 place-items-center rounded-xl md:rounded-2xl bg-gradient-to-br from-sky-500 via-cyan-500 to-emerald-400 text-white shadow-lg shadow-sky-500/30 ring-1 ring-white/30">
@@ -1034,6 +1269,7 @@ export default function CurrencyExchangePage() {
             </div>
           </header>
 
+          {/* نوار ارزها و آمار */}
           <div className="fx-up space-y-2" style={{ animationDelay: "70ms" }}>
             <div className="fx-scroll flex gap-2 overflow-x-auto -mx-3 px-3 pb-1 md:mx-0 md:px-0 md:pb-0">
               {currencies.map((c) => (
@@ -1062,6 +1298,7 @@ export default function CurrencyExchangePage() {
             </div>
           </div>
 
+          {/* تب‌ها - سه تب */}
           <div className={`fx-up flex gap-1.5 md:gap-2 rounded-xl md:rounded-2xl border p-1.5 md:p-2 shadow-sm backdrop-blur ${glassChip}`} style={{ animationDelay: "140ms" }}>
             <button
               onClick={() => setTab("exchange")}
@@ -1089,11 +1326,27 @@ export default function CurrencyExchangePage() {
               }`}
             >
               <Ic n="users" className="h-4 w-4" />
-              <span className="hidden xs:inline md:inline">تبادل بین مشتریان</span>
-              <span className="xs:hidden md:hidden inline">بین مشتریان</span>
+              <span className="hidden xs:inline md:inline">بین مشتریان</span>
+              <span className="xs:hidden md:hidden inline">مشتریان</span>
+            </button>
+
+            <button
+              onClick={() => setTab("convert")}
+              className={`flex flex-1 md:flex-initial cursor-pointer items-center justify-center md:justify-start gap-1.5 md:gap-2 rounded-lg md:rounded-xl px-3 md:px-5 py-2.5 md:py-3 text-xs md:text-sm font-black transition-all duration-300 active:scale-[0.97] ${
+                tab === "convert"
+                  ? `bg-gradient-to-l shadow-lg ${dk ? "from-violet-400 to-purple-400 text-slate-950 shadow-violet-400/25" : "from-violet-500 via-purple-500 to-fuchsia-400 text-white shadow-violet-500/30"}`
+                  : dk
+                  ? "text-slate-400 hover:bg-slate-700/60 hover:text-slate-100"
+                  : "text-slate-500 hover:bg-violet-50 hover:text-slate-800"
+              }`}
+            >
+              <Ic n="user" className="h-4 w-4" />
+              <span className="hidden xs:inline md:inline">تبدیل ارز مشتری</span>
+              <span className="xs:hidden md:hidden inline">تبدیل</span>
             </button>
           </div>
 
+          {/* ================= Exchange ================= */}
           {tab === "exchange" && (
             <section className={`fx-up space-y-4 md:space-y-5 p-4 md:p-7 ${uiCard}`}>
               {secHead(
@@ -1213,12 +1466,21 @@ export default function CurrencyExchangePage() {
                 {fld("کارمزد", moneyField(exchangeCommission, (s) => {
                   setExchangeCommission(s);
                   setExchangeErrors((p) => ({ ...p, exchangeCommission: undefined }));
-                }, !!exchangeErrors.exchangeCommission, labels[receivedCurrency], dk ? "bg-cyan-400/15 text-cyan-300" : "bg-sky-100 text-sky-700"))}
+                }, !!exchangeErrors.exchangeCommission, labels[exchangeCommissionCurrency], dk ? "bg-cyan-400/15 text-cyan-300" : "bg-sky-100 text-sky-700"))}
 
                 {fld("توضیحات", (
                   <input type="text" value={exchangeDescription} onChange={(e) => setExchangeDescription(e.target.value)} placeholder="توضیحات اختیاری…" className={uiInput} />
                 ))}
               </div>
+
+              {/* ✅ فیلدهای کارمزد */}
+              {commissionFields(
+                exchangeCommissionPayer,
+                setExchangeCommissionPayer,
+                exchangeCommissionCurrency,
+                setExchangeCommissionCurrency,
+                true
+              )}
 
               {errBox(exchangeErrorList)}
 
@@ -1234,6 +1496,7 @@ export default function CurrencyExchangePage() {
             </section>
           )}
 
+          {/* ================= Transfer ================= */}
           {tab === "transfer" && (
             <section className={`fx-up space-y-4 md:space-y-5 p-4 md:p-7 ${uiCard}`}>
               {secHead(
@@ -1353,12 +1616,21 @@ export default function CurrencyExchangePage() {
                 {fld("کارمزد", moneyField(commission, (s) => {
                   setCommission(s);
                   setTransferErrors((p) => ({ ...p, commission: undefined }));
-                }, !!transferErrors.commission, labels[senderCurrency], dk ? "bg-orange-400/15 text-orange-300" : "bg-orange-100 text-orange-700"))}
+                }, !!transferErrors.commission, labels[transferCommissionCurrency], dk ? "bg-orange-400/15 text-orange-300" : "bg-orange-100 text-orange-700"))}
 
                 {fld("توضیحات", (
                   <input type="text" value={transferDescription} onChange={(e) => setTransferDescription(e.target.value)} placeholder="توضیحات اختیاری…" className={uiInput} />
                 ))}
               </div>
+
+              {/* ✅ فیلدهای کارمزد */}
+              {commissionFields(
+                transferCommissionPayer,
+                setTransferCommissionPayer,
+                transferCommissionCurrency,
+                setTransferCommissionCurrency,
+                true
+              )}
 
               {errBox(transferErrorList)}
 
@@ -1374,6 +1646,152 @@ export default function CurrencyExchangePage() {
             </section>
           )}
 
+          {/* ================= Convert (جدید) ================= */}
+          {tab === "convert" && (
+            <section className={`fx-up space-y-4 md:space-y-5 p-4 md:p-7 ${uiCard}`}>
+              {secHead(
+                identCvIcon, "user", "تبدیل ارز مشتری", "تبدیل یک ارز به ارز دیگر در حساب خود مشتری", identCvChip,
+                editingConvertId ? `ویرایش ${shortId(editingConvertId)}` : "تبدیل جدید"
+              )}
+
+              {editingConvertId &&
+                editBanner(
+                  <>در حال ویرایش تبدیل {shortId(editingConvertId)}. تاریخ اصلی حفظ می‌شود.</>,
+                  resetConvertForm
+                )}
+
+              <div className="grid gap-3 md:gap-4 sm:grid-cols-2">
+                {fld(`تاریخ و ساعت (شمسی) ${editingConvertId ? "(اصل)" : "(خودکار)"}`, dateField(convertDateDisplay))}
+                {fld("مشتری", sel(convertCustomer, (v) => {
+                  setConvertCustomer(v);
+                  setConvertErrors((p) => ({ ...p, customer: undefined }));
+                }, customerOpts, convertErrors.customer ? errInput : ""))}
+              </div>
+
+              <div className="grid gap-3 md:gap-4 lg:grid-cols-[1fr_auto_1fr]">
+                {panel(cViolet, "down", "از حساب مشتری", (
+                  <>
+                    {fld("ارز مبدا", currencySelect(convertFromCurrency, (v) => {
+                      setConvertFromCurrency(v);
+                      setConvertErrors((p) => ({ ...p, rate: undefined, convertedAmount: undefined }));
+                    }))}
+                    {fld("مبلغ مبدا", (
+                      <input type="text" inputMode="decimal" dir="ltr" value={convertAmount}
+                        onChange={(e) => {
+                          setConvertAmount(toNumericText(e.target.value));
+                          setConvertErrors((p) => ({ ...p, amount: undefined, convertedAmount: undefined }));
+                        }}
+                        placeholder="0.00"
+                        className={`${uiInput} text-left tabular-nums ${convertErrors.amount ? errInput : ""}`} />
+                    ))}
+                  </>
+                ))}
+
+                {midBadgeMobile("swap", dk ? "border-slate-600 bg-slate-900 text-violet-300" : "border-slate-200 bg-white text-violet-600")}
+                {midBadge("swap", dk ? "border-slate-600 bg-slate-900 text-violet-300" : "border-slate-200 bg-white text-violet-600")}
+
+                {panel(cEmerald, "up", "به حساب مشتری", (
+                  <>
+                    {fld("ارز مقصد", currencySelect(convertToCurrency, (v) => {
+                      setConvertToCurrency(v);
+                      setConvertErrors((p) => ({ ...p, rate: undefined, convertedAmount: undefined }));
+                    }))}
+                    {fld("مبلغ مقصد", (
+                      <input readOnly dir="ltr" value={convertedAmount} className={`${uiInput} ${roInput} text-left tabular-nums ${convertErrors.convertedAmount ? errInput : ""}`} />
+                    ))}
+                  </>
+                ))}
+              </div>
+
+              {convertMode === "same" && sameBox("ارز مبدا و مقصد یکسان است؛ مبلغ تبدیل برابر مبلغ مبدا خواهد بود.")}
+
+              {convertMode === "afn" && convertForeign &&
+                rateBox(cSky, "نرخ دستی در برابر افغانی", (
+                  <div>
+                    <label className={uiLabel}>نرخ</label>
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <span className={rateChip}>{fmt(rateUnits[convertForeign])} {labels[convertForeign]} =</span>
+                      {rateInput(convertRate, (s) => {
+                        setConvertRate(s);
+                        setConvertErrors((p) => ({ ...p, rate: undefined, convertedAmount: undefined }));
+                      }, !!convertErrors.rate, "w-32 md:w-44")}
+                      <span className={rateChip}>{labels.AFN}</span>
+                    </div>
+                  </div>
+                ), (
+                  <>
+                    {pill(cSky.badge, convertRateValue > 0 ? `نرخ ثبت‌شده: ${afnRateLabel(convertForeign, convertRateValue)}` : "", true)}
+                    {pill(cEmerald.badge, convertedAmount ? `نتیجه: ${convertedAmount} ${labels[convertToCurrency]}` : "")}
+                  </>
+                ))}
+
+              {convertMode === "direct" &&
+                rateBox(cAmber, "نرخ مستقیم جفت‌ارز", (
+                  <div className="grid items-end gap-3 md:gap-4 md:grid-cols-2">
+                    {fld("مبنای نرخ", sel(convertDirectBaseValue, (v) => {
+                      setConvertDirectBase(v as Currency);
+                      setConvertErrors((p) => ({ ...p, rate: undefined, convertedAmount: undefined }));
+                    }, [[convertFromCurrency, labels[convertFromCurrency]], [convertToCurrency, labels[convertToCurrency]]]))}
+                    <div>
+                      <label className={uiLabel}>نرخ مستقیم</label>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={rateChip}>{fmt(rateUnits[convertDirectBaseValue])} {labels[convertDirectBaseValue]} =</span>
+                        {rateInput(convertRate, (s) => {
+                          setConvertRate(s);
+                          setConvertErrors((p) => ({ ...p, rate: undefined, convertedAmount: undefined }));
+                        }, !!convertErrors.rate, "w-28 md:w-40")}
+                        <span className={rateChip}>{convertDirectCounter ? labels[convertDirectCounter] : ""}</span>
+                      </div>
+                    </div>
+                  </div>
+                ), (
+                  <>
+                    {pill(
+                      cAmber.badge,
+                      convertRateValue > 0 && convertDirectCounter
+                        ? `نرخ ثبت‌شده: ${directRateLabel(convertDirectBaseValue, convertDirectCounter, convertRateValue)}`
+                        : "",
+                      true
+                    )}
+                    {pill(cEmerald.badge, convertedAmount ? `نتیجه: ${convertedAmount} ${labels[convertToCurrency]}` : "")}
+                  </>
+                ))}
+
+              <div className="grid gap-3 md:gap-4 md:grid-cols-2">
+                {fld("کارمزد", moneyField(convertCommission, (s) => {
+                  setConvertCommission(s);
+                  setConvertErrors((p) => ({ ...p, commission: undefined }));
+                }, !!convertErrors.commission, labels[convertCommissionCurrency], dk ? "bg-violet-400/15 text-violet-300" : "bg-violet-100 text-violet-700"))}
+
+                {fld("توضیحات", (
+                  <input type="text" value={convertDescription} onChange={(e) => setConvertDescription(e.target.value)} placeholder="توضیحات اختیاری…" className={uiInput} />
+                ))}
+              </div>
+
+              {/* ✅ فیلد ارز کارمزد (بدون انتخاب پرداخت‌کننده چون یک نفر است) */}
+              {commissionFields(
+                "sender",
+                () => {},
+                convertCommissionCurrency,
+                setConvertCommissionCurrency,
+                false
+              )}
+
+              {errBox(convertErrorList)}
+
+              <button
+                onClick={submitConvert}
+                className={`group flex h-[50px] md:h-[52px] w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-base font-black shadow-lg transition-all duration-300 hover:shadow-xl hover:brightness-110 active:scale-[0.985] ${
+                  dk ? "from-violet-400 to-purple-400 text-slate-950 shadow-violet-400/25" : "from-violet-500 via-purple-500 to-fuchsia-400 text-white shadow-violet-500/30"
+                }`}
+              >
+                {editingConvertId ? "به‌روزرسانی تبدیل" : "ثبت تبدیل"}
+                <Ic n="arrowLeft" className="h-5 w-5 transition-transform group-hover:-translate-x-1" />
+              </button>
+            </section>
+          )}
+
+          {/* ================= Transactions Table ================= */}
           <section className={`fx-up overflow-hidden ${uiCard}`} style={{ animationDelay: "160ms" }}>
             <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
               <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identExIcon}`}>
@@ -1483,6 +1901,13 @@ export default function CurrencyExchangePage() {
                         </div>
 
                         <div className="flex items-center justify-between text-[11px]">
+                          <span className={`font-bold ${subText}`}>پرداخت‌کننده کارمزد</span>
+                          <span className={`font-black ${dk ? "text-slate-200" : "text-slate-700"}`}>
+                            {commissionPayerLabel(tx)}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between text-[11px]">
                           <span className={`font-bold ${subText}`}>سود صرافی</span>
                           <span className={`font-black tabular-nums ${dk ? "text-emerald-300" : "text-emerald-700"}`}>
                             {transactionProfitLabel(tx)}
@@ -1548,11 +1973,11 @@ export default function CurrencyExchangePage() {
             </div>
 
             <div className="hidden md:block overflow-x-auto">
-              <table className="w-full min-w-[980px] text-sm">
+              <table className="w-full min-w-[1100px] text-sm">
                 <thead>
                   <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
-                    {["شماره", "نام مشتری", "تاریخ (شمسی)", "نوع معامله", "دریافت", "پرداخت", "نرخ ارز", "کارمزد", "عملیات"].map((h, i) => (
-                      <th key={h} className={`px-4 py-3 text-right text-[11px] font-black text-slate-400 ${i === 0 ? "md:px-7" : ""} ${i === 8 ? "md:px-7" : ""}`}>
+                    {["شماره", "نام مشتری", "تاریخ (شمسی)", "نوع معامله", "دریافت", "پرداخت", "نرخ ارز", "کارمزد", "پرداخت‌کننده کارمزد", "عملیات"].map((h, i) => (
+                      <th key={h} className={`px-4 py-3 text-right text-[11px] font-black text-slate-400 ${i === 0 ? "md:px-7" : ""} ${i === 9 ? "md:px-7" : ""}`}>
                         {h}
                       </th>
                     ))}
@@ -1562,7 +1987,7 @@ export default function CurrencyExchangePage() {
                 <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
                   {transactions.length === 0 ? (
                     <tr>
-                      <td colSpan={9}>
+                      <td colSpan={10}>
                         <div className={`flex flex-col items-center gap-3 px-6 py-14 ${dk ? "text-slate-500" : "text-slate-400"}`}>
                           <span className={`grid h-16 w-16 place-items-center rounded-2xl border border-dashed ${dk ? "border-slate-600 bg-slate-800/40" : "border-slate-300 bg-slate-50"}`}>
                             <Ic n="inbox" className="h-7 w-7 opacity-70" />
@@ -1630,6 +2055,10 @@ export default function CurrencyExchangePage() {
 
                           <td className="px-4 py-3.5 text-xs font-bold tabular-nums">{transactionCommissionLabel(tx)}</td>
 
+                          <td className={`px-4 py-3.5 text-xs font-bold ${dk ? "text-slate-300" : "text-slate-600"}`}>
+                            {commissionPayerLabel(tx)}
+                          </td>
+
                           <td className="px-4 py-3.5 md:px-7">
                             <details className="relative">
                               <summary
@@ -1678,6 +2107,7 @@ export default function CurrencyExchangePage() {
         </div>
       </div>
 
+      {/* ================= View Modal ================= */}
       {selectedTransaction && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => setSelectedTransaction(null)}>
           <div
@@ -1708,6 +2138,7 @@ export default function CurrencyExchangePage() {
               <DetailRow dark={dk} label="پرداخت" value={`${fmt(selectedTransaction.toAmount)} ${labels[selectedTransaction.toCurrency]}`} />
               <DetailRow dark={dk} label="نرخ ارز" value={selectedTransaction.rateLabel} />
               <DetailRow dark={dk} label="کارمزد" value={transactionCommissionLabel(selectedTransaction)} />
+              <DetailRow dark={dk} label="پرداخت‌کننده کارمزد" value={commissionPayerLabel(selectedTransaction)} />
               <DetailRow
                 dark={dk}
                 label="سود صرافی"
