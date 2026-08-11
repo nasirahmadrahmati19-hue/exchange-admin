@@ -331,7 +331,6 @@ export default function CurrencyExchangePage() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewData, setPreviewData] = useState<Transaction | null>(null);
 
-  // ✅ state های لیست مشتری‌ها - هر ۴ لیست جداگانه
   const [showCustomerList, setShowCustomerList] = useState(false);
   const [customerFilter, setCustomerFilter] = useState("");
   const customerListRef = useRef<HTMLDivElement>(null);
@@ -495,7 +494,6 @@ export default function CurrencyExchangePage() {
     setConvertedAmount(result ? fmt(result) : "");
   }, [convertAmount, convertFromCurrency, convertToCurrency, convertRate, convertMode, convertDirectBaseValue, convertDirectCounter]);
 
-  /* ✅ بستن لیست‌ها هنگام کلیک بیرون - فقط وقتی یکی از لیست‌ها باز است */
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
@@ -504,11 +502,10 @@ export default function CurrencyExchangePage() {
       if (receiverListRef.current && !receiverListRef.current.contains(target)) setShowReceiverList(false);
       if (convertListRef.current && !convertListRef.current.contains(target)) setShowConvertList(false);
     };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => { document.removeEventListener("mousedown", handleClickOutside); };
+    document.addEventListener("click", handleClickOutside);
+    return () => { document.removeEventListener("click", handleClickOutside); };
   }, []);
 
-  /* ✅ بستن dropdown عملیات هنگام کلیک بیرون */
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
@@ -516,9 +513,9 @@ export default function CurrencyExchangePage() {
       }
     };
     if (openMenuId) {
-      document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener("click", handleClickOutside);
     }
-    return () => { document.removeEventListener("mousedown", handleClickOutside); };
+    return () => { document.removeEventListener("click", handleClickOutside); };
   }, [openMenuId]);
 
   const filteredCustomerList = useMemo(() => {
@@ -1199,6 +1196,7 @@ export default function CurrencyExchangePage() {
     );
   }
 
+  /* ✅ CustomerBalanceCard با نمایش طلب/قرض از صرافی */
   const CustomerBalanceCard = ({ customer, color }: { customer: Customer | null; color: "cyan" | "orange" | "violet" }) => {
     if (!customer) return null;
     const colors = {
@@ -1214,18 +1212,47 @@ export default function CurrencyExchangePage() {
           <b className={`text-xs font-black ${c.text}`}>موجودی حساب {customer.name}</b>
         </div>
         <div className="grid grid-cols-3 md:grid-cols-5 gap-2 text-[10px] font-bold">
-          {currencies.map(cur => (
-            <div key={cur} className={`rounded-lg px-2 py-1.5 ${dk ? "bg-slate-900/50" : "bg-white"}`}>
-              <div className={subText}>{labels[cur]}</div>
-              <div className={`font-black tabular-nums ${dk ? "text-slate-100" : "text-slate-700"}`}>{fmt(customer.balances[cur] || 0)}</div>
-            </div>
-          ))}
+          {currencies.map(cur => {
+            const bal = customer.balances[cur] || 0;
+            const isDebt = bal < 0;
+            const isCredit = bal > 0;
+            const isZero = bal === 0;
+            return (
+              <div key={cur} className={`rounded-lg px-2 py-1.5 ${dk ? "bg-slate-900/50" : "bg-white"}`}>
+                <div className={subText}>{labels[cur]}</div>
+                <div className={`font-black tabular-nums ${
+                  isDebt ? "text-rose-500" : 
+                  isCredit ? (dk ? "text-emerald-300" : "text-emerald-600") : 
+                  dk ? "text-slate-400" : "text-slate-500"
+                }`}>
+                  {fmt(bal)}
+                </div>
+                <div className="min-h-[12px] mt-0.5">
+                  {isDebt && (
+                    <div className="text-[8px] font-black text-rose-500">
+                      قرض از صرافی
+                    </div>
+                  )}
+                  {isCredit && (
+                    <div className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>
+                      طلب از صرافی
+                    </div>
+                  )}
+                  {isZero && (
+                    <div className={`text-[8px] font-bold ${subText}`}>
+                      بدون بدهی
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     );
   };
 
-  /* ✅ کامپوننت dropdown مشتری - با رفع مشکل باز و بسته شدن */
+  /* ✅ CustomerDropdown اصلاح‌شده - بدون preventDefault اضافی */
   const CustomerDropdown = ({
     value, onInputChange, showList, onToggleList, filter, onFilterChange, listRef, filteredList, err
   }: {
@@ -1256,10 +1283,8 @@ export default function CurrencyExchangePage() {
         type="button"
         onClick={(e) => {
           e.stopPropagation();
-          e.preventDefault();
           onToggleList();
         }}
-        onMouseDown={(e) => e.preventDefault()}
         className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition ${dk ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}
       >
         <Ic n="chevron" className={`h-4 w-4 transition-transform ${showList ? "rotate-180" : ""}`} />
@@ -1273,8 +1298,8 @@ export default function CurrencyExchangePage() {
               <button
                 key={c.id}
                 type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   onInputChange(c.name);
                   onFilterChange("");
                   onToggleList();
@@ -1296,13 +1321,18 @@ export default function CurrencyExchangePage() {
     </div>
   );
 
+  /* ✅ ActionMenu اصلاح‌شده - بدون preventDefault اضافی */
   const ActionMenu = ({ tx }: { tx: Transaction }) => {
     const isOpen = openMenuId === tx.id;
     const isVoided = tx.status === "voided";
 
     return (
       <div className="relative" ref={isOpen ? menuRef : null}>
-        <button onClick={(e) => { e.stopPropagation(); toggleMenu(tx.id); }}
+        <button 
+          onClick={(e) => { 
+            e.stopPropagation();
+            toggleMenu(tx.id); 
+          }}
           className={`inline-flex cursor-pointer select-none items-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-black shadow-sm transition-all ${
             isOpen
               ? dk ? "border-blue-400/50 bg-blue-400/20 text-blue-300" : "border-blue-400 bg-blue-50 text-blue-600"
@@ -1497,7 +1527,6 @@ export default function CurrencyExchangePage() {
             </button>
           </div>
 
-          {/* ================= Exchange ================= */}
           {tab === "exchange" && (
             <section className={`fx-up space-y-4 md:space-y-5 p-4 md:p-7 ${uiCard}`}>
               {secHead(identExIcon, "swap", "تبادل ارز صرافی با مشتری", "دریافت یک ارز از مشتری و پرداخت ارز دیگر", identExChip, editingExchangeId ? `ویرایش ${shortId(editingExchangeId)}` : "معاملهٔ جدید")}
@@ -1608,7 +1637,6 @@ export default function CurrencyExchangePage() {
             </section>
           )}
 
-          {/* ================= Transfer ================= */}
           {tab === "transfer" && (
             <section className={`fx-up space-y-4 md:space-y-5 p-4 md:p-7 ${uiCard}`}>
               {secHead(identTrIcon, "users", "تبادل بین حساب مشتریان", "انتقال موجودی از حساب مشتری به مشتری دیگر", identTrChip, editingTransferId ? `ویرایش ${shortId(editingTransferId)}` : "انتقال جدید")}
@@ -1725,7 +1753,6 @@ export default function CurrencyExchangePage() {
             </section>
           )}
 
-          {/* ================= Convert ================= */}
           {tab === "convert" && (
             <section className={`fx-up space-y-4 md:space-y-5 p-4 md:p-7 ${uiCard}`}>
               {secHead(identCvIcon, "user", "تبدیل ارز مشتری", "تبدیل یک ارز به ارز دیگر در حساب خود مشتری", identCvChip, editingConvertId ? `ویرایش ${shortId(editingConvertId)}` : "تبدیل جدید")}
@@ -1825,7 +1852,6 @@ export default function CurrencyExchangePage() {
             </section>
           )}
 
-          {/* ================= Transactions Table ================= */}
           <section className={`fx-up overflow-hidden ${uiCard}`} style={{ animationDelay: "160ms" }}>
             <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
               <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identExIcon}`}><Ic n="doc" className="h-5 w-5" /></span>
@@ -1910,7 +1936,6 @@ export default function CurrencyExchangePage() {
         </div>
       </div>
 
-      {/* ================= View Modal ================= */}
       {selectedTransaction && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => setSelectedTransaction(null)}>
           <div className={`fx-pop w-full max-w-lg overflow-hidden rounded-xl md:rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={(e) => e.stopPropagation()}>
@@ -1941,7 +1966,6 @@ export default function CurrencyExchangePage() {
         </div>
       )}
 
-      {/* ================= Preview Modal ================= */}
       {previewOpen && previewData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => { setPreviewOpen(false); setPreviewData(null); }}>
           <div className={`fx-pop w-full max-w-2xl overflow-hidden rounded-xl md:rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={(e) => e.stopPropagation()}>
