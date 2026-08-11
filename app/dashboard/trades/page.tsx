@@ -1274,13 +1274,13 @@ export default function CurrencyExchangePage() {
   };
 
   /* ✅ فیلد مشتری با custom dropdown (استفاده مجدد) */
-  const CustomerDropdown = ({
+   const CustomerDropdown = ({
     value, onChange, showList, setShowList, filter, setFilter, listRef, filteredList, err, placeholder
   }: {
     value: string; onChange: (name: string) => void;
     showList: boolean; setShowList: (v: boolean) => void;
     filter: string; setFilter: (v: string) => void;
-    listRef: React.RefObject<HTMLDivElement | null>;
+    listRef: React.RefObject<HTMLDivElement>;  // ✅ | null حذف شد
     filteredList: Customer[]; err?: boolean; placeholder?: string;
   }) => (
     <div className="relative" ref={listRef}>
