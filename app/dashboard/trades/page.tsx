@@ -220,52 +220,32 @@ const afnRateLabel = (foreign: Currency, rate: number) => `${fmt(rateUnits[forei
 const directRateLabel = (base: Currency, counter: Currency, rate: number) => `${fmt(rateUnits[base])} ${labels[base]} = ${fmt(rate)} ${labels[counter]}`;
 const dealTypeLabel = (d?: DealType) => d === "buy" ? "خرید" : d === "sell" ? "فروش" : "-";
 
-// ✅ مدیریت موجودی - گزینه ۲ کارمزد
+// ✅ مدیریت موجودی - اصلاح شده
 type BalanceChange = { customerId: string; currency: Currency; amount: number; };
 
 function getBalanceChangesForTransaction(tx: Transaction): BalanceChange[] {
   const changes: BalanceChange[] = [];
   try {
-    const feeSameAsTo = tx.commissionCurrency === tx.toCurrency;
-
     if (tx.type === "exchange" && tx.customerId) {
       changes.push({ customerId: tx.customerId, currency: tx.fromCurrency, amount: -tx.fromAmount });
-      if (tx.commissionPayer === "sender") {
-        changes.push({ customerId: tx.customerId, currency: tx.toCurrency, amount: tx.toAmount });
-        if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
-          changes.push({ customerId: tx.customerId, currency: tx.commissionCurrency, amount: -tx.commission });
-        }
-      } else {
-        if (feeSameAsTo && tx.commission) {
-          changes.push({ customerId: tx.customerId, currency: tx.toCurrency, amount: tx.toAmount - tx.commission });
-        } else {
-          changes.push({ customerId: tx.customerId, currency: tx.toCurrency, amount: tx.toAmount });
-          if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
-            changes.push({ customerId: tx.customerId, currency: tx.commissionCurrency, amount: -tx.commission });
-          }
-        }
+      changes.push({ customerId: tx.customerId, currency: tx.toCurrency, amount: tx.toAmount });
+      
+      if (tx.commissionPayer === "sender" && tx.commission && tx.commission > 0 && tx.commissionCurrency && tx.commissionCurrency !== tx.toCurrency) {
+        changes.push({ customerId: tx.customerId, currency: tx.commissionCurrency, amount: -tx.commission });
       }
     }
 
     if (tx.type === "transfer") {
       if (tx.senderId) {
         changes.push({ customerId: tx.senderId, currency: tx.fromCurrency, amount: -tx.fromAmount });
-        if (tx.commissionPayer === "sender" && tx.commission && tx.commission > 0 && tx.commissionCurrency) {
+        if (tx.commissionPayer === "sender" && tx.commission && tx.commission > 0 && tx.commissionCurrency && tx.commissionCurrency !== tx.fromCurrency) {
           changes.push({ customerId: tx.senderId, currency: tx.commissionCurrency, amount: -tx.commission });
         }
       }
       if (tx.receiverId) {
-        if (tx.commissionPayer === "receiver") {
-          if (feeSameAsTo && tx.commission) {
-            changes.push({ customerId: tx.receiverId, currency: tx.toCurrency, amount: tx.toAmount - tx.commission });
-          } else {
-            changes.push({ customerId: tx.receiverId, currency: tx.toCurrency, amount: tx.toAmount });
-            if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
-              changes.push({ customerId: tx.receiverId, currency: tx.commissionCurrency, amount: -tx.commission });
-            }
-          }
-        } else {
-          changes.push({ customerId: tx.receiverId, currency: tx.toCurrency, amount: tx.toAmount });
+        changes.push({ customerId: tx.receiverId, currency: tx.toCurrency, amount: tx.toAmount });
+        if (tx.commissionPayer === "receiver" && tx.commission && tx.commission > 0 && tx.commissionCurrency && tx.commissionCurrency !== tx.toCurrency) {
+          changes.push({ customerId: tx.receiverId, currency: tx.commissionCurrency, amount: -tx.commission });
         }
       }
     }
@@ -273,7 +253,7 @@ function getBalanceChangesForTransaction(tx: Transaction): BalanceChange[] {
     if (tx.type === "convert" && tx.customerId) {
       changes.push({ customerId: tx.customerId, currency: tx.fromCurrency, amount: -tx.fromAmount });
       changes.push({ customerId: tx.customerId, currency: tx.toCurrency, amount: tx.toAmount });
-      if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
+      if (tx.commission && tx.commission > 0 && tx.commissionCurrency && tx.commissionCurrency !== tx.toCurrency) {
         changes.push({ customerId: tx.customerId, currency: tx.commissionCurrency, amount: -tx.commission });
       }
     }
@@ -354,7 +334,6 @@ function Ic({ n, className = "h-5 w-5" }: { n: IconName; className?: string }) {
 }
 
 export default function CurrencyExchangePage() {
-  // ✅ شروع با مقادیر خالی و load در useEffect
   const [mounted, setMounted] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>(defaultCustomers);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -380,7 +359,6 @@ export default function CurrencyExchangePage() {
   }, []);
   const currentDateTime = now ? formatDateTime(now) : "";
 
-  // ✅ Load all data safely
   useEffect(() => {
     try {
       setCustomers(loadCustomers());
@@ -396,7 +374,6 @@ export default function CurrencyExchangePage() {
   useEffect(() => { if (mounted) safeSetItem(CUSTOMERS_KEY, customers); }, [customers, mounted]);
   useEffect(() => { if (mounted) safeSetItem(TRANSACTIONS_KEY, transactions); }, [transactions, mounted]);
 
-  // ✅ به‌روزرسانی کد پیگیری بعد از mount
   useEffect(() => {
     if (mounted) setNextCode(getNextSharedCode("FX"));
   }, [mounted, transactions.length]);
@@ -473,43 +450,76 @@ export default function CurrencyExchangePage() {
     try {
       const amount = parseAmount(receivedAmount);
       if (!amount) { setPaidAmount(""); return; }
-      if (exchangeMode === "same") { setPaidAmount(fmt(amount)); return; }
+      if (exchangeMode === "same") { 
+          let net = amount;
+          if (exchangeCommissionCurrency === paidCurrency && exchangeCommissionPayer === "sender") {
+              net -= parseAmount(exchangeCommission);
+          }
+          setPaidAmount(fmt(Math.max(0, net))); return; 
+      }
       const r = parseAmount(rate);
       if (!r) { setPaidAmount(""); return; }
-      let result = 0;
-      if (exchangeMode === "afn") result = convertAfnRate(amount, receivedCurrency, paidCurrency, r);
-      if (exchangeMode === "direct" && exchangeDirectCounter) result = convertDirectRate(amount, receivedCurrency, paidCurrency, exchangeDirectBaseValue, r);
-      setPaidAmount(result ? fmt(result) : "");
+      let gross = 0;
+      if (exchangeMode === "afn") gross = convertAfnRate(amount, receivedCurrency, paidCurrency, r);
+      if (exchangeMode === "direct" && exchangeDirectCounter) gross = convertDirectRate(amount, receivedCurrency, paidCurrency, exchangeDirectBaseValue, r);
+      
+      let net = gross;
+      if (exchangeCommissionCurrency === paidCurrency && exchangeCommissionPayer === "sender") {
+          net -= parseAmount(exchangeCommission);
+      }
+      setPaidAmount(fmt(Math.max(0, net)));
     } catch { setPaidAmount(""); }
-  }, [receivedAmount, receivedCurrency, paidCurrency, rate, exchangeMode, exchangeDirectBaseValue, exchangeDirectCounter]);
+  }, [receivedAmount, receivedCurrency, paidCurrency, rate, exchangeMode, exchangeDirectBaseValue, exchangeDirectCounter, exchangeCommission, exchangeCommissionCurrency, exchangeCommissionPayer]);
 
   useEffect(() => {
     try {
       const amount = parseAmount(senderAmount);
       if (!amount) { setReceiverAmount(""); return; }
-      if (transferMode === "same") { setReceiverAmount(fmt(amount)); return; }
+      if (transferMode === "same") { 
+          let net = amount;
+          if (transferCommissionCurrency === receiverCurrency && transferCommissionPayer === "receiver") {
+              net -= parseAmount(commission);
+          }
+          setReceiverAmount(fmt(Math.max(0, net))); return; 
+      }
       const r = parseAmount(transferRate);
       if (!r) { setReceiverAmount(""); return; }
-      let result = 0;
-      if (transferMode === "afn") result = convertAfnRate(amount, senderCurrency, receiverCurrency, r);
-      if (transferMode === "direct" && transferDirectCounter) result = convertDirectRate(amount, senderCurrency, receiverCurrency, transferDirectBaseValue, r);
-      setReceiverAmount(result ? fmt(result) : "");
+      let gross = 0;
+      if (transferMode === "afn") gross = convertAfnRate(amount, senderCurrency, receiverCurrency, r);
+      if (transferMode === "direct" && transferDirectCounter) gross = convertDirectRate(amount, senderCurrency, receiverCurrency, transferDirectBaseValue, r);
+      
+      let net = gross;
+      if (transferCommissionCurrency === receiverCurrency && transferCommissionPayer === "receiver") {
+          net -= parseAmount(commission);
+      }
+      setReceiverAmount(fmt(Math.max(0, net)));
     } catch { setReceiverAmount(""); }
-  }, [senderAmount, senderCurrency, receiverCurrency, transferRate, transferMode, transferDirectBaseValue, transferDirectCounter]);
+  }, [senderAmount, senderCurrency, receiverCurrency, transferRate, transferMode, transferDirectBaseValue, transferDirectCounter, commission, transferCommissionCurrency, transferCommissionPayer]);
 
   useEffect(() => {
     try {
       const amount = parseAmount(convertAmount);
       if (!amount) { setConvertedAmount(""); return; }
-      if (convertMode === "same") { setConvertedAmount(fmt(amount)); return; }
+      if (convertMode === "same") { 
+          let net = amount;
+          if (convertCommissionCurrency === convertToCurrency) {
+              net -= parseAmount(convertCommission);
+          }
+          setConvertedAmount(fmt(Math.max(0, net))); return; 
+      }
       const r = parseAmount(convertRate);
       if (!r) { setConvertedAmount(""); return; }
-      let result = 0;
-      if (convertMode === "afn") result = convertAfnRate(amount, convertFromCurrency, convertToCurrency, r);
-      if (convertMode === "direct" && convertDirectCounter) result = convertDirectRate(amount, convertFromCurrency, convertToCurrency, convertDirectBaseValue, r);
-      setConvertedAmount(result ? fmt(result) : "");
+      let gross = 0;
+      if (convertMode === "afn") gross = convertAfnRate(amount, convertFromCurrency, convertToCurrency, r);
+      if (convertMode === "direct" && convertDirectCounter) gross = convertDirectRate(amount, convertFromCurrency, convertToCurrency, convertDirectBaseValue, r);
+      
+      let net = gross;
+      if (convertCommissionCurrency === convertToCurrency) {
+          net -= parseAmount(convertCommission);
+      }
+      setConvertedAmount(fmt(Math.max(0, net)));
     } catch { setConvertedAmount(""); }
-  }, [convertAmount, convertFromCurrency, convertToCurrency, convertRate, convertMode, convertDirectBaseValue, convertDirectCounter]);
+  }, [convertAmount, convertFromCurrency, convertToCurrency, convertRate, convertMode, convertDirectBaseValue, convertDirectCounter, convertCommission, convertCommissionCurrency]);
 
   /* Reset Forms */
   function resetExchangeForm() { setCustomer(""); setExchangeDealType(""); setReceivedAmount(""); setPaidAmount(""); setRate(""); setExchangeCommission(""); setExchangeCommissionPayer("sender"); setExchangeCommissionCurrency("AFN"); setExchangeDescription(""); setExchangeErrors({}); }
@@ -765,7 +775,6 @@ export default function CurrencyExchangePage() {
   const activeCount = transactions.filter(t => t.status === "active").length;
   const voidedCount = transactions.length - activeCount;
 
-  // ✅ اگر هنوز mount نشده، loading نشان بده
   if (!mounted) {
     return (
       <div className="min-h-screen flex items-center justify-center">
