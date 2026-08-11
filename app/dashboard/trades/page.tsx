@@ -1296,7 +1296,11 @@ export default function CurrencyExchangePage() {
         placeholder={placeholder || "انتخاب از لیست یا نوشتن نام جدید…"}
         className={`${uiInput} ${err ? errInput : ""}`}
       />
-      <button type="button" onClick={() => setShowList(!showList)}
+      <button type="button" onClick={(e) => {
+    e.stopPropagation();
+    setShowList(!showList);
+  }}
+  onMouseDown={(e) => e.preventDefault()}
         className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition ${dk ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}>
         <Ic n="chevron" className={`h-4 w-4 transition-transform ${showList ? "rotate-180" : ""}`} />
       </button>
