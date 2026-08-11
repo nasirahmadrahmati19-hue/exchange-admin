@@ -348,6 +348,11 @@ export default function HawalaPage() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
+  // ✅ state‌های جدید برای فیلد نام حواله‌دهنده
+  const [showSenderList, setShowSenderList] = useState(false);
+  const [senderFilter, setSenderFilter] = useState("");
+  const senderListRef = useRef<HTMLDivElement>(null);
+
   const [nameSearch, setNameSearch] = useState("");
   const [amountSearch, setAmountSearch] = useState("");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
@@ -399,6 +404,31 @@ export default function HawalaPage() {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [openMenuId]);
+
+  // ✅ بستن لیست مشتریان هنگام کلیک بیرون
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (senderListRef.current && !senderListRef.current.contains(event.target as Node)) {
+        setShowSenderList(false);
+      }
+    };
+    if (showSenderList) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showSenderList]);
+
+  // ✅ فیلتر مشتریان برای لیست
+  const filteredSenderList = useMemo(() => {
+    if (!senderFilter) return customers;
+    const q = normalizeDigits(senderFilter.trim()).toLowerCase();
+    return customers.filter(c =>
+      c.name.toLowerCase().includes(q) ||
+      (c.phone && normalizeDigits(c.phone).includes(q))
+    );
+  }, [customers, senderFilter]);
 
   const rateMode = getRateMode(form.currencyFrom, form.currencyTo);
   const afnForeign = getAfnForeign(form.currencyFrom, form.currencyTo);
@@ -529,7 +559,6 @@ export default function HawalaPage() {
         receiverAddress: form.receiverAddress, status: "pending" as HawalaStatus
       };
       
-      // ✅ فقط اگر حواله‌دهنده در لیست مشتریان موجود باشد، موجودی به‌روز می‌شود
       if (customers.some(c => c.name === senderName)) {
         setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForHawala(newHawala, "register")));
       }
@@ -573,7 +602,6 @@ export default function HawalaPage() {
     if (!Number.isFinite(amountPaid) || amountPaid <= 0) { showToast("مبلغ پرداخت‌شده معتبر نیست."); return; }
     try {
       const paidHawala = { ...settleTarget, status: "paid" as HawalaStatus };
-      // ✅ فقط اگر گیرنده در لیست مشتریان موجود باشد، موجودی به‌روز می‌شود
       if (customers.some(c => c.name === settleTarget.receiverName)) {
         setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForHawala(paidHawala, "settle")));
       }
@@ -868,16 +896,17 @@ export default function HawalaPage() {
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-600"}`}><Ic n="send" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-blue-300" : "text-blue-700"}`}>معلومات حواله‌دهنده و حواله</b></div>
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-3 mb-4">
-                  {/* ✅ فیلد نام حواله‌دهنده با قابلیت نوشتن آزاد */}
+                  {/* ✅ فیلد نام حواله‌دهنده با custom dropdown */}
                   {fld("نام حواله‌دهنده *", (
-                    <div className="relative">
+                    <div className="relative" ref={senderListRef}>
                       <input
-                        list="sender-customers-list"
                         value={form.senderName}
                         onChange={e => {
-                          const selectedName = e.target.value;
-                          setField("senderName", selectedName);
-                          const customer = customers.find(c => c.name === selectedName);
+                          const val = e.target.value;
+                          setField("senderName", val);
+                          setSenderFilter(val);
+                          setShowSenderList(true);
+                          const customer = customers.find(c => c.name === val);
                           if (customer) {
                             setField("senderPhone", customer.phone || "");
                             setField("senderTelegram", customer.telegram || "");
@@ -886,15 +915,50 @@ export default function HawalaPage() {
                             setField("senderTelegram", "");
                           }
                         }}
+                        onFocus={() => setShowSenderList(true)}
                         placeholder="انتخاب از لیست یا نوشتن نام جدید…"
                         className={`${uiInput} pl-9 ${errors.senderName ? errInput : ""}`}
                       />
-                      <datalist id="sender-customers-list">
-                        {customers.map((c, idx) => (
-                          <option key={c.id} value={c.name}>{idx + 1}. {c.name}</option>
-                        ))}
-                      </datalist>
-                      <span className={chevPos}><Ic n="chevron" className="h-4 w-4" /></span>
+                      <button
+                        type="button"
+                        onClick={() => setShowSenderList(!showSenderList)}
+                        className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition ${dk ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}
+                      >
+                        <Ic n="chevron" className={`h-4 w-4 transition-transform ${showSenderList ? "rotate-180" : ""}`} />
+                      </button>
+
+                      {showSenderList && (
+                        <div className={`hw-menu absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
+                          {filteredSenderList.length === 0 ? (
+                            <div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>
+                          ) : (
+                            filteredSenderList.map((c, idx) => (
+                              <button
+                                key={c.id}
+                                type="button"
+                                onClick={() => {
+                                  setField("senderName", c.name);
+                                  setField("senderPhone", c.phone || "");
+                                  setField("senderTelegram", c.telegram || "");
+                                  setSenderFilter("");
+                                  setShowSenderList(false);
+                                }}
+                                className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-blue-400/15 hover:text-blue-300" : "text-slate-700 hover:bg-blue-50 hover:text-blue-600"}`}
+                              >
+                                <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-blue-500 to-cyan-500`}>
+                                  {idx + 1}
+                                </span>
+                                <span className="flex-1 truncate">{c.name}</span>
+                                {c.phone && <span className={`text-[10px] ${subText}`} dir="ltr">{c.phone}</span>}
+                              </button>
+                            ))
+                          )}
+                          <div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
+                          <div className={`px-3 py-2 text-[10px] text-center ${subText}`}>
+                            یا نام جدید بنویسید (در لیست مشتریان ذخیره نمی‌شود)
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                   {fld("کد پیگیری", (
