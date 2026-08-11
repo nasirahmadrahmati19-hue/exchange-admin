@@ -13,7 +13,7 @@ type Customer = {
   tazkira?: string;
   address?: string;
   note?: string;
-  telegram?: string; // ✅ فیلد تلگرام
+  telegram?: string;
   registeredAt: string;
   balances: Record<Currency, number>;
 };
@@ -70,7 +70,6 @@ const generateId = (): string => {
 };
 
 const isCurrency = (v: any): v is Currency => typeof v === "string" && (currencies as string[]).includes(v);
-const getCurrencyLabel = (cur: any): string => isCurrency(cur) ? labels[cur] : "—";
 
 const normalizeDigits = (value: string) => {
   const pd = "۰۱۲۳۴۵۶۷۸۹"; const ad = "٠١٢٣٤٥٦٧٨٩";
@@ -121,22 +120,9 @@ function dateLabel(s: string) {
   try { const d = new Date(s); return Number.isNaN(d.getTime()) ? "-" : formatDateTime(d); } catch { return "-"; }
 }
 
-function shortDateLabel(s: string) {
-  try { const d = new Date(s); return Number.isNaN(d.getTime()) ? "-" : formatShamsiDate(d); } catch { return "-"; }
-}
-
 function formatShamsiDate(d: Date) {
   const s = shamsiParts(d);
   return `${s.year}/${s.month}/${s.day}`;
-}
-
-function timeLabel(s: string) {
-  try {
-    const d = new Date(s);
-    if (Number.isNaN(d.getTime())) return "-";
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  } catch { return "-"; }
 }
 
 const emptyForm: FormState = {
@@ -294,6 +280,21 @@ const statusColors: Record<HawalaStatus, { light: string; dark: string }> = {
   cancelled: { light: "bg-rose-100 text-rose-700", dark: "bg-rose-400/15 text-rose-300" },
 };
 
+// ✅ توابع کمکی که قبلاً تعریف نشده بودند
+const formatDestination = (province: string, district: string) => province === "هرات" ? `${province} — ${district}` : province;
+
+const getHawalaNumberValue = (number: string) => {
+  const match = String(number || "").match(/(\d+)$/);
+  return match ? Number(match[1]) : 0;
+};
+
+const sortByHawalaNumber = (items: Hawala[], order: "asc" | "desc") =>
+  [...items].sort((a, b) => {
+    const an = getHawalaNumberValue(a.number);
+    const bn = getHawalaNumberValue(b.number);
+    return order === "asc" ? an - bn : bn - an;
+  });
+
 type BalanceChange = { customerName: string; currency: Currency; amount: number; };
 
 function getBalanceChangesForHawala(h: Hawala, action: "register" | "settle" | "cancel"): BalanceChange[] {
@@ -345,9 +346,6 @@ const iconPaths = {
   moon: "M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z",
   plus: "M12 4.5v15m7.5-7.5h-15",
   tag: "M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z",
-  search: "m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z",
-  eye: "M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
-  trash: "M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0",
   wallet: "M21 12a2.25 2.25 0 0 0-2.25-2.25H15a3 3 0 1 1-6 0H5.25A2.25 2.25 0 0 0 3 12m18 0v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 9m18 0V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v3",
 };
 
@@ -668,17 +666,10 @@ export default function HawalaPage() {
 
   return (
     <div dir="rtl" className={dk ? "dark" : ""}>
-      <style>{`@import url("https://fonts.googleapis.com/css2?family=Lalezar&family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap");.hw-font{font-family:"Vazirmatn","Segoe UI",Tahoma,sans-serif}.hw-display{font-family:"Lalezar","Vazirmatn",Tahoma,sans-serif;letter-spacing:.01em}.dark{color-scheme:dark}.hw-grid{background-image:radial-gradient(circle at 1px 1px,rgba(2,132,199,.10) 1px,transparent 0);background-size:24px 24px;-webkit-mask-image:linear-gradient(to bottom,rgba(0,0,0,.9),rgba(0,0,0,.25) 60%,transparent);mask-image:linear-gradient(to bottom,rgba(0,0,0,.9),rgba(0,0,0,.25) 60%,transparent)}.dark .hw-grid{background-image:radial-gradient(circle at 1px 1px,rgba(148,163,184,.08) 1px,transparent 0)}@keyframes hwUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}.hw-up{animation:hwUp .5s cubic-bezier(.22,.8,.35,1) both}details>summary{list-style:none}details>summary::-webkit-details-marker{display:none}.hw-scroll::-webkit-scrollbar{height:6px;width:6px}.hw-scroll::-webkit-scrollbar-thumb{background:rgba(59,130,246,.3);border-radius:3px}.hw-scroll{scrollbar-width:thin}::selection{background:rgba(59,130,246,.25)}`}</style>
+      <style>{`@import url("https://fonts.googleapis.com/css2?family=Lalezar&family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap");.hw-font{font-family:"Vazirmatn","Segoe UI",Tahoma,sans-serif}.hw-display{font-family:"Lalezar","Vazirmatn",Tahoma,sans-serif;letter-spacing:.01em}.dark{color-scheme:dark}@keyframes hwUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}.hw-up{animation:hwUp .5s cubic-bezier(.22,.8,.35,1) both}details>summary{list-style:none}details>summary::-webkit-details-marker{display:none}::selection{background:rgba(59,130,246,.25)}`}</style>
 
       <div className={`hw-font relative min-h-screen overflow-x-hidden antialiased transition-colors duration-500 ${dk ? "bg-[#0f172a] text-slate-100" : "bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 text-slate-800"}`}>
         <div className={`fixed inset-x-0 top-0 z-30 h-1 bg-gradient-to-l ${dk ? "from-blue-400 via-cyan-400 to-emerald-400" : "from-blue-500 via-cyan-500 to-emerald-500"}`} />
-        <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-0">
-          <div className="hw-grid absolute inset-0" />
-          <div className={`absolute -top-36 right-[-12rem] h-[30rem] w-[30rem] rounded-full blur-[110px] ${dk ? "bg-blue-500/10" : "bg-blue-400/20"}`} />
-          <div className={`absolute left-[-12rem] top-1/4 h-[26rem] w-[26rem] rounded-full blur-[110px] ${dk ? "bg-emerald-500/10" : "bg-emerald-300/20"}`} />
-          <div className={`absolute bottom-[-10rem] right-1/3 h-[24rem] w-[24rem] rounded-full blur-[100px] ${dk ? "bg-cyan-500/10" : "bg-cyan-300/20"}`} />
-        </div>
-
         <div className="relative z-10 mx-auto w-full max-w-7xl space-y-4 md:space-y-6 px-3 pb-16 pt-5 md:px-8 md:pt-9">
           <header className="hw-up flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 md:gap-3.5 min-w-0">
@@ -695,7 +686,6 @@ export default function HawalaPage() {
               <div className={`hidden sm:flex items-center gap-2 rounded-xl border px-3 py-2 shadow-sm backdrop-blur ${glassChip}`}>
                 <span className="relative flex h-2.5 w-2.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-70" /><span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" /></span>
                 <span dir="ltr" className={`text-xs font-bold tabular-nums ${dk ? "text-slate-100" : "text-slate-700"}`}>{currentDateTime || "--:--"}</span>
-                {now && (<><span className={`h-4 w-px ${dk ? "bg-slate-600" : "bg-slate-200"}`} /><span className={`whitespace-nowrap text-[10px] font-black ${dk ? "text-cyan-300" : "text-blue-600"}`}>{shamsiMonthLabel(now)}</span></>)}
               </div>
               <button onClick={() => setTheme(dk ? "light" : "dark")} className={`group grid h-10 w-10 md:h-11 md:w-11 cursor-pointer place-items-center rounded-lg md:rounded-xl border shadow-sm backdrop-blur transition-all duration-300 active:scale-90 ${dk ? "border-slate-600 bg-slate-800/85 text-amber-300 hover:border-amber-300" : "border-slate-200 bg-white/85 text-slate-600 hover:border-blue-400"}`}>
                 {dk ? <Ic n="sun" className="h-4 w-4 transition-transform duration-500 group-hover:rotate-45" /> : <Ic n="moon" className="h-4 w-4 transition-transform duration-500 group-hover:-rotate-12" />}
@@ -736,7 +726,6 @@ export default function HawalaPage() {
                 </div>
               </div>
 
-              {/* اطلاعات مشتری انتخاب‌شده */}
               {form.senderName && (() => {
                 const sc = customers.find(c => c.name === form.senderName);
                 if (!sc) return null;
@@ -755,11 +744,8 @@ export default function HawalaPage() {
                 );
               })()}
 
-              {/* معلومات حواله‌دهنده */}
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-600"}`}><Ic n="send" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-blue-300" : "text-blue-700"}`}>معلومات حواله‌دهنده</b></div>
-                
-                {/* ردیف اول: نام حواله‌دهنده */}
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-1 mb-4">
                   {fld("نام حواله‌دهنده *", (
                     <div className="relative">
@@ -790,8 +776,6 @@ export default function HawalaPage() {
                     </div>
                   ))}
                 </div>
-
-                {/* ردیف دوم: تلفن و تلگرام */}
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-2">
                   {fld("شماره تماس حواله‌دهنده *", (
                     <input className={`${uiInput} ${errors.senderPhone ? errInput : ""}`} value={form.senderPhone} onChange={e => setField("senderPhone", e.target.value)} placeholder="07xxxxxxxx" />
@@ -802,11 +786,8 @@ export default function HawalaPage() {
                 </div>
               </div>
 
-              {/* معلومات حواله */}
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-cyan-400/15 text-cyan-300" : "bg-cyan-100 text-cyan-600"}`}><Ic n="swap" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-cyan-300" : "text-cyan-700"}`}>معلومات حواله</b></div>
-                
-                {/* ردیف اول: کد پیگیری و تاریخ */}
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-2 mb-4">
                   {fld("کد پیگیری", (
                     <div className="relative">
@@ -816,15 +797,11 @@ export default function HawalaPage() {
                   ))}
                   {fld("تاریخ (شمسی)", (<input readOnly value={currentDateTime} className={`${uiInput} ${roInput}`} />))}
                 </div>
-
-                {/* ردیف دوم: نوع حواله و ارزها */}
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-3 mb-4">
                   {fld("نوع حواله *", sel(form.type, (v) => setField("type", v), [["", "انتخاب کنید"], ["send", "ارسال"], ["receive", "دریافت"]], errors.type ? errInput : ""))}
                   {fld("ارز مبدا *", sel(form.currencyFrom, (v) => setField("currencyFrom", v), currencies.map(c => [c, labels[c]])))}
                   {fld("ارز مقصد *", sel(form.currencyTo, (v) => setField("currencyTo", v), currencies.map(c => [c, labels[c]])))}
                 </div>
-
-                {/* ردیف سوم: مبلغ و کمیشن */}
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-3 mb-4">
                   {fld("مبلغ حواله *", (
                     <input type="text" inputMode="decimal" dir="ltr" className={`${uiInput} text-left tabular-nums ${errors.amountFrom ? errInput : ""}`} value={form.amountFrom} onChange={e => setField("amountFrom", toNumericText(e.target.value))} placeholder="مثلاً 10000" />
@@ -836,8 +813,6 @@ export default function HawalaPage() {
                     <input readOnly value={`${fmt(finalAmount)} ${labels[form.currencyTo]}`} className={`${uiInput} ${roInput} text-left tabular-nums`} />
                   ))}
                 </div>
-
-                {/* ردیف چهارم: باقی مانده */}
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-2">
                   {fld("باقی مانده حساب مشتری", (
                     <input className={uiInput} value={form.balance} onChange={e => setField("balance", e.target.value)} placeholder="اختیاری" />
@@ -845,7 +820,6 @@ export default function HawalaPage() {
                 </div>
               </div>
 
-              {/* نرخ */}
               {rateMode === "same" && (<div>{sameBox("ارز مبدا و مقصد یکسان است؛ مبلغ نهایی برابر مبلغ حواله خواهد بود.")}</div>)}
               {rateMode === "afn" && afnForeign && (
                 <div>{rateBox(cBlue, "نرخ دستی در برابر افغانی", (
@@ -874,7 +848,6 @@ export default function HawalaPage() {
                 ), (<>{pill(cAmber.badge, rateValue > 0 && directCounter ? `نرخ ثبت‌شده: ${directRateLabel(directBaseValue, directCounter, rateValue)}` : "", true)}{pill(cEmerald.badge, convertedAmount > 0 ? `نتیجه: ${fmt(convertedAmount)} ${labels[form.currencyTo]}` : "")}</>))}</div>
               )}
 
-              {/* کارمزد */}
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="rate" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>کارمزد</b></div>
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-2">
@@ -895,7 +868,6 @@ export default function HawalaPage() {
                 </div>
               </div>
 
-              {/* معلومات مقصد */}
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}><Ic n="doc" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}>معلومات مقصد</b></div>
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -905,7 +877,6 @@ export default function HawalaPage() {
                 </div>
               </div>
 
-              {/* معلومات حواله‌گیرنده */}
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="receive" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>معلومات حواله‌گیرنده</b></div>
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -916,7 +887,6 @@ export default function HawalaPage() {
                 </div>
               </div>
 
-              {/* یادداشت */}
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-slate-400/15 text-slate-300" : "bg-slate-100 text-slate-600"}`}><Ic n="info" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-slate-300" : "text-slate-700"}`}>یادداشت</b></div>
                 <textarea rows={4} value={form.note} onChange={e => setField("note", e.target.value)} placeholder="یادداشت اختیاری..." className={`${uiInput} h-auto py-3 resize-none`} />
@@ -958,7 +928,7 @@ export default function HawalaPage() {
                     <p className="text-sm font-black text-center">هیچ حواله جاری پیدا نشد.</p>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto hw-scroll">
+                  <div className="overflow-x-auto">
                     <table className="w-full min-w-[1000px] text-sm">
                       <thead>
                         <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
@@ -1025,7 +995,7 @@ export default function HawalaPage() {
                     <p className="text-sm font-black text-center">هیچ حواله‌ای پیدا نشد.</p>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto hw-scroll">
+                  <div className="overflow-x-auto">
                     <table className="w-full min-w-[1000px] text-sm">
                       <thead>
                         <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
@@ -1063,7 +1033,6 @@ export default function HawalaPage() {
         </div>
       </div>
 
-      {/* مودال پیش‌نمایش */}
       {previewOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => setPreviewOpen(false)}>
           <div className={`hw-up w-full max-w-2xl overflow-hidden rounded-xl md:rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={(e) => e.stopPropagation()}>
@@ -1087,43 +1056,10 @@ export default function HawalaPage() {
                   <div><span className={subText}>تاریخ: </span><b>{currentDateTime}</b></div>
                   <div><span className={subText}>نوع: </span><b>{form.type === "send" ? "ارسال" : "دریافت"}</b></div>
                   <div><span className={subText}>مقصد: </span><b>{destinationText}</b></div>
-                  <div><span className={subText}>تبدیل: </span><b>{labels[form.currencyFrom]} ← {labels[form.currencyTo]}</b></div>
                   <div><span className={subText}>مبلغ: </span><b>{fmt(amountFrom)} {labels[form.currencyFrom]}</b></div>
-                  <div><span className={subText}>نرخ: </span><b>{form.rate || "بدون تبدیل"}</b></div>
                   <div><span className={subText}>مبلغ نهایی: </span><b className={dk ? "text-emerald-300" : "text-emerald-700"}>{fmt(finalAmount)} {labels[form.currencyTo]}</b></div>
                 </div>
               </div>
-              <div className={`rounded-xl border p-4 ${dk ? "border-amber-400/25 bg-amber-400/[0.05]" : "border-amber-300 bg-amber-50"}`}>
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2"><span className={`grid h-7 w-7 place-items-center rounded-lg ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="rate" className="h-3.5 w-3.5" /></span><b className={`text-xs font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>کارمزد</b></div>
-                  <span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${form.feePayer === "sender" ? dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-700" : dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-700"}`}>{form.feePayer === "sender" ? "از فرستنده" : "از گیرنده"}</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div><span className={subText}>مبلغ: </span><b>{fmt(feeValue)} {labels[form.feeCurrency]}</b></div>
-                  <div><span className={subText}>پرداخت‌کننده: </span><b>{form.feePayer === "sender" ? "حواله‌دهنده" : "حواله‌گیرنده"}</b></div>
-                </div>
-              </div>
-              <div className={`rounded-xl border p-4 ${dk ? "border-blue-400/25 bg-blue-400/[0.05]" : "border-blue-300 bg-blue-50"}`}>
-                <div className="flex items-center gap-2 mb-3"><span className={`grid h-7 w-7 place-items-center rounded-lg ${dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-600"}`}><Ic n="send" className="h-3.5 w-3.5" /></span><b className={`text-xs font-black ${dk ? "text-blue-300" : "text-blue-700"}`}>حواله‌دهنده</b></div>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div><span className={subText}>نام: </span><b>{form.senderName || "—"}</b></div>
-                  <div><span className={subText}>تلفن: </span><b dir="ltr">{form.senderPhone || "—"}</b></div>
-                </div>
-              </div>
-              <div className={`rounded-xl border p-4 ${dk ? "border-amber-400/25 bg-amber-400/[0.05]" : "border-amber-300 bg-amber-50"}`}>
-                <div className="flex items-center gap-2 mb-3"><span className={`grid h-7 w-7 place-items-center rounded-lg ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="receive" className="h-3.5 w-3.5" /></span><b className={`text-xs font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>حواله‌گیرنده</b></div>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div><span className={subText}>نام: </span><b>{form.receiverName || "—"}</b></div>
-                  <div><span className={subText}>تذکره: </span><b dir="ltr">{form.receiverTazkira || "—"}</b></div>
-                  <div><span className={subText}>تلفن: </span><b dir="ltr">{form.receiverPhone || "—"}</b></div>
-                </div>
-              </div>
-              {form.note && (
-                <div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"}`}>
-                  <b className={`text-xs font-black ${dk ? "text-slate-300" : "text-slate-700"}`}>یادداشت</b>
-                  <p className={`text-sm leading-6 mt-2 ${dk ? "text-slate-300" : "text-slate-600"}`}>{form.note}</p>
-                </div>
-              )}
               <div className="flex flex-wrap gap-3 pt-2">
                 <button onClick={confirmRegister} className={`flex h-[48px] flex-1 min-w-[180px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-sm font-black shadow-lg transition-all hover:brightness-110 active:scale-[0.98] ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 to-teal-500 text-white"}`}>
                   ثبت نهایی حواله<Ic n="check" className="h-4 w-4" />
@@ -1135,7 +1071,6 @@ export default function HawalaPage() {
         </div>
       )}
 
-      {/* مودال تسویه */}
       {settleTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => setSettleTarget(null)}>
           <div className={`hw-up w-full max-w-lg overflow-hidden rounded-xl md:rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={(e) => e.stopPropagation()}>
@@ -1147,12 +1082,7 @@ export default function HawalaPage() {
               <div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div><span className={subText}>گیرنده: </span><b>{settleTarget.receiverName}</b></div>
-                  <div><span className={subText}>تذکره: </span><b dir="ltr">{settleTarget.receiverTazkira}</b></div>
                   <div><span className={subText}>مبلغ نهایی: </span><b className={dk ? "text-emerald-300" : "text-emerald-700"}>{fmt(settleTarget.finalAmount)} {labels[settleTarget.currencyTo]}</b></div>
-                </div>
-                <div className={`mt-3 flex items-center justify-between rounded-xl border p-3 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-white"}`}>
-                  <div className={`text-[11px] font-black ${dk ? "text-slate-200" : "text-slate-700"}`}>کارمزد: {fmt(settleTarget.fee)} {labels[settleTarget.feeCurrency]}</div>
-                  <span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${settleTarget.feePayer === "sender" ? dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-700" : dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-700"}`}>{settleTarget.feePayer === "sender" ? "از فرستنده" : "از گیرنده"}</span>
                 </div>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -1170,7 +1100,6 @@ export default function HawalaPage() {
         </div>
       )}
 
-      {/* مودال لغو */}
       {cancelTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => setCancelTarget(null)}>
           <div className={`hw-up w-full max-w-lg overflow-hidden rounded-xl md:rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={(e) => e.stopPropagation()}>
@@ -1179,12 +1108,6 @@ export default function HawalaPage() {
               <button onClick={() => setCancelTarget(null)} className={`grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-all hover:rotate-90 ${dk ? "hover:bg-slate-700 hover:text-white" : "hover:bg-slate-100 hover:text-slate-700"}`}><Ic n="x" className="h-4 w-4" /></button>
             </div>
             <div className="px-4 md:px-5 py-4 space-y-4">
-              <div className={`rounded-xl border p-3 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"}`}>
-                <div className="flex items-center justify-between">
-                  <div className={`text-[11px] font-black ${dk ? "text-slate-200" : "text-slate-700"}`}>کارمزد: {fmt(cancelTarget.fee)} {labels[cancelTarget.feeCurrency]}</div>
-                  <span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${cancelTarget.feePayer === "sender" ? dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-700" : dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-700"}`}>{cancelTarget.feePayer === "sender" ? "از فرستنده" : "از گیرنده"}</span>
-                </div>
-              </div>
               <div><label className={uiLabel}>دلیل لغو حواله</label><textarea rows={4} value={cancelReason} onChange={e => setCancelReason(e.target.value)} placeholder="دلیل لغو را بنویسید..." className={`${uiInput} h-auto py-3 resize-none`} /></div>
               <div className="flex flex-wrap gap-3">
                 <button onClick={confirmCancel} className={`flex h-[48px] flex-1 min-w-[150px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-sm font-black shadow-lg transition-all hover:brightness-110 active:scale-[0.98] ${dk ? "from-rose-400 to-red-400 text-slate-950" : "from-rose-500 to-red-500 text-white"}`}>
