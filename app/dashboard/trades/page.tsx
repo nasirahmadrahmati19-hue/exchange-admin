@@ -494,7 +494,6 @@ export default function CurrencyExchangePage() {
     setConvertedAmount(result ? fmt(result) : "");
   }, [convertAmount, convertFromCurrency, convertToCurrency, convertRate, convertMode, convertDirectBaseValue, convertDirectCounter]);
 
-  // ✅ استفاده از mousedown برای هندلر کلیک بیرون و جلوگیری از تداخل با کلیک روی دکمه‌های toggle
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
@@ -519,7 +518,6 @@ export default function CurrencyExchangePage() {
     return () => { document.removeEventListener("mousedown", handleClickOutside); };
   }, [openMenuId]);
 
-  // ✅ Debounce برای فیلتر لیست‌ها - بهبود عملکرد
   const [debouncedCustomerFilter, setDebouncedCustomerFilter] = useState("");
   const [debouncedSenderFilter, setDebouncedSenderFilter] = useState("");
   const [debouncedReceiverFilter, setDebouncedReceiverFilter] = useState("");
@@ -1276,7 +1274,7 @@ export default function CurrencyExchangePage() {
     );
   });
 
-  // ✅ کامپوننت بهینه‌شده CustomerDropdown با memo و stopPropagation درست
+  // ✅ اصلاح خطای TypeScript: استفاده از RefObject<HTMLDivElement> بدون | null
   const CustomerDropdown = memo(function CustomerDropdown({
     value, onInputChange, showList, onToggleList, filter, onFilterChange, listRef, filteredList, err
   }: {
@@ -1286,7 +1284,7 @@ export default function CurrencyExchangePage() {
     onToggleList: () => void;
     filter: string;
     onFilterChange: (v: string) => void;
-    listRef: React.RefObject<HTMLDivElement | null>;
+    listRef: React.RefObject<HTMLDivElement>;
     filteredList: Customer[];
     err?: boolean;
   }) {
@@ -1301,7 +1299,6 @@ export default function CurrencyExchangePage() {
       if (!showList) onToggleList();
     }, [showList, onToggleList]);
 
-    // ✅ کلیدی: استفاده از onMouseDown با stopPropagation برای جلوگیری از حباب شدن رویداد
     const handleToggleClick = useCallback((e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
@@ -1360,12 +1357,10 @@ export default function CurrencyExchangePage() {
     );
   });
 
-  // ✅ ActionMenu بهینه‌شده
   const ActionMenu = memo(function ActionMenu({ tx }: { tx: Transaction }) {
     const isOpen = openMenuId === tx.id;
     const isVoided = tx.status === "voided";
 
-    // ✅ استفاده از onMouseDown برای جلوگیری از حباب
     const handleToggle = useCallback((e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
@@ -1464,7 +1459,6 @@ export default function CurrencyExchangePage() {
     );
   });
 
-  // ✅ ردیف تراکنش بهینه‌شده
   const TransactionRow = memo(function TransactionRow({ tx, index, isSearching, transactionMatchesSearch, typeChipClass, transactionCustomerLabel, transactionCommissionLabel, commissionPayerLabel, dk, subText }: {
     tx: Transaction;
     index: number;
