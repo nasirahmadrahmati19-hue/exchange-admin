@@ -40,7 +40,7 @@ const SHARED_COUNTER_KEY = "shared-tracking-counter";
 const defaultCustomers: Customer[] = [
   { id: "1", name: "احمد رحیمی", phone: "0700123456", tazkira: "1400-001-001", address: "هرات، گلران", note: "مشتری ویژه", telegram: "@ahmad_rahimi", registeredAt: "2025-01-15T10:00:00Z", balances: { AFN: 500000, USD: 10000, EUR: 0, IRR: 0, PKR: 0 } },
   { id: "2", name: "محمد ظاهر", phone: "0700654321", tazkira: "1400-002-002", address: "هرات، انجیل", note: "", telegram: "@mohammad_zahir", registeredAt: "2025-02-20T14:30:00Z", balances: { AFN: 200000, USD: 5000, EUR: 0, IRR: 0, PKR: 0 } },
-  { id: "3", name: "فاطمه حسینی", phone: "0700789123", tazkra: "1400-003-003", address: "هرات، مرکز", note: "معاملات عمده", telegram: "@fatema_hosseini", registeredAt: "2025-03-05T09:15:00Z", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 50000000, PKR: 0 } },
+  { id: "3", name: "فاطمه حسینی", phone: "0700789123", tazkira: "1400-003-003", address: "هرات، مرکز", note: "معاملات عمده", telegram: "@fatema_hosseini", registeredAt: "2025-03-05T09:15:00Z", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 50000000, PKR: 0 } },
 ];
 
 const generateId = (): string => {
@@ -679,6 +679,8 @@ export default function CurrencyExchangePage() {
   const rateChip = `flex h-12 items-center whitespace-nowrap rounded-xl border px-3.5 text-sm font-bold shadow-sm ${dk ? "border-slate-600 bg-slate-900 text-slate-100" : "border-slate-200 bg-white text-slate-700"}`;
   const chevPos = `pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${dk ? "text-slate-500" : "text-slate-400"}`;
   const identExIcon = dk ? "from-cyan-400/20 to-cyan-400/5 text-cyan-300 ring-cyan-400/25" : "from-cyan-400/20 to-cyan-400/10 text-cyan-600 ring-cyan-400/30";
+  const identTrIcon = dk ? "from-violet-400/20 to-violet-400/5 text-violet-300 ring-violet-400/25" : "from-violet-400/20 to-violet-400/10 text-violet-600 ring-violet-400/30";
+  const identCvIcon = dk ? "from-emerald-400/20 to-emerald-400/5 text-emerald-300 ring-emerald-400/25" : "from-emerald-400/20 to-emerald-400/10 text-emerald-600 ring-emerald-400/30";
 
   const cBlue = { wrap: dk ? "border-blue-400/25 bg-blue-400/[0.07]" : "border-blue-300 bg-blue-50", icon: dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-600", title: dk ? "text-blue-300" : "text-blue-700", badge: dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-700" };
   const cAmber = { wrap: dk ? "border-amber-400/25 bg-amber-400/[0.07]" : "border-amber-300 bg-amber-50", icon: dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600", title: dk ? "text-amber-300" : "text-amber-700", badge: dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-700" };
@@ -967,14 +969,7 @@ export default function CurrencyExchangePage() {
                       <button type="button" onClick={() => setCommissionPayer("receiver")} className={`flex-1 rounded-lg px-3 py-2 text-xs font-black transition-all ${commissionPayer === "receiver" ? dk ? "bg-cyan-400 text-slate-950 shadow" : "bg-sky-500 text-white shadow" : dk ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-700"}`}>گیرنده</button>
                     </div>
                   ))}
-                  {fld("ارز کارمزد", (
-                    <div className="relative">
-                      <select value={commissionCurrency} onChange={(e) => setCommissionCurrency(e.target.value as Currency)} className={`${uiInput} cursor-pointer appearance-none pl-9`}>
-                        {currencies.map((c) => (<option key={c} value={c}>{labels[c]}</option>))}
-                      </select>
-                      <span className={chevPos}><Ic n="chevron" className="h-4 w-4" /></span>
-                    </div>
-                  ))}
+                  {fld("ارز کارمزد", sel(commissionCurrency, (v) => setCommissionCurrency(v as Currency), currencies.map(c => [c, labels[c]])))}
                 </div>
               </div>
 
@@ -987,11 +982,11 @@ export default function CurrencyExchangePage() {
             </section>
           )}
 
-          {/* ✅ زیر تب انتقال بین مشتریان */}
+          {/* ✅ زیر تب انتقال بین مشتریان - فرم کامل */}
           {activeTab === "transfer" && (
             <section className={`ex-up space-y-4 md:space-y-5 p-4 md:p-7 ${uiCard}`}>
               <div className="flex flex-wrap items-center gap-3">
-                <span className={`grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${dk ? "from-violet-400/20 to-violet-400/5 text-violet-300 ring-violet-400/25" : "from-violet-400/20 to-violet-400/10 text-violet-600 ring-violet-400/30"}`}><Ic n="users" className="h-5 w-5" /></span>
+                <span className={`grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identTrIcon}`}><Ic n="users" className="h-5 w-5" /></span>
                 <div className="flex-1 min-w-0">
                   <h2 className={`ex-display text-xl md:text-2xl leading-none ${heading}`}>انتقال بین مشتریان</h2>
                   <p className={`mt-1 text-[11px] font-bold ${subText}`}>انتقال موجودی از یک مشتری به مشتری دیگر</p>
@@ -1000,6 +995,7 @@ export default function CurrencyExchangePage() {
 
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-violet-400/15 text-violet-300" : "bg-violet-100 text-violet-600"}`}><Ic n="users" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-violet-300" : "text-violet-700"}`}>معلومات انتقال</b></div>
+                
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-3 mb-4">
                   {fld("فرستنده *", sel(sender, (v) => setSender(v), [["", "انتخاب فرستنده"], ...customers.map(c => [c.name, c.name])]))}
                   {fld("گیرنده *", sel(receiver, (v) => setReceiver(v), [["", "انتخاب گیرنده"], ...customers.map(c => [c.name, c.name])]))}
@@ -1010,26 +1006,63 @@ export default function CurrencyExchangePage() {
                     </div>
                   ))}
                 </div>
+
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-3 mb-4">
+                  {fld("تاریخ (شمسی)", (<input readOnly value={currentDateTime} className={`${uiInput} ${roInput}`} />))}
                   {fld("ارز فرستنده *", sel(senderFromCurrency, (v) => setSenderFromCurrency(v as Currency), currencies.map(c => [c, labels[c]])))}
                   {fld("ارز گیرنده *", sel(receiverToCurrency, (v) => setReceiverToCurrency(v as Currency), currencies.map(c => [c, labels[c]])))}
-                  {fld("مبلغ *", (<input type="text" inputMode="decimal" dir="ltr" className={`${uiInput} text-left tabular-nums`} value={senderAmount} onChange={e => setSenderAmount(toNumericText(e.target.value))} placeholder="مثلاً 10000" />))}
                 </div>
+
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-3 mb-4">
-                  {fld("نرخ", (<input type="text" inputMode="decimal" dir="ltr" className={`${uiInput} text-left tabular-nums`} value={transferRate} onChange={e => setTransferRate(toNumericText(e.target.value))} placeholder="0" />))}
+                  {fld("مبلغ *", (<input type="text" inputMode="decimal" dir="ltr" className={`${uiInput} text-left tabular-nums`} value={senderAmount} onChange={e => setSenderAmount(toNumericText(e.target.value))} placeholder="مثلاً 10000" />))}
                   {fld("کمیشن", (<input type="text" inputMode="decimal" dir="ltr" className={`${uiInput} text-left tabular-nums`} value={transferCommission} onChange={e => setTransferCommission(toNumericText(e.target.value))} placeholder="0" />))}
                   {fld("مبلغ نهایی", (<input readOnly value={`${fmt(transferConvertedAmount)} ${labels[receiverToCurrency]}`} className={`${uiInput} ${roInput} text-left tabular-nums`} />))}
                 </div>
-                <div className="grid gap-3 md:gap-4 sm:grid-cols-2 mb-4">
-                  {fld("کارمزد از حساب", (
-                    <div className={`flex rounded-xl border p-1 ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`}>
-                      <button type="button" onClick={() => setTransferCommissionPayer("sender")} className={`flex-1 rounded-lg px-3 py-2 text-xs font-black transition-all ${transferCommissionPayer === "sender" ? dk ? "bg-cyan-400 text-slate-950 shadow" : "bg-sky-500 text-white shadow" : dk ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-700"}`}>فرستنده</button>
-                      <button type="button" onClick={() => setTransferCommissionPayer("receiver")} className={`flex-1 rounded-lg px-3 py-2 text-xs font-black transition-all ${transferCommissionPayer === "receiver" ? dk ? "bg-cyan-400 text-slate-950 shadow" : "bg-sky-500 text-white shadow" : dk ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-700"}`}>گیرنده</button>
+
+                {transferRateMode === "same" && (<div>{sameBox("ارز فرستنده و گیرنده یکسان است؛ مبلغ نهایی برابر مبلغ فرستنده خواهد بود.")}</div>)}
+                {transferRateMode === "afn" && transferAfnForeign && (
+                  <div>{rateBox(cBlue, "نرخ دستی در برابر افغانی", (
+                    <div><label className={uiLabel}>نرخ</label>
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <span className={rateChip}>{rateUnits[transferAfnForeign]} {labels[transferAfnForeign]} =</span>
+                        <input type="text" inputMode="decimal" dir="ltr" value={transferRate} onChange={(e) => setTransferRate(toNumericText(e.target.value))} placeholder="0" className={`h-12 w-32 md:w-44 px-3 text-left text-sm font-bold tabular-nums ${inputShell}`} />
+                        <span className={rateChip}>{labels.AFN}</span>
+                      </div>
                     </div>
-                  ))}
-                  {fld("ارز کارمزد", sel(transferCommissionCurrency, (v) => setTransferCommissionCurrency(v as Currency), currencies.map(c => [c, labels[c]])))}
+                  ), (<>{pill(cBlue.badge, transferRateValue > 0 ? `نرخ ثبت‌شده: ${afnRateLabel(transferAfnForeign, transferRateValue)}` : "", true)}{pill(cEmerald.badge, transferConvertedAmount > 0 ? `نتیجه: ${fmt(transferConvertedAmount)} ${labels[receiverToCurrency]}` : "")}</>))}</div>
+                )}
+                {transferRateMode === "direct" && (
+                  <div>{rateBox(cAmber, "نرخ مستقیم جفت‌ارز", (
+                    <div className="grid items-end gap-3 md:gap-4 md:grid-cols-2">
+                      {fld("مبنای نرخ", sel(transferDirectBaseValue, (v) => setTransferDirectBase(v as Currency), [[senderFromCurrency, labels[senderFromCurrency]], [receiverToCurrency, labels[receiverToCurrency]]]))}
+                      <div>
+                        <label className={uiLabel}>نرخ مستقیم</label>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={rateChip}>{rateUnits[transferDirectBaseValue]} {labels[transferDirectBaseValue]} =</span>
+                          <input type="text" inputMode="decimal" dir="ltr" value={transferRate} onChange={(e) => setTransferRate(toNumericText(e.target.value))} placeholder="0" className={`h-12 w-28 md:w-40 px-3 text-left text-sm font-bold tabular-nums ${inputShell}`} />
+                          <span className={rateChip}>{transferDirectCounter ? labels[transferDirectCounter] : ""}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ), (<>{pill(cAmber.badge, transferRateValue > 0 && transferDirectCounter ? `نرخ ثبت‌شده: ${directRateLabel(transferDirectBaseValue, transferDirectCounter, transferRateValue)}` : "", true)}{pill(cEmerald.badge, transferConvertedAmount > 0 ? `نتیجه: ${fmt(transferConvertedAmount)} ${labels[receiverToCurrency]}` : "")}</>))}</div>
+                )}
+
+                <div className={`rounded-2xl border p-4 mt-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
+                  <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="rate" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>کارمزد</b></div>
+                  <div className="grid gap-3 md:gap-4 sm:grid-cols-2">
+                    {fld("کارمزد از حساب", (
+                      <div className={`flex rounded-xl border p-1 ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`}>
+                        <button type="button" onClick={() => setTransferCommissionPayer("sender")} className={`flex-1 rounded-lg px-3 py-2 text-xs font-black transition-all ${transferCommissionPayer === "sender" ? dk ? "bg-cyan-400 text-slate-950 shadow" : "bg-sky-500 text-white shadow" : dk ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-700"}`}>فرستنده</button>
+                        <button type="button" onClick={() => setTransferCommissionPayer("receiver")} className={`flex-1 rounded-lg px-3 py-2 text-xs font-black transition-all ${transferCommissionPayer === "receiver" ? dk ? "bg-cyan-400 text-slate-950 shadow" : "bg-sky-500 text-white shadow" : dk ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-700"}`}>گیرنده</button>
+                      </div>
+                    ))}
+                    {fld("ارز کارمزد", sel(transferCommissionCurrency, (v) => setTransferCommissionCurrency(v as Currency), currencies.map(c => [c, labels[c]])))}
+                  </div>
                 </div>
-                {fld("توضیحات", (<input className={uiInput} value={transferDescription} onChange={e => setTransferDescription(e.target.value)} placeholder="اختیاری" />))}
+
+                <div className="mt-4">
+                  {fld("توضیحات", (<input className={uiInput} value={transferDescription} onChange={e => setTransferDescription(e.target.value)} placeholder="اختیاری" />))}
+                </div>
               </div>
 
               <div className="flex flex-wrap gap-3">
@@ -1041,11 +1074,11 @@ export default function CurrencyExchangePage() {
             </section>
           )}
 
-          {/* ✅ زیر تب تبدیل ارز مشتری */}
+          {/* ✅ زیر تب تبدیل ارز مشتری - فرم کامل */}
           {activeTab === "convert" && (
             <section className={`ex-up space-y-4 md:space-y-5 p-4 md:p-7 ${uiCard}`}>
               <div className="flex flex-wrap items-center gap-3">
-                <span className={`grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${dk ? "from-emerald-400/20 to-emerald-400/5 text-emerald-300 ring-emerald-400/25" : "from-emerald-400/20 to-emerald-400/10 text-emerald-600 ring-emerald-400/30"}`}><Ic n="user" className="h-5 w-5" /></span>
+                <span className={`grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identCvIcon}`}><Ic n="user" className="h-5 w-5" /></span>
                 <div className="flex-1 min-w-0">
                   <h2 className={`ex-display text-xl md:text-2xl leading-none ${heading}`}>تبدیل ارز مشتری</h2>
                   <p className={`mt-1 text-[11px] font-bold ${subText}`}>تبدیل یک ارز به ارز دیگر در حساب مشتری</p>
@@ -1054,6 +1087,7 @@ export default function CurrencyExchangePage() {
 
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}><Ic n="user" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}>معلومات تبدیل</b></div>
+                
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-3 mb-4">
                   {fld("مشتری *", sel(convertCustomer, (v) => setConvertCustomer(v), [["", "انتخاب مشتری"], ...customers.map(c => [c.name, c.name])]))}
                   {fld("کد پیگیری", (
@@ -1064,18 +1098,59 @@ export default function CurrencyExchangePage() {
                   ))}
                   {fld("تاریخ (شمسی)", (<input readOnly value={currentDateTime} className={`${uiInput} ${roInput}`} />))}
                 </div>
+
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-3 mb-4">
                   {fld("ارز مبدا *", sel(convertFromCurrency, (v) => setConvertFromCurrency(v as Currency), currencies.map(c => [c, labels[c]])))}
                   {fld("ارز مقصد *", sel(convertToCurrency, (v) => setConvertToCurrency(v as Currency), currencies.map(c => [c, labels[c]])))}
                   {fld("مبلغ *", (<input type="text" inputMode="decimal" dir="ltr" className={`${uiInput} text-left tabular-nums`} value={convertAmount} onChange={e => setConvertAmount(toNumericText(e.target.value))} placeholder="مثلاً 10000" />))}
                 </div>
+
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-3 mb-4">
-                  {fld("نرخ", (<input type="text" inputMode="decimal" dir="ltr" className={`${uiInput} text-left tabular-nums`} value={convertRate} onChange={e => setConvertRate(toNumericText(e.target.value))} placeholder="0" />))}
                   {fld("کمیشن", (<input type="text" inputMode="decimal" dir="ltr" className={`${uiInput} text-left tabular-nums`} value={convertCommission} onChange={e => setConvertCommission(toNumericText(e.target.value))} placeholder="0" />))}
                   {fld("مبلغ نهایی", (<input readOnly value={`${fmt(convertConvertedAmount)} ${labels[convertToCurrency]}`} className={`${uiInput} ${roInput} text-left tabular-nums`} />))}
                 </div>
-                <div className="grid gap-3 md:gap-4 sm:grid-cols-2 mb-4">
-                  {fld("ارز کارمزد", sel(convertCommissionCurrency, (v) => setConvertCommissionCurrency(v as Currency), currencies.map(c => [c, labels[c]])))}
+
+                {convertRateMode === "same" && (<div>{sameBox("ارز مبدا و مقصد یکسان است؛ مبلغ نهایی برابر مبلغ مبدا خواهد بود.")}</div>)}
+                {convertRateMode === "afn" && convertAfnForeign && (
+                  <div>{rateBox(cBlue, "نرخ دستی در برابر افغانی", (
+                    <div><label className={uiLabel}>نرخ</label>
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <span className={rateChip}>{rateUnits[convertAfnForeign]} {labels[convertAfnForeign]} =</span>
+                        <input type="text" inputMode="decimal" dir="ltr" value={convertRate} onChange={(e) => setConvertRate(toNumericText(e.target.value))} placeholder="0" className={`h-12 w-32 md:w-44 px-3 text-left text-sm font-bold tabular-nums ${inputShell}`} />
+                        <span className={rateChip}>{labels.AFN}</span>
+                      </div>
+                    </div>
+                  ), (<>{pill(cBlue.badge, convertRateValue > 0 ? `نرخ ثبت‌شده: ${afnRateLabel(convertAfnForeign, convertRateValue)}` : "", true)}{pill(cEmerald.badge, convertConvertedAmount > 0 ? `نتیجه: ${fmt(convertConvertedAmount)} ${labels[convertToCurrency]}` : "")}</>))}</div>
+                )}
+                {convertRateMode === "direct" && (
+                  <div>{rateBox(cAmber, "نرخ مستقیم جفت‌ارز", (
+                    <div className="grid items-end gap-3 md:gap-4 md:grid-cols-2">
+                      {fld("مبنای نرخ", sel(convertDirectBaseValue, (v) => setConvertDirectBase(v as Currency), [[convertFromCurrency, labels[convertFromCurrency]], [convertToCurrency, labels[convertToCurrency]]]))}
+                      <div>
+                        <label className={uiLabel}>نرخ مستقیم</label>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={rateChip}>{rateUnits[convertDirectBaseValue]} {labels[convertDirectBaseValue]} =</span>
+                          <input type="text" inputMode="decimal" dir="ltr" value={convertRate} onChange={(e) => setConvertRate(toNumericText(e.target.value))} placeholder="0" className={`h-12 w-28 md:w-40 px-3 text-left text-sm font-bold tabular-nums ${inputShell}`} />
+                          <span className={rateChip}>{convertDirectCounter ? labels[convertDirectCounter] : ""}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ), (<>{pill(cAmber.badge, convertRateValue > 0 && convertDirectCounter ? `نرخ ثبت‌شده: ${directRateLabel(convertDirectBaseValue, convertDirectCounter, convertRateValue)}` : "", true)}{pill(cEmerald.badge, convertConvertedAmount > 0 ? `نتیجه: ${fmt(convertConvertedAmount)} ${labels[convertToCurrency]}` : "")}</>))}</div>
+                )}
+
+                <div className={`rounded-2xl border p-4 mt-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
+                  <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="rate" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>کارمزد</b></div>
+                  <div className="grid gap-3 md:gap-4 sm:grid-cols-2">
+                    {fld("کارمزد از حساب", (
+                      <div className={`flex rounded-xl border p-1 ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`}>
+                        <button type="button" disabled className={`flex-1 rounded-lg px-3 py-2 text-xs font-black ${dk ? "bg-cyan-400 text-slate-950 shadow" : "bg-sky-500 text-white shadow"}`}>مشتری</button>
+                      </div>
+                    ))}
+                    {fld("ارز کارمزد", sel(convertCommissionCurrency, (v) => setConvertCommissionCurrency(v as Currency), currencies.map(c => [c, labels[c]])))}
+                  </div>
+                </div>
+
+                <div className="mt-4">
                   {fld("توضیحات", (<input className={uiInput} value={convertDescription} onChange={e => setConvertDescription(e.target.value)} placeholder="اختیاری" />))}
                 </div>
               </div>
