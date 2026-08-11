@@ -319,6 +319,7 @@ const iconPaths = {
   wallet: "M21 12a2.25 2.25 0 0 0-2.25-2.25H15a3 3 0 1 1-6 0H5.25A2.25 2.25 0 0 0 3 12m18 0v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 9m18 0V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v3",
   dots: "M6.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM12.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM18.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z",
   trash: "M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0",
+  undo: "M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3",
 };
 
 type IconName = keyof typeof iconPaths;
@@ -338,8 +339,8 @@ export default function HawalaPage() {
   const [hawalas, setHawalas] = useState<Hawala[]>([]);
   const [lastNames, setLastNames] = useState<LastNames>({ senderName: "", receiverName: "" });
 
-  // ✅ فقط دو تب: new و history
-  const [activeTab, setActiveTab] = useState<"new" | "history">("new");
+  // ✅ سه تب: new، current، history
+  const [activeTab, setActiveTab] = useState<"new" | "current" | "history">("new");
   const [form, setForm] = useState<FormState>(emptyForm);
   const [errors, setErrors] = useState<FormErrors>({});
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -351,7 +352,6 @@ export default function HawalaPage() {
   const [nameSearch, setNameSearch] = useState("");
   const [amountSearch, setAmountSearch] = useState("");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
-  const [statusFilter, setStatusFilter] = useState<"all" | HawalaStatus>("all");
   const [settleTarget, setSettleTarget] = useState<Hawala | null>(null);
   const [cancelTarget, setCancelTarget] = useState<Hawala | null>(null);
   const [paidBy, setPaidBy] = useState("");
@@ -430,40 +430,46 @@ export default function HawalaPage() {
   const isHerat = form.province === "هرات";
   const destinationText = formatDestination(form.province, form.district);
   const totalCount = hawalas.length;
-  const sendCount = hawalas.filter(item => item.type === "send").length;
-  const receiveCount = hawalas.filter(item => item.type === "receive").length;
   const pendingCount = hawalas.filter(item => item.status === "pending").length;
+  const sentCount = hawalas.filter(item => item.status === "sent").length;
+  const paidCount = hawalas.filter(item => item.status === "paid").length;
+  const cancelledCount = hawalas.filter(item => item.status === "cancelled").length;
 
-  // ✅ فیلتر شامل همه حواله‌ها + فیلتر وضعیت
-  const filteredHawalas = useMemo(() => {
+  const matchesSearch = (item: Hawala, query: string) => {
+    const q = normalizeDigits(query).trim().toLowerCase();
+    if (!q) return true;
+    const fields = [item.senderName, item.receiverName, item.number, item.senderPhone, item.receiverPhone, item.receiverTazkira];
+    return fields.some(f => f && normalizeDigits(String(f)).toLowerCase().includes(q));
+  };
+
+  const matchesAmount = (item: Hawala, query: string) => {
+    const raw = normalizeDigits(query).replace(/[,،\s]/g, "");
+    if (!raw) return true;
+    const queryNumber = Number(raw);
+    const values = [item.amountFrom, item.finalAmount, item.paidAmount];
+    if (!Number.isNaN(queryNumber)) return values.some(v => typeof v === "number" && (v === queryNumber || String(v).includes(raw)));
+    return values.some(v => String(v ?? "").includes(raw));
+  };
+
+  // ✅ تب حواله‌های جاری: فقط pending و sent
+  const currentHawalas = useMemo(() => {
     try {
-      const q = normalizeDigits(nameSearch.trim()).toLowerCase();
-      let filtered = [...hawalas];
-      
-      if (statusFilter !== "all") {
-        filtered = filtered.filter(item => item.status === statusFilter);
-      }
-      
-      if (q) {
-        filtered = filtered.filter(item => {
-          const fields = [item.senderName, item.receiverName, item.number, item.senderPhone, item.receiverPhone, item.receiverTazkira];
-          return fields.some(f => f && normalizeDigits(String(f)).toLowerCase().includes(q));
-        });
-      }
-      
-      const rawAmt = normalizeDigits(amountSearch.trim()).replace(/[,،\s]/g, "");
-      if (rawAmt) {
-        const queryNumber = Number(rawAmt);
-        filtered = filtered.filter(item => {
-          const values = [item.amountFrom, item.finalAmount, item.paidAmount];
-          if (!Number.isNaN(queryNumber)) return values.some(v => typeof v === "number" && (v === queryNumber || String(v).includes(rawAmt)));
-          return values.some(v => String(v ?? "").includes(rawAmt));
-        });
-      }
-      
+      let filtered = hawalas.filter(item => item.status === "pending" || item.status === "sent");
+      if (nameSearch) filtered = filtered.filter(item => matchesSearch(item, nameSearch));
+      if (amountSearch) filtered = filtered.filter(item => matchesAmount(item, amountSearch));
       return sortByHawalaNumber(filtered, sortOrder);
     } catch { return []; }
-  }, [hawalas, nameSearch, amountSearch, sortOrder, statusFilter]);
+  }, [hawalas, nameSearch, amountSearch, sortOrder]);
+
+  // ✅ تب تاریخچه: فقط paid و cancelled
+  const historyHawalas = useMemo(() => {
+    try {
+      let filtered = hawalas.filter(item => item.status === "paid" || item.status === "cancelled");
+      if (nameSearch) filtered = filtered.filter(item => matchesSearch(item, nameSearch));
+      if (amountSearch) filtered = filtered.filter(item => matchesAmount(item, amountSearch));
+      return sortByHawalaNumber(filtered, sortOrder);
+    } catch { return []; }
+  }, [hawalas, nameSearch, amountSearch, sortOrder]);
 
   const showToast = (message: string) => { setToast(message); setTimeout(() => setToast(""), 3500); };
   const setField = (field: keyof FormState, value: string) => { setForm(prev => ({ ...prev, [field]: value })); setErrors(prev => ({ ...prev, [field]: undefined })); };
@@ -536,7 +542,7 @@ export default function HawalaPage() {
       setForm(emptyForm);
       setErrors({});
       setPreviewOpen(false);
-      setActiveTab("history");
+      setActiveTab("current");
       showToast("حواله با موفقیت ثبت شد و موجودی حساب به‌روز شد.");
     } catch (err) {
       console.error("Register error:", err);
@@ -550,12 +556,14 @@ export default function HawalaPage() {
     setOpenMenuId(openMenuId === id ? null : id);
   };
 
+  // ✅ ارسال: pending → sent (در تب جاری می‌ماند)
   const markAsSent = (item: Hawala) => {
     setHawalas(prev => prev.map(h => h.id === item.id ? { ...h, status: "sent" as HawalaStatus } : h));
     setOpenMenuId(null);
     showToast("وضعیت حواله به ارسال‌شده تغییر کرد.");
   };
 
+  // ✅ تسویه: → paid (به تاریخچه منتقل می‌شود)
   const openSettlement = (item: Hawala) => {
     setSettleTarget(item);
     setPaidAmount(String(item.finalAmount));
@@ -573,13 +581,14 @@ export default function HawalaPage() {
       setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForHawala(paidHawala, "settle")));
       setHawalas(prev => prev.map(item => item.id === settleTarget.id ? { ...item, status: "paid" as HawalaStatus, paidAt: new Date().toISOString(), paidBy, paidAmount: amountPaid } : item));
       setSettleTarget(null);
-      showToast("حواله با موفقیت تسویه شد و موجودی حساب به‌روز شد.");
+      showToast("حواله تسویه شد و به تاریخچه منتقل شد.");
     } catch (err) {
       console.error("Settle error:", err);
       showToast("خطا در تسویه حواله");
     }
   };
 
+  // ✅ ابطال: → cancelled (به تاریخچه منتقل می‌شود)
   const openCancel = (item: Hawala) => {
     setCancelTarget(item);
     setCancelReason("");
@@ -593,13 +602,21 @@ export default function HawalaPage() {
       setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForHawala(cancelTarget, "cancel")));
       setHawalas(prev => prev.map(item => item.id === cancelTarget.id ? { ...item, status: "cancelled" as HawalaStatus, cancelReason } : item));
       setCancelTarget(null);
-      showToast("حواله لغو شد و موجودی حساب به حالت قبل برگشت.");
+      showToast("حواله ابطال شد و به تاریخچه منتقل شد.");
     } catch (err) {
       console.error("Cancel error:", err);
-      showToast("خطا در لغو حواله");
+      showToast("خطا در ابطال حواله");
     }
   };
 
+  // ✅ برگرداندن به ارسال (از تاریخچه به جاری)
+  const restoreToSent = (item: Hawala) => {
+    setHawalas(prev => prev.map(h => h.id === item.id ? { ...h, status: "sent" as HawalaStatus, paidAt: undefined, paidBy: undefined, paidAmount: undefined, cancelReason: undefined } : h));
+    setOpenMenuId(null);
+    showToast("حواله به وضعیت ارسال‌شده برگشت و به تب جاری منتقل شد.");
+  };
+
+  // ✅ حذف کامل حواله
   const deleteHawala = (item: Hawala) => {
     setOpenMenuId(null);
     const msg = `آیا از حذف کامل حواله ${item.number} مطمئن هستید؟\n\nاین عملیات قابل بازگشت نیست و حواله از سیستم پاک می‌شود.`;
@@ -684,8 +701,8 @@ export default function HawalaPage() {
     <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black ${cls}`}>{check && <Ic n="check" className="h-3.5 w-3.5" />}{txt}</span>
   );
 
-  // ✅ کامپوننت dropdown منو
-  const ActionMenu = ({ item }: { item: Hawala }) => {
+  // ✅ کامپوننت dropdown منو - بر اساس تب و وضعیت
+  const ActionMenu = ({ item, isInHistory }: { item: Hawala; isInHistory: boolean }) => {
     const isOpen = openMenuId === item.id;
     const isPending = item.status === "pending";
     const isSent = item.status === "sent";
@@ -707,41 +724,80 @@ export default function HawalaPage() {
 
         {isOpen && (
           <div className={`hw-menu absolute left-0 top-full z-20 mt-1.5 w-44 overflow-hidden rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
-            {isPending && (
-              <button
-                onClick={() => markAsSent(item)}
-                className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-blue-400/15 hover:text-blue-300" : "text-slate-700 hover:bg-blue-50 hover:text-blue-600"}`}
-              >
-                <Ic n="send" className="h-4 w-4" />
-                <span>ارسال</span>
-              </button>
+            {/* تب جاری */}
+            {!isInHistory && (
+              <>
+                {isPending && (
+                  <button
+                    onClick={() => markAsSent(item)}
+                    className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-blue-400/15 hover:text-blue-300" : "text-slate-700 hover:bg-blue-50 hover:text-blue-600"}`}
+                  >
+                    <Ic n="send" className="h-4 w-4" />
+                    <span>ارسال</span>
+                  </button>
+                )}
+                {(isPending || isSent) && (
+                  <button
+                    onClick={() => openSettlement(item)}
+                    className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-emerald-400/15 hover:text-emerald-300" : "text-slate-700 hover:bg-emerald-50 hover:text-emerald-600"}`}
+                  >
+                    <Ic n="check" className="h-4 w-4" />
+                    <span>تسویه</span>
+                  </button>
+                )}
+                {(isPending || isSent) && (
+                  <button
+                    onClick={() => openCancel(item)}
+                    className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-amber-400/15 hover:text-amber-300" : "text-slate-700 hover:bg-amber-50 hover:text-amber-600"}`}
+                  >
+                    <Ic n="xCircle" className="h-4 w-4" />
+                    <span>ابطال</span>
+                  </button>
+                )}
+                <div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
+                <button
+                  onClick={() => deleteHawala(item)}
+                  className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-rose-300 hover:bg-rose-400/15" : "text-rose-600 hover:bg-rose-50"}`}
+                >
+                  <Ic n="trash" className="h-4 w-4" />
+                  <span>حذف</span>
+                </button>
+              </>
             )}
-            {(isPending || isSent || isPaid) && (
-              <button
-                onClick={() => openSettlement(item)}
-                className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-emerald-400/15 hover:text-emerald-300" : "text-slate-700 hover:bg-emerald-50 hover:text-emerald-600"}`}
-              >
-                <Ic n="check" className="h-4 w-4" />
-                <span>تسویه</span>
-              </button>
+
+            {/* تب تاریخچه */}
+            {isInHistory && (
+              <>
+                {/* ابطال شده: می‌تواند به ارسال برگردد */}
+                {isCancelled && (
+                  <button
+                    onClick={() => restoreToSent(item)}
+                    className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-blue-400/15 hover:text-blue-300" : "text-slate-700 hover:bg-blue-50 hover:text-blue-600"}`}
+                  >
+                    <Ic n="undo" className="h-4 w-4" />
+                    <span>برگشت به ارسال</span>
+                  </button>
+                )}
+                {/* تسویه شده: می‌تواند ابطال شود */}
+                {isPaid && (
+                  <button
+                    onClick={() => openCancel(item)}
+                    className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-amber-400/15 hover:text-amber-300" : "text-slate-700 hover:bg-amber-50 hover:text-amber-600"}`}
+                  >
+                    <Ic n="xCircle" className="h-4 w-4" />
+                    <span>ابطال</span>
+                  </button>
+                )}
+                <div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
+                <button
+                  onClick={() => deleteHawala(item)}
+                  className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-rose-300 hover:bg-rose-400/15" : "text-rose-600 hover:bg-rose-50"}`}
+                >
+                  <Ic n="trash" className="h-4 w-4" />
+                  <span>حذف</span>
+                </button>
+              </>
             )}
-            {!isCancelled && (
-              <button
-                onClick={() => openCancel(item)}
-                className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-amber-400/15 hover:text-amber-300" : "text-slate-700 hover:bg-amber-50 hover:text-amber-600"}`}
-              >
-                <Ic n="xCircle" className="h-4 w-4" />
-                <span>ابطال</span>
-              </button>
-            )}
-            <div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
-            <button
-              onClick={() => deleteHawala(item)}
-              className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-rose-300 hover:bg-rose-400/15" : "text-rose-600 hover:bg-rose-50"}`}
-            >
-              <Ic n="trash" className="h-4 w-4" />
-              <span>حذف</span>
-            </button>
           </div>
         )}
       </div>
@@ -750,10 +806,11 @@ export default function HawalaPage() {
 
   const errorList = Object.values(errors).filter((msg): msg is string => Boolean(msg));
   
-  // ✅ فقط دو تب
+  // ✅ سه تب
   const tabs = [
     { id: "new" as const, label: "ثبت حواله جدید", icon: "plus" as IconName },
-    { id: "history" as const, label: "تاریخچه حواله‌ها", icon: "doc" as IconName },
+    { id: "current" as const, label: "حواله‌های جاری", icon: "clock" as IconName, count: currentHawalas.length },
+    { id: "history" as const, label: "تاریخچه حواله‌ها", icon: "doc" as IconName, count: historyHawalas.length },
   ];
 
   return (
@@ -788,9 +845,9 @@ export default function HawalaPage() {
           <div className="hw-up grid grid-cols-2 md:grid-cols-4 gap-3" style={{ animationDelay: "70ms" }}>
             {[
               { label: "تعداد حواله‌ها", value: totalCount, color: dk ? "text-blue-300" : "text-blue-600" },
-              { label: "ارسال‌شده", value: sendCount, color: dk ? "text-emerald-300" : "text-emerald-600" },
-              { label: "دریافت‌شده", value: receiveCount, color: dk ? "text-cyan-300" : "text-cyan-600" },
-              { label: "در انتظار", value: pendingCount, color: dk ? "text-amber-300" : "text-amber-600" },
+              { label: "در انتظار / ارسال", value: pendingCount + sentCount, color: dk ? "text-amber-300" : "text-amber-600" },
+              { label: "پرداخت‌شده", value: paidCount, color: dk ? "text-emerald-300" : "text-emerald-600" },
+              { label: "ابطال‌شده", value: cancelledCount, color: dk ? "text-rose-300" : "text-rose-600" },
             ].map((stat, i) => (
               <div key={i} className={`rounded-xl border p-3 text-center ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-white"}`}>
                 <div className={`text-xl font-black tabular-nums ${stat.color}`}>{stat.value}</div>
@@ -799,12 +856,13 @@ export default function HawalaPage() {
             ))}
           </div>
 
-          {/* ✅ فقط دو تب */}
+          {/* ✅ سه تب */}
           <div className={`hw-up flex gap-1.5 md:gap-2 rounded-xl md:rounded-2xl border p-1.5 md:p-2 shadow-sm backdrop-blur ${glassChip}`} style={{ animationDelay: "140ms" }}>
             {tabs.map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 md:gap-2 rounded-lg md:rounded-xl px-3 md:px-5 py-2.5 md:py-3 text-xs md:text-sm font-black transition-all duration-300 active:scale-[0.97] ${activeTab === tab.id ? `bg-gradient-to-l shadow-lg ${dk ? "from-blue-400 to-cyan-400 text-slate-950" : "from-blue-500 via-cyan-500 to-emerald-500 text-white"}` : dk ? "text-slate-400 hover:bg-slate-700/60 hover:text-slate-100" : "text-slate-500 hover:bg-blue-50 hover:text-slate-800"}`}>
                 <Ic n={tab.icon} className="h-4 w-4" />
                 <span>{tab.label}</span>
+                {tab.count !== undefined && tab.count > 0 && <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-black ${activeTab === tab.id ? dk ? "bg-slate-950/20 text-slate-950" : "bg-white/30 text-white" : dk ? "bg-slate-700 text-slate-300" : "bg-slate-200 text-slate-600"}`}>{tab.count}</span>}
               </button>
             ))}
           </div>
@@ -978,36 +1036,29 @@ export default function HawalaPage() {
             </section>
           )}
 
-          {/* ✅ تب تاریخچه حواله‌ها (شامل همه حواله‌ها) */}
-          {activeTab === "history" && (
+          {/* ✅ تب حواله‌های جاری: فقط pending و sent */}
+          {activeTab === "current" && (
             <section className={`hw-up overflow-hidden ${uiCard}`}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
-                <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identHwIcon}`}><Ic n="doc" className="h-5 w-5" /></span>
+                <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identHwIcon}`}><Ic n="clock" className="h-5 w-5" /></span>
                 <div className="flex-1 min-w-0">
-                  <h2 className={`hw-display text-xl md:text-2xl leading-none ${heading}`}>تاریخچه حواله‌ها</h2>
-                  <p className={`mt-1 text-[11px] font-bold ${subText}`}>مشاهده، ارسال، تسویه، ابطال و حذف حواله‌ها</p>
+                  <h2 className={`hw-display text-xl md:text-2xl leading-none ${heading}`}>حواله‌های جاری</h2>
+                  <p className={`mt-1 text-[11px] font-bold ${subText}`}>حواله‌های در انتظار و ارسال‌شده</p>
                 </div>
               </div>
               <div className="px-4 md:px-7 pb-4 space-y-4">
                 <div className="flex flex-wrap gap-3">
                   <input value={nameSearch} onChange={e => setNameSearch(e.target.value)} placeholder="نام، کد پیگیری، تلفن یا تذکره…" className={`${uiInput} flex-1 min-w-[200px]`} />
                   <input value={amountSearch} onChange={e => setAmountSearch(e.target.value)} placeholder="جستجو بر اساس مبلغ…" inputMode="numeric" className={`${uiInput} flex-1 min-w-[150px]`} />
-                  <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className={`${uiInput} w-auto min-w-[140px] cursor-pointer appearance-none pl-9`}>
-                    <option value="all">همه وضعیت‌ها</option>
-                    <option value="pending">در انتظار</option>
-                    <option value="sent">ارسال‌شده</option>
-                    <option value="paid">پرداخت‌شده</option>
-                    <option value="cancelled">لغوشده</option>
-                  </select>
                   <select value={sortOrder} onChange={e => setSortOrder(e.target.value as "asc" | "desc")} className={`${uiInput} w-auto min-w-[180px] cursor-pointer appearance-none pl-9`}>
                     <option value="desc">جدیدترین شماره</option>
                     <option value="asc">قدیمی‌ترین شماره</option>
                   </select>
                 </div>
-                {filteredHawalas.length === 0 ? (
+                {currentHawalas.length === 0 ? (
                   <div className={`flex flex-col items-center gap-3 px-6 py-12 ${dk ? "text-slate-500" : "text-slate-400"}`}>
                     <span className={`grid h-14 w-14 place-items-center rounded-2xl border border-dashed ${dk ? "border-slate-600 bg-slate-800/40" : "border-slate-300 bg-slate-50"}`}><Ic n="inbox" className="h-6 w-6 opacity-70" /></span>
-                    <p className="text-sm font-black text-center">هیچ حواله‌ای پیدا نشد.</p>
+                    <p className="text-sm font-black text-center">هیچ حواله جاری وجود ندارد.</p>
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
@@ -1020,7 +1071,7 @@ export default function HawalaPage() {
                         </tr>
                       </thead>
                       <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
-                        {filteredHawalas.map((item, index) => (
+                        {currentHawalas.map((item, index) => (
                           <tr key={item.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-blue-50/70"}`}>
                             <td className="px-4 py-3.5 md:px-7"><span className={`grid h-8 w-8 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500"}`}>{index + 1}</span></td>
                             <td className="px-4 py-3.5">
@@ -1036,7 +1087,69 @@ export default function HawalaPage() {
                             <td className="px-4 py-3.5"><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${item.feePayer === "sender" ? dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-700" : dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-700"}`}>{item.feePayer === "sender" ? "از فرستنده" : "از گیرنده"}</span></td>
                             <td className={`px-4 py-3.5 text-xs ${subText}`}>{item.destinationText}</td>
                             <td className="px-4 py-3.5"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${statusColors[item.status][dk ? "dark" : "light"]}`}>{statusLabels[item.status]}</span></td>
-                            <td className="px-4 py-3.5 md:px-7"><ActionMenu item={item} /></td>
+                            <td className="px-4 py-3.5 md:px-7"><ActionMenu item={item} isInHistory={false} /></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
+          {/* ✅ تب تاریخچه: فقط paid و cancelled */}
+          {activeTab === "history" && (
+            <section className={`hw-up overflow-hidden ${uiCard}`}>
+              <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
+                <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identHwIcon}`}><Ic n="doc" className="h-5 w-5" /></span>
+                <div className="flex-1 min-w-0">
+                  <h2 className={`hw-display text-xl md:text-2xl leading-none ${heading}`}>تاریخچه حواله‌ها</h2>
+                  <p className={`mt-1 text-[11px] font-bold ${subText}`}>حواله‌های پرداخت‌شده و ابطال‌شده</p>
+                </div>
+              </div>
+              <div className="px-4 md:px-7 pb-4 space-y-4">
+                <div className="flex flex-wrap gap-3">
+                  <input value={nameSearch} onChange={e => setNameSearch(e.target.value)} placeholder="نام، کد پیگیری، تلفن یا تذکره…" className={`${uiInput} flex-1 min-w-[200px]`} />
+                  <input value={amountSearch} onChange={e => setAmountSearch(e.target.value)} placeholder="جستجو بر اساس مبلغ…" inputMode="numeric" className={`${uiInput} flex-1 min-w-[150px]`} />
+                  <select value={sortOrder} onChange={e => setSortOrder(e.target.value as "asc" | "desc")} className={`${uiInput} w-auto min-w-[180px] cursor-pointer appearance-none pl-9`}>
+                    <option value="desc">جدیدترین شماره</option>
+                    <option value="asc">قدیمی‌ترین شماره</option>
+                  </select>
+                </div>
+                {historyHawalas.length === 0 ? (
+                  <div className={`flex flex-col items-center gap-3 px-6 py-12 ${dk ? "text-slate-500" : "text-slate-400"}`}>
+                    <span className={`grid h-14 w-14 place-items-center rounded-2xl border border-dashed ${dk ? "border-slate-600 bg-slate-800/40" : "border-slate-300 bg-slate-50"}`}><Ic n="inbox" className="h-6 w-6 opacity-70" /></span>
+                    <p className="text-sm font-black text-center">هیچ حواله‌ای در تاریخچه وجود ندارد.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[1000px] text-sm">
+                      <thead>
+                        <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
+                          {["شماره", "کد پیگیری", "تاریخ", "حواله‌دهنده", "حواله‌گیرنده", "مبلغ نهایی", "کارمزد", "پرداخت‌کننده", "مقصد", "وضعیت", "عملیات"].map((h, i) => (
+                            <th key={h} className={`px-4 py-3 text-right text-[11px] font-black text-slate-400 ${i === 0 ? "md:px-7" : ""} ${i === 10 ? "md:px-7" : ""}`}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
+                        {historyHawalas.map((item, index) => (
+                          <tr key={item.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-blue-50/70"}`}>
+                            <td className="px-4 py-3.5 md:px-7"><span className={`grid h-8 w-8 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500"}`}>{index + 1}</span></td>
+                            <td className="px-4 py-3.5">
+                              <span className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[12px] font-black tabular-nums ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-sky-300 bg-sky-50 text-sky-700"}`} dir="ltr">
+                                <Ic n="tag" className="h-3 w-3" />{item.number}
+                              </span>
+                            </td>
+                            <td className={`whitespace-nowrap px-4 py-3.5 text-xs tabular-nums ${dk ? "text-slate-400" : "text-slate-500"}`}><span dir="ltr">{dateLabel(item.date)}</span></td>
+                            <td className={`px-4 py-3.5 text-[13px] font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>{item.senderName}</td>
+                            <td className={`px-4 py-3.5 text-[13px] font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>{item.receiverName}</td>
+                            <td className="px-4 py-3.5"><div className="text-[13px] font-black tabular-nums">{fmt(item.finalAmount)}</div><div className={`text-[10px] font-bold ${subText}`}>{labels[item.currencyTo]}</div></td>
+                            <td className="px-4 py-3.5 text-xs font-bold tabular-nums">{fmt(item.fee)} {labels[item.feeCurrency]}</td>
+                            <td className="px-4 py-3.5"><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${item.feePayer === "sender" ? dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-700" : dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-700"}`}>{item.feePayer === "sender" ? "از فرستنده" : "از گیرنده"}</span></td>
+                            <td className={`px-4 py-3.5 text-xs ${subText}`}>{item.destinationText}</td>
+                            <td className="px-4 py-3.5"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${statusColors[item.status][dk ? "dark" : "light"]}`}>{statusLabels[item.status]}</span></td>
+                            <td className="px-4 py-3.5 md:px-7"><ActionMenu item={item} isInHistory={true} /></td>
                           </tr>
                         ))}
                       </tbody>
