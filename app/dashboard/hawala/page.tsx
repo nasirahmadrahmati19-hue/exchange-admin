@@ -348,10 +348,14 @@ export default function HawalaPage() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // ✅ state‌های جدید برای فیلد نام حواله‌دهنده
   const [showSenderList, setShowSenderList] = useState(false);
   const [senderFilter, setSenderFilter] = useState("");
   const senderListRef = useRef<HTMLDivElement>(null);
+
+  // ✅ state‌های جدید برای لیست حواله‌گیرنده
+  const [showReceiverList, setShowReceiverList] = useState(false);
+  const [receiverFilter, setReceiverFilter] = useState("");
+  const receiverListRef = useRef<HTMLDivElement>(null);
 
   const [nameSearch, setNameSearch] = useState("");
   const [amountSearch, setAmountSearch] = useState("");
@@ -391,6 +395,7 @@ export default function HawalaPage() {
   useEffect(() => { try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); } catch {} }, [customers]);
   useEffect(() => { try { localStorage.setItem(HAWALAS_KEY, JSON.stringify(hawalas)); } catch {} }, [hawalas]);
 
+  // ✅ استفاده از click بجای mousedown برای جلوگیری از مشکل باز/بسته شدن خودکار
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
@@ -398,29 +403,25 @@ export default function HawalaPage() {
       }
     };
     if (openMenuId) {
-      document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener("click", handleClickOutside);
     }
     return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("click", handleClickOutside);
     };
   }, [openMenuId]);
 
-  // ✅ بستن لیست مشتریان هنگام کلیک بیرون
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (senderListRef.current && !senderListRef.current.contains(event.target as Node)) {
-        setShowSenderList(false);
-      }
+      const target = event.target as Node;
+      if (senderListRef.current && !senderListRef.current.contains(target)) setShowSenderList(false);
+      if (receiverListRef.current && !receiverListRef.current.contains(target)) setShowReceiverList(false);
     };
-    if (showSenderList) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
+    document.addEventListener("click", handleClickOutside);
     return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("click", handleClickOutside);
     };
-  }, [showSenderList]);
+  }, []);
 
-  // ✅ فیلتر مشتریان برای لیست
   const filteredSenderList = useMemo(() => {
     if (!senderFilter) return customers;
     const q = normalizeDigits(senderFilter.trim()).toLowerCase();
@@ -429,6 +430,16 @@ export default function HawalaPage() {
       (c.phone && normalizeDigits(c.phone).includes(q))
     );
   }, [customers, senderFilter]);
+
+  // ✅ فیلتر لیست حواله‌گیرنده
+  const filteredReceiverList = useMemo(() => {
+    if (!receiverFilter) return customers;
+    const q = normalizeDigits(receiverFilter.trim()).toLowerCase();
+    return customers.filter(c =>
+      c.name.toLowerCase().includes(q) ||
+      (c.phone && normalizeDigits(c.phone).includes(q))
+    );
+  }, [customers, receiverFilter]);
 
   const rateMode = getRateMode(form.currencyFrom, form.currencyTo);
   const afnForeign = getAfnForeign(form.currencyFrom, form.currencyTo);
@@ -463,6 +474,10 @@ export default function HawalaPage() {
   const sentCount = hawalas.filter(item => item.status === "sent").length;
   const paidCount = hawalas.filter(item => item.status === "paid").length;
   const cancelledCount = hawalas.filter(item => item.status === "cancelled").length;
+
+  // ✅ محاسبه موجودی برای حواله‌دهنده و حواله‌گیرنده
+  const selectedSender = useMemo(() => customers.find(c => c.name === form.senderName) || null, [customers, form.senderName]);
+  const selectedReceiver = useMemo(() => customers.find(c => c.name === form.receiverName) || null, [customers, form.receiverName]);
 
   const matchesSearch = (item: Hawala, query: string) => {
     const q = normalizeDigits(query).trim().toLowerCase();
@@ -699,6 +714,7 @@ export default function HawalaPage() {
   const cBlue = { wrap: dk ? "border-blue-400/25 bg-blue-400/[0.07]" : "border-blue-300 bg-blue-50", icon: dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-600", title: dk ? "text-blue-300" : "text-blue-700", badge: dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-700" };
   const cAmber = { wrap: dk ? "border-amber-400/25 bg-amber-400/[0.07]" : "border-amber-300 bg-amber-50", icon: dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600", title: dk ? "text-amber-300" : "text-amber-700", badge: dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-700" };
   const cEmerald = { wrap: dk ? "border-emerald-400/25 bg-emerald-400/[0.07]" : "border-emerald-300 bg-emerald-50", icon: dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600", title: dk ? "text-emerald-300" : "text-emerald-700", badge: dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-700" };
+  const cOrange = { wrap: dk ? "border-orange-400/25 bg-orange-400/[0.07]" : "border-orange-300 bg-orange-50", icon: dk ? "bg-orange-400/15 text-orange-300" : "bg-orange-100 text-orange-600", title: dk ? "text-orange-300" : "text-orange-700", badge: dk ? "bg-orange-400/15 text-orange-300" : "bg-orange-100 text-orange-700" };
 
   const fld = (label: string, node: ReactNode, cls = "") => (<div className={cls}><label className={uiLabel}>{label}</label>{node}</div>);
   const sel = (value: string, onCh: (v: string) => void, opts: string[][], cls = "") => (
@@ -733,6 +749,62 @@ export default function HawalaPage() {
   const pill = (cls: string, txt: string, check = false) => !txt ? null : (
     <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black ${cls}`}>{check && <Ic n="check" className="h-3.5 w-3.5" />}{txt}</span>
   );
+
+  // ✅ کامپوننت کارت موجودی با نمایش قرض/طلب
+  const CustomerBalanceCard = ({ customer, color }: { customer: Customer | null; color: "blue" | "orange" | "emerald" }) => {
+    if (!customer) return null;
+    const colors = {
+      blue: { border: dk ? "border-blue-400/30 bg-blue-400/10" : "border-blue-200 bg-blue-50", text: dk ? "text-blue-300" : "text-blue-700", icon: dk ? "text-blue-300" : "text-blue-600" },
+      orange: { border: dk ? "border-orange-400/30 bg-orange-400/10" : "border-orange-200 bg-orange-50", text: dk ? "text-orange-300" : "text-orange-700", icon: dk ? "text-orange-300" : "text-orange-600" },
+      emerald: { border: dk ? "border-emerald-400/30 bg-emerald-400/10" : "border-emerald-200 bg-emerald-50", text: dk ? "text-emerald-300" : "text-emerald-700", icon: dk ? "text-emerald-300" : "text-emerald-600" },
+    };
+    const c = colors[color];
+    return (
+      <div className={`rounded-xl border p-3 ${c.border}`}>
+        <div className="flex items-center gap-2 mb-2">
+          <Ic n="wallet" className={`h-4 w-4 ${c.icon}`} />
+          <b className={`text-xs font-black ${c.text}`}>موجودی حساب {customer.name}</b>
+        </div>
+        <div className="grid grid-cols-3 md:grid-cols-5 gap-2 text-[10px] font-bold">
+          {currencies.map(cur => {
+            const bal = customer.balances[cur] || 0;
+            const isDebt = bal < 0;
+            const isCredit = bal > 0;
+            const isZero = bal === 0;
+            return (
+              <div key={cur} className={`rounded-lg px-2 py-1.5 ${dk ? "bg-slate-900/50" : "bg-white"}`}>
+                <div className={subText}>{labels[cur]}</div>
+                <div className={`font-black tabular-nums ${
+                  isDebt ? "text-rose-500" : 
+                  isCredit ? (dk ? "text-emerald-300" : "text-emerald-600") : 
+                  dk ? "text-slate-400" : "text-slate-500"
+                }`}>
+                  {fmt(bal)}
+                </div>
+                <div className="min-h-[12px] mt-0.5">
+                  {isDebt && (
+                    <div className="text-[8px] font-black text-rose-500">
+                      قرض از صرافی
+                    </div>
+                  )}
+                  {isCredit && (
+                    <div className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>
+                      طلب از صرافی
+                    </div>
+                  )}
+                  {isZero && (
+                    <div className={`text-[8px] font-bold ${subText}`}>
+                      بدون بدهی
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   const ActionMenu = ({ item, isInHistory }: { item: Hawala; isInHistory: boolean }) => {
     const isOpen = openMenuId === item.id;
@@ -875,28 +947,15 @@ export default function HawalaPage() {
                 </div>
               </div>
 
-              {form.senderName && (() => {
-                const sc = customers.find(c => c.name === form.senderName);
-                if (!sc) return null;
-                return (
-                  <div className={`rounded-xl border p-3 ${dk ? "border-blue-400/30 bg-blue-400/10" : "border-blue-200 bg-blue-50"}`}>
-                    <div className="flex items-center gap-2 mb-2"><Ic n="wallet" className={`h-4 w-4 ${dk ? "text-blue-300" : "text-blue-600"}`} /><b className={`text-xs font-black ${dk ? "text-blue-300" : "text-blue-700"}`}>موجودی حساب {sc.name}</b></div>
-                    <div className="grid grid-cols-3 md:grid-cols-5 gap-2 text-[10px] font-bold">
-                      {currencies.map(cur => (
-                        <div key={cur} className={`rounded-lg px-2 py-1.5 ${dk ? "bg-slate-900/50" : "bg-white"}`}>
-                          <div className={subText}>{labels[cur]}</div>
-                          <div className={`font-black tabular-nums ${dk ? "text-slate-100" : "text-slate-700"}`}>{fmt(sc.balances[cur] || 0)}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })()}
+              {/* ✅ نمایش کارت‌های موجودی با قرض/طلب برای حواله‌دهنده و حواله‌گیرنده */}
+              <div className="grid gap-3 md:grid-cols-2">
+                <CustomerBalanceCard customer={selectedSender} color="blue" />
+                <CustomerBalanceCard customer={selectedReceiver} color="orange" />
+              </div>
 
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-600"}`}><Ic n="send" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-blue-300" : "text-blue-700"}`}>معلومات حواله‌دهنده و حواله</b></div>
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-3 mb-4">
-                  {/* ✅ فیلد نام حواله‌دهنده با custom dropdown */}
                   {fld("نام حواله‌دهنده *", (
                     <div className="relative" ref={senderListRef}>
                       <input
@@ -905,7 +964,7 @@ export default function HawalaPage() {
                           const val = e.target.value;
                           setField("senderName", val);
                           setSenderFilter(val);
-                          setShowSenderList(true);
+                          if (!showSenderList) setShowSenderList(true);
                           const customer = customers.find(c => c.name === val);
                           if (customer) {
                             setField("senderPhone", customer.phone || "");
@@ -915,13 +974,14 @@ export default function HawalaPage() {
                             setField("senderTelegram", "");
                           }
                         }}
-                        onFocus={() => setShowSenderList(true)}
+                        onFocus={() => { if (!showSenderList) setShowSenderList(true); }}
                         placeholder="انتخاب از لیست یا نوشتن نام جدید…"
-                        className={`${uiInput} pl-9 ${errors.senderName ? errInput : ""}`}
+                        className={`${uiInput} pl-12 ${errors.senderName ? errInput : ""}`}
+                        autoComplete="off"
                       />
                       <button
                         type="button"
-                        onClick={() => setShowSenderList(!showSenderList)}
+                        onClick={(e) => { e.stopPropagation(); setShowSenderList(!showSenderList); }}
                         className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition ${dk ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}
                       >
                         <Ic n="chevron" className={`h-4 w-4 transition-transform ${showSenderList ? "rotate-180" : ""}`} />
@@ -936,7 +996,8 @@ export default function HawalaPage() {
                               <button
                                 key={c.id}
                                 type="button"
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   setField("senderName", c.name);
                                   setField("senderPhone", c.phone || "");
                                   setField("senderTelegram", c.telegram || "");
@@ -1048,7 +1109,76 @@ export default function HawalaPage() {
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="receive" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>معلومات حواله‌گیرنده</b></div>
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {fld("نام حواله‌گیرنده *", (<input className={`${uiInput} ${errors.receiverName ? errInput : ""}`} value={form.receiverName} onChange={e => setField("receiverName", e.target.value)} placeholder="نام کامل" />))}
+                  {/* ✅ فیلد نام حواله‌گیرنده با قابلیت نوشتن و انتخاب از لیست */}
+                  {fld("نام حواله‌گیرنده *", (
+                    <div className="relative" ref={receiverListRef}>
+                      <input
+                        value={form.receiverName}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setField("receiverName", val);
+                          setReceiverFilter(val);
+                          if (!showReceiverList) setShowReceiverList(true);
+                          const customer = customers.find(c => c.name === val);
+                          if (customer) {
+                            setField("receiverTazkira", customer.tazkira || "");
+                            setField("receiverPhone", customer.phone || "");
+                            setField("receiverAddress", customer.address || "");
+                          } else {
+                            setField("receiverTazkira", "");
+                            setField("receiverPhone", "");
+                            setField("receiverAddress", "");
+                          }
+                        }}
+                        onFocus={() => { if (!showReceiverList) setShowReceiverList(true); }}
+                        placeholder="انتخاب از لیست یا نوشتن نام جدید…"
+                        className={`${uiInput} pl-12 ${errors.receiverName ? errInput : ""}`}
+                        autoComplete="off"
+                      />
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setShowReceiverList(!showReceiverList); }}
+                        className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition ${dk ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}
+                      >
+                        <Ic n="chevron" className={`h-4 w-4 transition-transform ${showReceiverList ? "rotate-180" : ""}`} />
+                      </button>
+
+                      {showReceiverList && (
+                        <div className={`hw-menu absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
+                          {filteredReceiverList.length === 0 ? (
+                            <div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>
+                          ) : (
+                            filteredReceiverList.map((c, idx) => (
+                              <button
+                                key={c.id}
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setField("receiverName", c.name);
+                                  setField("receiverTazkira", c.tazkira || "");
+                                  setField("receiverPhone", c.phone || "");
+                                  setField("receiverAddress", c.address || "");
+                                  setReceiverFilter("");
+                                  setShowReceiverList(false);
+                                }}
+                                className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-amber-400/15 hover:text-amber-300" : "text-slate-700 hover:bg-amber-50 hover:text-amber-600"}`}
+                              >
+                                <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-amber-500 to-orange-500`}>
+                                  {idx + 1}
+                                </span>
+                                <span className="flex-1 truncate">{c.name}</span>
+                                {c.phone && <span className={`text-[10px] ${subText}`} dir="ltr">{c.phone}</span>}
+                              </button>
+                            ))
+                          )}
+                          <div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
+                          <div className={`px-3 py-2 text-[10px] text-center ${subText}`}>
+                            یا نام جدید بنویسید (در لیست مشتریان ذخیره نمی‌شود)
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                   {fld("شماره تذکره *", (<input className={`${uiInput} ${errors.receiverTazkira ? errInput : ""}`} value={form.receiverTazkira} onChange={e => setField("receiverTazkira", e.target.value)} placeholder="شماره تذکره" />))}
                   {fld("شماره تماس *", (<input className={`${uiInput} ${errors.receiverPhone ? errInput : ""}`} value={form.receiverPhone} onChange={e => setField("receiverPhone", e.target.value)} placeholder="07xxxxxxxx" />))}
                   {fld("آدرس", (<input className={`${uiInput} sm:col-span-2 lg:col-span-3`} value={form.receiverAddress} onChange={e => setField("receiverAddress", e.target.value)} placeholder="اختیاری" />))}
