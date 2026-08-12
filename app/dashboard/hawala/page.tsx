@@ -352,7 +352,6 @@ export default function HawalaPage() {
   const [senderFilter, setSenderFilter] = useState("");
   const senderListRef = useRef<HTMLDivElement>(null);
 
-  // ✅ state‌های جدید برای لیست حواله‌گیرنده
   const [showReceiverList, setShowReceiverList] = useState(false);
   const [receiverFilter, setReceiverFilter] = useState("");
   const receiverListRef = useRef<HTMLDivElement>(null);
@@ -395,32 +394,29 @@ export default function HawalaPage() {
   useEffect(() => { try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); } catch {} }, [customers]);
   useEffect(() => { try { localStorage.setItem(HAWALAS_KEY, JSON.stringify(hawalas)); } catch {} }, [hawalas]);
 
-  // ✅ استفاده از click بجای mousedown برای جلوگیری از مشکل باز/بسته شدن خودکار
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setOpenMenuId(null);
-      }
-    };
-    if (openMenuId) {
-      document.addEventListener("click", handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener("click", handleClickOutside);
-    };
-  }, [openMenuId]);
+  // ✅✅✅ راه‌حل قطعی: استفاده از setTimeout(0) برای dropdown ها ✅✅✅
+  const anyDropdownOpen = showSenderList || showReceiverList;
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (senderListRef.current && !senderListRef.current.contains(target)) setShowSenderList(false);
-      if (receiverListRef.current && !receiverListRef.current.contains(target)) setShowReceiverList(false);
+    if (!anyDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (showSenderList && senderListRef.current && !senderListRef.current.contains(t)) setShowSenderList(false);
+      if (showReceiverList && receiverListRef.current && !receiverListRef.current.contains(t)) setShowReceiverList(false);
     };
-    document.addEventListener("click", handleClickOutside);
-    return () => {
-      document.removeEventListener("click", handleClickOutside);
+    const timer = setTimeout(() => document.addEventListener("mousedown", handler), 0);
+    return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); };
+  }, [anyDropdownOpen, showSenderList, showReceiverList]);
+
+  // ✅✅✅ راه‌حل قطعی: استفاده از setTimeout(0) برای ActionMenu ✅✅✅
+  useEffect(() => {
+    if (!openMenuId) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpenMenuId(null);
     };
-  }, []);
+    const timer = setTimeout(() => document.addEventListener("mousedown", handler), 0);
+    return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); };
+  }, [openMenuId]);
 
   const filteredSenderList = useMemo(() => {
     if (!senderFilter) return customers;
@@ -431,7 +427,6 @@ export default function HawalaPage() {
     );
   }, [customers, senderFilter]);
 
-  // ✅ فیلتر لیست حواله‌گیرنده
   const filteredReceiverList = useMemo(() => {
     if (!receiverFilter) return customers;
     const q = normalizeDigits(receiverFilter.trim()).toLowerCase();
@@ -475,7 +470,6 @@ export default function HawalaPage() {
   const paidCount = hawalas.filter(item => item.status === "paid").length;
   const cancelledCount = hawalas.filter(item => item.status === "cancelled").length;
 
-  // ✅ محاسبه موجودی برای حواله‌دهنده و حواله‌گیرنده
   const selectedSender = useMemo(() => customers.find(c => c.name === form.senderName) || null, [customers, form.senderName]);
   const selectedReceiver = useMemo(() => customers.find(c => c.name === form.receiverName) || null, [customers, form.receiverName]);
 
@@ -750,7 +744,6 @@ export default function HawalaPage() {
     <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black ${cls}`}>{check && <Ic n="check" className="h-3.5 w-3.5" />}{txt}</span>
   );
 
-  // ✅ کامپوننت کارت موجودی با نمایش قرض/طلب
   const CustomerBalanceCard = ({ customer, color }: { customer: Customer | null; color: "blue" | "orange" | "emerald" }) => {
     if (!customer) return null;
     const colors = {
@@ -806,6 +799,7 @@ export default function HawalaPage() {
     );
   };
 
+  // ✅✅✅ ActionMenu با onMouseDown و stopPropagation ✅✅✅
   const ActionMenu = ({ item, isInHistory }: { item: Hawala; isInHistory: boolean }) => {
     const isOpen = openMenuId === item.id;
     const isPending = item.status === "pending";
@@ -816,7 +810,7 @@ export default function HawalaPage() {
     return (
       <div className="relative" ref={isOpen ? menuRef : null}>
         <button
-          onClick={(e) => { e.stopPropagation(); toggleMenu(item.id); }}
+          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); toggleMenu(item.id); }}
           className={`grid h-8 w-8 place-items-center rounded-lg border transition active:scale-95 ${
             isOpen
               ? dk ? "border-blue-400/50 bg-blue-400/20 text-blue-300" : "border-blue-400 bg-blue-50 text-blue-600"
@@ -947,7 +941,6 @@ export default function HawalaPage() {
                 </div>
               </div>
 
-              {/* ✅ نمایش کارت‌های موجودی با قرض/طلب برای حواله‌دهنده و حواله‌گیرنده */}
               <div className="grid gap-3 md:grid-cols-2">
                 <CustomerBalanceCard customer={selectedSender} color="blue" />
                 <CustomerBalanceCard customer={selectedReceiver} color="orange" />
@@ -974,14 +967,14 @@ export default function HawalaPage() {
                             setField("senderTelegram", "");
                           }
                         }}
-                        onFocus={() => { if (!showSenderList) setShowSenderList(true); }}
                         placeholder="انتخاب از لیست یا نوشتن نام جدید…"
                         className={`${uiInput} pl-12 ${errors.senderName ? errInput : ""}`}
                         autoComplete="off"
                       />
+                      {/* ✅✅✅ استفاده از onMouseDown با stopPropagation ✅✅✅ */}
                       <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); setShowSenderList(!showSenderList); }}
+                        onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setShowSenderList(!showSenderList); }}
                         className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition ${dk ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}
                       >
                         <Ic n="chevron" className={`h-4 w-4 transition-transform ${showSenderList ? "rotate-180" : ""}`} />
@@ -996,8 +989,8 @@ export default function HawalaPage() {
                               <button
                                 key={c.id}
                                 type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
+                                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                onClick={() => {
                                   setField("senderName", c.name);
                                   setField("senderPhone", c.phone || "");
                                   setField("senderTelegram", c.telegram || "");
@@ -1109,7 +1102,6 @@ export default function HawalaPage() {
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="receive" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>معلومات حواله‌گیرنده</b></div>
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {/* ✅ فیلد نام حواله‌گیرنده با قابلیت نوشتن و انتخاب از لیست */}
                   {fld("نام حواله‌گیرنده *", (
                     <div className="relative" ref={receiverListRef}>
                       <input
@@ -1130,14 +1122,14 @@ export default function HawalaPage() {
                             setField("receiverAddress", "");
                           }
                         }}
-                        onFocus={() => { if (!showReceiverList) setShowReceiverList(true); }}
                         placeholder="انتخاب از لیست یا نوشتن نام جدید…"
                         className={`${uiInput} pl-12 ${errors.receiverName ? errInput : ""}`}
                         autoComplete="off"
                       />
+                      {/* ✅✅✅ استفاده از onMouseDown با stopPropagation ✅✅✅ */}
                       <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); setShowReceiverList(!showReceiverList); }}
+                        onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setShowReceiverList(!showReceiverList); }}
                         className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition ${dk ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}
                       >
                         <Ic n="chevron" className={`h-4 w-4 transition-transform ${showReceiverList ? "rotate-180" : ""}`} />
@@ -1152,8 +1144,8 @@ export default function HawalaPage() {
                               <button
                                 key={c.id}
                                 type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
+                                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                onClick={() => {
                                   setField("receiverName", c.name);
                                   setField("receiverTazkira", c.tazkira || "");
                                   setField("receiverPhone", c.phone || "");
@@ -1264,7 +1256,7 @@ export default function HawalaPage() {
           )}
 
           {activeTab === "history" && (
-            <section className={`hw-up overflow-hidden ${uiCard}`}>
+            <section className={`hw-up Overflow-hidden ${uiCard}`}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
                 <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identHwIcon}`}><Ic n="doc" className="h-5 w-5" /></span>
                 <div className="flex-1 min-w-0">
