@@ -394,7 +394,7 @@ export default function HawalaPage() {
   useEffect(() => { try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); } catch {} }, [customers]);
   useEffect(() => { try { localStorage.setItem(HAWALAS_KEY, JSON.stringify(hawalas)); } catch {} }, [hawalas]);
 
-  // ✅✅✅ راه‌حل قطعی: استفاده از setTimeout(0) برای dropdown ها ✅✅✅
+  // ✅✅✅ راه‌حل قطعی: استفاده از click برای handler بیرون ✅✅✅
   const anyDropdownOpen = showSenderList || showReceiverList;
 
   useEffect(() => {
@@ -404,18 +404,18 @@ export default function HawalaPage() {
       if (showSenderList && senderListRef.current && !senderListRef.current.contains(t)) setShowSenderList(false);
       if (showReceiverList && receiverListRef.current && !receiverListRef.current.contains(t)) setShowReceiverList(false);
     };
-    const timer = setTimeout(() => document.addEventListener("mousedown", handler), 0);
-    return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); };
+    document.addEventListener("click", handler);
+    return () => { document.removeEventListener("click", handler); };
   }, [anyDropdownOpen, showSenderList, showReceiverList]);
 
-  // ✅✅✅ راه‌حل قطعی: استفاده از setTimeout(0) برای ActionMenu ✅✅✅
+  // ✅✅✅ راه‌حل قطعی: استفاده از click برای ActionMenu ✅✅✅
   useEffect(() => {
     if (!openMenuId) return;
     const handler = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpenMenuId(null);
     };
-    const timer = setTimeout(() => document.addEventListener("mousedown", handler), 0);
-    return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); };
+    document.addEventListener("click", handler);
+    return () => { document.removeEventListener("click", handler); };
   }, [openMenuId]);
 
   const filteredSenderList = useMemo(() => {
@@ -799,7 +799,7 @@ export default function HawalaPage() {
     );
   };
 
-  // ✅✅✅ ActionMenu با onMouseDown و stopPropagation ✅✅✅
+  // ✅✅✅ ActionMenu با onClick و stopPropagation ✅✅✅
   const ActionMenu = ({ item, isInHistory }: { item: Hawala; isInHistory: boolean }) => {
     const isOpen = openMenuId === item.id;
     const isPending = item.status === "pending";
@@ -810,7 +810,7 @@ export default function HawalaPage() {
     return (
       <div className="relative" ref={isOpen ? menuRef : null}>
         <button
-          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); toggleMenu(item.id); }}
+          onClick={(e) => { e.stopPropagation(); toggleMenu(item.id); }}
           className={`grid h-8 w-8 place-items-center rounded-lg border transition active:scale-95 ${
             isOpen
               ? dk ? "border-blue-400/50 bg-blue-400/20 text-blue-300" : "border-blue-400 bg-blue-50 text-blue-600"
@@ -971,10 +971,10 @@ export default function HawalaPage() {
                         className={`${uiInput} pl-12 ${errors.senderName ? errInput : ""}`}
                         autoComplete="off"
                       />
-                      {/* ✅✅✅ استفاده از onMouseDown با stopPropagation ✅✅✅ */}
+                      {/* ✅✅✅ دکمه toggle با onClick و stopPropagation ✅✅✅ */}
                       <button
                         type="button"
-                        onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setShowSenderList(!showSenderList); }}
+                        onClick={(e) => { e.stopPropagation(); setShowSenderList(!showSenderList); }}
                         className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition ${dk ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}
                       >
                         <Ic n="chevron" className={`h-4 w-4 transition-transform ${showSenderList ? "rotate-180" : ""}`} />
@@ -989,7 +989,6 @@ export default function HawalaPage() {
                               <button
                                 key={c.id}
                                 type="button"
-                                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                                 onClick={() => {
                                   setField("senderName", c.name);
                                   setField("senderPhone", c.phone || "");
@@ -1126,10 +1125,10 @@ export default function HawalaPage() {
                         className={`${uiInput} pl-12 ${errors.receiverName ? errInput : ""}`}
                         autoComplete="off"
                       />
-                      {/* ✅✅✅ استفاده از onMouseDown با stopPropagation ✅✅✅ */}
+                      {/* ✅✅✅ دکمه toggle با onClick و stopPropagation ✅✅✅ */}
                       <button
                         type="button"
-                        onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setShowReceiverList(!showReceiverList); }}
+                        onClick={(e) => { e.stopPropagation(); setShowReceiverList(!showReceiverList); }}
                         className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition ${dk ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}
                       >
                         <Ic n="chevron" className={`h-4 w-4 transition-transform ${showReceiverList ? "rotate-180" : ""}`} />
@@ -1144,7 +1143,6 @@ export default function HawalaPage() {
                               <button
                                 key={c.id}
                                 type="button"
-                                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                                 onClick={() => {
                                   setField("receiverName", c.name);
                                   setField("receiverTazkira", c.tazkira || "");
