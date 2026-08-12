@@ -494,18 +494,7 @@ export default function CurrencyExchangePage() {
     setConvertedAmount(result ? fmt(result) : "");
   }, [convertAmount, convertFromCurrency, convertToCurrency, convertRate, convertMode, convertDirectBaseValue, convertDirectCounter]);
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (customerListRef.current && !customerListRef.current.contains(target)) setShowCustomerList(false);
-      if (senderListRef.current && !senderListRef.current.contains(target)) setShowSenderList(false);
-      if (receiverListRef.current && !receiverListRef.current.contains(target)) setShowReceiverList(false);
-      if (convertListRef.current && !convertListRef.current.contains(target)) setShowConvertList(false);
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => { document.removeEventListener("mousedown", handleClickOutside); };
-  }, []);
-
+  // ✅ کلیک بیرون فقط برای منوی عملیات
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
@@ -513,9 +502,9 @@ export default function CurrencyExchangePage() {
       }
     };
     if (openMenuId) {
-      document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener("click", handleClickOutside);
     }
-    return () => { document.removeEventListener("mousedown", handleClickOutside); };
+    return () => { document.removeEventListener("click", handleClickOutside); };
   }, [openMenuId]);
 
   const [debouncedCustomerFilter, setDebouncedCustomerFilter] = useState("");
@@ -883,13 +872,6 @@ export default function CurrencyExchangePage() {
     if (editingConvertId === tx.id) setEditingConvertId(null);
     setOpenMenuId(null);
   }, [editingExchangeId, editingTransferId, editingConvertId]);
-
-  const restoreTransaction = useCallback((tx: Transaction) => {
-    if (tx.status !== "voided") return;
-    if (!window.confirm(`آیا از برگرداندن معامله ${tx.trackingCode} مطمئن هستید؟`)) return;
-    setTransactions((prev) => prev.map((t) => (t.id === tx.id ? { ...t, status: "active" } : t)));
-    setOpenMenuId(null);
-  }, []);
 
   const deleteTransaction = useCallback((tx: Transaction) => {
     if (!window.confirm(`آیا از حذف کامل معامله ${tx.trackingCode} مطمئن هستید؟\n\nاین عملیات قابل بازگشت نیست.`)) return;
@@ -1274,7 +1256,7 @@ export default function CurrencyExchangePage() {
     );
   });
 
-  // ✅ اصلاح خطای TypeScript: استفاده از RefObject<HTMLDivElement> بدون | null
+  // ✅ CustomerDropdown با لیست شماره‌دار و قابلیت اضافه کردن مشتری جدید
   const CustomerDropdown = memo(function CustomerDropdown({
     value, onInputChange, showList, onToggleList, filter, onFilterChange, listRef, filteredList, err
   }: {
@@ -1311,12 +1293,17 @@ export default function CurrencyExchangePage() {
       onToggleList();
     }, [onInputChange, onFilterChange, onToggleList]);
 
+    const handleInputMouseDown = useCallback((e: React.MouseEvent) => {
+      e.stopPropagation();
+    }, []);
+
     return (
       <div className="relative" ref={listRef}>
         <input
           value={value}
           onChange={handleInputChange}
           onFocus={handleFocus}
+          onMouseDown={handleInputMouseDown}
           placeholder="انتخاب از لیست یا نوشتن نام جدید…"
           className={`${uiInput} pl-12 ${err ? errInput : ""}`}
           autoComplete="off"
@@ -1357,6 +1344,7 @@ export default function CurrencyExchangePage() {
     );
   });
 
+  // ✅ ستون عملیات ساده‌شده با چهار گزینه
   const ActionMenu = memo(function ActionMenu({ tx }: { tx: Transaction }) {
     const isOpen = openMenuId === tx.id;
     const isVoided = tx.status === "voided";
@@ -1367,12 +1355,10 @@ export default function CurrencyExchangePage() {
       toggleMenu(tx.id);
     }, [tx.id, toggleMenu]);
 
-    const handleEdit = useCallback(() => { setOpenMenuId(null); editTransaction(tx); }, [tx, editTransaction]);
-    const handlePrint = useCallback(() => { setOpenMenuId(null); printReceipt(tx); }, [tx, printReceipt]);
     const handleView = useCallback(() => { setOpenMenuId(null); viewTransaction(tx); }, [tx, viewTransaction]);
+    const handleEdit = useCallback(() => { setOpenMenuId(null); editTransaction(tx); }, [tx, editTransaction]);
     const handleVoid = useCallback(() => { setOpenMenuId(null); voidTransaction(tx); }, [tx, voidTransaction]);
     const handleDelete = useCallback(() => { setOpenMenuId(null); deleteTransaction(tx); }, [tx, deleteTransaction]);
-    const handleRestore = useCallback(() => { setOpenMenuId(null); restoreTransaction(tx); }, [tx, restoreTransaction]);
 
     return (
       <div className="relative" ref={isOpen ? menuRef : null}>
@@ -1389,70 +1375,41 @@ export default function CurrencyExchangePage() {
 
         {isOpen && (
           <ul className={`fx-pop absolute left-0 top-full z-20 mt-1.5 w-44 space-y-1 rounded-xl border p-1.5 shadow-xl ${dk ? "border-slate-600 bg-slate-900 shadow-black/40" : "border-slate-200 bg-white shadow-slate-900/10"}`}>
-            {!isVoided && (
-              <>
-                <li>
-                  <button onClick={handleEdit}
-                    className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold transition ${dk ? "text-slate-300 hover:bg-cyan-400/10 hover:text-cyan-300" : "text-slate-600 hover:bg-sky-50 hover:text-sky-700"}`}>
-                    <Ic n="pencil" className="h-3.5 w-3.5" /> ویرایش
-                  </button>
-                </li>
-                <li>
-                  <button onClick={handlePrint}
-                    className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold transition ${dk ? "text-slate-300 hover:bg-cyan-400/10 hover:text-cyan-300" : "text-slate-600 hover:bg-sky-50 hover:text-sky-700"}`}>
-                    <Ic n="printer" className="h-3.5 w-3.5" /> چاپ رسید
-                  </button>
-                </li>
-                <li>
-                  <button onClick={handleView}
-                    className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold transition ${dk ? "text-slate-300 hover:bg-cyan-400/10 hover:text-cyan-300" : "text-slate-600 hover:bg-sky-50 hover:text-sky-700"}`}>
-                    <Ic n="eye" className="h-3.5 w-3.5" /> مشاهده
-                  </button>
-                </li>
-                <li>
-                  <button onClick={handleVoid}
-                    className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold transition ${dk ? "text-rose-300 hover:bg-rose-400/10" : "text-rose-500 hover:bg-rose-50"}`}>
-                    <Ic n="xCircle" className="h-3.5 w-3.5" /> لغو معامله
-                  </button>
-                </li>
-                <li className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
-                <li>
-                  <button onClick={handleDelete}
-                    className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold transition ${dk ? "text-rose-300 hover:bg-rose-400/10" : "text-rose-500 hover:bg-rose-50"}`}>
-                    <Ic n="trash" className="h-3.5 w-3.5" /> حذف
-                  </button>
-                </li>
-              </>
-            )}
-            {isVoided && (
-              <>
-                <li>
-                  <button onClick={handleView}
-                    className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold transition ${dk ? "text-slate-300 hover:bg-cyan-400/10 hover:text-cyan-300" : "text-slate-600 hover:bg-sky-50 hover:text-sky-700"}`}>
-                    <Ic n="eye" className="h-3.5 w-3.5" /> مشاهده
-                  </button>
-                </li>
-                <li>
-                  <button onClick={handlePrint}
-                    className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold transition ${dk ? "text-slate-300 hover:bg-cyan-400/10 hover:text-cyan-300" : "text-slate-600 hover:bg-sky-50 hover:text-sky-700"}`}>
-                    <Ic n="printer" className="h-3.5 w-3.5" /> چاپ رسید
-                  </button>
-                </li>
-                <li className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
-                <li>
-                  <button onClick={handleRestore}
-                    className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold transition ${dk ? "text-emerald-300 hover:bg-emerald-400/10" : "text-emerald-600 hover:bg-emerald-50"}`}>
-                    <Ic n="undo" className="h-3.5 w-3.5" /> برگرداندن
-                  </button>
-                </li>
-                <li>
-                  <button onClick={handleDelete}
-                    className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold transition ${dk ? "text-rose-300 hover:bg-rose-400/10" : "text-rose-500 hover:bg-rose-50"}`}>
-                    <Ic n="trash" className="h-3.5 w-3.5" /> حذف
-                  </button>
-                </li>
-              </>
-            )}
+            <li>
+              <button onClick={handleView}
+                className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold transition ${dk ? "text-slate-300 hover:bg-cyan-400/10 hover:text-cyan-300" : "text-slate-600 hover:bg-sky-50 hover:text-sky-700"}`}>
+                <Ic n="eye" className="h-3.5 w-3.5" /> مشاهده
+              </button>
+            </li>
+            <li>
+              <button onClick={handleEdit}
+                disabled={isVoided}
+                className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold transition ${
+                  isVoided 
+                    ? dk ? "text-slate-500 cursor-not-allowed" : "text-slate-400 cursor-not-allowed"
+                    : dk ? "text-slate-300 hover:bg-cyan-400/10 hover:text-cyan-300" : "text-slate-600 hover:bg-sky-50 hover:text-sky-700"
+                }`}>
+                <Ic n="pencil" className="h-3.5 w-3.5" /> ویرایش
+              </button>
+            </li>
+            <li>
+              <button onClick={handleVoid}
+                disabled={isVoided}
+                className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold transition ${
+                  isVoided
+                    ? dk ? "text-slate-500 cursor-not-allowed" : "text-slate-400 cursor-not-allowed"
+                    : dk ? "text-rose-300 hover:bg-rose-400/10" : "text-rose-500 hover:bg-rose-50"
+                }`}>
+                <Ic n="xCircle" className="h-3.5 w-3.5" /> لغو معامله
+              </button>
+            </li>
+            <li className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
+            <li>
+              <button onClick={handleDelete}
+                className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold transition ${dk ? "text-rose-300 hover:bg-rose-400/10" : "text-rose-500 hover:bg-rose-50"}`}>
+                <Ic n="trash" className="h-3.5 w-3.5" /> حذف
+              </button>
+            </li>
           </ul>
         )}
       </div>
@@ -1640,28 +1597,17 @@ export default function CurrencyExchangePage() {
                     <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 rounded-lg bg-gradient-to-r from-cyan-500 to-sky-500 px-2 py-1 text-[9px] font-black text-white">FX</span>
                   </div>
                 ))}
+                {/* ✅ فیلد مشتری ساده - فقط قابلیت نوشتن */}
                 {fld("مشتری", (
-                  <CustomerDropdown
+                  <input
+                    type="text"
                     value={customer}
-                    onInputChange={(name) => {
-                      setCustomer(name);
-                      const c = customers.find(x => x.name === name);
-                      if (c) {
-                        setCustomerPhone(c.phone || "");
-                        setCustomerTelegram(c.telegram || "");
-                      } else {
-                        setCustomerPhone("");
-                        setCustomerTelegram("");
-                      }
+                    onChange={(e) => {
+                      setCustomer(e.target.value);
                       setExchangeErrors((p) => ({ ...p, customer: undefined }));
                     }}
-                    showList={showCustomerList}
-                    onToggleList={() => setShowCustomerList(!showCustomerList)}
-                    filter={customerFilter}
-                    onFilterChange={setCustomerFilter}
-                    listRef={customerListRef}
-                    filteredList={filteredCustomerList}
-                    err={!!exchangeErrors.customer}
+                    placeholder="نام مشتری را بنویسید..."
+                    className={`${uiInput} ${exchangeErrors.customer ? errInput : ""}`}
                   />
                 ))}
               </div>
