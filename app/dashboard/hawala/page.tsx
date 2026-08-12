@@ -88,11 +88,7 @@ interface FormState {
   note: string;
 }
 
-interface LastNames {
-  senderName: string;
-  receiverName: string;
-}
-
+interface LastNames { senderName: string; receiverName: string; }
 type FormErrors = Partial<Record<keyof FormState, string>>;
 
 const provinces = ["هرات","ارزگان","بادغیس","بدخشان","بامیان","بغلان","بلخ","پکتیا","پکتیکا","پنجشیر","پروان","تخار","جوزجان","خوست","دایکندی","زابل","سرپل","سمنگان","فاریاب","فراه","غزنی","غور","کابل","کندهار","کاپیسا","قندوز","کنر","لغمان","لوگر","میدان وردک","ننگرهار","نیمروز","نورستان","هلمند"] as const;
@@ -622,7 +618,6 @@ export default function HawalaPage() {
   }, [form, rateMode, rateValue, afnForeign, directCounter, directBaseValue, feeValue, amountFrom, destinationText, customers, showToast]);
 
   const resetForm = useCallback(() => { setForm(emptyForm); setErrors({}); showToast("فورم پاک شد."); }, [showToast]);
-
   const toggleMenu = useCallback((id: string) => setOpenMenuId(p => p === id ? null : id), []);
 
   const markAsSent = useCallback((item: Hawala) => {
@@ -798,9 +793,7 @@ export default function HawalaPage() {
             return (
               <div key={cur} className={`rounded-lg px-2 py-1.5 ${dk ? "bg-slate-900/50" : "bg-white"}`}>
                 <div className={subText}>{labels[cur]}</div>
-                <div className={`font-black tabular-nums ${isDebt ? "text-rose-500" : isCredit ? (dk ? "text-emerald-300" : "text-emerald-600") : dk ? "text-slate-400" : "text-slate-500"}`}>
-                  {fmt(bal)}
-                </div>
+                <div className={`font-black tabular-nums ${isDebt ? "text-rose-500" : isCredit ? (dk ? "text-emerald-300" : "text-emerald-600") : dk ? "text-slate-400" : "text-slate-500"}`}>{fmt(bal)}</div>
                 <div className="min-h-[12px] mt-0.5">
                   {isDebt && <div className="text-[8px] font-black text-rose-500">قرض از صرافی</div>}
                   {isCredit && <div className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>طلب از صرافی</div>}
@@ -814,8 +807,7 @@ export default function HawalaPage() {
     );
   });
 
-  const ActionMenu = memo(function ActionMenu({ item, isInHistory }: { item: Hawala; isInHistory: boolean }) {
-    const isOpen = openMenuId === item.id;
+  const ActionMenu = memo(function ActionMenu({ item, isInHistory, isOpen }: { item: Hawala; isInHistory: boolean; isOpen: boolean }) {
     const isPending = item.status === "pending";
     const isSent = item.status === "sent";
     const isPaid = item.status === "paid";
@@ -1209,7 +1201,7 @@ export default function HawalaPage() {
                       <thead>
                         <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
                           {["شماره", "کد پیگیری", "تاریخ", "حواله‌دهنده", "حواله‌گیرنده", "مبلغ نهایی", "کارمزد", "پرداخت‌کننده", "مقصد", "وضعیت", "عملیات"].map((h) => (
-                            <th key={h} className={`px-4 py-3 text-right text-[11px] font-black text-slate-400`}>{h}</th>
+                            <th key={h} className="px-4 py-3 text-right text-[11px] font-black text-slate-400">{h}</th>
                           ))}
                         </tr>
                       </thead>
@@ -1230,7 +1222,7 @@ export default function HawalaPage() {
                             <td className="px-4 py-3.5"><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${item.feePayer === "sender" ? dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-700" : dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-700"}`}>{item.feePayer === "sender" ? "از فرستنده" : "از گیرنده"}</span></td>
                             <td className={`px-4 py-3.5 text-xs ${subText}`}>{item.destinationText}</td>
                             <td className="px-4 py-3.5"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${statusColors[item.status][dk ? "dark" : "light"]}`}>{statusLabels[item.status]}</span></td>
-                            <td className="px-4 py-3.5"><ActionMenu item={item} isInHistory={false} /></td>
+                            <td className="px-4 py-3.5"><ActionMenu item={item} isInHistory={false} isOpen={openMenuId === item.id} /></td>
                           </tr>
                         ))}
                       </tbody>
@@ -1270,7 +1262,7 @@ export default function HawalaPage() {
                       <thead>
                         <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
                           {["شماره", "کد پیگیری", "تاریخ", "حواله‌دهنده", "حواله‌گیرنده", "مبلغ نهایی", "کارمزد", "پرداخت‌کننده", "مقصد", "وضعیت", "عملیات"].map((h) => (
-                            <th key={h} className={`px-4 py-3 text-right text-[11px] font-black text-slate-400`}>{h}</th>
+                            <th key={h} className="px-4 py-3 text-right text-[11px] font-black text-slate-400">{h}</th>
                           ))}
                         </tr>
                       </thead>
@@ -1291,7 +1283,7 @@ export default function HawalaPage() {
                             <td className="px-4 py-3.5"><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${item.feePayer === "sender" ? dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-700" : dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-700"}`}>{item.feePayer === "sender" ? "از فرستنده" : "از گیرنده"}</span></td>
                             <td className={`px-4 py-3.5 text-xs ${subText}`}>{item.destinationText}</td>
                             <td className="px-4 py-3.5"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${statusColors[item.status][dk ? "dark" : "light"]}`}>{statusLabels[item.status]}</span></td>
-                            <td className="px-4 py-3.5"><ActionMenu item={item} isInHistory={true} /></td>
+                            <td className="px-4 py-3.5"><ActionMenu item={item} isInHistory={true} isOpen={openMenuId === item.id} /></td>
                           </tr>
                         ))}
                       </tbody>
