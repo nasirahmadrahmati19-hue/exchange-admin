@@ -407,13 +407,24 @@ export default function HawalaPage() {
     return () => { document.removeEventListener("click", handler); };
   }, [anyDropdownOpen, showSenderList, showReceiverList]);
 
+  // ✅✅✅ بهبود یافته: Listener برای بستن منو ✅✅✅
   useEffect(() => {
     if (!openMenuId) return;
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpenMenuId(null);
+    
+    const handleDocumentMouseDown = (e: MouseEvent) => {
+      // اگر کلیک خارج از منو بود، منو را ببند
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenuId(null);
+      }
     };
-    const timer = setTimeout(() => document.addEventListener("mousedown", handler), 0);
-    return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); };
+    
+    // مousedown قبل از click اجرا می‌شود، پس این listener قبل از دکمه toggle اجرا می‌شود
+    // اما stopPropagation در دکمه toggle از اجرای این handler جلوگیری می‌کند
+    document.addEventListener("mousedown", handleDocumentMouseDown);
+    
+    return () => {
+      document.removeEventListener("mousedown", handleDocumentMouseDown);
+    };
   }, [openMenuId]);
 
   const filteredSenderList = useMemo(() => {
@@ -649,11 +660,6 @@ export default function HawalaPage() {
     showToast("حواله به وضعیت ارسال‌شده برگشت و به تب جاری منتقل شد.");
   };
 
-  // ✅✅✅ تابع deleteHawala اصلاح‌شده ✅✅✅
-  // تغییرات:
-  // 1. ادغام دو setCustomers جداگانه در یک عملیات واحد برای جلوگیری از race condition
-  // 2. استفاده از تابع getBalanceChangesForHawala برای سازگاری با سایر بخش‌های کد
-  // 3. مدیریت حالت cancelled که در کد اصلی وجود نداشت
   const deleteHawala = (item: Hawala) => {
     setOpenMenuId(null);
     const msg = `آیا از حذف کامل حواله ${item.number} مطمئن هستید؟\n\nاین عملیات قابل بازگشت نیست و حواله از سیستم پاک می‌شود.`;
@@ -662,8 +668,6 @@ export default function HawalaPage() {
       const changes: BalanceChange[] = [];
       
       if (item.status === "pending" || item.status === "sent") {
-        // حواله ثبت شده اما تسویه نشده: فقط عملیات ثبت را reverse می‌کنیم
-        // فرستنده مبلغ اولیه را پس می‌گیرد
         if (customers.some(c => c.name === item.senderName)) {
           changes.push({ 
             customerName: item.senderName, 
@@ -672,8 +676,6 @@ export default function HawalaPage() {
           });
         }
       } else if (item.status === "paid") {
-        // حواله تسویه شده: هم عملیات ثبت و هم تسویه را reverse می‌کنیم
-        // فرستنده مبلغ اولیه را پس می‌گیرد
         if (customers.some(c => c.name === item.senderName)) {
           changes.push({ 
             customerName: item.senderName, 
@@ -681,7 +683,6 @@ export default function HawalaPage() {
             amount: item.amountFrom 
           });
         }
-        // گیرنده مبلغ نهایی را پس می‌دهد
         if (customers.some(c => c.name === item.receiverName)) {
           changes.push({ 
             customerName: item.receiverName, 
@@ -689,13 +690,8 @@ export default function HawalaPage() {
             amount: -item.finalAmount 
           });
         }
-        // توجه: کارمزد (profit) صرافی در این حالت برگردانده نمی‌شود
-        // زیرا transaction باطل شده و صرافی نباید سودی از یک حواله حذف‌شده ببرد
       }
-      // برای حواله‌های cancelled، تغییر موجودی قبلاً در زمان ابطال انجام شده
-      // فقط حواله را از لیست حذف می‌کنیم
       
-      // اعمال همه تغییرات در یک عملیات واحد (جلوگیری از race condition)
       if (changes.length > 0) {
         setCustomers(prev => applyBalanceChanges(prev, changes));
       }
@@ -826,6 +822,7 @@ export default function HawalaPage() {
     );
   };
 
+  // ✅✅✅ ActionMenu بهبود یافته ✅✅✅
   const ActionMenu = ({ item, isInHistory }: { item: Hawala; isInHistory: boolean }) => {
     const isOpen = openMenuId === item.id;
     const isPending = item.status === "pending";
@@ -834,9 +831,14 @@ export default function HawalaPage() {
     const isCancelled = item.status === "cancelled";
 
     return (
-      <div className="relative" ref={isOpen ? menuRef : null}>
+      // ✅ menuRef همیشه به container متصل است (نه فقط وقتی باز است)
+      <div className="relative" ref={menuRef}>
+        {/* ✅ دکمه toggle از onClick استفاده می‌کند با stopPropagation */}
         <button
-          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); toggleMenu(item.id); }}
+          onClick={(e) => { 
+            e.stopPropagation(); 
+            toggleMenu(item.id); 
+          }}
           className={`grid h-8 w-8 place-items-center rounded-lg border transition active:scale-95 ${
             isOpen
               ? dk ? "border-blue-400/50 bg-blue-400/20 text-blue-300" : "border-blue-400 bg-blue-50 text-blue-600"
@@ -852,7 +854,6 @@ export default function HawalaPage() {
               <>
                 {isPending && (
                   <button
-                    onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                     onClick={() => markAsSent(item)}
                     className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-blue-400/15 hover:text-blue-300" : "text-slate-700 hover:bg-blue-50 hover:text-blue-600"}`}
                   >
@@ -861,7 +862,6 @@ export default function HawalaPage() {
                 )}
                 {(isPending || isSent) && (
                   <button
-                    onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                     onClick={() => openSettlement(item)}
                     className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-emerald-400/15 hover:text-emerald-300" : "text-slate-700 hover:bg-emerald-50 hover:text-emerald-600"}`}
                   >
@@ -870,7 +870,6 @@ export default function HawalaPage() {
                 )}
                 {(isPending || isSent) && (
                   <button
-                    onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                     onClick={() => openCancel(item)}
                     className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-amber-400/15 hover:text-amber-300" : "text-slate-700 hover:bg-amber-50 hover:text-amber-600"}`}
                   >
@@ -879,7 +878,6 @@ export default function HawalaPage() {
                 )}
                 <div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
                 <button
-                  onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                   onClick={() => deleteHawala(item)}
                   className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-rose-300 hover:bg-rose-400/15" : "text-rose-600 hover:bg-rose-50"}`}
                 >
@@ -892,7 +890,6 @@ export default function HawalaPage() {
               <>
                 {isCancelled && (
                   <button
-                    onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                     onClick={() => restoreToSent(item)}
                     className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-blue-400/15 hover:text-blue-300" : "text-slate-700 hover:bg-blue-50 hover:text-blue-600"}`}
                   >
@@ -901,7 +898,6 @@ export default function HawalaPage() {
                 )}
                 {isPaid && (
                   <button
-                    onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                     onClick={() => openCancel(item)}
                     className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-amber-400/15 hover:text-amber-300" : "text-slate-700 hover:bg-amber-50 hover:text-amber-600"}`}
                   >
@@ -910,7 +906,6 @@ export default function HawalaPage() {
                 )}
                 <div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
                 <button
-                  onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                   onClick={() => deleteHawala(item)}
                   className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-rose-300 hover:bg-rose-400/15" : "text-rose-600 hover:bg-rose-50"}`}
                 >
