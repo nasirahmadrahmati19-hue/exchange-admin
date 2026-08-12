@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState, useRef, type ReactNode, type ChangeEvent } from "react";
+import { useEffect, useMemo, useState, useRef, useCallback, memo, type ReactNode, type ChangeEvent } from "react";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type RateMode = "same" | "afn" | "direct";
@@ -324,13 +324,13 @@ const iconPaths = {
 
 type IconName = keyof typeof iconPaths;
 
-function Ic({ n, className = "h-5 w-5" }: { n: IconName; className?: string }) {
+const Ic = memo(function Ic({ n, className = "h-5 w-5" }: { n: IconName; className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
       <path d={iconPaths[n]} />
     </svg>
   );
-}
+});
 
 export default function HawalaPage() {
   const [mounted, setMounted] = useState(false);
@@ -403,11 +403,11 @@ export default function HawalaPage() {
       if (showSenderList && senderListRef.current && !senderListRef.current.contains(t)) setShowSenderList(false);
       if (showReceiverList && receiverListRef.current && !receiverListRef.current.contains(t)) setShowReceiverList(false);
     };
-    document.addEventListener("click", handler);
-    return () => { document.removeEventListener("click", handler); };
+    const timer = setTimeout(() => document.addEventListener("mousedown", handler), 0);
+    return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); };
   }, [anyDropdownOpen, showSenderList, showReceiverList]);
 
-  // ✅✅✅ راه‌حل قطعی: setTimeout(0) تا رویداد فعلی گرفته نشود ✅✅✅
+  // ✅✅✅ راه‌حل قطعی: setTimeout(0) مطابق کد تبادل ارز ✅✅✅
   useEffect(() => {
     if (!openMenuId) return;
     const handler = (e: MouseEvent) => {
@@ -506,8 +506,8 @@ export default function HawalaPage() {
     } catch { return []; }
   }, [hawalas, nameSearch, amountSearch, sortOrder]);
 
-  const showToast = (message: string) => { setToast(message); setTimeout(() => setToast(""), 3500); };
-  const setField = (field: keyof FormState, value: string) => { setForm(prev => ({ ...prev, [field]: value })); setErrors(prev => ({ ...prev, [field]: undefined })); };
+  const showToast = useCallback((message: string) => { setToast(message); setTimeout(() => setToast(""), 3500); }, []);
+  const setField = useCallback((field: keyof FormState, value: string) => { setForm(prev => ({ ...prev, [field]: value })); setErrors(prev => ({ ...prev, [field]: undefined })); }, []);
 
   const handleProvinceChange = (event: ChangeEvent<HTMLSelectElement>) => {
     const np = event.target.value;
@@ -515,7 +515,7 @@ export default function HawalaPage() {
     setErrors(prev => ({ ...prev, province: undefined }));
   };
 
-  const validateForm = () => {
+  const validateForm = useCallback(() => {
     const errs: FormErrors = {};
     if (!form.type.trim()) errs.type = "نوع حواله را انتخاب کنید.";
     if (!form.senderName.trim()) errs.senderName = "نام حواله‌دهنده ضروری است.";
@@ -533,16 +533,16 @@ export default function HawalaPage() {
     }
     if (amountFrom > 0 && rateMode !== "same" && !convertedAmount) errs.rate = "مبلغ تبدیل محاسبه نشد؛ لطفاً نرخ را بررسی کنید.";
     return errs;
-  };
+  }, [form, amountFrom, feeValue, convertedAmount, rateMode, rateValue, directCounter]);
 
-  const handleRegisterClick = () => {
+  const handleRegisterClick = useCallback(() => {
     const errs = validateForm();
     setErrors(errs);
     if (Object.keys(errs).length > 0) { showToast("لطفاً فیلدهای ضروری را خانه‌پری کنید."); return; }
     setPreviewOpen(true);
-  };
+  }, [validateForm, showToast]);
 
-  const confirmRegister = () => {
+  const confirmRegister = useCallback(() => {
     try {
       const nowDate = new Date();
       const senderName = form.senderName.trim();
@@ -582,28 +582,27 @@ export default function HawalaPage() {
       console.error("Register error:", err);
       showToast("خطا در ثبت حواله");
     }
-  };
+  }, [form, rateMode, rateValue, afnForeign, directCounter, directBaseValue, feeValue, amountFrom, destinationText, customers, showToast]);
 
-  const resetForm = () => { setForm(emptyForm); setErrors({}); showToast("فورم پاک شد."); };
+  const resetForm = useCallback(() => { setForm(emptyForm); setErrors({}); showToast("فورم پاک شد."); }, [showToast]);
 
-  const toggleMenu = (id: string) => {
-    setOpenMenuId(openMenuId === id ? null : id);
-  };
+  // ✅✅✅ toggleMenu با useCallback مطابق کد تبادل ارز ✅✅✅
+  const toggleMenu = useCallback((id: string) => setOpenMenuId(p => p === id ? null : id), []);
 
-  const markAsSent = (item: Hawala) => {
+  const markAsSent = useCallback((item: Hawala) => {
     setHawalas(prev => prev.map(h => h.id === item.id ? { ...h, status: "sent" as HawalaStatus } : h));
     setOpenMenuId(null);
     showToast("وضعیت حواله به ارسال‌شده تغییر کرد.");
-  };
+  }, [showToast]);
 
-  const openSettlement = (item: Hawala) => {
+  const openSettlement = useCallback((item: Hawala) => {
     setSettleTarget(item);
     setPaidAmount(String(item.finalAmount));
     setPaidBy("");
     setOpenMenuId(null);
-  };
+  }, []);
 
-  const confirmSettlement = () => {
+  const confirmSettlement = useCallback(() => {
     if (!settleTarget) return;
     if (!paidBy.trim()) { showToast("نام پرداخت‌کننده را بنویسید."); return; }
     const amountPaid = Number(paidAmount || settleTarget.finalAmount);
@@ -620,15 +619,15 @@ export default function HawalaPage() {
       console.error("Settle error:", err);
       showToast("خطا در تسویه حواله");
     }
-  };
+  }, [settleTarget, paidBy, paidAmount, customers, showToast]);
 
-  const openCancel = (item: Hawala) => {
+  const openCancel = useCallback((item: Hawala) => {
     setCancelTarget(item);
     setCancelReason("");
     setOpenMenuId(null);
-  };
+  }, []);
 
-  const confirmCancel = () => {
+  const confirmCancel = useCallback(() => {
     if (!cancelTarget) return;
     if (!cancelReason.trim()) { showToast("دلیل لغو حواله را بنویسید."); return; }
     try {
@@ -642,15 +641,15 @@ export default function HawalaPage() {
       console.error("Cancel error:", err);
       showToast("خطا در ابطال حواله");
     }
-  };
+  }, [cancelTarget, cancelReason, customers, showToast]);
 
-  const restoreToSent = (item: Hawala) => {
+  const restoreToSent = useCallback((item: Hawala) => {
     setHawalas(prev => prev.map(h => h.id === item.id ? { ...h, status: "sent" as HawalaStatus, paidAt: undefined, paidBy: undefined, paidAmount: undefined, cancelReason: undefined } : h));
     setOpenMenuId(null);
     showToast("حواله به وضعیت ارسال‌شده برگشت و به تب جاری منتقل شد.");
-  };
+  }, [showToast]);
 
-  const deleteHawala = (item: Hawala) => {
+  const deleteHawala = useCallback((item: Hawala) => {
     setOpenMenuId(null);
     const msg = `آیا از حذف کامل حواله ${item.number} مطمئن هستید؟\n\nاین عملیات قابل بازگشت نیست و حواله از سیستم پاک می‌شود.`;
     if (!window.confirm(msg)) return;
@@ -659,26 +658,14 @@ export default function HawalaPage() {
       
       if (item.status === "pending" || item.status === "sent") {
         if (customers.some(c => c.name === item.senderName)) {
-          changes.push({ 
-            customerName: item.senderName, 
-            currency: item.currencyFrom, 
-            amount: item.amountFrom 
-          });
+          changes.push({ customerName: item.senderName, currency: item.currencyFrom, amount: item.amountFrom });
         }
       } else if (item.status === "paid") {
         if (customers.some(c => c.name === item.senderName)) {
-          changes.push({ 
-            customerName: item.senderName, 
-            currency: item.currencyFrom, 
-            amount: item.amountFrom 
-          });
+          changes.push({ customerName: item.senderName, currency: item.currencyFrom, amount: item.amountFrom });
         }
         if (customers.some(c => c.name === item.receiverName)) {
-          changes.push({ 
-            customerName: item.receiverName, 
-            currency: item.currencyTo, 
-            amount: -item.finalAmount 
-          });
+          changes.push({ customerName: item.receiverName, currency: item.currencyTo, amount: -item.finalAmount });
         }
       }
       
@@ -692,7 +679,7 @@ export default function HawalaPage() {
       console.error("Delete error:", err);
       showToast("خطا در حذف حواله");
     }
-  };
+  }, [customers, showToast]);
 
   if (!mounted) {
     return (
@@ -757,7 +744,7 @@ export default function HawalaPage() {
     <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black ${cls}`}>{check && <Ic n="check" className="h-3.5 w-3.5" />}{txt}</span>
   );
 
-  const CustomerBalanceCard = ({ customer, color }: { customer: Customer | null; color: "blue" | "orange" | "emerald" }) => {
+  const CustomerBalanceCard = memo(({ customer, color }: { customer: Customer | null; color: "blue" | "orange" | "emerald" }) => {
     if (!customer) return null;
     const colors = {
       blue: { border: dk ? "border-blue-400/30 bg-blue-400/10" : "border-blue-200 bg-blue-50", text: dk ? "text-blue-300" : "text-blue-700", icon: dk ? "text-blue-300" : "text-blue-600" },
@@ -810,10 +797,10 @@ export default function HawalaPage() {
         </div>
       </div>
     );
-  };
+  });
 
-  // ✅✅✅ ActionMenu اصلاح‌شده - ref مشروط و onMouseDown ✅✅✅
-  const ActionMenu = ({ item, isInHistory }: { item: Hawala; isInHistory: boolean }) => {
+  // ✅✅✅ ActionMenu با memo و تابع نام‌دار مطابق کد تبادل ارز ✅✅✅
+  const ActionMenu = memo(function ActionMenu({ item, isInHistory }: { item: Hawala; isInHistory: boolean }) {
     const isOpen = openMenuId === item.id;
     const isPending = item.status === "pending";
     const isSent = item.status === "sent";
@@ -824,85 +811,106 @@ export default function HawalaPage() {
       <div className="relative" ref={isOpen ? menuRef : null}>
         <button
           onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); toggleMenu(item.id); }}
-          className={`grid h-8 w-8 place-items-center rounded-lg border transition active:scale-95 ${
+          className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-black ${
             isOpen
               ? dk ? "border-blue-400/50 bg-blue-400/20 text-blue-300" : "border-blue-400 bg-blue-50 text-blue-600"
-              : dk ? "border-slate-600 text-slate-400 hover:bg-slate-700 hover:text-slate-200" : "border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+              : dk ? "border-slate-600 bg-slate-900 text-cyan-300" : "border-slate-200 bg-white text-sky-600"
           }`}
         >
-          <Ic n="dots" className="h-4 w-4" />
+          عملیات<Ic n="chevron" className={`h-3 w-3 ${isOpen ? "rotate-180" : ""}`} />
         </button>
 
         {isOpen && (
-          <div className={`hw-menu absolute left-0 top-full z-20 mt-1.5 w-44 overflow-hidden rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
+          <ul className={`absolute left-0 top-full z-20 mt-1.5 w-44 space-y-1 rounded-xl border p-1.5 shadow-xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`}>
             {!isInHistory && (
               <>
                 {isPending && (
-                  <button
-                    onClick={() => markAsSent(item)}
-                    className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-blue-400/15 hover:text-blue-300" : "text-slate-700 hover:bg-blue-50 hover:text-blue-600"}`}
-                  >
-                    <Ic n="send" className="h-4 w-4" /><span>ارسال</span>
-                  </button>
+                  <li>
+                    <button
+                      onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                      onClick={() => { setOpenMenuId(null); markAsSent(item); }}
+                      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold ${dk ? "text-slate-300 hover:bg-blue-400/10" : "text-slate-600 hover:bg-sky-50"}`}
+                    >
+                      <Ic n="send" className="h-3.5 w-3.5" /><span>ارسال</span>
+                    </button>
+                  </li>
                 )}
                 {(isPending || isSent) && (
-                  <button
-                    onClick={() => openSettlement(item)}
-                    className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-emerald-400/15 hover:text-emerald-300" : "text-slate-700 hover:bg-emerald-50 hover:text-emerald-600"}`}
-                  >
-                    <Ic n="check" className="h-4 w-4" /><span>تسویه</span>
-                  </button>
+                  <li>
+                    <button
+                      onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                      onClick={() => { setOpenMenuId(null); openSettlement(item); }}
+                      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold ${dk ? "text-slate-300 hover:bg-emerald-400/10" : "text-slate-600 hover:bg-emerald-50"}`}
+                    >
+                      <Ic n="check" className="h-3.5 w-3.5" /><span>تسویه</span>
+                    </button>
+                  </li>
                 )}
                 {(isPending || isSent) && (
-                  <button
-                    onClick={() => openCancel(item)}
-                    className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-amber-400/15 hover:text-amber-300" : "text-slate-700 hover:bg-amber-50 hover:text-amber-600"}`}
-                  >
-                    <Ic n="xCircle" className="h-4 w-4" /><span>ابطال</span>
-                  </button>
+                  <li>
+                    <button
+                      onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                      onClick={() => { setOpenMenuId(null); openCancel(item); }}
+                      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold ${dk ? "text-amber-300 hover:bg-amber-400/10" : "text-amber-600 hover:bg-amber-50"}`}
+                    >
+                      <Ic n="xCircle" className="h-3.5 w-3.5" /><span>ابطال</span>
+                    </button>
+                  </li>
                 )}
-                <div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
-                <button
-                  onClick={() => deleteHawala(item)}
-                  className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-rose-300 hover:bg-rose-400/15" : "text-rose-600 hover:bg-rose-50"}`}
-                >
-                  <Ic n="trash" className="h-4 w-4" /><span>حذف</span>
-                </button>
+                <li className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
+                <li>
+                  <button
+                    onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    onClick={() => { setOpenMenuId(null); deleteHawala(item); }}
+                    className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold ${dk ? "text-rose-300 hover:bg-rose-400/10" : "text-rose-500 hover:bg-rose-50"}`}
+                  >
+                    <Ic n="trash" className="h-3.5 w-3.5" /><span>حذف</span>
+                  </button>
+                </li>
               </>
             )}
 
             {isInHistory && (
               <>
                 {isCancelled && (
-                  <button
-                    onClick={() => restoreToSent(item)}
-                    className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-blue-400/15 hover:text-blue-300" : "text-slate-700 hover:bg-blue-50 hover:text-blue-600"}`}
-                  >
-                    <Ic n="undo" className="h-4 w-4" /><span>برگشت به ارسال</span>
-                  </button>
+                  <li>
+                    <button
+                      onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                      onClick={() => { setOpenMenuId(null); restoreToSent(item); }}
+                      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold ${dk ? "text-slate-300 hover:bg-blue-400/10" : "text-slate-600 hover:bg-sky-50"}`}
+                    >
+                      <Ic n="undo" className="h-3.5 w-3.5" /><span>برگشت به ارسال</span>
+                    </button>
+                  </li>
                 )}
                 {isPaid && (
-                  <button
-                    onClick={() => openCancel(item)}
-                    className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-amber-400/15 hover:text-amber-300" : "text-slate-700 hover:bg-amber-50 hover:text-amber-600"}`}
-                  >
-                    <Ic n="xCircle" className="h-4 w-4" /><span>ابطال</span>
-                  </button>
+                  <li>
+                    <button
+                      onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                      onClick={() => { setOpenMenuId(null); openCancel(item); }}
+                      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold ${dk ? "text-amber-300 hover:bg-amber-400/10" : "text-amber-600 hover:bg-amber-50"}`}
+                    >
+                      <Ic n="xCircle" className="h-3.5 w-3.5" /><span>ابطال</span>
+                    </button>
+                  </li>
                 )}
-                <div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
-                <button
-                  onClick={() => deleteHawala(item)}
-                  className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-rose-300 hover:bg-rose-400/15" : "text-rose-600 hover:bg-rose-50"}`}
-                >
-                  <Ic n="trash" className="h-4 w-4" /><span>حذف</span>
-                </button>
+                <li className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
+                <li>
+                  <button
+                    onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    onClick={() => { setOpenMenuId(null); deleteHawala(item); }}
+                    className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold ${dk ? "text-rose-300 hover:bg-rose-400/10" : "text-rose-500 hover:bg-rose-50"}`}
+                  >
+                    <Ic n="trash" className="h-3.5 w-3.5" /><span>حذف</span>
+                  </button>
+                </li>
               </>
             )}
-          </div>
+          </ul>
         )}
       </div>
     );
-  };
+  });
 
   const errorList = Object.values(errors).filter((msg): msg is string => Boolean(msg));
   
