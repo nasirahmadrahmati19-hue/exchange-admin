@@ -431,6 +431,8 @@ export default function HawalaPage() {
   useEffect(() => {
     if (!openMenuId) return;
     const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest("[data-menu-toggle]")) return;
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpenMenuId(null);
     };
     const timer = setTimeout(() => document.addEventListener("mousedown", handler), 0);
@@ -816,7 +818,8 @@ export default function HawalaPage() {
     return (
       <div className="relative" ref={isOpen ? menuRef : null}>
         <button
-          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); toggleMenu(item.id); }}
+          data-menu-toggle
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleMenu(item.id); }}
           className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-black ${
             isOpen
               ? dk ? "border-blue-400/50 bg-blue-400/20 text-blue-300" : "border-blue-400 bg-blue-50 text-blue-600"
