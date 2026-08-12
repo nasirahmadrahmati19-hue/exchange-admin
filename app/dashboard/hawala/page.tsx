@@ -1,5 +1,11 @@
 "use client";
 import { useEffect, useMemo, useState, useRef, useCallback, memo, type ReactNode, type ChangeEvent } from "react";
+import {
+  getNextTrackingCode,
+  consumeTrackingCode,
+  initTrackingSystem,
+  getTrackingNumberValue,
+} from "../lib/trackingCode";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type RateMode = "same" | "afn" | "direct";
@@ -19,27 +25,74 @@ type Customer = {
 };
 
 interface Hawala {
-  id: string; number: string; date: string; time: string; type: string;
-  destinationCountry: string; province: string; district: string; destinationText: string;
-  currencyFrom: Currency; currencyTo: Currency; amountFrom: number;
-  rate: number; rateLabel: string; rateBase?: Currency;
-  fee: number; feeCurrency: Currency; feePayer: CommissionPayer;
-  finalAmount: number; balance: string; note: string;
-  profit: number; profitCurrency: Currency;
-  senderName: string; senderPhone: string; senderTelegram: string;
-  receiverName: string; receiverTazkira: string; receiverPhone: string; receiverAddress: string;
-  status: HawalaStatus; paidAt?: string; paidBy?: string; paidAmount?: number; cancelReason?: string;
+  id: string;
+  number: string;
+  date: string;
+  time: string;
+  type: string;
+  destinationCountry: string;
+  province: string;
+  district: string;
+  destinationText: string;
+  currencyFrom: Currency;
+  currencyTo: Currency;
+  amountFrom: number;
+  rate: number;
+  rateLabel: string;
+  rateBase?: Currency;
+  fee: number;
+  feeCurrency: Currency;
+  feePayer: CommissionPayer;
+  finalAmount: number;
+  balance: string;
+  note: string;
+  profit: number;
+  profitCurrency: Currency;
+  senderId?: string;
+  senderName: string;
+  senderPhone: string;
+  senderTelegram: string;
+  receiverId?: string;
+  receiverName: string;
+  receiverTazkira: string;
+  receiverPhone: string;
+  receiverAddress: string;
+  status: HawalaStatus;
+  paidAt?: string;
+  paidBy?: string;
+  paidAmount?: number;
+  cancelReason?: string;
 }
 
 interface FormState {
-  type: string; currencyFrom: Currency; currencyTo: Currency;
-  senderName: string; senderPhone: string; senderTelegram: string;
-  amountFrom: string; rate: string; fee: string; feeCurrency: Currency; feePayer: CommissionPayer;
-  balance: string; province: string; district: string;
-  receiverName: string; receiverTazkira: string; receiverPhone: string; receiverAddress: string; note: string;
+  type: string;
+  currencyFrom: Currency;
+  currencyTo: Currency;
+  senderId: string;
+  senderName: string;
+  senderPhone: string;
+  senderTelegram: string;
+  amountFrom: string;
+  rate: string;
+  fee: string;
+  feeCurrency: Currency;
+  feePayer: CommissionPayer;
+  balance: string;
+  province: string;
+  district: string;
+  receiverId: string;
+  receiverName: string;
+  receiverTazkira: string;
+  receiverPhone: string;
+  receiverAddress: string;
+  note: string;
 }
 
-interface LastNames { senderName: string; receiverName: string; }
+interface LastNames {
+  senderName: string;
+  receiverName: string;
+}
+
 type FormErrors = Partial<Record<keyof FormState, string>>;
 
 const provinces = ["هرات","ارزگان","بادغیس","بدخشان","بامیان","بغلان","بلخ","پکتیا","پکتیکا","پنجشیر","پروان","تخار","جوزجان","خوست","دایکندی","زابل","سرپل","سمنگان","فاریاب","فراه","غزنی","غور","کابل","کندهار","کاپیسا","قندوز","کنر","لغمان","لوگر","میدان وردک","ننگرهار","نیمروز","نورستان","هلمند"] as const;
@@ -50,7 +103,6 @@ const rateUnits: Record<Currency, number> = { AFN: 1, USD: 1, EUR: 1, IRR: 1000,
 const CUSTOMERS_KEY = "fx-customers";
 const HAWALAS_KEY = "hawalas";
 const TRANSACTIONS_KEY = "fx-transactions";
-const SHARED_COUNTER_KEY = "shared-tracking-counter";
 
 const defaultCustomers: Customer[] = [
   { id: "1", name: "احمد رحیمی", phone: "0700123456", tazkira: "1400-001-001", address: "هرات، گلران", note: "مشتری ویژه", telegram: "@ahmad_rahimi", registeredAt: "2025-01-15T10:00:00Z", balances: { AFN: 500000, USD: 10000, EUR: 0, IRR: 0, PKR: 0 } },
@@ -109,9 +161,11 @@ function dateLabel(s: string) {
 }
 
 const emptyForm: FormState = {
-  type: "", currencyFrom: "AFN", currencyTo: "USD", senderName: "", senderPhone: "", senderTelegram: "",
+  type: "", currencyFrom: "AFN", currencyTo: "USD",
+  senderId: "", senderName: "", senderPhone: "", senderTelegram: "",
   amountFrom: "", rate: "", fee: "", feeCurrency: "AFN", feePayer: "sender", balance: "",
-  province: "هرات", district: "گلران", receiverName: "", receiverTazkira: "", receiverPhone: "", receiverAddress: "", note: ""
+  province: "هرات", district: "گلران",
+  receiverId: "", receiverName: "", receiverTazkira: "", receiverPhone: "", receiverAddress: "", note: ""
 };
 
 const safeGetItem = (key: string): any => {
@@ -164,51 +218,14 @@ const loadHawalas = (): Hawala[] => {
       finalAmount: Number(h.finalAmount || 0) || 0, balance: h.balance || "", note: h.note || "",
       profit: Number(h.profit || 0) || 0,
       profitCurrency: isCurrency(h.profitCurrency) ? h.profitCurrency : "AFN",
-      senderName: h.senderName || "", senderPhone: h.senderPhone || "", senderTelegram: h.senderTelegram || "",
-      receiverName: h.receiverName || "", receiverTazkira: h.receiverTazkira || "",
+      senderId: h.senderId, senderName: h.senderName || "", senderPhone: h.senderPhone || "", senderTelegram: h.senderTelegram || "",
+      receiverId: h.receiverId, receiverName: h.receiverName || "", receiverTazkira: h.receiverTazkira || "",
       receiverPhone: h.receiverPhone || "", receiverAddress: h.receiverAddress || "",
       status: h.status === "sent" ? "sent" : h.status === "paid" ? "paid" : h.status === "cancelled" ? "cancelled" : "pending",
       paidAt: h.paidAt, paidBy: h.paidBy, paidAmount: h.paidAmount, cancelReason: h.cancelReason,
     }));
   } catch { return []; }
 };
-
-function getSharedCounter(): number {
-  if (typeof window === "undefined") return 0;
-  try { const v = localStorage.getItem(SHARED_COUNTER_KEY); return v ? (parseInt(v, 10) || 0) : 0; } catch { return 0; }
-}
-
-function setSharedCounter(value: number) {
-  if (typeof window === "undefined") return;
-  try { localStorage.setItem(SHARED_COUNTER_KEY, String(value)); } catch {}
-}
-
-function getNextSharedCode(prefix: string): string {
-  return `${prefix}-${String(getSharedCounter() + 1).padStart(4, "0")}`;
-}
-
-function consumeSharedCode(prefix: string): string {
-  const next = getSharedCounter() + 1;
-  setSharedCounter(next);
-  return `${prefix}-${String(next).padStart(4, "0")}`;
-}
-
-function initSharedCounterFromAllSources(): void {
-  try {
-    let maxNum = 0;
-    for (const key of [TRANSACTIONS_KEY, HAWALAS_KEY]) {
-      const items = safeGetItem(key);
-      if (!Array.isArray(items)) continue;
-      for (const item of items) {
-        if (!item) continue;
-        const code = item.trackingCode || item.number || "";
-        const match = String(code).match(/(\d+)$/);
-        if (match) maxNum = Math.max(maxNum, Number(match[1]) || 0);
-      }
-    }
-    if (getSharedCounter() < maxNum) setSharedCounter(maxNum);
-  } catch {}
-}
 
 function getRateMode(from: Currency, to: Currency): RateMode { if (from === to) return "same"; if (from === "AFN" || to === "AFN") return "afn"; return "direct"; }
 function getAfnForeign(from: Currency, to: Currency): Currency | null { if (from === to) return null; if (from === "AFN") return to; if (to === "AFN") return from; return null; }
@@ -253,30 +270,25 @@ const statusColors: Record<HawalaStatus, { light: string; dark: string }> = {
 
 const formatDestination = (province: string, district: string) => province === "هرات" ? `${province} — ${district}` : province;
 
-const getHawalaNumberValue = (number: string) => {
-  const match = String(number || "").match(/(\d+)$/);
-  return match ? Number(match[1]) : 0;
-};
-
 const sortByHawalaNumber = (items: Hawala[], order: "asc" | "desc") =>
   [...items].sort((a, b) => {
-    const an = getHawalaNumberValue(a.number);
-    const bn = getHawalaNumberValue(b.number);
+    const an = getTrackingNumberValue(a.number);
+    const bn = getTrackingNumberValue(b.number);
     return order === "asc" ? an - bn : bn - an;
   });
 
-type BalanceChange = { customerName: string; currency: Currency; amount: number; };
+type BalanceChange = { customerName: string; customerId?: string; currency: Currency; amount: number; };
 
 function getBalanceChangesForHawala(h: Hawala, action: "register" | "settle" | "cancel"): BalanceChange[] {
   const changes: BalanceChange[] = [];
   try {
     if (action === "register") {
-      changes.push({ customerName: h.senderName, currency: h.currencyFrom, amount: -h.amountFrom });
+      changes.push({ customerName: h.senderName, customerId: h.senderId, currency: h.currencyFrom, amount: -h.amountFrom });
     } else if (action === "settle") {
-      changes.push({ customerName: h.receiverName, currency: h.currencyTo, amount: h.finalAmount });
+      changes.push({ customerName: h.receiverName, customerId: h.receiverId, currency: h.currencyTo, amount: h.finalAmount });
     } else if (action === "cancel") {
-      changes.push({ customerName: h.senderName, currency: h.currencyFrom, amount: h.amountFrom });
-      if (h.status === "paid") changes.push({ customerName: h.receiverName, currency: h.currencyTo, amount: -h.finalAmount });
+      changes.push({ customerName: h.senderName, customerId: h.senderId, currency: h.currencyFrom, amount: h.amountFrom });
+      if (h.status === "paid") changes.push({ customerName: h.receiverName, customerId: h.receiverId, currency: h.currencyTo, amount: -h.finalAmount });
     }
   } catch {}
   return changes;
@@ -285,7 +297,7 @@ function getBalanceChangesForHawala(h: Hawala, action: "register" | "settle" | "
 function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): Customer[] {
   try {
     return customers.map(c => {
-      const cc = changes.filter(ch => ch.customerName === c.name);
+      const cc = changes.filter(ch => ch.customerId === c.id || (!ch.customerId && ch.customerName === c.name));
       if (cc.length === 0) return c;
       const nb = { ...c.balances };
       for (const ch of cc) {
@@ -295,6 +307,20 @@ function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): C
       return { ...c, balances: nb };
     });
   } catch { return customers; }
+}
+
+function createCustomerFromName(name: string, phone: string = "", telegram: string = ""): Customer {
+  return {
+    id: generateId(),
+    name: name.trim(),
+    phone: phone.trim(),
+    telegram: telegram.trim(),
+    address: "",
+    note: "",
+    tazkira: "",
+    registeredAt: new Date().toISOString(),
+    balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 },
+  };
 }
 
 const iconPaths = {
@@ -317,7 +343,6 @@ const iconPaths = {
   plus: "M12 4.5v15m7.5-7.5h-15",
   tag: "M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z",
   wallet: "M21 12a2.25 2.25 0 0 0-2.25-2.25H15a3 3 0 1 1-6 0H5.25A2.25 2.25 0 0 0 3 12m18 0v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 9m18 0V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v3",
-  dots: "M6.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM12.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM18.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z",
   trash: "M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0",
   undo: "M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3",
 };
@@ -377,7 +402,7 @@ export default function HawalaPage() {
       setCustomers(loadCustomers());
       setTransactions(loadTransactions());
       setHawalas(loadHawalas());
-      initSharedCounterFromAllSources();
+      initTrackingSystem();
     } catch (err) { console.error("Load error:", err); }
     setMounted(true);
   }, []);
@@ -407,7 +432,6 @@ export default function HawalaPage() {
     return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); };
   }, [anyDropdownOpen, showSenderList, showReceiverList]);
 
-  // ✅✅✅ راه‌حل قطعی: setTimeout(0) مطابق کد تبادل ارز ✅✅✅
   useEffect(() => {
     if (!openMenuId) return;
     const handler = (e: MouseEvent) => {
@@ -460,7 +484,7 @@ export default function HawalaPage() {
   }, [amountFrom, rateValue, rateMode, form.currencyFrom, form.currencyTo, directCounter, directBaseValue]);
 
   const finalAmount = Math.max(0, convertedAmount - feeValue);
-  const nextHawalaNumber = getNextSharedCode("HW");
+  const nextHawalaNumber = getNextTrackingCode();
   const isHerat = form.province === "هرات";
   const destinationText = formatDestination(form.province, form.district);
   const totalCount = hawalas.length;
@@ -469,8 +493,8 @@ export default function HawalaPage() {
   const paidCount = hawalas.filter(item => item.status === "paid").length;
   const cancelledCount = hawalas.filter(item => item.status === "cancelled").length;
 
-  const selectedSender = useMemo(() => customers.find(c => c.name === form.senderName) || null, [customers, form.senderName]);
-  const selectedReceiver = useMemo(() => customers.find(c => c.name === form.receiverName) || null, [customers, form.receiverName]);
+  const selectedSender = useMemo(() => customers.find(c => c.id === form.senderId || c.name === form.senderName) || null, [customers, form.senderId, form.senderName]);
+  const selectedReceiver = useMemo(() => customers.find(c => c.id === form.receiverId || c.name === form.receiverName) || null, [customers, form.receiverId, form.receiverName]);
 
   const matchesSearch = (item: Hawala, query: string) => {
     const q = normalizeDigits(query).trim().toLowerCase();
@@ -547,13 +571,26 @@ export default function HawalaPage() {
       const nowDate = new Date();
       const senderName = form.senderName.trim();
       const receiverName = form.receiverName.trim();
-      
+
+      let sender = customers.find(c => c.id === form.senderId || c.name === senderName);
+      if (!sender && senderName) {
+        sender = createCustomerFromName(senderName, form.senderPhone, form.senderTelegram);
+        setCustomers(prev => [...prev, sender!]);
+      }
+
+      let receiver = customers.find(c => c.id === form.receiverId || c.name === receiverName);
+      if (!receiver && receiverName) {
+        receiver = createCustomerFromName(receiverName, form.receiverPhone, "");
+        setCustomers(prev => [...prev, receiver!]);
+      }
+
       let rateLabel = "";
       const txRate = rateMode === "same" ? 1 : rateValue;
       if (rateMode === "same") rateLabel = "بدون تبدیل";
       if (rateMode === "afn" && afnForeign) rateLabel = afnRateLabel(afnForeign, txRate);
       if (rateMode === "direct" && directCounter) rateLabel = directRateLabel(directBaseValue, directCounter, txRate);
-      const trackingNumber = consumeSharedCode("HW");
+
+      const trackingNumber = consumeTrackingCode();
       const newHawala: Hawala = {
         id: generateId(), number: trackingNumber, date: nowDate.toISOString(), time: "", type: form.type,
         destinationCountry: "افغانستان", province: form.province,
@@ -562,15 +599,15 @@ export default function HawalaPage() {
         rateBase: rateMode === "direct" ? directBaseValue : undefined, fee: feeValue,
         feeCurrency: form.feeCurrency, feePayer: form.feePayer, finalAmount, balance: form.balance,
         note: form.note, profit: feeValue, profitCurrency: form.feeCurrency,
-        senderName, senderPhone: form.senderPhone, senderTelegram: form.senderTelegram,
-        receiverName, receiverTazkira: form.receiverTazkira, receiverPhone: form.receiverPhone,
+        senderId: sender?.id, senderName, senderPhone: form.senderPhone, senderTelegram: form.senderTelegram,
+        receiverId: receiver?.id, receiverName, receiverTazkira: form.receiverTazkira, receiverPhone: form.receiverPhone,
         receiverAddress: form.receiverAddress, status: "pending" as HawalaStatus
       };
-      
-      if (customers.some(c => c.name === senderName)) {
+
+      if (sender) {
         setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForHawala(newHawala, "register")));
       }
-      
+
       setHawalas(prev => [newHawala, ...prev]);
       setLastNames({ senderName, receiverName });
       setForm(emptyForm);
@@ -586,7 +623,6 @@ export default function HawalaPage() {
 
   const resetForm = useCallback(() => { setForm(emptyForm); setErrors({}); showToast("فورم پاک شد."); }, [showToast]);
 
-  // ✅✅✅ toggleMenu با useCallback مطابق کد تبادل ارز ✅✅✅
   const toggleMenu = useCallback((id: string) => setOpenMenuId(p => p === id ? null : id), []);
 
   const markAsSent = useCallback((item: Hawala) => {
@@ -609,7 +645,7 @@ export default function HawalaPage() {
     if (!Number.isFinite(amountPaid) || amountPaid <= 0) { showToast("مبلغ پرداخت‌شده معتبر نیست."); return; }
     try {
       const paidHawala = { ...settleTarget, status: "paid" as HawalaStatus };
-      if (customers.some(c => c.name === settleTarget.receiverName)) {
+      if (settleTarget.receiverId || customers.some(c => c.name === settleTarget.receiverName)) {
         setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForHawala(paidHawala, "settle")));
       }
       setHawalas(prev => prev.map(item => item.id === settleTarget.id ? { ...item, status: "paid" as HawalaStatus, paidAt: new Date().toISOString(), paidBy, paidAmount: amountPaid } : item));
@@ -631,7 +667,7 @@ export default function HawalaPage() {
     if (!cancelTarget) return;
     if (!cancelReason.trim()) { showToast("دلیل لغو حواله را بنویسید."); return; }
     try {
-      if (customers.some(c => c.name === cancelTarget.senderName)) {
+      if (cancelTarget.senderId || customers.some(c => c.name === cancelTarget.senderName)) {
         setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForHawala(cancelTarget, "cancel")));
       }
       setHawalas(prev => prev.map(item => item.id === cancelTarget.id ? { ...item, status: "cancelled" as HawalaStatus, cancelReason } : item));
@@ -655,24 +691,21 @@ export default function HawalaPage() {
     if (!window.confirm(msg)) return;
     try {
       const changes: BalanceChange[] = [];
-      
       if (item.status === "pending" || item.status === "sent") {
-        if (customers.some(c => c.name === item.senderName)) {
-          changes.push({ customerName: item.senderName, currency: item.currencyFrom, amount: item.amountFrom });
+        if (item.senderId || customers.some(c => c.name === item.senderName)) {
+          changes.push({ customerName: item.senderName, customerId: item.senderId, currency: item.currencyFrom, amount: item.amountFrom });
         }
       } else if (item.status === "paid") {
-        if (customers.some(c => c.name === item.senderName)) {
-          changes.push({ customerName: item.senderName, currency: item.currencyFrom, amount: item.amountFrom });
+        if (item.senderId || customers.some(c => c.name === item.senderName)) {
+          changes.push({ customerName: item.senderName, customerId: item.senderId, currency: item.currencyFrom, amount: item.amountFrom });
         }
-        if (customers.some(c => c.name === item.receiverName)) {
-          changes.push({ customerName: item.receiverName, currency: item.currencyTo, amount: -item.finalAmount });
+        if (item.receiverId || customers.some(c => c.name === item.receiverName)) {
+          changes.push({ customerName: item.receiverName, customerId: item.receiverId, currency: item.currencyTo, amount: -item.finalAmount });
         }
       }
-      
       if (changes.length > 0) {
         setCustomers(prev => applyBalanceChanges(prev, changes));
       }
-      
       setHawalas(prev => prev.filter(h => h.id !== item.id));
       showToast(`حواله ${item.number} حذف شد.`);
     } catch (err) {
@@ -708,7 +741,6 @@ export default function HawalaPage() {
   const cBlue = { wrap: dk ? "border-blue-400/25 bg-blue-400/[0.07]" : "border-blue-300 bg-blue-50", icon: dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-600", title: dk ? "text-blue-300" : "text-blue-700", badge: dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-700" };
   const cAmber = { wrap: dk ? "border-amber-400/25 bg-amber-400/[0.07]" : "border-amber-300 bg-amber-50", icon: dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600", title: dk ? "text-amber-300" : "text-amber-700", badge: dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-700" };
   const cEmerald = { wrap: dk ? "border-emerald-400/25 bg-emerald-400/[0.07]" : "border-emerald-300 bg-emerald-50", icon: dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600", title: dk ? "text-emerald-300" : "text-emerald-700", badge: dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-700" };
-  const cOrange = { wrap: dk ? "border-orange-400/25 bg-orange-400/[0.07]" : "border-orange-300 bg-orange-50", icon: dk ? "bg-orange-400/15 text-orange-300" : "bg-orange-100 text-orange-600", title: dk ? "text-orange-300" : "text-orange-700", badge: dk ? "bg-orange-400/15 text-orange-300" : "bg-orange-100 text-orange-700" };
 
   const fld = (label: string, node: ReactNode, cls = "") => (<div className={cls}><label className={uiLabel}>{label}</label>{node}</div>);
   const sel = (value: string, onCh: (v: string) => void, opts: string[][], cls = "") => (
@@ -763,33 +795,16 @@ export default function HawalaPage() {
             const bal = customer.balances[cur] || 0;
             const isDebt = bal < 0;
             const isCredit = bal > 0;
-            const isZero = bal === 0;
             return (
               <div key={cur} className={`rounded-lg px-2 py-1.5 ${dk ? "bg-slate-900/50" : "bg-white"}`}>
                 <div className={subText}>{labels[cur]}</div>
-                <div className={`font-black tabular-nums ${
-                  isDebt ? "text-rose-500" : 
-                  isCredit ? (dk ? "text-emerald-300" : "text-emerald-600") : 
-                  dk ? "text-slate-400" : "text-slate-500"
-                }`}>
+                <div className={`font-black tabular-nums ${isDebt ? "text-rose-500" : isCredit ? (dk ? "text-emerald-300" : "text-emerald-600") : dk ? "text-slate-400" : "text-slate-500"}`}>
                   {fmt(bal)}
                 </div>
                 <div className="min-h-[12px] mt-0.5">
-                  {isDebt && (
-                    <div className="text-[8px] font-black text-rose-500">
-                      قرض از صرافی
-                    </div>
-                  )}
-                  {isCredit && (
-                    <div className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>
-                      طلب از صرافی
-                    </div>
-                  )}
-                  {isZero && (
-                    <div className={`text-[8px] font-bold ${subText}`}>
-                      بدون بدهی
-                    </div>
-                  )}
+                  {isDebt && <div className="text-[8px] font-black text-rose-500">قرض از صرافی</div>}
+                  {isCredit && <div className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>طلب از صرافی</div>}
+                  {bal === 0 && <div className={`text-[8px] font-bold ${subText}`}>بدون بدهی</div>}
                 </div>
               </div>
             );
@@ -799,7 +814,6 @@ export default function HawalaPage() {
     );
   });
 
-  // ✅✅✅ ActionMenu با memo و تابع نام‌دار مطابق کد تبادل ارز ✅✅✅
   const ActionMenu = memo(function ActionMenu({ item, isInHistory }: { item: Hawala; isInHistory: boolean }) {
     const isOpen = openMenuId === item.id;
     const isPending = item.status === "pending";
@@ -821,86 +835,57 @@ export default function HawalaPage() {
         </button>
 
         {isOpen && (
-          <ul className={`absolute left-0 top-full z-20 mt-1.5 w-44 space-y-1 rounded-xl border p-1.5 shadow-xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`}>
+          <ul className={`hw-menu absolute left-0 top-full z-20 mt-1.5 w-44 space-y-1 rounded-xl border p-1.5 shadow-xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`}>
             {!isInHistory && (
               <>
                 {isPending && (
                   <li>
-                    <button
-                      onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                      onClick={() => { setOpenMenuId(null); markAsSent(item); }}
-                      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold ${dk ? "text-slate-300 hover:bg-blue-400/10" : "text-slate-600 hover:bg-sky-50"}`}
-                    >
+                    <button onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={() => { setOpenMenuId(null); markAsSent(item); }} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold ${dk ? "text-slate-300 hover:bg-blue-400/10" : "text-slate-600 hover:bg-sky-50"}`}>
                       <Ic n="send" className="h-3.5 w-3.5" /><span>ارسال</span>
                     </button>
                   </li>
                 )}
                 {(isPending || isSent) && (
                   <li>
-                    <button
-                      onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                      onClick={() => { setOpenMenuId(null); openSettlement(item); }}
-                      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold ${dk ? "text-slate-300 hover:bg-emerald-400/10" : "text-slate-600 hover:bg-emerald-50"}`}
-                    >
+                    <button onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={() => { setOpenMenuId(null); openSettlement(item); }} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold ${dk ? "text-slate-300 hover:bg-emerald-400/10" : "text-slate-600 hover:bg-emerald-50"}`}>
                       <Ic n="check" className="h-3.5 w-3.5" /><span>تسویه</span>
                     </button>
                   </li>
                 )}
                 {(isPending || isSent) && (
                   <li>
-                    <button
-                      onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                      onClick={() => { setOpenMenuId(null); openCancel(item); }}
-                      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold ${dk ? "text-amber-300 hover:bg-amber-400/10" : "text-amber-600 hover:bg-amber-50"}`}
-                    >
+                    <button onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={() => { setOpenMenuId(null); openCancel(item); }} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold ${dk ? "text-amber-300 hover:bg-amber-400/10" : "text-amber-600 hover:bg-amber-50"}`}>
                       <Ic n="xCircle" className="h-3.5 w-3.5" /><span>ابطال</span>
                     </button>
                   </li>
                 )}
                 <li className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
                 <li>
-                  <button
-                    onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                    onClick={() => { setOpenMenuId(null); deleteHawala(item); }}
-                    className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold ${dk ? "text-rose-300 hover:bg-rose-400/10" : "text-rose-500 hover:bg-rose-50"}`}
-                  >
+                  <button onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={() => { setOpenMenuId(null); deleteHawala(item); }} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold ${dk ? "text-rose-300 hover:bg-rose-400/10" : "text-rose-500 hover:bg-rose-50"}`}>
                     <Ic n="trash" className="h-3.5 w-3.5" /><span>حذف</span>
                   </button>
                 </li>
               </>
             )}
-
             {isInHistory && (
               <>
                 {isCancelled && (
                   <li>
-                    <button
-                      onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                      onClick={() => { setOpenMenuId(null); restoreToSent(item); }}
-                      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold ${dk ? "text-slate-300 hover:bg-blue-400/10" : "text-slate-600 hover:bg-sky-50"}`}
-                    >
+                    <button onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={() => { setOpenMenuId(null); restoreToSent(item); }} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold ${dk ? "text-slate-300 hover:bg-blue-400/10" : "text-slate-600 hover:bg-sky-50"}`}>
                       <Ic n="undo" className="h-3.5 w-3.5" /><span>برگشت به ارسال</span>
                     </button>
                   </li>
                 )}
                 {isPaid && (
                   <li>
-                    <button
-                      onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                      onClick={() => { setOpenMenuId(null); openCancel(item); }}
-                      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold ${dk ? "text-amber-300 hover:bg-amber-400/10" : "text-amber-600 hover:bg-amber-50"}`}
-                    >
+                    <button onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={() => { setOpenMenuId(null); openCancel(item); }} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold ${dk ? "text-amber-300 hover:bg-amber-400/10" : "text-amber-600 hover:bg-amber-50"}`}>
                       <Ic n="xCircle" className="h-3.5 w-3.5" /><span>ابطال</span>
                     </button>
                   </li>
                 )}
                 <li className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
                 <li>
-                  <button
-                    onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                    onClick={() => { setOpenMenuId(null); deleteHawala(item); }}
-                    className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold ${dk ? "text-rose-300 hover:bg-rose-400/10" : "text-rose-500 hover:bg-rose-50"}`}
-                  >
+                  <button onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={() => { setOpenMenuId(null); deleteHawala(item); }} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold ${dk ? "text-rose-300 hover:bg-rose-400/10" : "text-rose-500 hover:bg-rose-50"}`}>
                     <Ic n="trash" className="h-3.5 w-3.5" /><span>حذف</span>
                   </button>
                 </li>
@@ -913,7 +898,7 @@ export default function HawalaPage() {
   });
 
   const errorList = Object.values(errors).filter((msg): msg is string => Boolean(msg));
-  
+
   const tabs = [
     { id: "new" as const, label: "ثبت حواله جدید", icon: "plus" as IconName },
     { id: "current" as const, label: "حواله‌های جاری", icon: "clock" as IconName, count: currentHawalas.length },
@@ -931,7 +916,7 @@ export default function HawalaPage() {
             <div className="flex items-center gap-2.5 md:gap-3.5 min-w-0">
               <div className="relative grid h-11 w-11 md:h-14 md:w-14 shrink-0 place-items-center rounded-xl md:rounded-2xl bg-gradient-to-br from-blue-500 via-cyan-500 to-emerald-400 text-white shadow-lg shadow-blue-500/30 ring-1 ring-white/30">
                 <Ic n="send" className="h-5 w-5 md:h-6 md:w-6" />
-                <span className={`absolute -bottom-1 -left-1 md:-bottom-1.5 md:-left-1.5 grid h-4 min-w-4 md:h-5 md:min-w-5 place-items-center rounded-full bg-gradient-to-br from-amber-400 to-orange-400 px-1 text-[7px] md:text-[8px] font-black text-white ring-2 ${dk ? "ring-[#0f172a]" : "ring-[#eff6ff]"}`}>HW</span>
+                <span className={`absolute -bottom-1 -left-1 md:-bottom-1.5 md:-left-1.5 grid h-4 min-w-4 md:h-5 md:min-w-5 place-items-center rounded-full bg-gradient-to-br from-amber-400 to-orange-400 px-1 text-[7px] md:text-[8px] font-black text-white ring-2 ${dk ? "ring-[#0f172a]" : "ring-[#eff6ff]"}`}>TR</span>
               </div>
               <div className="min-w-0">
                 <h1 className={`hw-display text-2xl md:text-4xl leading-none ${heading}`}>حواله‌جات</h1>
@@ -1002,9 +987,11 @@ export default function HawalaPage() {
                           if (!showSenderList) setShowSenderList(true);
                           const customer = customers.find(c => c.name === val);
                           if (customer) {
+                            setField("senderId", customer.id);
                             setField("senderPhone", customer.phone || "");
                             setField("senderTelegram", customer.telegram || "");
                           } else {
+                            setField("senderId", "");
                             setField("senderPhone", "");
                             setField("senderTelegram", "");
                           }
@@ -1013,52 +1000,32 @@ export default function HawalaPage() {
                         className={`${uiInput} pl-12 ${errors.senderName ? errInput : ""}`}
                         autoComplete="off"
                       />
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); setShowSenderList(!showSenderList); }}
-                        className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition ${dk ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}
-                      >
+                      <button type="button" onClick={(e) => { e.stopPropagation(); setShowSenderList(!showSenderList); }} className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition ${dk ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}>
                         <Ic n="chevron" className={`h-4 w-4 transition-transform ${showSenderList ? "rotate-180" : ""}`} />
                       </button>
-
                       {showSenderList && (
                         <div className={`hw-menu absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
                           {filteredSenderList.length === 0 ? (
                             <div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>
                           ) : (
                             filteredSenderList.map((c, idx) => (
-                              <button
-                                key={c.id}
-                                type="button"
-                                onClick={() => {
-                                  setField("senderName", c.name);
-                                  setField("senderPhone", c.phone || "");
-                                  setField("senderTelegram", c.telegram || "");
-                                  setSenderFilter("");
-                                  setShowSenderList(false);
-                                }}
-                                className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-blue-400/15 hover:text-blue-300" : "text-slate-700 hover:bg-blue-50 hover:text-blue-600"}`}
-                              >
-                                <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-blue-500 to-cyan-500`}>
-                                  {idx + 1}
-                                </span>
+                              <button key={c.id} type="button" onClick={() => { setField("senderId", c.id); setField("senderName", c.name); setField("senderPhone", c.phone || ""); setField("senderTelegram", c.telegram || ""); setSenderFilter(""); setShowSenderList(false); }} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-blue-400/15 hover:text-blue-300" : "text-slate-700 hover:bg-blue-50 hover:text-blue-600"}`}>
+                                <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-blue-500 to-cyan-500`}>{idx + 1}</span>
                                 <span className="flex-1 truncate">{c.name}</span>
                                 {c.phone && <span className={`text-[10px] ${subText}`} dir="ltr">{c.phone}</span>}
                               </button>
                             ))
                           )}
                           <div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
-                          <div className={`px-3 py-2 text-[10px] text-center ${subText}`}>
-                            یا نام جدید بنویسید (در لیست مشتریان ذخیره نمی‌شود)
-                          </div>
+                          <div className={`px-3 py-2 text-[10px] text-center ${subText}`}>یا نام جدید بنویسید (خودکار ثبت می‌شود)</div>
                         </div>
                       )}
                     </div>
                   ))}
                   {fld("کد پیگیری", (
                     <div className="relative">
-                      <input readOnly dir="ltr" value={nextHawalaNumber} className={`${uiInput} ${roInput} pl-14 text-left tabular-nums font-black text-[15px]`} />
-                      <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 px-2 py-1 text-[9px] font-black text-white">HW</span>
+                      <input readOnly dir="ltr" value={nextHawalaNumber} className={`${uiInput} ${roInput} pl-16 text-left tabular-nums font-black text-[14px]`} />
+                      <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 px-2 py-1 text-[9px] font-black text-white">TR</span>
                     </div>
                   ))}
                   {fld("تاریخ (شمسی)", (<input readOnly value={currentDateTime} className={`${uiInput} ${roInput}`} />))}
@@ -1153,10 +1120,12 @@ export default function HawalaPage() {
                           if (!showReceiverList) setShowReceiverList(true);
                           const customer = customers.find(c => c.name === val);
                           if (customer) {
+                            setField("receiverId", customer.id);
                             setField("receiverTazkira", customer.tazkira || "");
                             setField("receiverPhone", customer.phone || "");
                             setField("receiverAddress", customer.address || "");
                           } else {
+                            setField("receiverId", "");
                             setField("receiverTazkira", "");
                             setField("receiverPhone", "");
                             setField("receiverAddress", "");
@@ -1166,45 +1135,24 @@ export default function HawalaPage() {
                         className={`${uiInput} pl-12 ${errors.receiverName ? errInput : ""}`}
                         autoComplete="off"
                       />
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); setShowReceiverList(!showReceiverList); }}
-                        className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition ${dk ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}
-                      >
+                      <button type="button" onClick={(e) => { e.stopPropagation(); setShowReceiverList(!showReceiverList); }} className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition ${dk ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}>
                         <Ic n="chevron" className={`h-4 w-4 transition-transform ${showReceiverList ? "rotate-180" : ""}`} />
                       </button>
-
                       {showReceiverList && (
                         <div className={`hw-menu absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
                           {filteredReceiverList.length === 0 ? (
                             <div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>
                           ) : (
                             filteredReceiverList.map((c, idx) => (
-                              <button
-                                key={c.id}
-                                type="button"
-                                onClick={() => {
-                                  setField("receiverName", c.name);
-                                  setField("receiverTazkira", c.tazkira || "");
-                                  setField("receiverPhone", c.phone || "");
-                                  setField("receiverAddress", c.address || "");
-                                  setReceiverFilter("");
-                                  setShowReceiverList(false);
-                                }}
-                                className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-amber-400/15 hover:text-amber-300" : "text-slate-700 hover:bg-amber-50 hover:text-amber-600"}`}
-                              >
-                                <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-amber-500 to-orange-500`}>
-                                  {idx + 1}
-                                </span>
+                              <button key={c.id} type="button" onClick={() => { setField("receiverId", c.id); setField("receiverName", c.name); setField("receiverTazkira", c.tazkira || ""); setField("receiverPhone", c.phone || ""); setField("receiverAddress", c.address || ""); setReceiverFilter(""); setShowReceiverList(false); }} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-amber-400/15 hover:text-amber-300" : "text-slate-700 hover:bg-amber-50 hover:text-amber-600"}`}>
+                                <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-amber-500 to-orange-500`}>{idx + 1}</span>
                                 <span className="flex-1 truncate">{c.name}</span>
                                 {c.phone && <span className={`text-[10px] ${subText}`} dir="ltr">{c.phone}</span>}
                               </button>
                             ))
                           )}
                           <div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
-                          <div className={`px-3 py-2 text-[10px] text-center ${subText}`}>
-                            یا نام جدید بنویسید (در لیست مشتریان ذخیره نمی‌شود)
-                          </div>
+                          <div className={`px-3 py-2 text-[10px] text-center ${subText}`}>یا نام جدید بنویسید (خودکار ثبت می‌شود)</div>
                         </div>
                       )}
                     </div>
@@ -1233,7 +1181,7 @@ export default function HawalaPage() {
           )}
 
           {activeTab === "current" && (
-            <section className={`hw-up Overflow-hidden ${uiCard}`}>
+            <section className={`hw-up overflow-hidden ${uiCard}`}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
                 <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identHwIcon}`}><Ic n="clock" className="h-5 w-5" /></span>
                 <div className="flex-1 min-w-0">
@@ -1260,17 +1208,17 @@ export default function HawalaPage() {
                     <table className="w-full min-w-[1000px] text-sm">
                       <thead>
                         <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
-                          {["شماره", "کد پیگیری", "تاریخ", "حواله‌دهنده", "حواله‌گیرنده", "مبلغ نهایی", "کارمزد", "پرداخت‌کننده", "مقصد", "وضعیت", "عملیات"].map((h, i) => (
-                            <th key={h} className={`px-4 py-3 text-right text-[11px] font-black text-slate-400 ${i === 0 ? "md:px-7" : ""} ${i === 10 ? "md:px-7" : ""}`}>{h}</th>
+                          {["شماره", "کد پیگیری", "تاریخ", "حواله‌دهنده", "حواله‌گیرنده", "مبلغ نهایی", "کارمزد", "پرداخت‌کننده", "مقصد", "وضعیت", "عملیات"].map((h) => (
+                            <th key={h} className={`px-4 py-3 text-right text-[11px] font-black text-slate-400`}>{h}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
                         {currentHawalas.map((item, index) => (
                           <tr key={item.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-blue-50/70"}`}>
-                            <td className="px-4 py-3.5 md:px-7"><span className={`grid h-8 w-8 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500"}`}>{index + 1}</span></td>
+                            <td className="px-4 py-3.5"><span className={`grid h-8 w-8 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500"}`}>{index + 1}</span></td>
                             <td className="px-4 py-3.5">
-                              <span className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[12px] font-black tabular-nums ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-sky-300 bg-sky-50 text-sky-700"}`} dir="ltr">
+                              <span className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-black tabular-nums ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-sky-300 bg-sky-50 text-sky-700"}`} dir="ltr">
                                 <Ic n="tag" className="h-3 w-3" />{item.number}
                               </span>
                             </td>
@@ -1282,7 +1230,7 @@ export default function HawalaPage() {
                             <td className="px-4 py-3.5"><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${item.feePayer === "sender" ? dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-700" : dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-700"}`}>{item.feePayer === "sender" ? "از فرستنده" : "از گیرنده"}</span></td>
                             <td className={`px-4 py-3.5 text-xs ${subText}`}>{item.destinationText}</td>
                             <td className="px-4 py-3.5"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${statusColors[item.status][dk ? "dark" : "light"]}`}>{statusLabels[item.status]}</span></td>
-                            <td className="px-4 py-3.5 md:px-7"><ActionMenu item={item} isInHistory={false} /></td>
+                            <td className="px-4 py-3.5"><ActionMenu item={item} isInHistory={false} /></td>
                           </tr>
                         ))}
                       </tbody>
@@ -1294,7 +1242,7 @@ export default function HawalaPage() {
           )}
 
           {activeTab === "history" && (
-            <section className={`hw-up Overflow-hidden ${uiCard}`}>
+            <section className={`hw-up overflow-hidden ${uiCard}`}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
                 <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identHwIcon}`}><Ic n="doc" className="h-5 w-5" /></span>
                 <div className="flex-1 min-w-0">
@@ -1321,17 +1269,17 @@ export default function HawalaPage() {
                     <table className="w-full min-w-[1000px] text-sm">
                       <thead>
                         <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
-                          {["شماره", "کد پیگیری", "تاریخ", "حواله‌دهنده", "حواله‌گیرنده", "مبلغ نهایی", "کارمزد", "پرداخت‌کننده", "مقصد", "وضعیت", "عملیات"].map((h, i) => (
-                            <th key={h} className={`px-4 py-3 text-right text-[11px] font-black text-slate-400 ${i === 0 ? "md:px-7" : ""} ${i === 10 ? "md:px-7" : ""}`}>{h}</th>
+                          {["شماره", "کد پیگیری", "تاریخ", "حواله‌دهنده", "حواله‌گیرنده", "مبلغ نهایی", "کارمزد", "پرداخت‌کننده", "مقصد", "وضعیت", "عملیات"].map((h) => (
+                            <th key={h} className={`px-4 py-3 text-right text-[11px] font-black text-slate-400`}>{h}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
                         {historyHawalas.map((item, index) => (
                           <tr key={item.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-blue-50/70"}`}>
-                            <td className="px-4 py-3.5 md:px-7"><span className={`grid h-8 w-8 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500"}`}>{index + 1}</span></td>
+                            <td className="px-4 py-3.5"><span className={`grid h-8 w-8 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500"}`}>{index + 1}</span></td>
                             <td className="px-4 py-3.5">
-                              <span className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[12px] font-black tabular-nums ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-sky-300 bg-sky-50 text-sky-700"}`} dir="ltr">
+                              <span className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-black tabular-nums ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-sky-300 bg-sky-50 text-sky-700"}`} dir="ltr">
                                 <Ic n="tag" className="h-3 w-3" />{item.number}
                               </span>
                             </td>
@@ -1343,7 +1291,7 @@ export default function HawalaPage() {
                             <td className="px-4 py-3.5"><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${item.feePayer === "sender" ? dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-700" : dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-700"}`}>{item.feePayer === "sender" ? "از فرستنده" : "از گیرنده"}</span></td>
                             <td className={`px-4 py-3.5 text-xs ${subText}`}>{item.destinationText}</td>
                             <td className="px-4 py-3.5"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${statusColors[item.status][dk ? "dark" : "light"]}`}>{statusLabels[item.status]}</span></td>
-                            <td className="px-4 py-3.5 md:px-7"><ActionMenu item={item} isInHistory={true} /></td>
+                            <td className="px-4 py-3.5"><ActionMenu item={item} isInHistory={true} /></td>
                           </tr>
                         ))}
                       </tbody>
@@ -1374,7 +1322,6 @@ export default function HawalaPage() {
                 </span>
               </div>
               <div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"}`}>
-                <div className="flex items-center gap-2 mb-3"><span className={`grid h-7 w-7 place-items-center rounded-lg ${dk ? "bg-cyan-400/15 text-cyan-300" : "bg-cyan-100 text-cyan-600"}`}><Ic n="swap" className="h-3.5 w-3.5" /></span><b className={`text-xs font-black ${dk ? "text-cyan-300" : "text-cyan-700"}`}>معلومات حواله</b></div>
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div><span className={subText}>تاریخ: </span><b>{currentDateTime}</b></div>
                   <div><span className={subText}>نوع: </span><b>{form.type === "send" ? "ارسال" : "دریافت"}</b></div>
