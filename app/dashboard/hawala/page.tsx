@@ -394,7 +394,7 @@ export default function HawalaPage() {
   useEffect(() => { try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); } catch {} }, [customers]);
   useEffect(() => { try { localStorage.setItem(HAWALAS_KEY, JSON.stringify(hawalas)); } catch {} }, [hawalas]);
 
-  // ✅✅✅ راه‌حل قطعی: استفاده از click برای handler بیرون ✅✅✅
+  // ✅ لیست‌های مشتریان با click (کار می‌کند)
   const anyDropdownOpen = showSenderList || showReceiverList;
 
   useEffect(() => {
@@ -408,14 +408,14 @@ export default function HawalaPage() {
     return () => { document.removeEventListener("click", handler); };
   }, [anyDropdownOpen, showSenderList, showReceiverList]);
 
-  // ✅✅✅ راه‌حل قطعی: استفاده از click برای ActionMenu ✅✅✅
+  // ✅✅✅ ActionMenu با mousedown و setTimeout(0) - راه‌حل قطعی ✅✅✅
   useEffect(() => {
     if (!openMenuId) return;
     const handler = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpenMenuId(null);
     };
-    document.addEventListener("click", handler);
-    return () => { document.removeEventListener("click", handler); };
+    const timer = setTimeout(() => document.addEventListener("mousedown", handler), 0);
+    return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); };
   }, [openMenuId]);
 
   const filteredSenderList = useMemo(() => {
@@ -799,7 +799,7 @@ export default function HawalaPage() {
     );
   };
 
-  // ✅✅✅ ActionMenu با onClick و stopPropagation ✅✅✅
+  // ✅✅✅ ActionMenu اصلاح‌شده با onMouseDown ✅✅✅
   const ActionMenu = ({ item, isInHistory }: { item: Hawala; isInHistory: boolean }) => {
     const isOpen = openMenuId === item.id;
     const isPending = item.status === "pending";
@@ -810,7 +810,7 @@ export default function HawalaPage() {
     return (
       <div className="relative" ref={isOpen ? menuRef : null}>
         <button
-          onClick={(e) => { e.stopPropagation(); toggleMenu(item.id); }}
+          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); toggleMenu(item.id); }}
           className={`grid h-8 w-8 place-items-center rounded-lg border transition active:scale-95 ${
             isOpen
               ? dk ? "border-blue-400/50 bg-blue-400/20 text-blue-300" : "border-blue-400 bg-blue-50 text-blue-600"
@@ -825,22 +825,38 @@ export default function HawalaPage() {
             {!isInHistory && (
               <>
                 {isPending && (
-                  <button onClick={() => markAsSent(item)} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-blue-400/15 hover:text-blue-300" : "text-slate-700 hover:bg-blue-50 hover:text-blue-600"}`}>
+                  <button
+                    onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    onClick={() => markAsSent(item)}
+                    className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-blue-400/15 hover:text-blue-300" : "text-slate-700 hover:bg-blue-50 hover:text-blue-600"}`}
+                  >
                     <Ic n="send" className="h-4 w-4" /><span>ارسال</span>
                   </button>
                 )}
                 {(isPending || isSent) && (
-                  <button onClick={() => openSettlement(item)} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-emerald-400/15 hover:text-emerald-300" : "text-slate-700 hover:bg-emerald-50 hover:text-emerald-600"}`}>
+                  <button
+                    onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    onClick={() => openSettlement(item)}
+                    className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-emerald-400/15 hover:text-emerald-300" : "text-slate-700 hover:bg-emerald-50 hover:text-emerald-600"}`}
+                  >
                     <Ic n="check" className="h-4 w-4" /><span>تسویه</span>
                   </button>
                 )}
                 {(isPending || isSent) && (
-                  <button onClick={() => openCancel(item)} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-amber-400/15 hover:text-amber-300" : "text-slate-700 hover:bg-amber-50 hover:text-amber-600"}`}>
+                  <button
+                    onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    onClick={() => openCancel(item)}
+                    className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-amber-400/15 hover:text-amber-300" : "text-slate-700 hover:bg-amber-50 hover:text-amber-600"}`}
+                  >
                     <Ic n="xCircle" className="h-4 w-4" /><span>ابطال</span>
                   </button>
                 )}
                 <div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
-                <button onClick={() => deleteHawala(item)} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-rose-300 hover:bg-rose-400/15" : "text-rose-600 hover:bg-rose-50"}`}>
+                <button
+                  onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  onClick={() => deleteHawala(item)}
+                  className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-rose-300 hover:bg-rose-400/15" : "text-rose-600 hover:bg-rose-50"}`}
+                >
                   <Ic n="trash" className="h-4 w-4" /><span>حذف</span>
                 </button>
               </>
@@ -849,17 +865,29 @@ export default function HawalaPage() {
             {isInHistory && (
               <>
                 {isCancelled && (
-                  <button onClick={() => restoreToSent(item)} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-blue-400/15 hover:text-blue-300" : "text-slate-700 hover:bg-blue-50 hover:text-blue-600"}`}>
+                  <button
+                    onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    onClick={() => restoreToSent(item)}
+                    className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-blue-400/15 hover:text-blue-300" : "text-slate-700 hover:bg-blue-50 hover:text-blue-600"}`}
+                  >
                     <Ic n="undo" className="h-4 w-4" /><span>برگشت به ارسال</span>
                   </button>
                 )}
                 {isPaid && (
-                  <button onClick={() => openCancel(item)} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-amber-400/15 hover:text-amber-300" : "text-slate-700 hover:bg-amber-50 hover:text-amber-600"}`}>
+                  <button
+                    onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    onClick={() => openCancel(item)}
+                    className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-amber-400/15 hover:text-amber-300" : "text-slate-700 hover:bg-amber-50 hover:text-amber-600"}`}
+                  >
                     <Ic n="xCircle" className="h-4 w-4" /><span>ابطال</span>
                   </button>
                 )}
                 <div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
-                <button onClick={() => deleteHawala(item)} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-rose-300 hover:bg-rose-400/15" : "text-rose-600 hover:bg-rose-50"}`}>
+                <button
+                  onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  onClick={() => deleteHawala(item)}
+                  className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-rose-300 hover:bg-rose-400/15" : "text-rose-600 hover:bg-rose-50"}`}
+                >
                   <Ic n="trash" className="h-4 w-4" /><span>حذف</span>
                 </button>
               </>
@@ -971,7 +999,6 @@ export default function HawalaPage() {
                         className={`${uiInput} pl-12 ${errors.senderName ? errInput : ""}`}
                         autoComplete="off"
                       />
-                      {/* ✅✅✅ دکمه toggle با onClick و stopPropagation ✅✅✅ */}
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); setShowSenderList(!showSenderList); }}
@@ -1125,7 +1152,6 @@ export default function HawalaPage() {
                         className={`${uiInput} pl-12 ${errors.receiverName ? errInput : ""}`}
                         autoComplete="off"
                       />
-                      {/* ✅✅✅ دکمه toggle با onClick و stopPropagation ✅✅✅ */}
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); setShowReceiverList(!showReceiverList); }}
@@ -1254,7 +1280,7 @@ export default function HawalaPage() {
           )}
 
           {activeTab === "history" && (
-            <section className={`hw-up Overflow-hidden ${uiCard}`}>
+            <section className={`hw-up overflow-hidden ${uiCard}`}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
                 <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identHwIcon}`}><Ic n="doc" className="h-5 w-5" /></span>
                 <div className="flex-1 min-w-0">
