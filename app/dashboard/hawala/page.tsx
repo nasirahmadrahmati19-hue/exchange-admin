@@ -394,7 +394,7 @@ export default function HawalaPage() {
   useEffect(() => { try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); } catch {} }, [customers]);
   useEffect(() => { try { localStorage.setItem(HAWALAS_KEY, JSON.stringify(hawalas)); } catch {} }, [hawalas]);
 
-  // ✅ لیست‌های مشتریان با click (کار می‌کند)
+  // ✅ لیست‌های مشتریان - بدون تغییر (درست کار می‌کنند)
   const anyDropdownOpen = showSenderList || showReceiverList;
 
   useEffect(() => {
@@ -408,7 +408,7 @@ export default function HawalaPage() {
     return () => { document.removeEventListener("click", handler); };
   }, [anyDropdownOpen, showSenderList, showReceiverList]);
 
-  // ✅✅✅ ActionMenu با mousedown و setTimeout(0) - راه‌حل قطعی ✅✅✅
+  // ✅✅✅ ActionMenu - اصلاح شده با mousedown و setTimeout(0) ✅✅✅
   useEffect(() => {
     if (!openMenuId) return;
     const handler = (e: MouseEvent) => {
@@ -799,7 +799,7 @@ export default function HawalaPage() {
     );
   };
 
-  // ✅✅✅ ActionMenu اصلاح‌شده با onMouseDown ✅✅✅
+  // ✅✅✅ ActionMenu اصلاح‌شده - فقط این کامپوننت تغییر کرده ✅✅✅
   const ActionMenu = ({ item, isInHistory }: { item: Hawala; isInHistory: boolean }) => {
     const isOpen = openMenuId === item.id;
     const isPending = item.status === "pending";
@@ -809,6 +809,7 @@ export default function HawalaPage() {
 
     return (
       <div className="relative" ref={isOpen ? menuRef : null}>
+        {/* ✅ دکمه toggle با onMouseDown */}
         <button
           onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); toggleMenu(item.id); }}
           className={`grid h-8 w-8 place-items-center rounded-lg border transition active:scale-95 ${
