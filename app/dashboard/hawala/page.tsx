@@ -407,24 +407,14 @@ export default function HawalaPage() {
     return () => { document.removeEventListener("click", handler); };
   }, [anyDropdownOpen, showSenderList, showReceiverList]);
 
-  // ✅✅✅ بهبود یافته: Listener برای بستن منو ✅✅✅
+  // ✅✅✅ راه‌حل قطعی: setTimeout(0) تا رویداد فعلی گرفته نشود ✅✅✅
   useEffect(() => {
     if (!openMenuId) return;
-    
-    const handleDocumentMouseDown = (e: MouseEvent) => {
-      // اگر کلیک خارج از منو بود، منو را ببند
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setOpenMenuId(null);
-      }
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpenMenuId(null);
     };
-    
-    // مousedown قبل از click اجرا می‌شود، پس این listener قبل از دکمه toggle اجرا می‌شود
-    // اما stopPropagation در دکمه toggle از اجرای این handler جلوگیری می‌کند
-    document.addEventListener("mousedown", handleDocumentMouseDown);
-    
-    return () => {
-      document.removeEventListener("mousedown", handleDocumentMouseDown);
-    };
+    const timer = setTimeout(() => document.addEventListener("mousedown", handler), 0);
+    return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); };
   }, [openMenuId]);
 
   const filteredSenderList = useMemo(() => {
@@ -822,7 +812,7 @@ export default function HawalaPage() {
     );
   };
 
-  // ✅✅✅ ActionMenu بهبود یافته ✅✅✅
+  // ✅✅✅ ActionMenu اصلاح‌شده - ref مشروط و onMouseDown ✅✅✅
   const ActionMenu = ({ item, isInHistory }: { item: Hawala; isInHistory: boolean }) => {
     const isOpen = openMenuId === item.id;
     const isPending = item.status === "pending";
@@ -831,14 +821,9 @@ export default function HawalaPage() {
     const isCancelled = item.status === "cancelled";
 
     return (
-      // ✅ menuRef همیشه به container متصل است (نه فقط وقتی باز است)
-      <div className="relative" ref={menuRef}>
-        {/* ✅ دکمه toggle از onClick استفاده می‌کند با stopPropagation */}
+      <div className="relative" ref={isOpen ? menuRef : null}>
         <button
-          onClick={(e) => { 
-            e.stopPropagation(); 
-            toggleMenu(item.id); 
-          }}
+          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); toggleMenu(item.id); }}
           className={`grid h-8 w-8 place-items-center rounded-lg border transition active:scale-95 ${
             isOpen
               ? dk ? "border-blue-400/50 bg-blue-400/20 text-blue-300" : "border-blue-400 bg-blue-50 text-blue-600"
@@ -1240,7 +1225,7 @@ export default function HawalaPage() {
           )}
 
           {activeTab === "current" && (
-            <section className={`hw-up overflow-hidden ${uiCard}`}>
+            <section className={`hw-up Overflow-hidden ${uiCard}`}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
                 <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identHwIcon}`}><Ic n="clock" className="h-5 w-5" /></span>
                 <div className="flex-1 min-w-0">
