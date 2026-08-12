@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { initTrackingSystem } from "../lib/trackingCode";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 
@@ -10,6 +11,7 @@ type Customer = {
   tazkira?: string;
   address?: string;
   note?: string;
+  telegram?: string;
   registeredAt: string;
   balances: Record<Currency, number>;
 };
@@ -36,6 +38,7 @@ type FormState = {
   phone: string;
   address: string;
   note: string;
+  telegram: string;
 };
 
 type FormErrors = Partial<Record<keyof FormState, string>>;
@@ -71,12 +74,11 @@ const TRANSACTIONS_KEY = "fx-transactions";
 const HAWALAS_KEY = "hawalas";
 
 const defaultCustomers: Customer[] = [
-  { id: "1", name: "احمد رحیمی", phone: "0700123456", tazkira: "1400-001-001", address: "هرات، گلران", note: "مشتری ویژه", registeredAt: "2025-01-15T10:00:00Z", balances: { AFN: 500000, USD: 10000, EUR: 0, IRR: 0, PKR: 0 } },
-  { id: "2", name: "محمد ظاهر", phone: "0700654321", tazkira: "1400-002-002", address: "هرات، انجیل", note: "", registeredAt: "2025-02-20T14:30:00Z", balances: { AFN: 200000, USD: 5000, EUR: 0, IRR: 0, PKR: 0 } },
-  { id: "3", name: "فاطمه حسینی", phone: "0700789123", tazkira: "1400-003-003", address: "هرات، مرکز", note: "معاملات عمده", registeredAt: "2025-03-05T09:15:00Z", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 50000000, PKR: 0 } },
+  { id: "1", name: "احمد رحیمی", phone: "0700123456", tazkira: "1400-001-001", address: "هرات، گلران", note: "مشتری ویژه", telegram: "@ahmad_rahimi", registeredAt: "2025-01-15T10:00:00Z", balances: { AFN: 500000, USD: 10000, EUR: 0, IRR: 0, PKR: 0 } },
+  { id: "2", name: "محمد ظاهر", phone: "0700654321", tazkira: "1400-002-002", address: "هرات، انجیل", note: "", telegram: "@mohammad_zahir", registeredAt: "2025-02-20T14:30:00Z", balances: { AFN: 200000, USD: 5000, EUR: 0, IRR: 0, PKR: 0 } },
+  { id: "3", name: "فاطمه حسینی", phone: "0700789123", tazkira: "1400-003-003", address: "هرات، مرکز", note: "معاملات عمده", telegram: "@fatema_hosseini", registeredAt: "2025-03-05T09:15:00Z", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 50000000, PKR: 0 } },
 ];
 
-// ✅ UUID ساز ایمن با fallback
 const generateId = (): string => {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     try { return crypto.randomUUID(); } catch {}
@@ -88,7 +90,6 @@ const generateId = (): string => {
   });
 };
 
-// ✅ توابع کمکی برای دسترسی امن
 const isCurrency = (v: any): v is Currency => typeof v === "string" && (currencies as string[]).includes(v);
 const getCurrencyLabel = (cur: any): string => isCurrency(cur) ? labels[cur] : "—";
 
@@ -104,9 +105,7 @@ function shamsiParts(d: Date) {
     const parts = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", { year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(d);
     const get = (type: string) => parts.find((p) => p.type === type)?.value || "0";
     return { year: get("year"), month: get("month"), day: get("day") };
-  } catch {
-    return { year: "0", month: "0", day: "0" };
-  }
+  } catch { return { year: "0", month: "0", day: "0" }; }
 }
 
 function formatDateTime(d: Date) {
@@ -137,9 +136,8 @@ function timeLabel(s: string) {
   } catch { return "-"; }
 }
 
-const emptyForm: FormState = { name: "", tazkira: "", phone: "", address: "", note: "" };
+const emptyForm: FormState = { name: "", tazkira: "", phone: "", address: "", note: "", telegram: "" };
 
-// ✅ توابع safe برای خواندن از localStorage
 const safeGetItem = (key: string): any => {
   if (typeof window === "undefined") return null;
   try {
@@ -156,14 +154,14 @@ const loadCustomers = (): Customer[] => {
     if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === "object" && parsed[0] !== null && "id" in parsed[0] && "name" in parsed[0]) {
       return parsed.map((c: any) => ({
         id: c.id || generateId(), name: c.name || "", phone: c.phone || "", tazkira: c.tazkira || "",
-        address: c.address || "", note: c.note || "",
+        address: c.address || "", note: c.note || "", telegram: c.telegram || "",
         registeredAt: c.registeredAt || c.createdAt || new Date().toISOString(),
         balances: { AFN: Number(c.balances?.AFN || 0) || 0, USD: Number(c.balances?.USD || 0) || 0, EUR: Number(c.balances?.EUR || 0) || 0, IRR: Number(c.balances?.IRR || 0) || 0, PKR: Number(c.balances?.PKR || 0) || 0 },
       }));
     }
     if (Array.isArray(parsed) && typeof parsed[0] === "string") {
       const migrated = parsed.map((name: string, i: number): Customer => ({
-        id: `cust-migrated-${i}`, name, phone: "", tazkira: "", address: "", note: "",
+        id: `cust-migrated-${i}`, name, phone: "", tazkira: "", address: "", note: "", telegram: "",
         registeredAt: new Date().toISOString(),
         balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 },
       }));
@@ -176,24 +174,18 @@ const loadCustomers = (): Customer[] => {
 
 const loadTransactions = (): any[] => {
   if (typeof window === "undefined") return [];
-  try {
-    const parsed = safeGetItem(TRANSACTIONS_KEY);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch { return []; }
+  try { const parsed = safeGetItem(TRANSACTIONS_KEY); return Array.isArray(parsed) ? parsed : []; } catch { return []; }
 };
 
 const loadHawalas = (): any[] => {
   if (typeof window === "undefined") return [];
-  try {
-    const parsed = safeGetItem(HAWALAS_KEY);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch { return []; }
+  try { const parsed = safeGetItem(HAWALAS_KEY); return Array.isArray(parsed) ? parsed : []; } catch { return []; }
 };
 
 const iconPaths = {
   users: "M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z",
   user: "M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z",
-  search: "m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z",
+  search: "m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 1 10.607 10.607Z",
   plus: "M12 4.5v15m7.5-7.5h-15",
   chevron: "m19.5 8.25-7.5 7.5-7.5-7.5",
   x: "M6 18 18 6M6 6l12 12",
@@ -216,6 +208,7 @@ const iconPaths = {
   arrowLeft: "M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18",
   trash: "M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0",
   xCircle: "m9.75 9.75 4.5 4.5m0-4.5-4.5 4.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
+  send: "M6 12 3.269 3.126A59.768 59.768 0 0 1 21.485 12 59.77 59.77 0 0 1 3.27 20.876L5.999 12Zm0 0h7.5",
 };
 
 type IconName = keyof typeof iconPaths;
@@ -228,7 +221,6 @@ function Ic({ n, className = "h-5 w-5" }: { n: IconName; className?: string }) {
   );
 }
 
-// ✅ Build ledger با defensive programming کامل
 function buildLedger(customers: Customer[], transactions: any[], hawalas: any[]): LedgerEntry[] {
   const entries: LedgerEntry[] = [];
   if (!Array.isArray(customers) || !Array.isArray(transactions) || !Array.isArray(hawalas)) return entries;
@@ -245,84 +237,34 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[])
     const toAmt = Number(tx.toAmount || 0) || 0;
     const commAmt = Number(tx.commission || 0) || 0;
 
-    if (tx.type === "exchange" && tx.customerId && isCurrency(fromCur) && isCurrency(toCur)) {
-      entries.push({
-        id: `${tx.id || generateId()}-out`, date, customerId: tx.customerId, type: "exchange",
-        description: `فروش ${getCurrencyLabel(fromCur)} - ${tx.rateLabel || ""}`,
-        currency: fromCur, amount: fromAmt, direction: "out",
-        balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum,
-      });
-      entries.push({
-        id: `${tx.id || generateId()}-in`, date, customerId: tx.customerId, type: "exchange",
-        description: `خرید ${getCurrencyLabel(toCur)} - ${tx.rateLabel || ""}`,
-        currency: toCur, amount: toAmt, direction: "in",
-        balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum,
-      });
-      if (commAmt > 0 && isCurrency(commCur)) {
-        entries.push({
-          id: `${tx.id || generateId()}-fee`, date, customerId: tx.customerId, type: "fee",
-          description: `کارمزد معامله`,
-          currency: commCur, amount: commAmt, direction: "out",
-          balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum,
-        });
+    if (tx.type === "exchange") {
+      const custId = tx.customerId || customers.find(c => c.name === (tx.customerName || tx.customerId))?.id;
+      if (custId && isCurrency(fromCur) && isCurrency(toCur)) {
+        entries.push({ id: `${tx.id || generateId()}-out`, date, customerId: custId, type: "exchange", description: `فروش ${getCurrencyLabel(fromCur)} - ${tx.rateLabel || ""}`, currency: fromCur, amount: fromAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
+        entries.push({ id: `${tx.id || generateId()}-in`, date, customerId: custId, type: "exchange", description: `خرید ${getCurrencyLabel(toCur)} - ${tx.rateLabel || ""}`, currency: toCur, amount: toAmt, direction: "in", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
+        if (commAmt > 0 && isCurrency(commCur)) entries.push({ id: `${tx.id || generateId()}-fee`, date, customerId: custId, type: "fee", description: `کارمزد معامله`, currency: commCur, amount: commAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
       }
     }
 
     if (tx.type === "transfer") {
-      if (tx.senderId && isCurrency(fromCur)) {
-        entries.push({
-          id: `${tx.id || generateId()}-s-out`, date, customerId: tx.senderId, type: "transfer",
-          description: `انتقال ${getCurrencyLabel(fromCur)} به ${customers.find(c => c.id === tx.receiverId)?.name || "—"}`,
-          currency: fromCur, amount: fromAmt, direction: "out",
-          balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum,
-        });
-        if (tx.commissionPayer === "sender" && commAmt > 0 && isCurrency(commCur)) {
-          entries.push({
-            id: `${tx.id || generateId()}-s-fee`, date, customerId: tx.senderId, type: "fee",
-            description: `کارمزد انتقال`,
-            currency: commCur, amount: commAmt, direction: "out",
-            balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum,
-          });
-        }
+      const sId = tx.senderId || customers.find(c => c.name === (tx.senderName || tx.senderId))?.id;
+      const rId = tx.receiverId || customers.find(c => c.name === (tx.receiverName || tx.receiverId))?.id;
+      if (sId && isCurrency(fromCur)) {
+        entries.push({ id: `${tx.id || generateId()}-s-out`, date, customerId: sId, type: "transfer", description: `انتقال ${getCurrencyLabel(fromCur)} به ${customers.find(c => c.id === rId)?.name || tx.receiverName || "—"}`, currency: fromCur, amount: fromAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
+        if (tx.commissionPayer === "sender" && commAmt > 0 && isCurrency(commCur)) entries.push({ id: `${tx.id || generateId()}-s-fee`, date, customerId: sId, type: "fee", description: `کارمزد انتقال`, currency: commCur, amount: commAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
       }
-      if (tx.receiverId && isCurrency(toCur)) {
-        entries.push({
-          id: `${tx.id || generateId()}-r-in`, date, customerId: tx.receiverId, type: "transfer",
-          description: `دریافت ${getCurrencyLabel(toCur)} از ${customers.find(c => c.id === tx.senderId)?.name || "—"}`,
-          currency: toCur, amount: toAmt, direction: "in",
-          balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum,
-        });
-        if (tx.commissionPayer === "receiver" && commAmt > 0 && isCurrency(commCur)) {
-          entries.push({
-            id: `${tx.id || generateId()}-r-fee`, date, customerId: tx.receiverId, type: "fee",
-            description: `کارمزد انتقال`,
-            currency: commCur, amount: commAmt, direction: "out",
-            balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum,
-          });
-        }
+      if (rId && isCurrency(toCur)) {
+        entries.push({ id: `${tx.id || generateId()}-r-in`, date, customerId: rId, type: "transfer", description: `دریافت ${getCurrencyLabel(toCur)} از ${customers.find(c => c.id === sId)?.name || tx.senderName || "—"}`, currency: toCur, amount: toAmt, direction: "in", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
+        if (tx.commissionPayer === "receiver" && commAmt > 0 && isCurrency(commCur)) entries.push({ id: `${tx.id || generateId()}-r-fee`, date, customerId: rId, type: "fee", description: `کارمزد انتقال`, currency: commCur, amount: commAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
       }
     }
 
-    if (tx.type === "convert" && tx.customerId && isCurrency(fromCur) && isCurrency(toCur)) {
-      entries.push({
-        id: `${tx.id || generateId()}-c-out`, date, customerId: tx.customerId, type: "convert",
-        description: `تبدیل از ${getCurrencyLabel(fromCur)}`,
-        currency: fromCur, amount: fromAmt, direction: "out",
-        balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum,
-      });
-      entries.push({
-        id: `${tx.id || generateId()}-c-in`, date, customerId: tx.customerId, type: "convert",
-        description: `تبدیل به ${getCurrencyLabel(toCur)}`,
-        currency: toCur, amount: toAmt, direction: "in",
-        balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum,
-      });
-      if (commAmt > 0 && isCurrency(commCur)) {
-        entries.push({
-          id: `${tx.id || generateId()}-c-fee`, date, customerId: tx.customerId, type: "fee",
-          description: `کارمزد تبدیل`,
-          currency: commCur, amount: commAmt, direction: "out",
-          balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum,
-        });
+    if (tx.type === "convert") {
+      const custId = tx.customerId || customers.find(c => c.name === (tx.customerName || tx.customerId))?.id;
+      if (custId && isCurrency(fromCur) && isCurrency(toCur)) {
+        entries.push({ id: `${tx.id || generateId()}-c-out`, date, customerId: custId, type: "convert", description: `تبدیل از ${getCurrencyLabel(fromCur)}`, currency: fromCur, amount: fromAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
+        entries.push({ id: `${tx.id || generateId()}-c-in`, date, customerId: custId, type: "convert", description: `تبدیل به ${getCurrencyLabel(toCur)}`, currency: toCur, amount: toAmt, direction: "in", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
+        if (commAmt > 0 && isCurrency(commCur)) entries.push({ id: `${tx.id || generateId()}-c-fee`, date, customerId: custId, type: "fee", description: `کارمزد تبدیل`, currency: commCur, amount: commAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
       }
     }
   }
@@ -332,8 +274,8 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[])
     if (h.status === "cancelled") continue;
     const date = h.date || new Date().toISOString();
     const refNum = h.number || "";
-    const sender = customers.find(c => c.name === h.senderName);
-    const receiver = customers.find(c => c.name === h.receiverName);
+    const sender = customers.find(c => c.id === h.senderId) || customers.find(c => c.name === h.senderName);
+    const receiver = customers.find(c => c.id === h.receiverId) || customers.find(c => c.name === h.receiverName);
     const hFromCur = h.currencyFrom as Currency;
     const hToCur = h.currencyTo as Currency;
     const hFeeCur = h.feeCurrency as Currency;
@@ -342,47 +284,19 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[])
     const hFee = Number(h.fee || 0) || 0;
 
     if (sender && isCurrency(hFromCur)) {
-      entries.push({
-        id: `${h.id || generateId()}-hs-out`, date, customerId: sender.id, type: "hawala",
-        description: `حواله ارسالی به ${h.receiverName || "—"} (${h.destinationText || ""})`,
-        currency: hFromCur, amount: hAmtFrom, direction: "out",
-        balanceAfter: 0, referenceId: h.id, referenceNumber: refNum,
-      });
-      if (h.feePayer === "sender" && hFee > 0 && isCurrency(hFeeCur)) {
-        entries.push({
-          id: `${h.id || generateId()}-hs-fee`, date, customerId: sender.id, type: "fee",
-          description: `کارمزد حواله`,
-          currency: hFeeCur, amount: hFee, direction: "out",
-          balanceAfter: 0, referenceId: h.id, referenceNumber: refNum,
-        });
-      }
+      entries.push({ id: `${h.id || generateId()}-hs-out`, date, customerId: sender.id, type: "hawala", description: `حواله ارسالی به ${h.receiverName || "—"} (${h.destinationText || ""})`, currency: hFromCur, amount: hAmtFrom, direction: "out", balanceAfter: 0, referenceId: h.id, referenceNumber: refNum });
+      if (h.feePayer === "sender" && hFee > 0 && isCurrency(hFeeCur)) entries.push({ id: `${h.id || generateId()}-hs-fee`, date, customerId: sender.id, type: "fee", description: `کارمزد حواله`, currency: hFeeCur, amount: hFee, direction: "out", balanceAfter: 0, referenceId: h.id, referenceNumber: refNum });
     }
     if (receiver && h.status === "paid" && isCurrency(hToCur)) {
-      entries.push({
-        id: `${h.id || generateId()}-hr-in`, date: h.paidAt || h.date || date, customerId: receiver.id, type: "hawala",
-        description: `دریافت حواله از ${h.senderName || "—"}`,
-        currency: hToCur, amount: hFinalAmt, direction: "in",
-        balanceAfter: 0, referenceId: h.id, referenceNumber: refNum,
-      });
-      if (h.feePayer === "receiver" && hFee > 0 && isCurrency(hFeeCur)) {
-        entries.push({
-          id: `${h.id || generateId()}-hr-fee`, date: h.paidAt || h.date || date, customerId: receiver.id, type: "fee",
-          description: `کارمزد حواله`,
-          currency: hFeeCur, amount: hFee, direction: "out",
-          balanceAfter: 0, referenceId: h.id, referenceNumber: refNum,
-        });
-      }
+      entries.push({ id: `${h.id || generateId()}-hr-in`, date: h.paidAt || h.date || date, customerId: receiver.id, type: "hawala", description: `دریافت حواله از ${h.senderName || "—"}`, currency: hToCur, amount: hFinalAmt, direction: "in", balanceAfter: 0, referenceId: h.id, referenceNumber: refNum });
+      if (h.feePayer === "receiver" && hFee > 0 && isCurrency(hFeeCur)) entries.push({ id: `${h.id || generateId()}-hr-fee`, date: h.paidAt || h.date || date, customerId: receiver.id, type: "fee", description: `کارمزد حواله`, currency: hFeeCur, amount: hFee, direction: "out", balanceAfter: 0, referenceId: h.id, referenceNumber: refNum });
     }
   }
 
-  entries.sort((a, b) => {
-    try { return new Date(a.date).getTime() - new Date(b.date).getTime(); } catch { return 0; }
-  });
+  entries.sort((a, b) => { try { return new Date(a.date).getTime() - new Date(b.date).getTime(); } catch { return 0; } });
 
   const runningBal: Record<string, Record<Currency, number>> = {};
-  for (const c of customers) {
-    runningBal[c.id] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-  }
+  for (const c of customers) runningBal[c.id] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
   for (const e of entries) {
     if (!runningBal[e.customerId]) runningBal[e.customerId] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     if (!isCurrency(e.currency)) continue;
@@ -417,7 +331,6 @@ export default function CustomersPage() {
   const [errors, setErrors] = useState<FormErrors>({});
   const [toast, setToast] = useState("");
   const [theme, setTheme] = useState<"light" | "dark">("light");
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
     try { const saved = window.localStorage.getItem("fx-theme"); if (saved === "dark" || saved === "light") setTheme(saved); } catch {}
@@ -430,9 +343,8 @@ export default function CustomersPage() {
       setCustomers(loadCustomers());
       setTransactions(loadTransactions());
       setHawalas(loadHawalas());
-    } catch (err) {
-      console.error("Load error:", err);
-    }
+      initTrackingSystem();
+    } catch (err) { console.error("Load error:", err); }
     setMounted(true);
   }, []);
 
@@ -463,7 +375,7 @@ export default function CustomersPage() {
     const q = normalizeDigits(search.trim()).toLowerCase();
     return customers.filter(c => {
       if (!q) return true;
-      const fields = [c.name, c.phone || "", c.tazkira || "", c.id].map(f => normalizeDigits(String(f)).toLowerCase());
+      const fields = [c.name, c.phone || "", c.tazkira || "", c.telegram || "", c.id].map(f => normalizeDigits(String(f)).toLowerCase());
       return fields.some(f => f.includes(q));
     });
   }, [customers, search]);
@@ -490,32 +402,19 @@ export default function CustomersPage() {
   const openProfile = (id: string) => { setSelectedCustomerId(id); setProfileTab("info"); setActiveTab("profile"); };
   const backToList = () => { setActiveTab("list"); setSelectedCustomerId(null); };
 
-  // ✅ تابع حذف مشتری با چک موجودی و سوابق
   const deleteCustomer = (id: string) => {
     const customer = customers.find(c => c.id === id);
     if (!customer) return;
-    
     const bal = computeBalances(ledger, id);
     const hasBalance = currencies.some(cur => bal[cur] !== 0);
     const customerLedgerCount = ledger.filter(e => e.customerId === id).length;
-    
     let msg = `آیا از حذف مشتری "${customer.name}" مطمئن هستید؟`;
-    if (customerLedgerCount > 0) {
-      msg += `\n\n⚠️ هشدار: این مشتری دارای ${customerLedgerCount} رویداد مالی است.`;
-    }
-    if (hasBalance) {
-      msg += `\n\n⚠️ هشدار: این مشتری دارای موجودی غیر صفر است!`;
-    }
+    if (customerLedgerCount > 0) msg += `\n\n⚠️ هشدار: این مشتری دارای ${customerLedgerCount} رویداد مالی است.`;
+    if (hasBalance) msg += `\n\n⚠️ هشدار: این مشتری دارای موجودی غیر صفر است!`;
     msg += "\n\nاین عملیات قابل بازگشت نیست.";
-    
     if (!window.confirm(msg)) return;
-    
     setCustomers(prev => prev.filter(c => c.id !== id));
-    if (selectedCustomerId === id) {
-      setSelectedCustomerId(null);
-      setActiveTab("list");
-    }
-    setConfirmDeleteId(null);
+    if (selectedCustomerId === id) { setSelectedCustomerId(null); setActiveTab("list"); }
     showToast(`مشتری "${customer.name}" حذف شد.`);
   };
 
@@ -539,6 +438,7 @@ export default function CustomersPage() {
     const newCustomer: Customer = {
       id: generateId(), name: form.name.trim(), phone: form.phone.trim(),
       tazkira: form.tazkira.trim(), address: form.address.trim(), note: form.note.trim(),
+      telegram: form.telegram.trim(),
       registeredAt: new Date().toISOString(),
       balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 },
     };
@@ -551,13 +451,13 @@ export default function CustomersPage() {
 
   const updateCustomer = () => {
     if (!selectedCustomer) return;
-    setCustomers(prev => prev.map(c => c.id === selectedCustomer.id ? { ...c, name: form.name.trim(), phone: form.phone.trim(), tazkira: form.tazkira.trim(), address: form.address.trim(), note: form.note.trim() } : c));
+    setCustomers(prev => prev.map(c => c.id === selectedCustomer.id ? { ...c, name: form.name.trim(), phone: form.phone.trim(), tazkira: form.tazkira.trim(), address: form.address.trim(), note: form.note.trim(), telegram: form.telegram.trim() } : c));
     showToast("اطلاعات مشتری به‌روز شد.");
   };
 
   useEffect(() => {
     if (profileTab === "info" && selectedCustomer) {
-      setForm({ name: selectedCustomer.name, phone: selectedCustomer.phone || "", tazkira: selectedCustomer.tazkira || "", address: selectedCustomer.address || "", note: selectedCustomer.note || "" });
+      setForm({ name: selectedCustomer.name, phone: selectedCustomer.phone || "", tazkira: selectedCustomer.tazkira || "", address: selectedCustomer.address || "", note: selectedCustomer.note || "", telegram: selectedCustomer.telegram || "" });
     }
   }, [profileTab, selectedCustomer]);
 
@@ -573,38 +473,7 @@ export default function CustomersPage() {
         if (e.direction === "in") totalIn[e.currency] += e.amount;
         else totalOut[e.currency] += e.amount;
       }
-      const html = `<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8"><title>صورت‌حساب ${selectedCustomer.name}</title><style>
-        body{font-family:Tahoma,Arial,sans-serif;padding:24px;direction:rtl;color:#0f172a}
-        h1{margin:0 0 8px;color:#0369a1}h2{margin:16px 0 8px;color:#0f172a;border-bottom:2px solid #0ea5e9;padding-bottom:4px}
-        .header{display:flex;justify-content:space-between;border-bottom:3px double #0ea5e9;padding-bottom:12px;margin-bottom:16px}
-        .info{font-size:13px;line-height:1.8}table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
-        th,td{border:1px solid #cbd5e1;padding:6px 8px;text-align:right}th{background:#f0f9ff;color:#0369a1;font-weight:bold}
-        .in{color:#059669;font-weight:bold}.out{color:#dc2626;font-weight:bold}
-        .balance-box{display:inline-block;padding:8px 14px;border:2px solid #0ea5e9;border-radius:8px;margin:4px;font-weight:bold}
-        .footer{margin-top:24px;padding-top:12px;border-top:1px solid #cbd5e1;font-size:11px;color:#64748b}
-      </style></head><body>
-        <div class="header">
-          <div><h1>صورت‌حساب مشتری</h1><div class="info"><b>${selectedCustomer.name}</b><br>شماره مشتری: ${selectedCustomer.id.slice(-6)}<br>تذکره: ${selectedCustomer.tazkira || "-"}<br>تلفن: ${selectedCustomer.phone || "-"}<br>آدرس: ${selectedCustomer.address || "-"}</div></div>
-          <div style="text-align:left"><div class="info">تاریخ صدور: ${currentDateTime}<br>دوره: تمام سوابق</div></div>
-        </div>
-        <h2>مانده حساب</h2>
-        <div>${currencies.map(c => `<span class="balance-box">${getCurrencyLabel(c)}: ${fmt(customerBalances[c])}</span>`).join("")}</div>
-        <h2>گردش حساب (${customerLedger.length} رویداد)</h2>
-        <table><thead><tr><th>#</th><th>تاریخ</th><th>شماره سند</th><th>نوع</th><th>شرح</th><th>ارز</th><th>دریافت</th><th>پرداخت</th><th>مانده</th></tr></thead><tbody>
-        ${customerLedger.map((e, i) => `<tr>
-          <td>${i + 1}</td><td>${dateLabel(e.date)}</td><td>${e.referenceNumber || "-"}</td>
-          <td>${txLabels[e.type]}</td><td>${e.description}</td><td>${getCurrencyLabel(e.currency)}</td>
-          <td class="in">${e.direction === "in" ? fmt(e.amount) : ""}</td>
-          <td class="out">${e.direction === "out" ? fmt(e.amount) : ""}</td>
-          <td>${fmt(e.balanceAfter)}</td>
-        </tr>`).join("")}
-        </tbody></table>
-        <h2>جمع کل</h2>
-        <table><thead><tr><th>ارز</th><th>جمع دریافت</th><th>جمع پرداخت</th><th>مانده نهایی</th></tr></thead><tbody>
-        ${currencies.map(c => `<tr><td>${getCurrencyLabel(c)}</td><td class="in">${fmt(totalIn[c])}</td><td class="out">${fmt(totalOut[c])}</td><td><b>${fmt(customerBalances[c])}</b></td></tr>`).join("")}
-        </tbody></table>
-        <div class="footer">این صورت‌حساب به‌صورت خودکار توسط سیستم صرافی تولید شده است.</div>
-      </body></html>`;
+      const html = `<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8"><title>صورت‌حساب ${selectedCustomer.name}</title><style>body{font-family:Tahoma,Arial,sans-serif;padding:24px;direction:rtl;color:#0f172a}h1{margin:0 0 8px;color:#0369a1}h2{margin:16px 0 8px;color:#0f172a;border-bottom:2px solid #0ea5e9;padding-bottom:4px}.header{display:flex;justify-content:space-between;border-bottom:3px double #0ea5e9;padding-bottom:12px;margin-bottom:16px}.info{font-size:13px;line-height:1.8}table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}th,td{border:1px solid #cbd5e1;padding:6px 8px;text-align:right}th{background:#f0f9ff;color:#0369a1;font-weight:bold}.in{color:#059669;font-weight:bold}.out{color:#dc2626;font-weight:bold}.balance-box{display:inline-block;padding:8px 14px;border:2px solid #0ea5e9;border-radius:8px;margin:4px;font-weight:bold}.footer{margin-top:24px;padding-top:12px;border-top:1px solid #cbd5e1;font-size:11px;color:#64748b}</style></head><body><div class="header"><div><h1>صورت‌حساب مشتری</h1><div class="info"><b>${selectedCustomer.name}</b><br>شماره مشتری: ${selectedCustomer.id.slice(-6)}<br>تذکره: ${selectedCustomer.tazkira || "-"}<br>تلفن: ${selectedCustomer.phone || "-"}<br>تلگرام: ${selectedCustomer.telegram || "-"}<br>آدرس: ${selectedCustomer.address || "-"}</div></div><div style="text-align:left"><div class="info">تاریخ صدور: ${currentDateTime}<br>دوره: تمام سوابق</div></div></div><h2>مانده حساب</h2><div>${currencies.map(c => `<span class="balance-box">${getCurrencyLabel(c)}: ${fmt(customerBalances[c])}</span>`).join("")}</div><h2>گردش حساب (${customerLedger.length} رویداد)</h2><table><thead><tr><th>#</th><th>تاریخ</th><th>شماره سند</th><th>نوع</th><th>شرح</th><th>ارز</th><th>دریافت</th><th>پرداخت</th><th>مانده</th></tr></thead><tbody>${customerLedger.map((e, i) => `<tr><td>${i + 1}</td><td>${dateLabel(e.date)}</td><td>${e.referenceNumber || "-"}</td><td>${txLabels[e.type]}</td><td>${e.description}</td><td>${getCurrencyLabel(e.currency)}</td><td class="in">${e.direction === "in" ? fmt(e.amount) : ""}</td><td class="out">${e.direction === "out" ? fmt(e.amount) : ""}</td><td>${fmt(e.balanceAfter)}</td></tr>`).join("")}</tbody></table><h2>جمع کل</h2><table><thead><tr><th>ارز</th><th>جمع دریافت</th><th>جمع پرداخت</th><th>مانده نهایی</th></tr></thead><tbody>${currencies.map(c => `<tr><td>${getCurrencyLabel(c)}</td><td class="in">${fmt(totalIn[c])}</td><td class="out">${fmt(totalOut[c])}</td><td><b>${fmt(customerBalances[c])}</b></td></tr>`).join("")}</tbody></table><div class="footer">این صورت‌حساب به‌صورت خودکار توسط سیستم صرافی تولید شده است.</div></body></html>`;
       win.document.write(html);
       win.document.close();
       win.focus();
@@ -755,7 +624,7 @@ export default function CustomersPage() {
 
               <div className="px-4 md:px-7 pb-4 space-y-3">
                 <div className="relative">
-                  <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="جستجو بر اساس نام، تلفن یا تذکره…" className={`${uiInput} pr-10`} />
+                  <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="جستجو بر اساس نام، تلفن، تذکره یا تلگرام…" className={`${uiInput} pr-10`} />
                   <span className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 ${dk ? "text-slate-500" : "text-slate-400"}`}><Ic n="search" className="h-4 w-4" /></span>
                 </div>
 
@@ -772,9 +641,7 @@ export default function CustomersPage() {
                         return (
                           <div key={c.id} className={`rounded-2xl border p-4 transition-all hover:shadow-md ${glassCard}`}>
                             <div className="flex items-start gap-3">
-                              <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white font-black text-lg shadow-lg`}>
-                                {c.name.charAt(0)}
-                              </div>
+                              <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white font-black text-lg shadow-lg`}>{c.name.charAt(0)}</div>
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <b className={`text-sm font-black truncate ${dk ? "text-slate-100" : "text-slate-800"}`}>{c.name}</b>
@@ -782,6 +649,7 @@ export default function CustomersPage() {
                                 <div className={`text-[11px] ${subText} mt-1 space-y-0.5`}>
                                   <div>📱 {c.phone || "-"}</div>
                                   <div>🆔 {c.tazkira || "-"}</div>
+                                  {c.telegram && <div>💬 <span dir="ltr">{c.telegram}</span></div>}
                                 </div>
                               </div>
                             </div>
@@ -810,7 +678,7 @@ export default function CustomersPage() {
                       <table className="w-full min-w-[1000px] text-sm">
                         <thead>
                           <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
-                            {["شماره", "مشتری", "تلفن", "تذکره", "تاریخ ثبت", "موجودی", "عملیات"].map(h => (
+                            {["شماره", "مشتری", "تلفن", "تذکره", "تلگرام", "تاریخ ثبت", "موجودی", "عملیات"].map(h => (
                               <th key={h} className="px-4 py-3 text-right text-[11px] font-black text-slate-400">{h}</th>
                             ))}
                           </tr>
@@ -824,9 +692,7 @@ export default function CustomersPage() {
                                 <td className="px-4 py-3.5"><span className={`grid h-8 w-8 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500"}`}>{idx + 1}</span></td>
                                 <td className="px-4 py-3.5">
                                   <div className="flex items-center gap-2.5">
-                                    <div className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 text-white font-black text-sm shadow`}>
-                                      {c.name.charAt(0)}
-                                    </div>
+                                    <div className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 text-white font-black text-sm shadow`}>{c.name.charAt(0)}</div>
                                     <div className="min-w-0">
                                       <div className={`text-[13px] font-black truncate ${dk ? "text-slate-100" : "text-slate-800"}`}>{c.name}</div>
                                       <div className={`text-[10px] ${subText} truncate`}>{c.address || "—"}</div>
@@ -835,6 +701,7 @@ export default function CustomersPage() {
                                 </td>
                                 <td className={`px-4 py-3.5 text-xs tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{c.phone || "-"}</td>
                                 <td className={`px-4 py-3.5 text-xs tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{c.tazkira || "-"}</td>
+                                <td className={`px-4 py-3.5 text-xs tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{c.telegram || "-"}</td>
                                 <td className={`whitespace-nowrap px-4 py-3.5 text-xs tabular-nums ${dk ? "text-slate-400" : "text-slate-500"}`} dir="ltr">{shortDateLabel(c.registeredAt)}</td>
                                 <td className="px-4 py-3.5">
                                   <div className="flex flex-wrap gap-1">
@@ -849,12 +716,8 @@ export default function CustomersPage() {
                                 </td>
                                 <td className="px-4 py-3.5">
                                   <div className="flex gap-1.5">
-                                    <button onClick={() => openProfile(c.id)} className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition active:scale-95 ${dk ? "border-emerald-400/30 text-emerald-300 hover:bg-emerald-400/10" : "border-emerald-300 text-emerald-600 hover:bg-emerald-50"}`}>
-                                      <Ic n="eye" className="h-3.5 w-3.5" />
-                                    </button>
-                                    <button onClick={() => deleteCustomer(c.id)} className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition active:scale-95 ${dk ? "border-rose-400/30 text-rose-300 hover:bg-rose-400/10" : "border-rose-300 text-rose-600 hover:bg-rose-50"}`}>
-                                      <Ic n="trash" className="h-3.5 w-3.5" />
-                                    </button>
+                                    <button onClick={() => openProfile(c.id)} className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition active:scale-95 ${dk ? "border-emerald-400/30 text-emerald-300 hover:bg-emerald-400/10" : "border-emerald-300 text-emerald-600 hover:bg-emerald-50"}`}><Ic n="eye" className="h-3.5 w-3.5" /></button>
+                                    <button onClick={() => deleteCustomer(c.id)} className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition active:scale-95 ${dk ? "border-rose-400/30 text-rose-300 hover:bg-rose-400/10" : "border-rose-300 text-rose-600 hover:bg-rose-50"}`}><Ic n="trash" className="h-3.5 w-3.5" /></button>
                                   </div>
                                 </td>
                               </tr>
@@ -892,6 +755,7 @@ export default function CustomersPage() {
                 {fld("نام و نام خانوادگی *", (<input className={`${uiInput} ${errors.name ? errInput : ""}`} value={form.name} onChange={e => setField("name", e.target.value)} placeholder="مثلاً علی احمدی" />))}
                 {fld("شماره تماس *", (<input className={`${uiInput} ${errors.phone ? errInput : ""}`} value={form.phone} onChange={e => setField("phone", e.target.value)} placeholder="07xxxxxxxx" />))}
                 {fld("شماره تذکره", (<input className={`${uiInput} ${errors.tazkira ? errInput : ""}`} value={form.tazkira} onChange={e => setField("tazkira", e.target.value)} placeholder="مثلاً 1400-001-001" />))}
+                {fld("چت آی‌دی تلگرام", (<input className={uiInput} value={form.telegram} onChange={e => setField("telegram", e.target.value)} placeholder="@example یا شماره" />))}
                 <div className="md:col-span-2">{fld("آدرس", (<input className={uiInput} value={form.address} onChange={e => setField("address", e.target.value)} placeholder="ولایت، ولسوالی، منطقه" />))}</div>
                 <div className="md:col-span-2">{fld("توضیحات", (<textarea rows={3} className={`${uiInput} h-auto py-3 resize-none`} value={form.note} onChange={e => setField("note", e.target.value)} placeholder="توضیحات اختیاری..." />))}</div>
               </div>
@@ -932,6 +796,7 @@ export default function CustomersPage() {
                         <div><span className="font-bold">تلفن:</span> <span className="font-black tabular-nums" dir="ltr">{selectedCustomer.phone || "-"}</span></div>
                         <div><span className="font-bold">تذکره:</span> <span className="font-black tabular-nums" dir="ltr">{selectedCustomer.tazkira || "-"}</span></div>
                         <div><span className="font-bold">ثبت:</span> <span className="font-black tabular-nums" dir="ltr">{shortDateLabel(selectedCustomer.registeredAt)}</span></div>
+                        {selectedCustomer.telegram && <div className="md:col-span-2"><span className="font-bold">تلگرام:</span> <span className="font-black tabular-nums" dir="ltr">{selectedCustomer.telegram}</span></div>}
                       </div>
                     </div>
 
@@ -964,9 +829,7 @@ export default function CustomersPage() {
                           <span className={`text-[10px] font-black ${subText}`}>{labels[cur]}</span>
                           <span className={`grid h-5 w-5 place-items-center rounded-md bg-gradient-to-br ${colors.gradient} text-white text-[9px] font-black`}>{cur}</span>
                         </div>
-                        <div className={`text-lg font-black tabular-nums ${isDebt ? "text-rose-500" : colors[dk ? "dark" : "light"]}`}>
-                          {fmt(bal)}
-                        </div>
+                        <div className={`text-lg font-black tabular-nums ${isDebt ? "text-rose-500" : colors[dk ? "dark" : "light"]}`}>{fmt(bal)}</div>
                         {isDebt && <div className="text-[9px] font-bold text-rose-500 mt-1">قرض از صرافی</div>}
                         {bal > 0 && <div className={`text-[9px] font-bold mt-1 ${subText}`}>طلب از صرافی</div>}
                       </div>
@@ -994,6 +857,7 @@ export default function CustomersPage() {
                     {fld("نام و نام خانوادگی", (<input className={uiInput} value={form.name} onChange={e => setField("name", e.target.value)} />))}
                     {fld("شماره تماس", (<input className={uiInput} value={form.phone} onChange={e => setField("phone", e.target.value)} />))}
                     {fld("شماره تذکره", (<input className={uiInput} value={form.tazkira} onChange={e => setField("tazkira", e.target.value)} />))}
+                    {fld("چت آی‌دی تلگرام", (<input className={uiInput} value={form.telegram} onChange={e => setField("telegram", e.target.value)} placeholder="@example" />))}
                     <div className="md:col-span-2">{fld("آدرس", (<input className={uiInput} value={form.address} onChange={e => setField("address", e.target.value)} />))}</div>
                     <div className="md:col-span-2">{fld("توضیحات", (<textarea rows={3} className={`${uiInput} h-auto py-3 resize-none`} value={form.note} onChange={e => setField("note", e.target.value)} />))}</div>
                   </div>
@@ -1034,9 +898,7 @@ export default function CustomersPage() {
                                 <div className={`text-[10px] ${subText}`}>{txCount} رویداد</div>
                               </div>
                             </div>
-                            <div className={`text-2xl font-black tabular-nums ${bal >= 0 ? colors[dk ? "dark" : "light"] : "text-rose-500"}`}>
-                              {fmt(bal)}
-                            </div>
+                            <div className={`text-2xl font-black tabular-nums ${bal >= 0 ? colors[dk ? "dark" : "light"] : "text-rose-500"}`}>{fmt(bal)}</div>
                           </div>
                           <div className="grid grid-cols-2 gap-2 pt-3 border-t border-dashed border-slate-300/30">
                             <div className={`flex items-center gap-2 rounded-lg px-3 py-2 ${dk ? "bg-emerald-400/10" : "bg-emerald-50"}`}>
@@ -1118,9 +980,7 @@ export default function CustomersPage() {
                               <div className="grid grid-cols-3 gap-2 pt-2 border-t border-dashed border-slate-300/30">
                                 <div>
                                   <div className={`text-[9px] font-bold ${subText}`}>مبلغ</div>
-                                  <div className={`text-sm font-black tabular-nums ${isOut ? "text-rose-500" : "text-emerald-500"}`}>
-                                    {isOut ? "-" : "+"}{fmt(e.amount)}
-                                  </div>
+                                  <div className={`text-sm font-black tabular-nums ${isOut ? "text-rose-500" : "text-emerald-500"}`}>{isOut ? "-" : "+"}{fmt(e.amount)}</div>
                                   <div className={`text-[9px] ${subText}`}>{getCurrencyLabel(e.currency)}</div>
                                 </div>
                                 <div>
@@ -1155,9 +1015,7 @@ export default function CustomersPage() {
                                   <td className={`whitespace-nowrap px-3 py-2.5 text-[11px] tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{shortDateLabel(e.date)}</td>
                                   <td className={`whitespace-nowrap px-3 py-2.5 text-[11px] tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{timeLabel(e.date)}</td>
                                   <td className="px-3 py-2.5">
-                                    <span className={`inline-flex rounded-md border px-1.5 py-0.5 text-[10px] font-black tabular-nums ${dk ? "border-slate-600 text-slate-300" : "border-slate-200 text-slate-600"}`} dir="ltr">
-                                      {e.referenceNumber || "-"}
-                                    </span>
+                                    <span className={`inline-flex rounded-md border px-1.5 py-0.5 text-[10px] font-black tabular-nums ${dk ? "border-slate-600 text-slate-300" : "border-slate-200 text-slate-600"}`} dir="ltr">{e.referenceNumber || "-"}</span>
                                   </td>
                                   <td className="px-3 py-2.5">
                                     <span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${txColors[e.type][dk ? "dark" : "light"]}`}>{txLabels[e.type]}</span>
@@ -1201,6 +1059,7 @@ export default function CustomersPage() {
                         <div><b>کد:</b> <span dir="ltr">{selectedCustomer.id.slice(-6)}</span></div>
                         <div><b>تلفن:</b> <span dir="ltr">{selectedCustomer.phone || "-"}</span></div>
                         <div><b>تذکره:</b> <span dir="ltr">{selectedCustomer.tazkira || "-"}</span></div>
+                        <div><b>تلگرام:</b> <span dir="ltr">{selectedCustomer.telegram || "-"}</span></div>
                         <div><b>آدرس:</b> {selectedCustomer.address || "-"}</div>
                       </div>
                     </div>
@@ -1274,9 +1133,7 @@ export default function CustomersPage() {
                               </div>
                             </div>
                             <div className="text-right">
-                              <div className={`text-[12px] font-black tabular-nums ${e.direction === "out" ? "text-rose-500" : "text-emerald-500"}`}>
-                                {e.direction === "out" ? "-" : "+"}{fmt(e.amount)}
-                              </div>
+                              <div className={`text-[12px] font-black tabular-nums ${e.direction === "out" ? "text-rose-500" : "text-emerald-500"}`}>{e.direction === "out" ? "-" : "+"}{fmt(e.amount)}</div>
                               <div className={`text-[9px] ${subText}`}>{getCurrencyLabel(e.currency)}</div>
                             </div>
                           </div>
