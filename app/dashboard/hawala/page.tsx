@@ -366,9 +366,6 @@ export default function HawalaPage() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
 
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-
   const [showSenderList, setShowSenderList] = useState(false);
   const [senderFilter, setSenderFilter] = useState("");
   const senderListRef = useRef<HTMLDivElement>(null);
@@ -427,17 +424,6 @@ export default function HawalaPage() {
     const timer = setTimeout(() => document.addEventListener("mousedown", handler), 0);
     return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); };
   }, [anyDropdownOpen, showSenderList, showReceiverList]);
-
-  useEffect(() => {
-    if (!openMenuId) return;
-    const handler = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.closest("[data-menu-toggle]")) return;
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpenMenuId(null);
-    };
-    const timer = setTimeout(() => document.addEventListener("mousedown", handler), 0);
-    return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); };
-  }, [openMenuId]);
 
   const filteredSenderList = useMemo(() => {
     if (!senderFilter) return customers;
@@ -620,11 +606,9 @@ export default function HawalaPage() {
   }, [form, rateMode, rateValue, afnForeign, directCounter, directBaseValue, feeValue, amountFrom, destinationText, customers, showToast]);
 
   const resetForm = useCallback(() => { setForm(emptyForm); setErrors({}); showToast("فورم پاک شد."); }, [showToast]);
-  const toggleMenu = useCallback((id: string) => setOpenMenuId(p => p === id ? null : id), []);
 
   const markAsSent = useCallback((item: Hawala) => {
     setHawalas(prev => prev.map(h => h.id === item.id ? { ...h, status: "sent" as HawalaStatus } : h));
-    setOpenMenuId(null);
     showToast("وضعیت حواله به ارسال‌شده تغییر کرد.");
   }, [showToast]);
 
@@ -632,7 +616,6 @@ export default function HawalaPage() {
     setSettleTarget(item);
     setPaidAmount(String(item.finalAmount));
     setPaidBy("");
-    setOpenMenuId(null);
   }, []);
 
   const confirmSettlement = useCallback(() => {
@@ -657,7 +640,6 @@ export default function HawalaPage() {
   const openCancel = useCallback((item: Hawala) => {
     setCancelTarget(item);
     setCancelReason("");
-    setOpenMenuId(null);
   }, []);
 
   const confirmCancel = useCallback(() => {
@@ -678,12 +660,10 @@ export default function HawalaPage() {
 
   const restoreToSent = useCallback((item: Hawala) => {
     setHawalas(prev => prev.map(h => h.id === item.id ? { ...h, status: "sent" as HawalaStatus, paidAt: undefined, paidBy: undefined, paidAmount: undefined, cancelReason: undefined } : h));
-    setOpenMenuId(null);
     showToast("حواله به وضعیت ارسال‌شده برگشت و به تب جاری منتقل شد.");
   }, [showToast]);
 
   const deleteHawala = useCallback((item: Hawala) => {
-    setOpenMenuId(null);
     const msg = `آیا از حذف کامل حواله ${item.number} مطمئن هستید؟\n\nاین عملیات قابل بازگشت نیست و حواله از سیستم پاک می‌شود.`;
     if (!window.confirm(msg)) return;
     try {
@@ -809,85 +789,79 @@ export default function HawalaPage() {
     );
   });
 
-  const ActionMenu = memo(function ActionMenu({ item, isInHistory, isOpen }: { item: Hawala; isInHistory: boolean; isOpen: boolean }) {
+  /* ✅ ستون عملیات جدید: دکمه‌های مستقیم بدون dropdown */
+  const ActionButtons = memo(function ActionButtons({ item, isInHistory }: { item: Hawala; isInHistory: boolean }) {
     const isPending = item.status === "pending";
     const isSent = item.status === "sent";
     const isPaid = item.status === "paid";
     const isCancelled = item.status === "cancelled";
 
-    return (
-      <div className="relative" ref={isOpen ? menuRef : null}>
-        <button
-          data-menu-toggle
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleMenu(item.id); }}
-          className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-black ${
-            isOpen
-              ? dk ? "border-blue-400/50 bg-blue-400/20 text-blue-300" : "border-blue-400 bg-blue-50 text-blue-600"
-              : dk ? "border-slate-600 bg-slate-900 text-cyan-300" : "border-slate-200 bg-white text-sky-600"
-          }`}
-        >
-          عملیات<Ic n="chevron" className={`h-3 w-3 ${isOpen ? "rotate-180" : ""}`} />
-        </button>
+    const btn = "grid h-8 w-8 place-items-center rounded-lg border transition-all duration-150 active:scale-90 cursor-pointer";
 
-        {isOpen && (
-          <ul className={`hw-menu absolute left-0 top-full z-20 mt-1.5 w-44 space-y-1 rounded-xl border p-1.5 shadow-xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`}>
-            {!isInHistory && (
+    return (
+      <div className="flex items-center gap-1.5">
+        {!isInHistory && (
+          <>
+            {isPending && (
+              <button
+                title="ارسال"
+                onClick={() => markAsSent(item)}
+                className={`${btn} ${dk ? "border-sky-400/30 text-sky-300 hover:bg-sky-400/15 hover:border-sky-400/60" : "border-sky-200 text-sky-600 hover:bg-sky-50 hover:border-sky-400"}`}
+              >
+                <Ic n="send" className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {(isPending || isSent) && (
               <>
-                {isPending && (
-                  <li>
-                    <button onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={() => { setOpenMenuId(null); markAsSent(item); }} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold ${dk ? "text-slate-300 hover:bg-blue-400/10" : "text-slate-600 hover:bg-sky-50"}`}>
-                      <Ic n="send" className="h-3.5 w-3.5" /><span>ارسال</span>
-                    </button>
-                  </li>
-                )}
-                {(isPending || isSent) && (
-                  <li>
-                    <button onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={() => { setOpenMenuId(null); openSettlement(item); }} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold ${dk ? "text-slate-300 hover:bg-emerald-400/10" : "text-slate-600 hover:bg-emerald-50"}`}>
-                      <Ic n="check" className="h-3.5 w-3.5" /><span>تسویه</span>
-                    </button>
-                  </li>
-                )}
-                {(isPending || isSent) && (
-                  <li>
-                    <button onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={() => { setOpenMenuId(null); openCancel(item); }} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold ${dk ? "text-amber-300 hover:bg-amber-400/10" : "text-amber-600 hover:bg-amber-50"}`}>
-                      <Ic n="xCircle" className="h-3.5 w-3.5" /><span>ابطال</span>
-                    </button>
-                  </li>
-                )}
-                <li className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
-                <li>
-                  <button onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={() => { setOpenMenuId(null); deleteHawala(item); }} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold ${dk ? "text-rose-300 hover:bg-rose-400/10" : "text-rose-500 hover:bg-rose-50"}`}>
-                    <Ic n="trash" className="h-3.5 w-3.5" /><span>حذف</span>
-                  </button>
-                </li>
+                <button
+                  title="تسویه"
+                  onClick={() => openSettlement(item)}
+                  className={`${btn} ${dk ? "border-emerald-400/30 text-emerald-300 hover:bg-emerald-400/15 hover:border-emerald-400/60" : "border-emerald-200 text-emerald-600 hover:bg-emerald-50 hover:border-emerald-400"}`}
+                >
+                  <Ic n="check" className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  title="ابطال"
+                  onClick={() => openCancel(item)}
+                  className={`${btn} ${dk ? "border-amber-400/30 text-amber-300 hover:bg-amber-400/15 hover:border-amber-400/60" : "border-amber-200 text-amber-600 hover:bg-amber-50 hover:border-amber-400"}`}
+                >
+                  <Ic n="xCircle" className="h-3.5 w-3.5" />
+                </button>
               </>
             )}
-            {isInHistory && (
-              <>
-                {isCancelled && (
-                  <li>
-                    <button onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={() => { setOpenMenuId(null); restoreToSent(item); }} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold ${dk ? "text-slate-300 hover:bg-blue-400/10" : "text-slate-600 hover:bg-sky-50"}`}>
-                      <Ic n="undo" className="h-3.5 w-3.5" /><span>برگشت به ارسال</span>
-                    </button>
-                  </li>
-                )}
-                {isPaid && (
-                  <li>
-                    <button onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={() => { setOpenMenuId(null); openCancel(item); }} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold ${dk ? "text-amber-300 hover:bg-amber-400/10" : "text-amber-600 hover:bg-amber-50"}`}>
-                      <Ic n="xCircle" className="h-3.5 w-3.5" /><span>ابطال</span>
-                    </button>
-                  </li>
-                )}
-                <li className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
-                <li>
-                  <button onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={() => { setOpenMenuId(null); deleteHawala(item); }} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold ${dk ? "text-rose-300 hover:bg-rose-400/10" : "text-rose-500 hover:bg-rose-50"}`}>
-                    <Ic n="trash" className="h-3.5 w-3.5" /><span>حذف</span>
-                  </button>
-                </li>
-              </>
-            )}
-          </ul>
+          </>
         )}
+
+        {isInHistory && (
+          <>
+            {isCancelled && (
+              <button
+                title="برگشت به ارسال"
+                onClick={() => restoreToSent(item)}
+                className={`${btn} ${dk ? "border-sky-400/30 text-sky-300 hover:bg-sky-400/15 hover:border-sky-400/60" : "border-sky-200 text-sky-600 hover:bg-sky-50 hover:border-sky-400"}`}
+              >
+                <Ic n="undo" className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {isPaid && (
+              <button
+                title="ابطال"
+                onClick={() => openCancel(item)}
+                className={`${btn} ${dk ? "border-amber-400/30 text-amber-300 hover:bg-amber-400/15 hover:border-amber-400/60" : "border-amber-200 text-amber-600 hover:bg-amber-50 hover:border-amber-400"}`}
+              >
+                <Ic n="xCircle" className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </>
+        )}
+
+        <button
+          title="حذف"
+          onClick={() => deleteHawala(item)}
+          className={`${btn} ${dk ? "border-rose-400/30 text-rose-300 hover:bg-rose-400/15 hover:border-rose-400/60" : "border-rose-200 text-rose-500 hover:bg-rose-50 hover:border-rose-400"}`}
+        >
+          <Ic n="trash" className="h-3.5 w-3.5" />
+        </button>
       </div>
     );
   });
@@ -902,7 +876,7 @@ export default function HawalaPage() {
 
   return (
     <div dir="rtl" className={dk ? "dark" : ""}>
-      <style>{`@import url("https://fonts.googleapis.com/css2?family=Lalezar&family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap");.hw-font{font-family:"Vazirmatn","Segoe UI",Tahoma,sans-serif}.hw-display{font-family:"Lalezar","Vazirmatn",Tahoma,sans-serif;letter-spacing:.01em}.dark{color-scheme:dark}@keyframes hwUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}.hw-up{animation:hwUp .5s cubic-bezier(.22,.8,.35,1) both}@keyframes menuIn{from{opacity:0;transform:scale(.95) translateY(-4px)}to{opacity:1;transform:scale(1) translateY(0)}}.hw-menu{animation:menuIn .15s ease-out}details>summary{list-style:none}details>summary::-webkit-details-marker{display:none}::selection{background:rgba(59,130,246,.25)}`}</style>
+      <style>{`@import url("https://fonts.googleapis.com/css2?family=Lalezar&family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap");.hw-font{font-family:"Vazirmatn","Segoe UI",Tahoma,sans-serif}.hw-display{font-family:"Lalezar","Vazirmatn",Tahoma,sans-serif;letter-spacing:.01em}.dark{color-scheme:dark}@keyframes hwUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}.hw-up{animation:hwUp .5s cubic-bezier(.22,.8,.35,1) both}details>summary{list-style:none}details>summary::-webkit-details-marker{display:none}::selection{background:rgba(59,130,246,.25)}`}</style>
 
       <div className={`hw-font relative min-h-screen overflow-x-hidden antialiased transition-colors duration-500 ${dk ? "bg-[#0f172a] text-slate-100" : "bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 text-slate-800"}`}>
         <div className={`fixed inset-x-0 top-0 z-30 h-1 bg-gradient-to-l ${dk ? "from-blue-400 via-cyan-400 to-emerald-400" : "from-blue-500 via-cyan-500 to-emerald-500"}`} />
@@ -1225,7 +1199,7 @@ export default function HawalaPage() {
                             <td className="px-4 py-3.5"><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${item.feePayer === "sender" ? dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-700" : dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-700"}`}>{item.feePayer === "sender" ? "از فرستنده" : "از گیرنده"}</span></td>
                             <td className={`px-4 py-3.5 text-xs ${subText}`}>{item.destinationText}</td>
                             <td className="px-4 py-3.5"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${statusColors[item.status][dk ? "dark" : "light"]}`}>{statusLabels[item.status]}</span></td>
-                            <td className="px-4 py-3.5"><ActionMenu item={item} isInHistory={false} isOpen={openMenuId === item.id} /></td>
+                            <td className="px-4 py-3.5"><ActionButtons item={item} isInHistory={false} /></td>
                           </tr>
                         ))}
                       </tbody>
@@ -1286,7 +1260,7 @@ export default function HawalaPage() {
                             <td className="px-4 py-3.5"><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${item.feePayer === "sender" ? dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-700" : dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-700"}`}>{item.feePayer === "sender" ? "از فرستنده" : "از گیرنده"}</span></td>
                             <td className={`px-4 py-3.5 text-xs ${subText}`}>{item.destinationText}</td>
                             <td className="px-4 py-3.5"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${statusColors[item.status][dk ? "dark" : "light"]}`}>{statusLabels[item.status]}</span></td>
-                            <td className="px-4 py-3.5"><ActionMenu item={item} isInHistory={true} isOpen={openMenuId === item.id} /></td>
+                            <td className="px-4 py-3.5"><ActionButtons item={item} isInHistory={true} /></td>
                           </tr>
                         ))}
                       </tbody>
