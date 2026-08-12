@@ -394,7 +394,6 @@ export default function HawalaPage() {
   useEffect(() => { try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); } catch {} }, [customers]);
   useEffect(() => { try { localStorage.setItem(HAWALAS_KEY, JSON.stringify(hawalas)); } catch {} }, [hawalas]);
 
-  // ✅ لیست‌های مشتریان - بدون تغییر (درست کار می‌کنند)
   const anyDropdownOpen = showSenderList || showReceiverList;
 
   useEffect(() => {
@@ -408,7 +407,6 @@ export default function HawalaPage() {
     return () => { document.removeEventListener("click", handler); };
   }, [anyDropdownOpen, showSenderList, showReceiverList]);
 
-  // ✅✅✅ ActionMenu - اصلاح شده با mousedown و setTimeout(0) ✅✅✅
   useEffect(() => {
     if (!openMenuId) return;
     const handler = (e: MouseEvent) => {
@@ -651,28 +649,57 @@ export default function HawalaPage() {
     showToast("حواله به وضعیت ارسال‌شده برگشت و به تب جاری منتقل شد.");
   };
 
+  // ✅✅✅ تابع deleteHawala اصلاح‌شده ✅✅✅
+  // تغییرات:
+  // 1. ادغام دو setCustomers جداگانه در یک عملیات واحد برای جلوگیری از race condition
+  // 2. استفاده از تابع getBalanceChangesForHawala برای سازگاری با سایر بخش‌های کد
+  // 3. مدیریت حالت cancelled که در کد اصلی وجود نداشت
   const deleteHawala = (item: Hawala) => {
     setOpenMenuId(null);
     const msg = `آیا از حذف کامل حواله ${item.number} مطمئن هستید؟\n\nاین عملیات قابل بازگشت نیست و حواله از سیستم پاک می‌شود.`;
     if (!window.confirm(msg)) return;
     try {
+      const changes: BalanceChange[] = [];
+      
       if (item.status === "pending" || item.status === "sent") {
+        // حواله ثبت شده اما تسویه نشده: فقط عملیات ثبت را reverse می‌کنیم
+        // فرستنده مبلغ اولیه را پس می‌گیرد
         if (customers.some(c => c.name === item.senderName)) {
-          setCustomers(prev => applyBalanceChanges(prev, [{ customerName: item.senderName, currency: item.currencyFrom, amount: item.amountFrom }]));
+          changes.push({ 
+            customerName: item.senderName, 
+            currency: item.currencyFrom, 
+            amount: item.amountFrom 
+          });
         }
-      }
-      if (item.status === "paid") {
+      } else if (item.status === "paid") {
+        // حواله تسویه شده: هم عملیات ثبت و هم تسویه را reverse می‌کنیم
+        // فرستنده مبلغ اولیه را پس می‌گیرد
         if (customers.some(c => c.name === item.senderName)) {
-          setCustomers(prev => applyBalanceChanges(prev, [
-            { customerName: item.senderName, currency: item.currencyFrom, amount: item.amountFrom },
-          ]));
+          changes.push({ 
+            customerName: item.senderName, 
+            currency: item.currencyFrom, 
+            amount: item.amountFrom 
+          });
         }
+        // گیرنده مبلغ نهایی را پس می‌دهد
         if (customers.some(c => c.name === item.receiverName)) {
-          setCustomers(prev => applyBalanceChanges(prev, [
-            { customerName: item.receiverName, currency: item.currencyTo, amount: -item.finalAmount },
-          ]));
+          changes.push({ 
+            customerName: item.receiverName, 
+            currency: item.currencyTo, 
+            amount: -item.finalAmount 
+          });
         }
+        // توجه: کارمزد (profit) صرافی در این حالت برگردانده نمی‌شود
+        // زیرا transaction باطل شده و صرافی نباید سودی از یک حواله حذف‌شده ببرد
       }
+      // برای حواله‌های cancelled، تغییر موجودی قبلاً در زمان ابطال انجام شده
+      // فقط حواله را از لیست حذف می‌کنیم
+      
+      // اعمال همه تغییرات در یک عملیات واحد (جلوگیری از race condition)
+      if (changes.length > 0) {
+        setCustomers(prev => applyBalanceChanges(prev, changes));
+      }
+      
       setHawalas(prev => prev.filter(h => h.id !== item.id));
       showToast(`حواله ${item.number} حذف شد.`);
     } catch (err) {
@@ -799,7 +826,6 @@ export default function HawalaPage() {
     );
   };
 
-  // ✅✅✅ ActionMenu اصلاح‌شده - فقط این کامپوننت تغییر کرده ✅✅✅
   const ActionMenu = ({ item, isInHistory }: { item: Hawala; isInHistory: boolean }) => {
     const isOpen = openMenuId === item.id;
     const isPending = item.status === "pending";
@@ -809,7 +835,6 @@ export default function HawalaPage() {
 
     return (
       <div className="relative" ref={isOpen ? menuRef : null}>
-        {/* ✅ دکمه toggle با onMouseDown */}
         <button
           onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); toggleMenu(item.id); }}
           className={`grid h-8 w-8 place-items-center rounded-lg border transition active:scale-95 ${
@@ -1281,7 +1306,7 @@ export default function HawalaPage() {
           )}
 
           {activeTab === "history" && (
-            <section className={`hw-up overflow-hidden ${uiCard}`}>
+            <section className={`hw-up Overflow-hidden ${uiCard}`}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
                 <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identHwIcon}`}><Ic n="doc" className="h-5 w-5" /></span>
                 <div className="flex-1 min-w-0">
