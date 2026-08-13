@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState, useCallback, memo, type ReactNode } from "react";
+import { useEffect, useMemo, useState, useRef, useCallback, memo, type ReactNode } from "react";
 import {
   getNextTrackingCode,
   consumeTrackingCode,
@@ -8,7 +8,19 @@ import {
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 
-type CashEntryType = "deposit" | "payment" | "owner_deposit" | "owner_withdraw" | "adjustment";
+type Customer = {
+  id: string;
+  name: string;
+  phone?: string;
+  tazkira?: string;
+  address?: string;
+  note?: string;
+  telegram?: string;
+  registeredAt: string;
+  balances: Record<Currency, number>;
+};
+
+type CashEntryType = "customer_deposit" | "customer_withdraw" | "owner_deposit" | "owner_withdraw" | "adjustment";
 
 type CashEntry = {
   id: string;
@@ -20,6 +32,10 @@ type CashEntry = {
   direction: "in" | "out";
   reason: string;
   balanceAfter: number;
+  customerId?: string;
+  customerName?: string;
+  customerPhone?: string;
+  customerTazkira?: string;
   closeActual?: number;
   closeDiff?: number;
 };
@@ -29,26 +45,28 @@ type FormState = {
   currency: Currency;
   amount: string;
   reason: string;
+  customerId: string;
+  customerName: string;
 };
 
 type FormErrors = Partial<Record<keyof FormState, string>>;
 
 const CASH_KEY = "cash-entries";
+const CUSTOMERS_KEY = "fx-customers";
 const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
 const labels: Record<Currency, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
-const rateUnits: Record<Currency, number> = { AFN: 1, USD: 1, EUR: 1, IRR: 1000, PKR: 1000 };
 
 const entryTypeLabels: Record<CashEntryType, string> = {
-  deposit: "دریافت به صندوق",
-  payment: "پرداخت از صندوق",
+  customer_deposit: "واریز مشتری",
+  customer_withdraw: "برداشت مشتری",
   owner_deposit: "واریز مالک",
   owner_withdraw: "برداشت مالک",
   adjustment: "اصلاح صندوق",
 };
 
 const entryTypeColors: Record<CashEntryType, { light: string; dark: string }> = {
-  deposit: { light: "bg-emerald-100 text-emerald-700", dark: "bg-emerald-400/15 text-emerald-300" },
-  payment: { light: "bg-rose-100 text-rose-700", dark: "bg-rose-400/15 text-rose-300" },
+  customer_deposit: { light: "bg-teal-100 text-teal-700", dark: "bg-teal-400/15 text-teal-300" },
+  customer_withdraw: { light: "bg-orange-100 text-orange-700", dark: "bg-orange-400/15 text-orange-300" },
   owner_deposit: { light: "bg-sky-100 text-sky-700", dark: "bg-sky-400/15 text-sky-300" },
   owner_withdraw: { light: "bg-amber-100 text-amber-700", dark: "bg-amber-400/15 text-amber-300" },
   adjustment: { light: "bg-violet-100 text-violet-700", dark: "bg-violet-400/15 text-violet-300" },
@@ -137,6 +155,22 @@ const safeGetItem = (key: string): any => {
   } catch { return null; }
 };
 
+function loadCustomers(): Customer[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const parsed = safeGetItem(CUSTOMERS_KEY);
+    if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === "object" && parsed[0] !== null && "id" in parsed[0] && "name" in parsed[0]) {
+      return parsed.map((c: any) => ({
+        id: c.id || generateId(), name: c.name || "", phone: c.phone || "", tazkira: c.tazkira || "",
+        address: c.address || "", note: c.note || "", telegram: c.telegram || "",
+        registeredAt: c.registeredAt || c.createdAt || new Date().toISOString(),
+        balances: { AFN: Number(c.balances?.AFN || 0) || 0, USD: Number(c.balances?.USD || 0) || 0, EUR: Number(c.balances?.EUR || 0) || 0, IRR: Number(c.balances?.IRR || 0) || 0, PKR: Number(c.balances?.PKR || 0) || 0 },
+      }));
+    }
+    return [];
+  } catch { return []; }
+}
+
 function loadCashEntries(): CashEntry[] {
   if (typeof window === "undefined") return [];
   try {
@@ -146,12 +180,16 @@ function loadCashEntries(): CashEntry[] {
       id: e.id,
       trackingCode: e.trackingCode || "",
       date: e.date || new Date().toISOString(),
-      type: (["deposit", "payment", "owner_deposit", "owner_withdraw", "adjustment"].includes(e.type) ? e.type : "deposit") as CashEntryType,
+      type: (["customer_deposit","customer_withdraw","owner_deposit","owner_withdraw","adjustment"].includes(e.type) ? e.type : "customer_deposit") as CashEntryType,
       currency: currencies.includes(e.currency) ? e.currency : "AFN",
       amount: Number(e.amount || 0) || 0,
       direction: e.direction === "out" ? "out" : "in",
       reason: e.reason || "",
       balanceAfter: Number(e.balanceAfter || 0) || 0,
+      customerId: e.customerId,
+      customerName: e.customerName,
+      customerPhone: e.customerPhone,
+      customerTazkira: e.customerTazkira,
       closeActual: e.closeActual,
       closeDiff: e.closeDiff,
     }));
@@ -171,7 +209,7 @@ function computeCashBalances(entries: CashEntry[]): Record<Currency, number> {
   return balances;
 }
 
-const emptyForm: FormState = { type: "deposit", currency: "AFN", amount: "", reason: "" };
+const emptyForm: FormState = { type: "customer_deposit", currency: "AFN", amount: "", reason: "", customerId: "", customerName: "" };
 
 const iconPaths = {
   wallet: "M21 12a2.25 2.25 0 0 0-2.25-2.25H15a3 3 0 1 1-6 0H5.25A2.25 2.25 0 0 0 3 12m18 0v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 9m18 0V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v3",
@@ -193,6 +231,7 @@ const iconPaths = {
   trash: "M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0",
   lock: "M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z",
   history: "M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
+  phone: "M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 0 0 2.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 0 1-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 0 0-1.091-.852H4.5A2.25 2.25 0 0 0 2.25 4.5v2.25Z",
 };
 
 type IconName = keyof typeof iconPaths;
@@ -208,6 +247,7 @@ const Ic = memo(function Ic({ n, className = "h-5 w-5" }: { n: IconName; classNa
 export default function CashPage() {
   const [mounted, setMounted] = useState(false);
   const [entries, setEntries] = useState<CashEntry[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [activeTab, setActiveTab] = useState<"register" | "ledger" | "close">("register");
   const [form, setForm] = useState<FormState>(emptyForm);
@@ -215,6 +255,10 @@ export default function CashPage() {
   const [toast, setToast] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewData, setPreviewData] = useState<CashEntry | null>(null);
+
+  const [showCustomerList, setShowCustomerList] = useState(false);
+  const [customerFilter, setCustomerFilter] = useState("");
+  const customerListRef = useRef<HTMLDivElement>(null);
 
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState<CashEntryType | "all">("all");
@@ -232,6 +276,7 @@ export default function CashPage() {
   useEffect(() => {
     try {
       setEntries(loadCashEntries());
+      setCustomers(loadCustomers());
       initTrackingSystem();
     } catch (err) { console.error("Load error:", err); }
     setMounted(true);
@@ -250,8 +295,28 @@ export default function CashPage() {
     try { localStorage.setItem(CASH_KEY, JSON.stringify(entries)); } catch {}
   }, [entries, mounted]);
 
+  useEffect(() => {
+    if (!mounted) return;
+    try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); } catch {}
+  }, [customers, mounted]);
+
+  useEffect(() => {
+    if (!showCustomerList) return;
+    const handler = (e: MouseEvent) => {
+      if (customerListRef.current && !customerListRef.current.contains(e.target as Node)) setShowCustomerList(false);
+    };
+    const timer = setTimeout(() => document.addEventListener("mousedown", handler), 0);
+    return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); };
+  }, [showCustomerList]);
+
   const cashBalances = useMemo(() => computeCashBalances(entries), [entries]);
   const nextCode = useMemo(() => getNextTrackingCode(), []);
+
+  const filteredCustomerList = useMemo(() => {
+    if (!customerFilter) return customers;
+    const q = normalizeDigits(customerFilter.trim()).toLowerCase();
+    return customers.filter(c => c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q)) || (c.tazkira && normalizeDigits(c.tazkira).includes(q)));
+  }, [customers, customerFilter]);
 
   const filteredEntries = useMemo(() => {
     let result = [...entries];
@@ -260,7 +325,10 @@ export default function CashPage() {
     const q = normalizeDigits(search.trim()).toLowerCase();
     if (q) {
       result = result.filter(e => {
-        const fields = [e.trackingCode, e.reason, entryTypeLabels[e.type]].map(f => normalizeDigits(String(f)).toLowerCase());
+        const fields = [
+          e.trackingCode, e.reason, entryTypeLabels[e.type],
+          e.customerName || "", e.customerPhone || "", e.customerTazkira || "",
+        ].map(f => normalizeDigits(String(f)).toLowerCase());
         return fields.some(f => f.includes(q));
       });
     }
@@ -269,10 +337,24 @@ export default function CashPage() {
     });
   }, [entries, search, filterType, filterCurrency]);
 
+  const isInType = form.type === "customer_deposit" || form.type === "owner_deposit";
+  const isCustomerType = form.type === "customer_deposit" || form.type === "customer_withdraw";
+  const selectedCustomer = useMemo(() => customers.find(c => c.id === form.customerId) || null, [customers, form.customerId]);
+
   const showToast = useCallback((message: string) => { setToast(message); setTimeout(() => setToast(""), 3500); }, []);
   const setField = useCallback((field: keyof FormState, value: string) => {
     setForm(prev => ({ ...prev, [field]: value }));
     setErrors(prev => ({ ...prev, [field]: undefined }));
+  }, []);
+
+  const updateCustomerBalance = useCallback((customerId: string, currency: Currency, amount: number, direction: "in" | "out") => {
+    setCustomers(prev => prev.map(c => {
+      if (c.id !== customerId) return c;
+      const nb = { ...c.balances };
+      const delta = direction === "in" ? amount : -amount;
+      nb[currency] = (nb[currency] || 0) + delta;
+      return { ...c, balances: nb };
+    }));
   }, []);
 
   const validateForm = useCallback(() => {
@@ -280,21 +362,25 @@ export default function CashPage() {
     const amount = parseAmount(form.amount);
     if (!amount) errs.amount = "مبلغ خالی یا صفر است.";
     if (!form.reason.trim()) errs.reason = "دلیل / شرح ضروری است.";
+    if (isCustomerType && !form.customerName.trim()) errs.customerName = "انتخاب مشتری ضروری است.";
+    if (form.type === "customer_withdraw" && form.customerId) {
+      const cust = customers.find(c => c.id === form.customerId);
+      if (cust) {
+        const bal = cust.balances[form.currency] || 0;
+        if (amount > bal) errs.amount = `موجودی کافی نیست. موجودی فعلی: ${fmt(bal)} ${labels[form.currency]}`;
+      }
+    }
     return errs;
-  }, [form]);
+  }, [form, isCustomerType, customers]);
 
   const handleSubmitClick = useCallback(() => {
     const errs = validateForm();
     setErrors(errs);
     if (Object.keys(errs).length > 0) { showToast("لطفاً فیلدهای ضروری را تکمیل کنید."); return; }
-
     const amount = parseAmount(form.amount);
-    const isIn = form.type === "deposit" || form.type === "owner_deposit";
-    const direction: "in" | "out" = isIn ? "in" : "out";
-
+    const direction: "in" | "out" = isInType ? "in" : "out";
     const currentBal = cashBalances[form.currency] || 0;
-    const newBal = isIn ? currentBal + amount : currentBal - amount;
-
+    const newBal = isInType ? currentBal + amount : currentBal - amount;
     const entry: CashEntry = {
       id: generateId(),
       trackingCode: getNextTrackingCode(),
@@ -305,38 +391,51 @@ export default function CashPage() {
       direction,
       reason: form.reason.trim(),
       balanceAfter: newBal,
+      customerId: isCustomerType ? form.customerId : undefined,
+      customerName: isCustomerType ? form.customerName : undefined,
     };
-
     setPreviewData(entry);
     setPreviewOpen(true);
-  }, [validateForm, form, cashBalances, showToast]);
+  }, [validateForm, form, cashBalances, isInType, isCustomerType, showToast]);
 
   const confirmRegister = useCallback(() => {
     if (!previewData) return;
     const entry = { ...previewData, trackingCode: consumeTrackingCode() };
+    if (entry.customerId) {
+      const cust = customers.find(c => c.id === entry.customerId);
+      if (cust) {
+        entry.customerPhone = cust.phone || "";
+        entry.customerTazkira = cust.tazkira || "";
+      }
+    }
     setEntries(prev => [...prev, entry]);
+    if (entry.customerId && (entry.type === "customer_deposit" || entry.type === "customer_withdraw")) {
+      const custDirection: "in" | "out" = entry.type === "customer_deposit" ? "in" : "out";
+      updateCustomerBalance(entry.customerId, entry.currency, entry.amount, custDirection);
+    }
     setForm(emptyForm);
     setErrors({});
     setPreviewOpen(false);
     setPreviewData(null);
     showToast("عملیات صندوق با موفقیت ثبت شد.");
-  }, [previewData, showToast]);
+  }, [previewData, showToast, updateCustomerBalance, customers]);
 
   const deleteEntry = useCallback((entry: CashEntry) => {
     if (!window.confirm(`آیا از حذف سند ${entry.trackingCode} مطمئن هستید؟`)) return;
+    if (entry.customerId && (entry.type === "customer_deposit" || entry.type === "customer_withdraw")) {
+      const reverseDir: "in" | "out" = entry.type === "customer_deposit" ? "out" : "in";
+      updateCustomerBalance(entry.customerId, entry.currency, entry.amount, reverseDir);
+    }
     setEntries(prev => prev.filter(e => e.id !== entry.id));
     showToast(`سند ${entry.trackingCode} حذف شد.`);
-  }, [showToast]);
+  }, [showToast, updateCustomerBalance]);
 
   const handleClose = useCallback(() => {
     const result: Record<Currency, { actual: number; system: number; diff: number }> = {} as any;
     let hasData = false;
     for (const cur of currencies) {
       const actualStr = closeAmounts[cur];
-      if (actualStr.trim() === "") {
-        result[cur] = { actual: 0, system: cashBalances[cur], diff: -cashBalances[cur] };
-        continue;
-      }
+      if (actualStr.trim() === "") { result[cur] = { actual: 0, system: cashBalances[cur], diff: -cashBalances[cur] }; continue; }
       hasData = true;
       const actual = parseAmount(actualStr);
       const system = cashBalances[cur];
@@ -411,13 +510,13 @@ export default function CashPage() {
   ];
 
   const entryTypeOptions: [string, string][] = [
-    ["deposit", "دریافت به صندوق"],
-    ["payment", "پرداخت از صندوق"],
-    ["owner_deposit", "واریز مالک"],
-    ["owner_withdraw", "برداشت مالک"],
+    ["customer_deposit", "واریز مشتری به حساب"],
+    ["customer_withdraw", "برداشت مشتری از حساب"],
+    ["owner_deposit", "واریز مالک به صندوق"],
+    ["owner_withdraw", "برداشت مالک از صندوق"],
   ];
 
-  const isInType = form.type === "deposit" || form.type === "owner_deposit";
+  const errorList = Object.values(errors).filter((msg): msg is string => Boolean(msg));
 
   return (
     <div dir="rtl" className={dk ? "dark" : ""}>
@@ -427,7 +526,6 @@ export default function CashPage() {
         <div className={`fixed inset-x-0 top-0 z-30 h-1 bg-gradient-to-l ${dk ? "from-emerald-400 via-teal-400 to-cyan-400" : "from-emerald-500 via-teal-500 to-cyan-500"}`} />
         <div className="relative z-10 mx-auto w-full max-w-7xl space-y-4 md:space-y-6 px-3 pb-16 pt-5 md:px-8 md:pt-9">
 
-          {/* Header */}
           <header className="cs-up flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 md:gap-3.5 min-w-0">
               <div className="relative grid h-11 w-11 md:h-14 md:w-14 shrink-0 place-items-center rounded-xl md:rounded-2xl bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-400 text-white shadow-lg shadow-emerald-500/30 ring-1 ring-white/30">
@@ -436,7 +534,7 @@ export default function CashPage() {
               </div>
               <div className="min-w-0">
                 <h1 className={`cs-display text-2xl md:text-4xl leading-none ${heading}`}>صندوق</h1>
-                <p className={`mt-1 text-[10px] md:text-xs font-bold ${subText}`}>مدیریت دریافت، پرداخت و موجودی نقدی</p>
+                <p className={`mt-1 text-[10px] md:text-xs font-bold ${subText}`}>مدیریت واریز، برداشت و موجودی نقدی</p>
               </div>
             </div>
             <div className="flex items-center gap-1.5 md:gap-2.5">
@@ -450,7 +548,6 @@ export default function CashPage() {
             </div>
           </header>
 
-          {/* Cash Balances */}
           <div className="cs-up grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3" style={{ animationDelay: "70ms" }}>
             {currencies.map(cur => {
               const bal = cashBalances[cur];
@@ -462,18 +559,13 @@ export default function CashPage() {
                     <span className={`text-[10px] font-black ${subText}`}>{labels[cur]}</span>
                     <span className={`grid h-6 w-6 place-items-center rounded-md bg-gradient-to-br ${colors.gradient} text-white text-[8px] font-black`}>{cur}</span>
                   </div>
-                  <div className={`text-xl md:text-2xl font-black tabular-nums ${isNeg ? "text-rose-500" : colors[dk ? "dark" : "light"]}`}>
-                    {fmt(bal)}
-                  </div>
-                  <div className={`text-[9px] font-bold mt-1 ${isNeg ? "text-rose-500" : subText}`}>
-                    {isNeg ? "منفی - کسری" : "موجودی فعلی"}
-                  </div>
+                  <div className={`text-xl md:text-2xl font-black tabular-nums ${isNeg ? "text-rose-500" : colors[dk ? "dark" : "light"]}`}>{fmt(bal)}</div>
+                  <div className={`text-[9px] font-bold mt-1 ${isNeg ? "text-rose-500" : subText}`}>{isNeg ? "منفی - کسری" : "موجودی فعلی"}</div>
                 </div>
               );
             })}
           </div>
 
-          {/* Tabs */}
           <div className={`cs-up flex gap-1.5 md:gap-2 rounded-xl md:rounded-2xl border p-1.5 md:p-2 shadow-sm backdrop-blur ${glassChip}`} style={{ animationDelay: "140ms" }}>
             {tabs.map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 md:gap-2 rounded-lg md:rounded-xl px-3 md:px-5 py-2.5 md:py-3 text-xs md:text-sm font-black transition-all duration-300 active:scale-[0.97] ${activeTab === tab.id ? `bg-gradient-to-l shadow-lg ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 via-teal-500 to-cyan-500 text-white"}` : dk ? "text-slate-400 hover:bg-slate-700/60 hover:text-slate-100" : "text-slate-500 hover:bg-emerald-50 hover:text-slate-800"}`}>
@@ -484,21 +576,20 @@ export default function CashPage() {
             ))}
           </div>
 
-          {/* Register Tab */}
           {activeTab === "register" && (
             <section className={`cs-up space-y-4 md:space-y-5 p-4 md:p-7 ${uiCard}`} style={{ animationDelay: "160ms" }}>
               <div className="flex flex-wrap items-center gap-3">
                 <span className={`grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identIcon}`}><Ic n="plus" className="h-5 w-5" /></span>
                 <div className="flex-1 min-w-0">
                   <h2 className={`cs-display text-xl md:text-2xl leading-none ${heading}`}>ثبت عملیات صندوق</h2>
-                  <p className={`mt-1 text-[11px] font-bold ${subText}`}>دریافت، پرداخت، واریز و برداشت مالک</p>
+                  <p className={`mt-1 text-[11px] font-bold ${subText}`}>واریز و برداشت مشتری یا مالک</p>
                 </div>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                 {fld("نوع عملیات *", (
                   <div className="relative">
-                    <select value={form.type} onChange={e => setField("type", e.target.value)} className={`${uiInput} cursor-pointer appearance-none pl-9`}>
+                    <select value={form.type} onChange={e => { setField("type", e.target.value); if (e.target.value !== "customer_deposit" && e.target.value !== "customer_withdraw") { setField("customerId", ""); setField("customerName", ""); } }} className={`${uiInput} cursor-pointer appearance-none pl-9`}>
                       {entryTypeOptions.map(o => <option key={o[0]} value={o[0]}>{o[1]}</option>)}
                     </select>
                     <span className={chevPos}><Ic n="chevron" className="h-4 w-4" /></span>
@@ -523,8 +614,65 @@ export default function CashPage() {
                 ))}
               </div>
 
+              {isCustomerType && (
+                <div className={`rounded-xl border p-4 ${dk ? "border-teal-400/25 bg-teal-400/[0.07]" : "border-teal-200 bg-teal-50"}`}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-teal-400/15 text-teal-300" : "bg-teal-100 text-teal-600"}`}><Ic n="user" className="h-4 w-4" /></span>
+                    <b className={`text-xs font-black ${dk ? "text-teal-300" : "text-teal-700"}`}>مشتری {form.type === "customer_deposit" ? "واریزکننده" : "برداشت‌کننده"}</b>
+                  </div>
+                  {fld("انتخاب مشتری *", (
+                    <div className="relative" ref={customerListRef}>
+                      <input
+                        value={form.customerName}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setField("customerName", val);
+                          setCustomerFilter(val);
+                          if (!showCustomerList) setShowCustomerList(true);
+                          const c = customers.find(x => x.name === val);
+                          if (c) { setField("customerId", c.id); } else { setField("customerId", ""); }
+                        }}
+                        placeholder="نام مشتری را بنویسید یا انتخاب کنید…"
+                        className={`${uiInput} pl-12 ${errors.customerName ? errInput : ""}`}
+                        autoComplete="off"
+                      />
+                      <button type="button" onClick={(e) => { e.stopPropagation(); setShowCustomerList(!showCustomerList); }} className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition ${dk ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}>
+                        <Ic n="chevron" className={`h-4 w-4 transition-transform ${showCustomerList ? "rotate-180" : ""}`} />
+                      </button>
+                      {showCustomerList && (
+                        <div className={`absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
+                          {filteredCustomerList.length === 0 ? (
+                            <div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>
+                          ) : (
+                            filteredCustomerList.map((c, idx) => (
+                              <button key={c.id} type="button" onClick={() => { setField("customerId", c.id); setField("customerName", c.name); setCustomerFilter(""); setShowCustomerList(false); }} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-teal-400/15 hover:text-teal-300" : "text-slate-700 hover:bg-teal-50 hover:text-teal-600"}`}>
+                                <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-teal-500 to-emerald-500`}>{idx + 1}</span>
+                                <span className="flex-1 truncate">{c.name}</span>
+                                <span className={`text-[10px] tabular-nums font-bold ${currencyColors[form.currency][dk ? "dark" : "light"]}`}>{fmt(c.balances[form.currency] || 0)} {labels[form.currency]}</span>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {selectedCustomer && (
+                    <div className={`mt-3 flex items-center gap-2 rounded-lg px-3 py-2 ${dk ? "bg-slate-900/50" : "bg-white"}`}>
+                      <Ic n="wallet" className={`h-4 w-4 ${dk ? "text-teal-300" : "text-teal-600"}`} />
+                      <span className={`text-xs font-bold ${subText}`}>موجودی {selectedCustomer.name} ({labels[form.currency]}):</span>
+                      <b className={`text-sm font-black tabular-nums ${(selectedCustomer.balances[form.currency] || 0) >= 0 ? currencyColors[form.currency][dk ? "dark" : "light"] : "text-rose-500"}`}>{fmt(selectedCustomer.balances[form.currency] || 0)}</b>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {fld("دلیل / شرح عملیات *", (
-                <textarea rows={3} value={form.reason} onChange={e => setField("reason", e.target.value)} placeholder="مثلاً: دریافت نقدی از مشتری، پرداخت کرایه دفتر، واریز سرمایه مالک..." className={`${uiInput} h-auto py-3 resize-none ${errors.reason ? errInput : ""}`} />
+                <textarea rows={3} value={form.reason} onChange={e => setField("reason", e.target.value)} placeholder={
+                  form.type === "customer_deposit" ? "مثلاً: واریز نقدی مشتری به حساب…" :
+                  form.type === "customer_withdraw" ? "مثلاً: برداشت نقدی مشتری از حساب…" :
+                  form.type === "owner_deposit" ? "مثلاً: واریز سرمایه مالک به صندوق…" :
+                  "مثلاً: برداشت مالک برای مصارف شخصی…"
+                } className={`${uiInput} h-auto py-3 resize-none ${errors.reason ? errInput : ""}`} />
               ))}
 
               <div className={`flex items-center gap-3 rounded-xl border p-4 ${isInType ? dk ? "border-emerald-400/25 bg-emerald-400/[0.07]" : "border-emerald-200 bg-emerald-50" : dk ? "border-rose-400/25 bg-rose-400/[0.07]" : "border-rose-200 bg-rose-50"}`}>
@@ -537,14 +685,15 @@ export default function CashPage() {
                   </b>
                   <p className={`text-[11px] ${subText}`}>
                     {isInType ? "مبلغ به موجودی" : "مبلغ از موجودی"} {labels[form.currency]} {isInType ? "اضافه" : "کم"} می‌شود.
+                    {isCustomerType && form.customerId && (form.type === "customer_deposit" ? " موجودی حساب مشتری هم افزایش می‌یابد." : " موجودی حساب مشتری هم کاهش می‌یابد.")}
                   </p>
                 </div>
               </div>
 
-              {Object.values(errors).filter(Boolean).length > 0 && (
+              {errorList.length > 0 && (
                 <div className={`space-y-2 rounded-xl border p-4 ${dk ? "border-rose-400/30 bg-rose-400/10 text-rose-300" : "border-rose-300 bg-rose-50 text-rose-600"}`}>
                   <b className="flex items-center gap-2 text-sm"><Ic n="alert" className="h-5 w-5 shrink-0" />لطفاً تکمیل کنید:</b>
-                  <ul className="list-disc pr-5 text-sm space-y-1">{Object.values(errors).filter((m): m is string => Boolean(m)).map((msg, i) => <li key={i}>{msg}</li>)}</ul>
+                  <ul className="list-disc pr-5 text-sm space-y-1">{errorList.map((msg, i) => <li key={i}>{msg}</li>)}</ul>
                 </div>
               )}
 
@@ -555,30 +704,39 @@ export default function CashPage() {
             </section>
           )}
 
-          {/* Ledger Tab */}
           {activeTab === "ledger" && (
             <section className={`cs-up overflow-hidden ${uiCard}`} style={{ animationDelay: "160ms" }}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
                 <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identIcon}`}><Ic n="history" className="h-5 w-5" /></span>
                 <div className="flex-1 min-w-0">
                   <h2 className={`cs-display text-xl md:text-2xl leading-none ${heading}`}>روزنامچه صندوق</h2>
-                  <p className={`mt-1 text-[11px] font-bold ${subText}`}>تمام گردش‌های دریافت، پرداخت و اصلاحات</p>
+                  <p className={`mt-1 text-[11px] font-bold ${subText}`}>تمام دریافتی‌ها و پرداختی‌ها با جزئیات کامل</p>
                 </div>
+                <span className={`rounded-full px-3 py-1.5 text-[10px] font-black ${dk ? "bg-slate-700 text-slate-300" : "bg-emerald-100 text-emerald-700"}`}>{filteredEntries.length} عملیات</span>
               </div>
               <div className="px-4 md:px-7 pb-4 space-y-4">
                 <div className="flex flex-wrap gap-3">
-                  <div className="relative flex-1 min-w-[200px]">
-                    <input value={search} onChange={e => setSearch(e.target.value)} placeholder="جستجو بر اساس شماره سند یا شرح…" className={`${uiInput} pr-10`} />
+                  <div className="relative flex-1 min-w-[250px]">
+                    <input value={search} onChange={e => setSearch(e.target.value)} placeholder="جستجو: نام مشتری، کد پیگیری، شماره تماس، تذکره، شرح…" className={`${uiInput} pr-10`} />
                     <span className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 ${dk ? "text-slate-500" : "text-slate-400"}`}><Ic n="search" className="h-4 w-4" /></span>
                   </div>
-                  <select value={filterType} onChange={e => setFilterType(e.target.value as any)} className={`${uiInput} w-auto min-w-[160px] cursor-pointer appearance-none pl-9`}>
+                  <select value={filterType} onChange={e => setFilterType(e.target.value as any)} className={`${uiInput} w-auto min-w-[170px] cursor-pointer appearance-none pl-9`}>
                     <option value="all">همه انواع</option>
-                    {(Object.keys(entryTypeLabels) as CashEntryType[]).map(t => <option key={t} value={t}>{entryTypeLabels[t]}</option>)}
+                    <option value="customer_deposit">واریز مشتری</option>
+                    <option value="customer_withdraw">برداشت مشتری</option>
+                    <option value="owner_deposit">واریز مالک</option>
+                    <option value="owner_withdraw">برداشت مالک</option>
+                    <option value="adjustment">اصلاح صندوق</option>
                   </select>
                   <select value={filterCurrency} onChange={e => setFilterCurrency(e.target.value as any)} className={`${uiInput} w-auto min-w-[130px] cursor-pointer appearance-none pl-9`}>
                     <option value="all">همه ارزها</option>
                     {currencies.map(c => <option key={c} value={c}>{labels[c]}</option>)}
                   </select>
+                  {(search || filterType !== "all" || filterCurrency !== "all") && (
+                    <button onClick={() => { setSearch(""); setFilterType("all"); setFilterCurrency("all"); }} className={`flex items-center gap-1.5 rounded-xl border px-4 py-2.5 text-xs font-black transition-all active:scale-95 cursor-pointer ${dk ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+                      <Ic n="x" className="h-3.5 w-3.5" />پاک کردن
+                    </button>
+                  )}
                 </div>
 
                 {filteredEntries.length === 0 ? (
@@ -588,39 +746,47 @@ export default function CashPage() {
                   </div>
                 ) : (
                   <div className="overflow-x-auto cs-scroll">
-                    <table className="w-full min-w-[900px] text-sm">
+                    <table className="w-full min-w-[1200px] text-sm">
                       <thead>
                         <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
-                          {["#", "کد پیگیری", "تاریخ", "نوع", "شرح", "ارز", "دریافت", "پرداخت", "مانده", "حذف"].map(h => (
-                            <th key={h} className="px-4 py-3 text-right text-[11px] font-black text-slate-400">{h}</th>
+                          {["#", "کد پیگیری", "تاریخ", "نوع عملیات", "مشتری / مالک", "تماس", "تذکره", "شرح", "ارز", "دریافت", "پرداخت", "مانده", "حذف"].map(h => (
+                            <th key={h} className="px-3 py-3 text-right text-[10px] font-black text-slate-400 whitespace-nowrap">{h}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
                         {filteredEntries.map((e, idx) => {
                           const isIn = e.direction === "in";
+                          const isOwner = e.type === "owner_deposit" || e.type === "owner_withdraw";
+                          const isAdjust = e.type === "adjustment";
                           return (
                             <tr key={e.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/70"}`}>
-                              <td className="px-4 py-3.5"><span className={`grid h-8 w-8 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500"}`}>{idx + 1}</span></td>
-                              <td className="px-4 py-3.5">
-                                <span className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-black tabular-nums ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-sky-300 bg-sky-50 text-sky-700"}`} dir="ltr">
-                                  <Ic n="tag" className="h-3 w-3" />{e.trackingCode}
+                              <td className="px-3 py-3"><span className={`grid h-7 w-7 place-items-center rounded-lg text-[10px] font-black tabular-nums ${dk ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500"}`}>{idx + 1}</span></td>
+                              <td className="px-3 py-3">
+                                <span className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-black tabular-nums ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-sky-300 bg-sky-50 text-sky-700"}`} dir="ltr">
+                                  <Ic n="tag" className="h-2.5 w-2.5" />{e.trackingCode}
                                 </span>
                               </td>
-                              <td className={`whitespace-nowrap px-4 py-3.5 text-xs tabular-nums ${dk ? "text-slate-400" : "text-slate-500"}`}>
-                                <span dir="ltr">{shortDateLabel(e.date)}</span> <span dir="ltr" className={subText}>{timeLabel(e.date)}</span>
+                              <td className={`whitespace-nowrap px-3 py-3 text-[11px] tabular-nums ${dk ? "text-slate-400" : "text-slate-500"}`}>
+                                <div dir="ltr">{shortDateLabel(e.date)}</div>
+                                <div dir="ltr" className={`text-[9px] ${subText}`}>{timeLabel(e.date)}</div>
                               </td>
-                              <td className="px-4 py-3.5">
-                                <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${entryTypeColors[e.type][dk ? "dark" : "light"]}`}>{entryTypeLabels[e.type]}</span>
+                              <td className="px-3 py-3">
+                                <span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black whitespace-nowrap ${entryTypeColors[e.type][dk ? "dark" : "light"]}`}>{entryTypeLabels[e.type]}</span>
                               </td>
-                              <td className={`px-4 py-3.5 text-xs max-w-[200px] truncate ${dk ? "text-slate-200" : "text-slate-700"}`}>{e.reason || "—"}</td>
-                              <td className={`px-4 py-3.5 text-xs font-black ${currencyColors[e.currency][dk ? "dark" : "light"]}`}>{labels[e.currency]}</td>
-                              <td className={`px-4 py-3.5 text-xs font-black tabular-nums ${isIn ? "text-emerald-500" : ""}`}>{isIn ? fmt(e.amount) : ""}</td>
-                              <td className={`px-4 py-3.5 text-xs font-black tabular-nums ${!isIn ? "text-rose-500" : ""}`}>{!isIn ? fmt(e.amount) : ""}</td>
-                              <td className={`px-4 py-3.5 text-xs font-black tabular-nums ${currencyColors[e.currency][dk ? "dark" : "light"]}`}>{fmt(e.balanceAfter)}</td>
-                              <td className="px-4 py-3.5">
-                                <button onClick={() => deleteEntry(e)} className={`grid h-8 w-8 place-items-center rounded-lg border transition-all active:scale-90 cursor-pointer ${dk ? "border-rose-400/30 text-rose-300 hover:bg-rose-400/10" : "border-rose-200 text-rose-500 hover:bg-rose-50"}`}>
-                                  <Ic n="trash" className="h-3.5 w-3.5" />
+                              <td className={`px-3 py-3 text-[12px] font-bold whitespace-nowrap ${dk ? "text-slate-200" : "text-slate-700"}`}>
+                                {isOwner ? <span className={dk ? "text-amber-300" : "text-amber-700"}>👤 مالک</span> : isAdjust ? <span className={subText}>سیستم</span> : (e.customerName || "—")}
+                              </td>
+                              <td className={`px-3 py-3 text-[11px] tabular-nums whitespace-nowrap ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{e.customerPhone || "—"}</td>
+                              <td className={`px-3 py-3 text-[11px] tabular-nums whitespace-nowrap ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{e.customerTazkira || "—"}</td>
+                              <td className={`px-3 py-3 text-[11px] max-w-[180px] truncate ${dk ? "text-slate-300" : "text-slate-600"}`}>{e.reason || "—"}</td>
+                              <td className={`px-3 py-3 text-[11px] font-black whitespace-nowrap ${currencyColors[e.currency][dk ? "dark" : "light"]}`}>{labels[e.currency]}</td>
+                              <td className={`px-3 py-3 text-[12px] font-black tabular-nums whitespace-nowrap ${isIn ? "text-emerald-500" : ""}`}>{isIn ? fmt(e.amount) : ""}</td>
+                              <td className={`px-3 py-3 text-[12px] font-black tabular-nums whitespace-nowrap ${!isIn ? "text-rose-500" : ""}`}>{!isIn ? fmt(e.amount) : ""}</td>
+                              <td className={`px-3 py-3 text-[12px] font-black tabular-nums whitespace-nowrap ${currencyColors[e.currency][dk ? "dark" : "light"]}`}>{fmt(e.balanceAfter)}</td>
+                              <td className="px-3 py-3">
+                                <button onClick={() => deleteEntry(e)} className={`grid h-7 w-7 place-items-center rounded-lg border transition-all active:scale-90 cursor-pointer ${dk ? "border-rose-400/30 text-rose-300 hover:bg-rose-400/10" : "border-rose-200 text-rose-500 hover:bg-rose-50"}`}>
+                                  <Ic n="trash" className="h-3 w-3" />
                                 </button>
                               </td>
                             </tr>
@@ -634,7 +800,6 @@ export default function CashPage() {
             </section>
           )}
 
-          {/* Close Tab */}
           {activeTab === "close" && (
             <section className={`cs-up space-y-4 md:space-y-5 p-4 md:p-7 ${uiCard}`} style={{ animationDelay: "160ms" }}>
               <div className="flex flex-wrap items-center gap-3">
@@ -665,21 +830,9 @@ export default function CashPage() {
                         <span className={`grid h-6 w-6 place-items-center rounded-md bg-gradient-to-br ${colors.gradient} text-white text-[8px] font-black`}>{cur}</span>
                       </div>
                       <div className={`text-[10px] ${subText} mb-1`}>موجودی سیستم: <b className="tabular-nums">{fmt(sysBal)}</b></div>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        dir="ltr"
-                        value={closeAmounts[cur]}
-                        onChange={e => setCloseAmounts(prev => ({ ...prev, [cur]: toNumericText(e.target.value) }))}
-                        placeholder="موجودی واقعی"
-                        className={`${uiInput} text-left tabular-nums text-sm`}
-                      />
+                      <input type="text" inputMode="decimal" dir="ltr" value={closeAmounts[cur]} onChange={e => setCloseAmounts(prev => ({ ...prev, [cur]: toNumericText(e.target.value) }))} placeholder="موجودی واقعی" className={`${uiInput} text-left tabular-nums text-sm`} />
                       {closeResult && (
-                        <div className={`mt-2 text-[11px] font-black tabular-nums ${
-                          closeResult[cur].diff === 0 ? dk ? "text-emerald-300" : "text-emerald-600" :
-                          closeResult[cur].diff > 0 ? dk ? "text-sky-300" : "text-sky-600" :
-                          "text-rose-500"
-                        }`}>
+                        <div className={`mt-2 text-[11px] font-black tabular-nums ${closeResult[cur].diff === 0 ? dk ? "text-emerald-300" : "text-emerald-600" : closeResult[cur].diff > 0 ? dk ? "text-sky-300" : "text-sky-600" : "text-rose-500"}`}>
                           {closeResult[cur].diff === 0 ? "✅ دقیق" : closeResult[cur].diff > 0 ? `➕ اضافه: ${fmt(closeResult[cur].diff)}` : `➖ کسری: ${fmt(Math.abs(closeResult[cur].diff))}`}
                         </div>
                       )}
@@ -729,18 +882,14 @@ export default function CashPage() {
               <div className="flex flex-wrap gap-3">
                 {!closeResult ? (
                   <button onClick={handleClose} className={`flex h-[50px] flex-1 min-w-[200px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-base font-black shadow-lg transition-all hover:brightness-110 active:scale-[0.985] ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 to-teal-500 text-white"}`}>
-                    <Ic n="lock" className="h-5 w-5" />
-                    شمارش و مقایسه
+                    <Ic n="lock" className="h-5 w-5" />شمارش و مقایسه
                   </button>
                 ) : (
                   <>
                     <button onClick={saveClose} className={`flex h-[50px] flex-1 min-w-[200px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-base font-black shadow-lg transition-all hover:brightness-110 active:scale-[0.985] ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 to-teal-500 text-white"}`}>
-                      <Ic n="check" className="h-5 w-5" />
-                      ثبت اصلاحات در روزنامچه
+                      <Ic n="check" className="h-5 w-5" />ثبت اصلاحات در روزنامچه
                     </button>
-                    <button onClick={() => setCloseResult(null)} className={`flex h-[50px] px-6 cursor-pointer items-center justify-center gap-2 rounded-xl border text-sm font-bold transition-all active:scale-95 ${dk ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-                      انصراف
-                    </button>
+                    <button onClick={() => setCloseResult(null)} className={`flex h-[50px] px-6 cursor-pointer items-center justify-center gap-2 rounded-xl border text-sm font-bold transition-all active:scale-95 ${dk ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>انصراف</button>
                   </>
                 )}
               </div>
@@ -749,7 +898,6 @@ export default function CashPage() {
         </div>
       </div>
 
-      {/* Preview Modal */}
       {previewOpen && previewData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => { setPreviewOpen(false); setPreviewData(null); }}>
           <div className={`cs-up w-full max-w-lg overflow-hidden rounded-xl md:rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={(e) => e.stopPropagation()}>
@@ -773,6 +921,9 @@ export default function CashPage() {
                   <div><span className={subText}>ارز: </span><b>{labels[previewData.currency]}</b></div>
                   <div><span className={subText}>مبلغ: </span><b className={`tabular-nums ${previewData.direction === "in" ? dk ? "text-emerald-300" : "text-emerald-700" : "text-rose-500"}`}>{fmt(previewData.amount)}</b></div>
                   <div><span className={subText}>جهت: </span><b>{previewData.direction === "in" ? "دریافت ➕" : "پرداخت ➖"}</b></div>
+                  {previewData.customerName && (
+                    <div className="col-span-2"><span className={subText}>مشتری: </span><b>{previewData.customerName}</b></div>
+                  )}
                   <div className="col-span-2"><span className={subText}>شرح: </span><b>{previewData.reason}</b></div>
                 </div>
               </div>
