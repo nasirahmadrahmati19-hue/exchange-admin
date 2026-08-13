@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useStored } from "../lib/ui";
-import { sendTelegram, getLastChatId, getTelegramUsers, getBotInfo } from "../lib/telegram";
 
 interface TelegramUser {
   id: number;
@@ -28,6 +27,86 @@ const BACKUP_KEYS = [
   "fx-theme",
 ];
 
+// ═══════════ توابع تلگرام (بازنویسی‌شده) ═══════════
+
+async function fetchTelegramUpdates(token: string): Promise<any[]> {
+  const url = `https://api.telegram.org/bot${token}/getUpdates?offset=-100&limit=100`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`HTTP ${res.status}: ${errText}`);
+  }
+  const data = await res.json();
+  if (!data.ok) {
+    throw new Error(data.description || "خطای API تلگرام");
+  }
+  return data.result || [];
+}
+
+async function fetchBotInfoDirect(token: string): Promise<any> {
+  const res = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+  const data = await res.json();
+  if (!data.ok) return null;
+  return data.result;
+}
+
+async function sendTelegramDirect(token: string, chatId: string, text: string, silent = false): Promise<boolean> {
+  const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text,
+      parse_mode: "HTML",
+      disable_notification: silent,
+    }),
+  });
+  const data = await res.json();
+  return data.ok === true;
+}
+
+function extractUniqueUsers(updates: any[]): TelegramUser[] {
+  const userMap = new Map<number, TelegramUser>();
+
+  for (const update of updates) {
+    let user: any = null;
+    let text = "";
+
+    if (update.message) {
+      user = update.message.from;
+      text = update.message.text || "";
+    } else if (update.edited_message) {
+      user = update.edited_message.from;
+      text = update.edited_message.text || "";
+    } else if (update.callback_query) {
+      user = update.callback_query.from;
+    } else if (update.my_chat_member) {
+      user = update.my_chat_member.from;
+    } else if (update.chat_member) {
+      user = update.chat_member.from;
+    }
+
+    if (user && user.id) {
+      const existing = userMap.get(user.id);
+      const date = update.message?.date || update.edited_message?.date || Math.floor(Date.now() / 1000);
+      const dateStr = new Date(date * 1000).toLocaleString("fa-IR");
+
+      userMap.set(user.id, {
+        id: user.id,
+        firstName: user.first_name || "—",
+        lastName: user.last_name || undefined,
+        username: user.username || undefined,
+        lastSeen: dateStr,
+        lastMessage: text || existing?.lastMessage,
+      });
+    }
+  }
+
+  return Array.from(userMap.values());
+}
+
+// ═══════════ پایان توابع تلگرام ═══════════
+
 export default function SettingsPage() {
   const [settings, setSettings] = useStored<any>("db_settings", {
     siteName: "صرافی برادران نورزاد",
@@ -45,13 +124,15 @@ export default function SettingsPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [testResult, setTestResult] = useState("");
+  const [apiDebug, setApiDebug] = useState("");
   const [telegramUsers, setTelegramUsers] = useState<TelegramUser[]>([]);
   const [botInfo, setBotInfo] = useState<any>(null);
   const [backupStats, setBackupStats] = useState<Record<string, number>>({});
+  const [rawUpdatesCount, setRawUpdatesCount] = useState(0);
 
   const [openSections, setOpenSections] = useState<Record<SectionId, boolean>>({
     general: true,
-    telegram: false,
+    telegram: true,
     security: false,
     backup: false,
     about: false,
@@ -79,8 +160,10 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    if (settings.telegramToken) {
-      getBotInfo(settings.telegramToken).then(info => setBotInfo(info)).catch(() => setBotInfo(null));
+    if (settings.telegramToken?.trim()) {
+      fetchBotInfoDirect(settings.telegramToken.trim())
+        .then(info => setBotInfo(info))
+        .catch(() => setBotInfo(null));
     } else {
       setBotInfo(null);
     }
@@ -123,12 +206,12 @@ export default function SettingsPage() {
 
   const testTelegram = async () => {
     if (!settings.telegramToken?.trim()) { setError("⚠️ توکن ربات خالی است"); return; }
-    if (!settings.telegramChatId?.trim()) { setError("⚠️ chat_id را دریافت کنید"); return; }
+    if (!settings.telegramChatId?.trim()) { setError("⚠️ ابتدا chat_id را از لیست کاربران انتخاب کنید"); return; }
     setLoading(true);
     setTestResult("");
     try {
-      const message = `🎉 تست اتصال ربات تلگرام\n\nصرافی: ${settings.siteName || "برادران نورزاد"}\nتاریخ: ${new Date().toLocaleDateString("fa-IR")}\nساعت: ${new Date().toLocaleTimeString("fa-IR")}\n\n✅ ربات شما فعال است!`;
-      const ok = await sendTelegram(settings.telegramToken, settings.telegramChatId, message, { silent: settings.telegramSilent === true });
+      const message = `🎉 <b>تست اتصال ربات تلگرام</b>\n\n🏢 صرافی: ${settings.siteName || "برادران نورزاد"}\n🗓 تاریخ: ${new Date().toLocaleDateString("fa-IR")}\n⏰ ساعت: ${new Date().toLocaleTimeString("fa-IR")}\n\n✅ ربات شما فعال است!`;
+      const ok = await sendTelegramDirect(settings.telegramToken.trim(), settings.telegramChatId.trim(), message, settings.telegramSilent === true);
       setTestResult(ok ? "✅ پیام تست ارسال شد" : "❌ ارسال ناموفق بود");
     } catch (e) {
       setTestResult("❌ خطا: " + String(e));
@@ -136,35 +219,43 @@ export default function SettingsPage() {
     setLoading(false);
   };
 
-  const fetchChatId = async () => {
-    if (!settings.telegramToken?.trim()) { setError("⚠️ توکن ربات خالی است"); return; }
-    setLoading(true);
-    setError("");
-    try {
-      const chatId = await getLastChatId(settings.telegramToken);
-      if (chatId) {
-        set({ telegramChatId: String(chatId) });
-        setSuccess(`✅ chat_id دریافت شد: ${chatId}`);
-      } else {
-        setError("❌ پیامی یافت نشد. به ربات /start بفرستید.");
-      }
-    } catch (e) {
-      setError("❌ خطا: " + String(e));
-    }
-    setLoading(false);
-  };
-
+  // ✅ تابع بازنویسی‌شده با نمایش جزئیات
   const refreshUsers = async () => {
-    if (!settings.telegramToken?.trim()) { setError("⚠️ توکن ربات خالی است"); return; }
+    const token = settings.telegramToken?.trim();
+    if (!token) {
+      setError("⚠️ لطفاً ابتدا توکن ربات را وارد کنید و ذخیره نمایید");
+      return;
+    }
+
     setLoadingUsers(true);
     setError("");
+    setApiDebug("");
+    setRawUpdatesCount(0);
+
     try {
-      const usersList = await getTelegramUsers(settings.telegramToken);
-      setTelegramUsers(usersList);
-      localStorage.setItem("db_telegram_users", JSON.stringify(usersList));
-      setSuccess(`✅ ${usersList.length} کاربر دریافت شد`);
-    } catch (e) {
-      setError("❌ خطا: " + String(e));
+      const updates = await fetchTelegramUpdates(token);
+      setRawUpdatesCount(updates.length);
+
+      if (updates.length === 0) {
+        setApiDebug("⚠️ هیچ پیامی از API تلگرام دریافت نشد.\n\n🔹 راه‌حل:\n1. ابتدا به ربات خود در تلگرام پیام /start بفرستید\n2. سپس روی «به‌روزرسانی» کلیک کنید\n3. مطمئن شوید webhook غیرفعال است");
+        setTelegramUsers([]);
+        setLoadingUsers(false);
+        return;
+      }
+
+      const users = extractUniqueUsers(updates);
+      setTelegramUsers(users);
+      localStorage.setItem("db_telegram_users", JSON.stringify(users));
+
+      if (users.length === 0) {
+        setApiDebug(`✅ ${updates.length} پیام دریافت شد، اما هیچ کاربری استخراج نشد.`);
+      } else {
+        setSuccess(`✅ ${users.length} کاربر از ${updates.length} پیام استخراج شد`);
+      }
+    } catch (e: any) {
+      const errMsg = String(e?.message || e);
+      setApiDebug(`❌ خطا در اتصال به API تلگرام:\n\n${errMsg}\n\n🔹 راه‌حل:\n- توکن را بررسی کنید\n- اتصال اینترنت را بررسی کنید\n- مطمئن شوید توکن معتبر است`);
+      setError("❌ خطا در دریافت کاربران: " + errMsg);
     }
     setLoadingUsers(false);
   };
@@ -173,6 +264,38 @@ export default function SettingsPage() {
     navigator.clipboard.writeText(String(id));
     setSuccess(`✅ chat_id ${id} کپی شد`);
     setTimeout(() => setSuccess(""), 2000);
+  };
+
+  const useAsMainChatId = (id: number) => {
+    set({ telegramChatId: String(id) });
+    setSuccess(`✅ chat_id ${id} به عنوان chat_id اصلی تنظیم شد`);
+    setTimeout(() => setSuccess(""), 3000);
+  };
+
+  const fetchChatId = async () => {
+    const token = settings.telegramToken?.trim();
+    if (!token) { setError("⚠️ توکن ربات خالی است"); return; }
+    setLoading(true);
+    setError("");
+    try {
+      const updates = await fetchTelegramUpdates(token);
+      if (updates.length === 0) {
+        setError("❌ پیامی یافت نشد. به ربات /start بفرستید.");
+        setLoading(false);
+        return;
+      }
+      const lastUpdate = updates[updates.length - 1];
+      const chatId = lastUpdate.message?.chat?.id || lastUpdate.my_chat_member?.chat?.id;
+      if (chatId) {
+        set({ telegramChatId: String(chatId) });
+        setSuccess(`✅ chat_id دریافت شد: ${chatId}`);
+      } else {
+        setError("❌ chat_id یافت نشد");
+      }
+    } catch (e) {
+      setError("❌ خطا: " + String(e));
+    }
+    setLoading(false);
   };
 
   const exportBackup = () => {
@@ -224,7 +347,7 @@ export default function SettingsPage() {
           setError("❌ ساختار فایل بکاپ نامعتبر است");
           return;
         }
-        const msg = `⚠️ هشدار مهم:\n\nاین عملیات تمام اطلاعات فعلی را با فایل بکاپ جایگزین می‌کند.\n\nفایل: ${file.name}\nایجاد شده: ${backup._createdAt ? new Date(backup._createdAt).toLocaleString("fa-IR") : "نامشخص"}\nآیتم‌ها: ${Object.keys(backup.data).length}\n\nآیا مطمئن هستید؟`;
+        const msg = `⚠️ هشدار:\n\nاین عملیات تمام اطلاعات فعلی را با فایل بکاپ جایگزین می‌کند.\n\nآیا مطمئن هستید؟`;
         if (!window.confirm(msg)) {
           if (importRef.current) importRef.current.value = "";
           return;
@@ -247,7 +370,7 @@ export default function SettingsPage() {
   };
 
   const clearAllData = () => {
-    const msg = `⛔️ هشدار خطرناک!\n\nتمام اطلاعات صرافی حذف می‌شود:\n- مشتریان\n- معاملات\n- حواله‌ها\n- صندوق\n- تنظیمات\n\nاین عملیات قابل بازگشت نیست!\n\nاگر مطمئن هستید، عبارت "پاک شود" را بنویسید:`;
+    const msg = `⛔️ هشدار!\n\nتمام اطلاعات صرافی حذف می‌شود.\n\nاگر مطمئن هستید، عبارت "پاک شود" را بنویسید:`;
     const answer = window.prompt(msg);
     if (answer !== "پاک شود") return;
     for (const key of BACKUP_KEYS) {
@@ -264,13 +387,8 @@ export default function SettingsPage() {
   const sectionBg = dk ? "bg-slate-900/50" : "bg-slate-50";
 
   const Section = ({ id, icon, title, subtitle, gradient, badge, children }: {
-    id: SectionId;
-    icon: string;
-    title: string;
-    subtitle: string;
-    gradient: string;
-    badge?: React.ReactNode;
-    children: React.ReactNode;
+    id: SectionId; icon: string; title: string; subtitle: string;
+    gradient: string; badge?: React.ReactNode; children: React.ReactNode;
   }) => (
     <div className={`rounded-2xl border backdrop-blur overflow-hidden transition-all duration-300 ${card} shadow-sm hover:shadow-md`}>
       <button
@@ -295,7 +413,6 @@ export default function SettingsPage() {
           </div>
         </div>
       </button>
-
       <div className={`transition-all duration-300 overflow-hidden ${openSections[id] ? "max-h-[5000px] opacity-100" : "max-h-0 opacity-0"}`}>
         <div className={`p-5 pt-4 space-y-4 border-t ${dk ? "border-slate-700" : "border-slate-100"}`}>
           {children}
@@ -356,7 +473,7 @@ export default function SettingsPage() {
             </button>
           </header>
 
-          <div className="st-up grid grid-cols-2 md:grid-cols-4 gap-2 mb-6" style={{ animationDelay: "60ms" }}>
+          <div className="st-up grid grid-cols-2 md:grid-cols-4 gap-2 mb-6">
             {[
               { l: "ربات تلگرام", v: botInfo ? "فعال" : "غیرفعال", c: botInfo ? "text-emerald-500" : "text-slate-400", i: "🤖" },
               { l: "کاربران ربات", v: telegramUsers.length, c: dk ? "text-sky-300" : "text-sky-600", i: "👥" },
@@ -377,7 +494,7 @@ export default function SettingsPage() {
 
           <div className="space-y-4">
 
-            <div className="st-up" style={{ animationDelay: "100ms" }}>
+            <div className="st-up">
               <Section id="general" icon="🏢" title="اطلاعات عمومی" subtitle="نام و مشخصات صرافی" gradient="from-amber-400 to-orange-500">
                 <div className="grid gap-3 md:grid-cols-2">
                   <FieldBox label="نام صرافی" icon="🏷️">
@@ -393,7 +510,7 @@ export default function SettingsPage() {
               </Section>
             </div>
 
-            <div className="st-up" style={{ animationDelay: "140ms" }}>
+            <div className="st-up">
               <Section
                 id="telegram"
                 icon="🤖"
@@ -419,55 +536,138 @@ export default function SettingsPage() {
                   <p className={`text-[11px] mt-1.5 ${subText}`}>💡 از @BotFather در تلگرام دریافت کنید</p>
                 </FieldBox>
 
+                {botInfo && (
+                  <div className={`rounded-xl p-4 border ${dk ? "bg-emerald-400/10 border-emerald-400/30" : "bg-emerald-50 border-emerald-200"}`}>
+                    <div className="flex items-center gap-3">
+                      <div className="grid h-12 w-12 place-items-center rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 text-white text-xl shadow-lg">
+                        🤖
+                      </div>
+                      <div>
+                        <div className={`text-sm font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}>
+                          ✅ ربات فعال است
+                        </div>
+                        <div className={`text-xs font-mono font-bold mt-0.5 ${dk ? "text-slate-300" : "text-slate-700"}`} dir="ltr">
+                          @{botInfo.username} · ID: {botInfo.id}
+                        </div>
+                        <div className={`text-[10px] ${subText} mt-0.5`}>{botInfo.first_name}</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 📊 لیست کاربران ربات - نسخه بازنویسی‌شده */}
                 <div className={`rounded-xl p-4 space-y-3 ${sectionBg}`}>
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <h3 className={`text-sm font-black flex items-center gap-2 ${heading}`}>
                       👥 کاربران ربات
                       <span className={`text-[10px] px-2 py-0.5 rounded-full font-black ${dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-700"}`}>
-                        {telegramUsers.length}
+                        {telegramUsers.length} کاربر
                       </span>
+                      {rawUpdatesCount > 0 && (
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-black ${dk ? "bg-slate-700 text-slate-300" : "bg-slate-200 text-slate-600"}`}>
+                          {rawUpdatesCount} پیام
+                        </span>
+                      )}
                     </h3>
                     <button
                       onClick={refreshUsers}
                       disabled={loadingUsers}
                       className={`px-3 py-1.5 rounded-lg text-xs font-black text-white transition-all active:scale-95 disabled:opacity-50 ${dk ? "bg-sky-500 hover:bg-sky-400" : "bg-sky-500 hover:bg-sky-600"}`}
                     >
-                      {loadingUsers ? "⏳ ..." : "🔄 به‌روزرسانی"}
+                      {loadingUsers ? "⏳ در حال دریافت..." : "🔄 به‌روزرسانی لیست"}
                     </button>
                   </div>
 
+                  {/* ✅ راهنمای مهم */}
+                  <div className={`rounded-lg p-3 text-[11px] leading-relaxed ${dk ? "bg-blue-400/10 border border-blue-400/30 text-blue-200" : "bg-blue-50 border border-blue-200 text-blue-800"}`}>
+                    <b>📌 راهنما:</b> برای نمایش کاربران:
+                    <ol className="list-decimal list-inside mt-1 space-y-0.5">
+                      <li>به ربات خود در تلگرام پیام <code className="font-mono font-black">/start</code> بفرستید</li>
+                      <li>سپس روی دکمه «🔄 به‌روزرسانی لیست» کلیک کنید</li>
+                      <li>نام، username و chat_id همه کاربران نمایش داده می‌شود</li>
+                    </ol>
+                  </div>
+
+                  {/* نمایش خطاهای API */}
+                  {apiDebug && (
+                    <div className={`rounded-lg p-3 text-[11px] whitespace-pre-line ${dk ? "bg-amber-400/10 border border-amber-400/30 text-amber-200" : "bg-amber-50 border border-amber-200 text-amber-800"}`}>
+                      {apiDebug}
+                    </div>
+                  )}
+
+                  {/* لیست کاربران */}
                   {telegramUsers.length > 0 ? (
-                    <div className="space-y-2 max-h-64 overflow-y-auto">
-                      {telegramUsers.map(user => (
-                        <div key={user.id} className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${dk ? "bg-slate-800/60 border-slate-700 hover:border-sky-500" : "bg-white border-slate-200 hover:border-sky-400"}`}>
-                          <div className="flex-1 min-w-0">
-                            <div className={`text-sm font-black truncate ${heading}`}>
-                              {user.firstName} {user.lastName || ""}
+                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                      {telegramUsers.map((user, idx) => (
+                        <div key={user.id} className={`rounded-lg border p-3 transition-all ${dk ? "bg-slate-800/60 border-slate-700 hover:border-sky-500" : "bg-white border-slate-200 hover:border-sky-400"} ${settings.telegramChatId === String(user.id) ? (dk ? "ring-2 ring-emerald-400" : "ring-2 ring-emerald-500") : ""}`}>
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-start gap-3 flex-1 min-w-0">
+                              <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 text-white font-black text-sm`}>
+                                {idx + 1}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className={`text-sm font-black truncate ${heading}`}>
+                                  {user.firstName} {user.lastName || ""}
+                                  {settings.telegramChatId === String(user.id) && (
+                                    <span className={`mr-2 text-[9px] px-1.5 py-0.5 rounded-full ${dk ? "bg-emerald-400/20 text-emerald-300" : "bg-emerald-100 text-emerald-700"}`}>
+                                      ✓ اصلی
+                                    </span>
+                                  )}
+                                </div>
+                                {user.username && (
+                                  <div className={`text-[11px] mt-0.5 font-mono ${subText}`} dir="ltr">
+                                    @{user.username}
+                                  </div>
+                                )}
+                                <div className={`text-[11px] mt-1 flex items-center gap-1.5 ${dk ? "text-slate-300" : "text-slate-600"}`}>
+                                  <span className={subText}>chat_id:</span>
+                                  <code className={`font-mono font-black px-1.5 py-0.5 rounded ${dk ? "bg-slate-700 text-sky-300" : "bg-sky-50 text-sky-700"}`} dir="ltr">
+                                    {user.id}
+                                  </code>
+                                </div>
+                                {user.lastSeen && (
+                                  <div className={`text-[10px] mt-1 ${subText}`}>
+                                    🕐 آخرین فعالیت: {user.lastSeen}
+                                  </div>
+                                )}
+                                {user.lastMessage && (
+                                  <div className={`text-[10px] mt-0.5 truncate ${subText}`}>
+                                    💬 "{user.lastMessage}"
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                            <div className={`text-[11px] mt-0.5 ${subText}`}>
-                              {user.username ? <span dir="ltr">@{user.username} · </span> : ""}
-                              <span className="font-mono font-black" dir="ltr">id: {user.id}</span>
+
+                            <div className="flex flex-col gap-1.5 shrink-0">
+                              <button
+                                onClick={() => useAsMainChatId(user.id)}
+                                className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all active:scale-95 whitespace-nowrap ${dk ? "bg-emerald-500 text-white hover:bg-emerald-400" : "bg-emerald-500 text-white hover:bg-emerald-600"}`}
+                              >
+                                ⭐ استفاده
+                              </button>
+                              <button
+                                onClick={() => copyChatId(user.id)}
+                                className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all active:scale-95 whitespace-nowrap ${dk ? "bg-slate-700 text-slate-200 hover:bg-slate-600" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+                              >
+                                📋 کپی
+                              </button>
                             </div>
-                            {user.lastSeen && (
-                              <div className={`text-[10px] mt-0.5 ${subText}`}>آخرین: {user.lastSeen}</div>
-                            )}
                           </div>
-                          <button
-                            onClick={() => copyChatId(user.id)}
-                            className={`text-[11px] px-3 py-1.5 rounded-lg font-black transition-all active:scale-95 ${dk ? "bg-slate-700 text-slate-200 hover:bg-slate-600" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
-                          >
-                            📋 کپی
-                          </button>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <p className={`text-xs text-center py-6 ${subText}`}>
-                      هنوز کاربری به ربات پیام نداده. روی «🔄 به‌روزرسانی» بزنید.
-                    </p>
+                    !apiDebug && (
+                      <div className={`text-center py-8 ${subText}`}>
+                        <div className="text-4xl mb-2">📭</div>
+                        <p className="text-sm font-black">هنوز کاربری یافت نشده</p>
+                        <p className="text-xs mt-1">به ربات <code className="font-mono">/start</code> بفرستید و روی «🔄 به‌روزرسانی لیست» بزنید</p>
+                      </div>
+                    )
                   )}
                 </div>
 
+                {/* تنظیمات صدا */}
                 <div className={`rounded-xl p-4 ${sectionBg}`}>
                   <label className="flex items-start gap-3 cursor-pointer">
                     <input
@@ -483,12 +683,13 @@ export default function SettingsPage() {
                   </label>
                 </div>
 
+                {/* chat_id اصلی */}
                 <FieldBox label="chat_id اصلی (برای تست)" icon="💬">
                   <div className="flex gap-2">
                     <Input
                       value={settings.telegramChatId || ""}
                       onChange={e => set({ telegramChatId: e.target.value })}
-                      placeholder="123456789"
+                      placeholder="از لیست بالا انتخاب یا اینجا وارد کنید"
                       dir="ltr"
                       className="font-mono flex-1"
                     />
@@ -497,10 +698,10 @@ export default function SettingsPage() {
                       disabled={loading}
                       className={`px-4 py-2 rounded-xl text-xs font-black text-white whitespace-nowrap transition-all active:scale-95 disabled:opacity-50 ${dk ? "bg-sky-500 hover:bg-sky-400" : "bg-sky-500 hover:bg-sky-600"}`}
                     >
-                      {loading ? "⏳" : "📥 دریافت"}
+                      {loading ? "⏳" : "📥 خودکار"}
                     </button>
                   </div>
-                  <p className={`text-[11px] mt-1.5 ${subText}`}>💡 ابتدا به ربات /start بفرستید</p>
+                  <p className={`text-[11px] mt-1.5 ${subText}`}>💡 یا از دکمه «⭐ استفاده» در لیست بالا استفاده کنید</p>
                 </FieldBox>
 
                 <button
@@ -523,18 +724,14 @@ export default function SettingsPage() {
               </Section>
             </div>
 
-            <div className="st-up" style={{ animationDelay: "180ms" }}>
+            <div className="st-up">
               <Section
                 id="backup"
                 icon="💾"
                 title="پشتیبان‌گیری"
                 subtitle="Export / Import / پاک‌سازی داده‌ها"
                 gradient="from-emerald-400 to-teal-500"
-                badge={
-                  <span className={`text-[10px] px-2.5 py-1 rounded-full font-black ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-700"}`}>
-                    {totalItems} آیتم
-                  </span>
-                }
+                badge={<span className={`text-[10px] px-2.5 py-1 rounded-full font-black ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-700"}`}>{totalItems} آیتم</span>}
               >
                 <div className={`rounded-xl p-4 ${sectionBg}`}>
                   <div className="flex items-center gap-2 mb-3">
@@ -559,27 +756,21 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="grid gap-3 md:grid-cols-2">
-                  <button
-                    onClick={exportBackup}
-                    className={`rounded-xl p-4 text-right transition-all active:scale-[0.98] hover:shadow-lg ${dk ? "bg-gradient-to-br from-emerald-500/20 to-teal-500/10 border border-emerald-400/30 hover:border-emerald-400" : "bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 hover:border-emerald-400"}`}
-                  >
+                  <button onClick={exportBackup} className={`rounded-xl p-4 text-right transition-all active:scale-[0.98] hover:shadow-lg ${dk ? "bg-gradient-to-br from-emerald-500/20 to-teal-500/10 border border-emerald-400/30 hover:border-emerald-400" : "bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 hover:border-emerald-400"}`}>
                     <div className="flex items-start gap-3">
-                      <div className={`grid h-11 w-11 place-items-center rounded-xl text-white shadow-md bg-gradient-to-br from-emerald-500 to-teal-500`}>
+                      <div className="grid h-11 w-11 place-items-center rounded-xl text-white shadow-md bg-gradient-to-br from-emerald-500 to-teal-500">
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                       </div>
                       <div className="flex-1">
                         <b className={`text-sm font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}>دانلود بکاپ</b>
-                        <p className={`text-[11px] mt-0.5 ${subText}`}>تمام اطلاعات را در یک فایل JSON دانلود کنید</p>
+                        <p className={`text-[11px] mt-0.5 ${subText}`}>تمام اطلاعات را در فایل JSON دانلود کنید</p>
                       </div>
                     </div>
                   </button>
 
-                  <button
-                    onClick={() => importRef.current?.click()}
-                    className={`rounded-xl p-4 text-right transition-all active:scale-[0.98] hover:shadow-lg ${dk ? "bg-gradient-to-br from-sky-500/20 to-blue-500/10 border border-sky-400/30 hover:border-sky-400" : "bg-gradient-to-br from-sky-50 to-blue-50 border border-sky-200 hover:border-sky-400"}`}
-                  >
+                  <button onClick={() => importRef.current?.click()} className={`rounded-xl p-4 text-right transition-all active:scale-[0.98] hover:shadow-lg ${dk ? "bg-gradient-to-br from-sky-500/20 to-blue-500/10 border border-sky-400/30 hover:border-sky-400" : "bg-gradient-to-br from-sky-50 to-blue-50 border border-sky-200 hover:border-sky-400"}`}>
                     <div className="flex items-start gap-3">
-                      <div className={`grid h-11 w-11 place-items-center rounded-xl text-white shadow-md bg-gradient-to-br from-sky-500 to-blue-600`}>
+                      <div className="grid h-11 w-11 place-items-center rounded-xl text-white shadow-md bg-gradient-to-br from-sky-500 to-blue-600">
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
                       </div>
                       <div className="flex-1">
@@ -589,13 +780,7 @@ export default function SettingsPage() {
                     </div>
                   </button>
 
-                  <input
-                    ref={importRef}
-                    type="file"
-                    accept="application/json,.json"
-                    onChange={importBackup}
-                    className="hidden"
-                  />
+                  <input ref={importRef} type="file" accept="application/json,.json" onChange={importBackup} className="hidden" />
                 </div>
 
                 <div className={`rounded-xl border p-4 ${dk ? "border-rose-400/30 bg-rose-400/10" : "border-rose-200 bg-rose-50"}`}>
@@ -606,25 +791,18 @@ export default function SettingsPage() {
                     <div className="flex-1">
                       <b className={`text-sm font-black ${dk ? "text-rose-300" : "text-rose-700"}`}>پاک‌سازی کامل</b>
                       <p className={`text-[11px] mt-0.5 ${dk ? "text-rose-300/70" : "text-rose-600/80"}`}>
-                        ⚠️ قبل از پاک‌سازی، حتماً بکاپ بگیرید. این عملیات قابل بازگشت نیست.
+                        ⚠️ قبل از پاک‌سازی، حتماً بکاپ بگیرید.
                       </p>
                     </div>
                   </div>
-                  <button
-                    onClick={clearAllData}
-                    className={`w-full rounded-xl py-2.5 text-xs font-black text-white transition-all active:scale-[0.98] ${dk ? "bg-rose-500 hover:bg-rose-400" : "bg-rose-500 hover:bg-rose-600"} shadow-md`}
-                  >
+                  <button onClick={clearAllData} className={`w-full rounded-xl py-2.5 text-xs font-black text-white transition-all active:scale-[0.98] ${dk ? "bg-rose-500 hover:bg-rose-400" : "bg-rose-500 hover:bg-rose-600"} shadow-md`}>
                     🗑️ پاک کردن تمام داده‌ها
                   </button>
-                </div>
-
-                <div className={`rounded-xl p-3 text-center text-[11px] ${subText}`}>
-                  💡 <b>نکته:</b> برای انتقال داده‌ها به دستگاه دیگر، ابتدا بکاپ دانلود کنید، سپس در دستگاه جدید بازیابی نمایید.
                 </div>
               </Section>
             </div>
 
-            <div className="st-up" style={{ animationDelay: "220ms" }}>
+            <div className="st-up">
               <Section id="security" icon="🔐" title="امنیت ورود" subtitle="نام کاربری و رمز عبور" gradient="from-purple-400 to-pink-500">
                 <div className="grid gap-3 md:grid-cols-2">
                   <FieldBox label="نام کاربری" icon="👤">
@@ -637,7 +815,7 @@ export default function SettingsPage() {
               </Section>
             </div>
 
-            <div className="st-up" style={{ animationDelay: "260ms" }}>
+            <div className="st-up">
               <Section id="about" icon="ℹ️" title="درباره سیستم" subtitle="نسخه و اطلاعات فنی" gradient="from-slate-400 to-slate-600">
                 <div className={`grid gap-2 text-xs ${dk ? "text-slate-300" : "text-slate-600"}`}>
                   <div className={`flex justify-between p-2.5 rounded-lg ${sectionBg}`}>
@@ -652,16 +830,12 @@ export default function SettingsPage() {
                     <span className={subText}>ذخیره‌سازی:</span>
                     <b className="font-black">localStorage</b>
                   </div>
-                  <div className={`flex justify-between p-2.5 rounded-lg ${sectionBg}`}>
-                    <span className={subText}>زبان:</span>
-                    <b className="font-black">فارسی (دری)</b>
-                  </div>
                 </div>
               </Section>
             </div>
           </div>
 
-          <div className="st-up sticky bottom-4 mt-6" style={{ animationDelay: "300ms" }}>
+          <div className="st-up sticky bottom-4 mt-6">
             <button
               onClick={saveSettings}
               className={`w-full rounded-2xl py-4 text-base font-black text-white shadow-2xl transition-all active:scale-[0.98] hover:brightness-110 flex items-center justify-center gap-2 ${dk ? "bg-gradient-to-l from-emerald-400 via-teal-400 to-cyan-400" : "bg-gradient-to-l from-emerald-500 via-teal-500 to-cyan-500"}`}
@@ -683,12 +857,6 @@ export default function SettingsPage() {
               {success}
             </div>
           )}
-
-          <div className="mt-8 text-center">
-            <p className={`text-[10px] ${subText}`}>
-              💚 ساخته شده با ❤️ برای صرافی برادران نورزاد
-            </p>
-          </div>
         </div>
       </div>
     </div>
