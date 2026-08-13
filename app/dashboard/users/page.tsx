@@ -72,6 +72,7 @@ const txColors: Record<TxType, { light: string; dark: string }> = {
 const CUSTOMERS_KEY = "fx-customers";
 const TRANSACTIONS_KEY = "fx-transactions";
 const HAWALAS_KEY = "hawalas";
+const CASH_KEY = "cash-entries";
 
 const defaultCustomers: Customer[] = [
   { id: "1", name: "احمد رحیمی", phone: "0700123456", tazkira: "1400-001-001", address: "هرات، گلران", note: "مشتری ویژه", telegram: "@ahmad_rahimi", registeredAt: "2025-01-15T10:00:00Z", balances: { AFN: 500000, USD: 10000, EUR: 0, IRR: 0, PKR: 0 } },
@@ -182,6 +183,11 @@ const loadHawalas = (): any[] => {
   try { const parsed = safeGetItem(HAWALAS_KEY); return Array.isArray(parsed) ? parsed : []; } catch { return []; }
 };
 
+const loadCashEntries = (): any[] => {
+  if (typeof window === "undefined") return [];
+  try { const parsed = safeGetItem(CASH_KEY); return Array.isArray(parsed) ? parsed : []; } catch { return []; }
+};
+
 const iconPaths = {
   users: "M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z",
   user: "M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z",
@@ -221,9 +227,9 @@ function Ic({ n, className = "h-5 w-5" }: { n: IconName; className?: string }) {
   );
 }
 
-function buildLedger(customers: Customer[], transactions: any[], hawalas: any[]): LedgerEntry[] {
+function buildLedger(customers: Customer[], transactions: any[], hawalas: any[], cashEntries: any[]): LedgerEntry[] {
   const entries: LedgerEntry[] = [];
-  if (!Array.isArray(customers) || !Array.isArray(transactions) || !Array.isArray(hawalas)) return entries;
+  if (!Array.isArray(customers) || !Array.isArray(transactions) || !Array.isArray(hawalas) || !Array.isArray(cashEntries)) return entries;
 
   for (const tx of transactions) {
     if (!tx || typeof tx !== "object") continue;
@@ -240,9 +246,9 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[])
     if (tx.type === "exchange") {
       const custId = tx.customerId || customers.find(c => c.name === (tx.customerName || tx.customerId))?.id;
       if (custId && isCurrency(fromCur) && isCurrency(toCur)) {
-        entries.push({ id: `${tx.id || generateId()}-out`, date, customerId: custId, type: "exchange", description: `فروش ${getCurrencyLabel(fromCur)} - ${tx.rateLabel || ""}`, currency: fromCur, amount: fromAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
-        entries.push({ id: `${tx.id || generateId()}-in`, date, customerId: custId, type: "exchange", description: `خرید ${getCurrencyLabel(toCur)} - ${tx.rateLabel || ""}`, currency: toCur, amount: toAmt, direction: "in", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
-        if (commAmt > 0 && isCurrency(commCur)) entries.push({ id: `${tx.id || generateId()}-fee`, date, customerId: custId, type: "fee", description: `کارمزد معامله`, currency: commCur, amount: commAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
+        entries.push({ id: `${tx.id}-out`, date, customerId: custId, type: "exchange", description: `فروش ${getCurrencyLabel(fromCur)} - ${tx.rateLabel || ""}`, currency: fromCur, amount: fromAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
+        entries.push({ id: `${tx.id}-in`, date, customerId: custId, type: "exchange", description: `خرید ${getCurrencyLabel(toCur)} - ${tx.rateLabel || ""}`, currency: toCur, amount: toAmt, direction: "in", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
+        if (commAmt > 0 && isCurrency(commCur)) entries.push({ id: `${tx.id}-fee`, date, customerId: custId, type: "fee", description: "کارمزد معامله", currency: commCur, amount: commAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
       }
     }
 
@@ -250,21 +256,21 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[])
       const sId = tx.senderId || customers.find(c => c.name === (tx.senderName || tx.senderId))?.id;
       const rId = tx.receiverId || customers.find(c => c.name === (tx.receiverName || tx.receiverId))?.id;
       if (sId && isCurrency(fromCur)) {
-        entries.push({ id: `${tx.id || generateId()}-s-out`, date, customerId: sId, type: "transfer", description: `انتقال ${getCurrencyLabel(fromCur)} به ${customers.find(c => c.id === rId)?.name || tx.receiverName || "—"}`, currency: fromCur, amount: fromAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
-        if (tx.commissionPayer === "sender" && commAmt > 0 && isCurrency(commCur)) entries.push({ id: `${tx.id || generateId()}-s-fee`, date, customerId: sId, type: "fee", description: `کارمزد انتقال`, currency: commCur, amount: commAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
+        entries.push({ id: `${tx.id}-s-out`, date, customerId: sId, type: "transfer", description: `انتقال ${getCurrencyLabel(fromCur)} به ${customers.find(c => c.id === rId)?.name || tx.receiverName || "—"}`, currency: fromCur, amount: fromAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
+        if (tx.commissionPayer === "sender" && commAmt > 0 && isCurrency(commCur)) entries.push({ id: `${tx.id}-s-fee`, date, customerId: sId, type: "fee", description: "کارمزد انتقال", currency: commCur, amount: commAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
       }
       if (rId && isCurrency(toCur)) {
-        entries.push({ id: `${tx.id || generateId()}-r-in`, date, customerId: rId, type: "transfer", description: `دریافت ${getCurrencyLabel(toCur)} از ${customers.find(c => c.id === sId)?.name || tx.senderName || "—"}`, currency: toCur, amount: toAmt, direction: "in", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
-        if (tx.commissionPayer === "receiver" && commAmt > 0 && isCurrency(commCur)) entries.push({ id: `${tx.id || generateId()}-r-fee`, date, customerId: rId, type: "fee", description: `کارمزد انتقال`, currency: commCur, amount: commAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
+        entries.push({ id: `${tx.id}-r-in`, date, customerId: rId, type: "transfer", description: `دریافت ${getCurrencyLabel(toCur)} از ${customers.find(c => c.id === sId)?.name || tx.senderName || "—"}`, currency: toCur, amount: toAmt, direction: "in", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
+        if (tx.commissionPayer === "receiver" && commAmt > 0 && isCurrency(commCur)) entries.push({ id: `${tx.id}-r-fee`, date, customerId: rId, type: "fee", description: "کارمزد انتقال", currency: commCur, amount: commAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
       }
     }
 
     if (tx.type === "convert") {
       const custId = tx.customerId || customers.find(c => c.name === (tx.customerName || tx.customerId))?.id;
       if (custId && isCurrency(fromCur) && isCurrency(toCur)) {
-        entries.push({ id: `${tx.id || generateId()}-c-out`, date, customerId: custId, type: "convert", description: `تبدیل از ${getCurrencyLabel(fromCur)}`, currency: fromCur, amount: fromAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
-        entries.push({ id: `${tx.id || generateId()}-c-in`, date, customerId: custId, type: "convert", description: `تبدیل به ${getCurrencyLabel(toCur)}`, currency: toCur, amount: toAmt, direction: "in", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
-        if (commAmt > 0 && isCurrency(commCur)) entries.push({ id: `${tx.id || generateId()}-c-fee`, date, customerId: custId, type: "fee", description: `کارمزد تبدیل`, currency: commCur, amount: commAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
+        entries.push({ id: `${tx.id}-c-out`, date, customerId: custId, type: "convert", description: `تبدیل از ${getCurrencyLabel(fromCur)}`, currency: fromCur, amount: fromAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
+        entries.push({ id: `${tx.id}-c-in`, date, customerId: custId, type: "convert", description: `تبدیل به ${getCurrencyLabel(toCur)}`, currency: toCur, amount: toAmt, direction: "in", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
+        if (commAmt > 0 && isCurrency(commCur)) entries.push({ id: `${tx.id}-c-fee`, date, customerId: custId, type: "fee", description: "کارمزد تبدیل", currency: commCur, amount: commAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
       }
     }
   }
@@ -284,16 +290,44 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[])
     const hFee = Number(h.fee || 0) || 0;
 
     if (sender && isCurrency(hFromCur)) {
-      entries.push({ id: `${h.id || generateId()}-hs-out`, date, customerId: sender.id, type: "hawala", description: `حواله ارسالی به ${h.receiverName || "—"} (${h.destinationText || ""})`, currency: hFromCur, amount: hAmtFrom, direction: "out", balanceAfter: 0, referenceId: h.id, referenceNumber: refNum });
-      if (h.feePayer === "sender" && hFee > 0 && isCurrency(hFeeCur)) entries.push({ id: `${h.id || generateId()}-hs-fee`, date, customerId: sender.id, type: "fee", description: `کارمزد حواله`, currency: hFeeCur, amount: hFee, direction: "out", balanceAfter: 0, referenceId: h.id, referenceNumber: refNum });
+      entries.push({ id: `${h.id}-hs-out`, date, customerId: sender.id, type: "hawala", description: `حواله ارسالی به ${h.receiverName || "—"} (${h.destinationText || ""})`, currency: hFromCur, amount: hAmtFrom, direction: "out", balanceAfter: 0, referenceId: h.id, referenceNumber: refNum });
+      if (h.feePayer === "sender" && hFee > 0 && isCurrency(hFeeCur)) entries.push({ id: `${h.id}-hs-fee`, date, customerId: sender.id, type: "fee", description: "کارمزد حواله", currency: hFeeCur, amount: hFee, direction: "out", balanceAfter: 0, referenceId: h.id, referenceNumber: refNum });
     }
     if (receiver && h.status === "paid" && isCurrency(hToCur)) {
-      entries.push({ id: `${h.id || generateId()}-hr-in`, date: h.paidAt || h.date || date, customerId: receiver.id, type: "hawala", description: `دریافت حواله از ${h.senderName || "—"}`, currency: hToCur, amount: hFinalAmt, direction: "in", balanceAfter: 0, referenceId: h.id, referenceNumber: refNum });
-      if (h.feePayer === "receiver" && hFee > 0 && isCurrency(hFeeCur)) entries.push({ id: `${h.id || generateId()}-hr-fee`, date: h.paidAt || h.date || date, customerId: receiver.id, type: "fee", description: `کارمزد حواله`, currency: hFeeCur, amount: hFee, direction: "out", balanceAfter: 0, referenceId: h.id, referenceNumber: refNum });
+      entries.push({ id: `${h.id}-hr-in`, date: h.paidAt || h.date || date, customerId: receiver.id, type: "hawala", description: `دریافت حواله از ${h.senderName || "—"}`, currency: hToCur, amount: hFinalAmt, direction: "in", balanceAfter: 0, referenceId: h.id, referenceNumber: refNum });
+      if (h.feePayer === "receiver" && hFee > 0 && isCurrency(hFeeCur)) entries.push({ id: `${h.id}-hr-fee`, date: h.paidAt || h.date || date, customerId: receiver.id, type: "fee", description: "کارمزد حواله", currency: hFeeCur, amount: hFee, direction: "out", balanceAfter: 0, referenceId: h.id, referenceNumber: refNum });
     }
   }
 
-  entries.sort((a, b) => { try { return new Date(a.date).getTime() - new Date(b.date).getTime(); } catch { return 0; } });
+  for (const ce of cashEntries) {
+    if (!ce || typeof ce !== "object") continue;
+    if (ce.type !== "customer_deposit" && ce.type !== "customer_withdraw") continue;
+    if (!ce.customerId) continue;
+    const cust = customers.find(c => c.id === ce.customerId);
+    if (!cust) continue;
+    const cur = ce.currency as Currency;
+    if (!isCurrency(cur)) continue;
+    const amt = Number(ce.amount || 0) || 0;
+    if (amt <= 0) continue;
+    const isIn = ce.type === "customer_deposit";
+    entries.push({
+      id: `${ce.id}-cash`,
+      date: ce.date || new Date().toISOString(),
+      customerId: ce.customerId,
+      type: isIn ? "deposit" : "withdraw",
+      description: isIn ? `واریز به حساب - ${ce.reason || ""}` : `برداشت از حساب - ${ce.reason || ""}`,
+      currency: cur,
+      amount: amt,
+      direction: isIn ? "in" : "out",
+      balanceAfter: 0,
+      referenceId: ce.id,
+      referenceNumber: ce.trackingCode || "",
+    });
+  }
+
+  entries.sort((a, b) => {
+    try { return new Date(a.date).getTime() - new Date(b.date).getTime(); } catch { return 0; }
+  });
 
   const runningBal: Record<string, Record<Currency, number>> = {};
   for (const c of customers) runningBal[c.id] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
@@ -323,6 +357,7 @@ export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>(defaultCustomers);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [hawalas, setHawalas] = useState<any[]>([]);
+  const [cashEntries, setCashEntries] = useState<any[]>([]);
 
   const [activeTab, setActiveTab] = useState<"list" | "new" | "profile">("list");
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
@@ -343,6 +378,7 @@ export default function CustomersPage() {
       setCustomers(loadCustomers());
       setTransactions(loadTransactions());
       setHawalas(loadHawalas());
+      setCashEntries(loadCashEntries());
       initTrackingSystem();
     } catch (err) { console.error("Load error:", err); }
     setMounted(true);
@@ -368,8 +404,8 @@ export default function CustomersPage() {
   }, [customers, mounted]);
 
   const ledger = useMemo(() => {
-    try { return buildLedger(customers, transactions, hawalas); } catch (err) { console.error("Ledger error:", err); return []; }
-  }, [customers, transactions, hawalas]);
+    try { return buildLedger(customers, transactions, hawalas, cashEntries); } catch (err) { console.error("Ledger error:", err); return []; }
+  }, [customers, transactions, hawalas, cashEntries]);
 
   const filteredCustomers = useMemo(() => {
     const q = normalizeDigits(search.trim()).toLowerCase();
@@ -573,9 +609,9 @@ export default function CustomersPage() {
 
           <div className="cu-up grid grid-cols-2 md:grid-cols-3 gap-3" style={{ animationDelay: "70ms" }}>
             {[
-              { label: "کل مشتریان", value: customers.length, icon: "users", color: dk ? "from-emerald-500 to-teal-500" : "from-emerald-500 to-teal-500", text: dk ? "text-emerald-300" : "text-emerald-600" },
-              { label: "رویدادهای مالی", value: ledger.length, icon: "history", color: dk ? "from-amber-500 to-orange-500" : "from-amber-500 to-orange-500", text: dk ? "text-amber-300" : "text-amber-600" },
-              { label: "مشتریان با موجودی", value: customers.filter(c => currencies.some(cur => computeBalances(ledger, c.id)[cur] !== 0)).length, icon: "wallet", color: dk ? "from-sky-500 to-cyan-500" : "from-sky-500 to-cyan-500", text: dk ? "text-sky-300" : "text-sky-600" },
+              { label: "کل مشتریان", value: customers.length, icon: "users", color: "from-emerald-500 to-teal-500", text: dk ? "text-emerald-300" : "text-emerald-600" },
+              { label: "رویدادهای مالی", value: ledger.length, icon: "history", color: "from-amber-500 to-orange-500", text: dk ? "text-amber-300" : "text-amber-600" },
+              { label: "مشتریان با موجودی", value: customers.filter(c => currencies.some(cur => computeBalances(ledger, c.id)[cur] !== 0)).length, icon: "wallet", color: "from-sky-500 to-cyan-500", text: dk ? "text-sky-300" : "text-sky-600" },
             ].map((stat, i) => (
               <div key={i} className={`group relative overflow-hidden rounded-2xl border p-4 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${glassCard}`}>
                 <div className={`absolute inset-0 bg-gradient-to-br ${stat.color} opacity-0 transition-opacity group-hover:opacity-10`} />
@@ -643,9 +679,7 @@ export default function CustomersPage() {
                             <div className="flex items-start gap-3">
                               <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white font-black text-lg shadow-lg`}>{c.name.charAt(0)}</div>
                               <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <b className={`text-sm font-black truncate ${dk ? "text-slate-100" : "text-slate-800"}`}>{c.name}</b>
-                                </div>
+                                <b className={`text-sm font-black truncate ${dk ? "text-slate-100" : "text-slate-800"}`}>{c.name}</b>
                                 <div className={`text-[11px] ${subText} mt-1 space-y-0.5`}>
                                   <div>📱 {c.phone || "-"}</div>
                                   <div>🆔 {c.tazkira || "-"}</div>
@@ -746,7 +780,7 @@ export default function CustomersPage() {
                 <div className="flex items-start gap-3">
                   <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}><Ic n="info" className="h-4 w-4" /></span>
                   <div className={`text-xs leading-6 ${dk ? "text-emerald-200" : "text-emerald-800"}`}>
-                    <b>نکته مهم:</b> موجودی مشتری پس از ثبت، از طریق معاملات، حواله‌جات و صندوق مالی به‌صورت خودکار به‌روزرسانی می‌شود. امکان تغییر دستی موجودی وجود ندارد.
+                    <b>نکته مهم:</b> موجودی مشتری پس از ثبت، از طریق معاملات، حواله‌جات و صندوق به‌صورت خودکار به‌روزرسانی می‌شود. امکان تغییر دستی موجودی وجود ندارد.
                   </div>
                 </div>
               </div>
@@ -788,9 +822,7 @@ export default function CustomersPage() {
                     </div>
 
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <h2 className={`cu-display text-2xl md:text-3xl leading-none ${heading}`}>{selectedCustomer.name}</h2>
-                      </div>
+                      <h2 className={`cu-display text-2xl md:text-3xl leading-none ${heading}`}>{selectedCustomer.name}</h2>
                       <div className={`grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1 text-xs mt-2 ${subText}`}>
                         <div><span className="font-bold">کد مشتری:</span> <span className="font-black tabular-nums" dir="ltr">{selectedCustomer.id.slice(-6)}</span></div>
                         <div><span className="font-bold">تلفن:</span> <span className="font-black tabular-nums" dir="ltr">{selectedCustomer.phone || "-"}</span></div>
@@ -802,10 +834,7 @@ export default function CustomersPage() {
 
                     <div className="flex gap-2">
                       <button onClick={() => deleteCustomer(selectedCustomer.id)} className={`cursor-pointer rounded-xl border px-3 py-2 text-xs font-bold transition active:scale-95 ${dk ? "border-rose-400/30 text-rose-300 hover:bg-rose-400/10" : "border-rose-300 text-rose-600 hover:bg-rose-50"}`}>
-                        <span className="flex items-center gap-1.5">
-                          <Ic n="trash" className="h-3.5 w-3.5" />
-                          حذف مشتری
-                        </span>
+                        <span className="flex items-center gap-1.5"><Ic n="trash" className="h-3.5 w-3.5" />حذف مشتری</span>
                       </button>
                     </div>
                   </div>
@@ -816,7 +845,7 @@ export default function CustomersPage() {
                 <div className="flex items-center gap-2 mb-3">
                   <span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}><Ic n="wallet" className="h-4 w-4" /></span>
                   <b className={`text-sm font-black ${heading}`}>موجودی فعلی</b>
-                  <span className={`ml-auto text-[10px] font-bold ${subText}`}>محاسبه خودکار از گردش حساب</span>
+                  <span className={`ml-auto text-[10px] font-bold ${subText}`}>محاسبه خودکار از تمام منابع (تبادل، حواله، صندوق)</span>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-2 md:gap-3">
                   {currencies.map(cur => {
@@ -877,7 +906,7 @@ export default function CustomersPage() {
                     <div className="flex items-start gap-2">
                       <Ic n="alert" className={`h-4 w-4 shrink-0 mt-0.5 ${dk ? "text-amber-300" : "text-amber-600"}`} />
                       <span className={`text-xs leading-6 ${dk ? "text-amber-200" : "text-amber-800"}`}>
-                        موجودی‌ها فقط از گردش واقعی حساب محاسبه می‌شوند. برای واریز یا برداشت، از تب صندوق مالی استفاده کنید.
+                        موجودی‌ها از تمام منابع (تبادل ارز، حواله‌جات، صندوق) محاسبه می‌شوند.
                       </span>
                     </div>
                   </div>
@@ -959,79 +988,40 @@ export default function CustomersPage() {
                       <p className="text-sm font-black text-center">هیچ رویداد مالی یافت نشد.</p>
                     </div>
                   ) : (
-                    <>
-                      <div className="md:hidden space-y-2">
-                        {filteredLedger.map(e => {
-                          const isOut = e.direction === "out";
-                          return (
-                            <div key={e.id} className={`rounded-xl border p-3 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-200 bg-white"}`}>
-                              <div className="flex items-start justify-between gap-2 mb-2">
-                                <div className="flex items-center gap-2 flex-1 min-w-0">
-                                  <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${txColors[e.type][dk ? "dark" : "light"]}`}>
-                                    <Ic n={isOut ? "arrowUp" : "arrowDown"} className="h-4 w-4" />
-                                  </span>
-                                  <div className="min-w-0 flex-1">
-                                    <div className={`text-[12px] font-black truncate ${heading}`}>{e.description}</div>
-                                    <div className={`text-[10px] ${subText} truncate`}>#{e.referenceNumber || "-"} · {shortDateLabel(e.date)} {timeLabel(e.date)}</div>
-                                  </div>
-                                </div>
-                                <span className={`text-[9px] font-black rounded-full px-2 py-0.5 ${txColors[e.type][dk ? "dark" : "light"]}`}>{txLabels[e.type]}</span>
-                              </div>
-                              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-dashed border-slate-300/30">
-                                <div>
-                                  <div className={`text-[9px] font-bold ${subText}`}>مبلغ</div>
-                                  <div className={`text-sm font-black tabular-nums ${isOut ? "text-rose-500" : "text-emerald-500"}`}>{isOut ? "-" : "+"}{fmt(e.amount)}</div>
-                                  <div className={`text-[9px] ${subText}`}>{getCurrencyLabel(e.currency)}</div>
-                                </div>
-                                <div>
-                                  <div className={`text-[9px] font-bold ${subText}`}>مانده پس از</div>
-                                  <div className={`text-sm font-black tabular-nums ${currencyColors[e.currency][dk ? "dark" : "light"]}`}>{fmt(e.balanceAfter)}</div>
-                                </div>
-                                <div>
-                                  <div className={`text-[9px] font-bold ${subText}`}>نوع</div>
-                                  <div className={`text-[11px] font-black ${dk ? "text-slate-300" : "text-slate-600"}`}>{getCurrencyLabel(e.currency)}</div>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      <div className="hidden md:block overflow-x-auto cu-scroll">
-                        <table className="w-full min-w-[900px] text-sm">
-                          <thead>
-                            <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
-                              {["#", "تاریخ", "ساعت", "شماره سند", "نوع", "شرح", "ارز", "دریافت", "پرداخت", "مانده"].map(h => (
-                                <th key={h} className="px-3 py-2.5 text-right text-[10px] font-black text-slate-400">{h}</th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
-                            {filteredLedger.map((e, i) => {
-                              const isOut = e.direction === "out";
-                              return (
-                                <tr key={e.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/50"}`}>
-                                  <td className="px-3 py-2.5 text-[11px] font-black tabular-nums">{filteredLedger.length - i}</td>
-                                  <td className={`whitespace-nowrap px-3 py-2.5 text-[11px] tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{shortDateLabel(e.date)}</td>
-                                  <td className={`whitespace-nowrap px-3 py-2.5 text-[11px] tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{timeLabel(e.date)}</td>
-                                  <td className="px-3 py-2.5">
-                                    <span className={`inline-flex rounded-md border px-1.5 py-0.5 text-[10px] font-black tabular-nums ${dk ? "border-slate-600 text-slate-300" : "border-slate-200 text-slate-600"}`} dir="ltr">{e.referenceNumber || "-"}</span>
-                                  </td>
-                                  <td className="px-3 py-2.5">
-                                    <span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${txColors[e.type][dk ? "dark" : "light"]}`}>{txLabels[e.type]}</span>
-                                  </td>
-                                  <td className={`px-3 py-2.5 text-[11px] max-w-xs truncate ${dk ? "text-slate-200" : "text-slate-700"}`}>{e.description}</td>
-                                  <td className={`px-3 py-2.5 text-[11px] font-black ${currencyColors[e.currency][dk ? "dark" : "light"]}`}>{getCurrencyLabel(e.currency)}</td>
-                                  <td className={`px-3 py-2.5 text-[11px] font-black tabular-nums ${!isOut ? "text-emerald-500" : ""}`}>{!isOut ? fmt(e.amount) : ""}</td>
-                                  <td className={`px-3 py-2.5 text-[11px] font-black tabular-nums ${isOut ? "text-rose-500" : ""}`}>{isOut ? fmt(e.amount) : ""}</td>
-                                  <td className={`px-3 py-2.5 text-[11px] font-black tabular-nums ${currencyColors[e.currency][dk ? "dark" : "light"]}`}>{fmt(e.balanceAfter)}</td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </>
+                    <div className="overflow-x-auto cu-scroll">
+                      <table className="w-full min-w-[900px] text-sm">
+                        <thead>
+                          <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
+                            {["#", "تاریخ", "ساعت", "شماره سند", "نوع", "شرح", "ارز", "دریافت", "پرداخت", "مانده"].map(h => (
+                              <th key={h} className="px-3 py-2.5 text-right text-[10px] font-black text-slate-400">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
+                          {filteredLedger.map((e, i) => {
+                            const isOut = e.direction === "out";
+                            return (
+                              <tr key={e.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/50"}`}>
+                                <td className="px-3 py-2.5 text-[11px] font-black tabular-nums">{filteredLedger.length - i}</td>
+                                <td className={`whitespace-nowrap px-3 py-2.5 text-[11px] tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{shortDateLabel(e.date)}</td>
+                                <td className={`whitespace-nowrap px-3 py-2.5 text-[11px] tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{timeLabel(e.date)}</td>
+                                <td className="px-3 py-2.5">
+                                  <span className={`inline-flex rounded-md border px-1.5 py-0.5 text-[10px] font-black tabular-nums ${dk ? "border-slate-600 text-slate-300" : "border-slate-200 text-slate-600"}`} dir="ltr">{e.referenceNumber || "-"}</span>
+                                </td>
+                                <td className="px-3 py-2.5">
+                                  <span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${txColors[e.type][dk ? "dark" : "light"]}`}>{txLabels[e.type]}</span>
+                                </td>
+                                <td className={`px-3 py-2.5 text-[11px] max-w-xs truncate ${dk ? "text-slate-200" : "text-slate-700"}`}>{e.description}</td>
+                                <td className={`px-3 py-2.5 text-[11px] font-black ${currencyColors[e.currency][dk ? "dark" : "light"]}`}>{getCurrencyLabel(e.currency)}</td>
+                                <td className={`px-3 py-2.5 text-[11px] font-black tabular-nums ${!isOut ? "text-emerald-500" : ""}`}>{!isOut ? fmt(e.amount) : ""}</td>
+                                <td className={`px-3 py-2.5 text-[11px] font-black tabular-nums ${isOut ? "text-rose-500" : ""}`}>{isOut ? fmt(e.amount) : ""}</td>
+                                <td className={`px-3 py-2.5 text-[11px] font-black tabular-nums ${currencyColors[e.currency][dk ? "dark" : "light"]}`}>{fmt(e.balanceAfter)}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   )}
                 </div>
               )}
