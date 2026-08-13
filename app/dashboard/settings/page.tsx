@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useStored, Field, ErrorBox } from "../lib/ui";
-import { loadJSON, fa } from "../lib/helpers";
+import { useStored } from "../lib/ui";
 import { sendTelegram, getLastChatId, getTelegramUsers, getBotInfo } from "../lib/telegram";
 
 interface TelegramUser {
@@ -14,7 +13,8 @@ interface TelegramUser {
   lastMessage?: string;
 }
 
-// کلیدهای localStorage برای بکاپ
+type SectionId = "general" | "telegram" | "security" | "backup" | "about";
+
 const BACKUP_KEYS = [
   "fx-customers",
   "fx-transactions",
@@ -49,7 +49,7 @@ export default function SettingsPage() {
   const [botInfo, setBotInfo] = useState<any>(null);
   const [backupStats, setBackupStats] = useState<Record<string, number>>({});
 
-  const [openSections, setOpenSections] = useState({
+  const [openSections, setOpenSections] = useState<Record<SectionId, boolean>>({
     general: true,
     telegram: false,
     security: false,
@@ -107,7 +107,7 @@ export default function SettingsPage() {
     setSuccess("");
   };
 
-  const toggle = (key: keyof typeof openSections) => {
+  const toggle = (key: SectionId) => {
     setOpenSections(p => ({ ...p, [key]: !p[key] }));
   };
 
@@ -175,7 +175,6 @@ export default function SettingsPage() {
     setTimeout(() => setSuccess(""), 2000);
   };
 
-  // ═══════════ بکاپ‌گیری ═══════════
   const exportBackup = () => {
     try {
       const data: Record<string, any> = {};
@@ -258,14 +257,21 @@ export default function SettingsPage() {
     setTimeout(() => window.location.reload(), 1500);
   };
 
-  // ═══════════ استایل ═══════════
   const heading = dk ? "text-white" : "text-slate-900";
   const subText = dk ? "text-slate-400" : "text-slate-500";
   const card = dk ? "border-slate-700 bg-slate-800/90" : "border-slate-200 bg-white/95";
   const input = dk ? "border-slate-600 bg-slate-900 text-slate-100" : "border-slate-200 bg-white text-slate-800";
   const sectionBg = dk ? "bg-slate-900/50" : "bg-slate-50";
 
-  const Section = ({ id, icon, title, subtitle, gradient, badge, children }: any) => (
+  const Section = ({ id, icon, title, subtitle, gradient, badge, children }: {
+    id: SectionId;
+    icon: string;
+    title: string;
+    subtitle: string;
+    gradient: string;
+    badge?: React.ReactNode;
+    children: React.ReactNode;
+  }) => (
     <div className={`rounded-2xl border backdrop-blur overflow-hidden transition-all duration-300 ${card} shadow-sm hover:shadow-md`}>
       <button
         onClick={() => toggle(id)}
@@ -298,7 +304,7 @@ export default function SettingsPage() {
     </div>
   );
 
-  const FieldBox = ({ label, icon, children }: any) => (
+  const FieldBox = ({ label, icon, children }: { label: string; icon: string; children: React.ReactNode }) => (
     <div>
       <label className={`block text-xs font-black mb-1.5 ${subText}`}>
         <span className="ml-1">{icon}</span>{label}
@@ -307,7 +313,7 @@ export default function SettingsPage() {
     </div>
   );
 
-  const Input = (props: any) => (
+  const Input = (props: React.InputHTMLAttributes<HTMLInputElement>) => (
     <input
       {...props}
       className={`w-full h-12 px-3.5 rounded-xl border text-sm font-medium outline-none transition-all duration-200 focus:ring-4 ${input} ${dk ? "focus:border-emerald-400 focus:ring-emerald-400/10" : "focus:border-emerald-500 focus:ring-emerald-500/10"} ${props.className || ""}`}
@@ -324,10 +330,9 @@ export default function SettingsPage() {
         <div className={`fixed inset-x-0 top-0 z-30 h-1 bg-gradient-to-l ${dk ? "from-emerald-400 via-teal-400 to-cyan-400" : "from-emerald-500 via-teal-500 to-cyan-500"}`} />
         <div className="relative z-10 mx-auto w-full max-w-4xl px-3 md:px-6 pb-16 pt-5 md:pt-9">
 
-          {/* Header */}
           <header className="st-up mb-6 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className={`relative grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-500 text-white shadow-lg shadow-emerald-500/30 ring-1 ring-white/30 ${openSections.general ? "" : ""}`}>
+              <div className="relative grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-500 text-white shadow-lg shadow-emerald-500/30 ring-1 ring-white/30">
                 <svg className="w-7 h-7 st-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -351,7 +356,6 @@ export default function SettingsPage() {
             </button>
           </header>
 
-          {/* آمار سریع */}
           <div className="st-up grid grid-cols-2 md:grid-cols-4 gap-2 mb-6" style={{ animationDelay: "60ms" }}>
             {[
               { l: "ربات تلگرام", v: botInfo ? "فعال" : "غیرفعال", c: botInfo ? "text-emerald-500" : "text-slate-400", i: "🤖" },
@@ -373,15 +377,8 @@ export default function SettingsPage() {
 
           <div className="space-y-4">
 
-            {/* ═══════════ اطلاعات عمومی ═══════════ */}
             <div className="st-up" style={{ animationDelay: "100ms" }}>
-              <Section
-                id="general"
-                icon="🏢"
-                title="اطلاعات عمومی"
-                subtitle="نام و مشخصات صرافی"
-                gradient="from-amber-400 to-orange-500"
-              >
+              <Section id="general" icon="🏢" title="اطلاعات عمومی" subtitle="نام و مشخصات صرافی" gradient="from-amber-400 to-orange-500">
                 <div className="grid gap-3 md:grid-cols-2">
                   <FieldBox label="نام صرافی" icon="🏷️">
                     <Input value={settings.siteName || ""} onChange={e => set({ siteName: e.target.value })} placeholder="صرافی برادران نورزاد" />
@@ -396,7 +393,6 @@ export default function SettingsPage() {
               </Section>
             </div>
 
-            {/* ═══════════ ربات تلگرام ═══════════ */}
             <div className="st-up" style={{ animationDelay: "140ms" }}>
               <Section
                 id="telegram"
@@ -423,7 +419,6 @@ export default function SettingsPage() {
                   <p className={`text-[11px] mt-1.5 ${subText}`}>💡 از @BotFather در تلگرام دریافت کنید</p>
                 </FieldBox>
 
-                {/* لیست کاربران */}
                 <div className={`rounded-xl p-4 space-y-3 ${sectionBg}`}>
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <h3 className={`text-sm font-black flex items-center gap-2 ${heading}`}>
@@ -473,7 +468,6 @@ export default function SettingsPage() {
                   )}
                 </div>
 
-                {/* اعلان با صدا */}
                 <div className={`rounded-xl p-4 ${sectionBg}`}>
                   <label className="flex items-start gap-3 cursor-pointer">
                     <input
@@ -489,7 +483,6 @@ export default function SettingsPage() {
                   </label>
                 </div>
 
-                {/* chat_id */}
                 <FieldBox label="chat_id اصلی (برای تست)" icon="💬">
                   <div className="flex gap-2">
                     <Input
@@ -530,7 +523,6 @@ export default function SettingsPage() {
               </Section>
             </div>
 
-            {/* ═══════════ بکاپ‌گیری ═══════════ */}
             <div className="st-up" style={{ animationDelay: "180ms" }}>
               <Section
                 id="backup"
@@ -566,7 +558,6 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                {/* دکمه‌های اصلی */}
                 <div className="grid gap-3 md:grid-cols-2">
                   <button
                     onClick={exportBackup}
@@ -607,7 +598,6 @@ export default function SettingsPage() {
                   />
                 </div>
 
-                {/* هشدار و پاک‌سازی */}
                 <div className={`rounded-xl border p-4 ${dk ? "border-rose-400/30 bg-rose-400/10" : "border-rose-200 bg-rose-50"}`}>
                   <div className="flex items-start gap-3 mb-3">
                     <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${dk ? "bg-rose-400/20 text-rose-300" : "bg-rose-100 text-rose-600"}`}>
@@ -634,15 +624,8 @@ export default function SettingsPage() {
               </Section>
             </div>
 
-            {/* ═══════════ امنیت ═══════════ */}
             <div className="st-up" style={{ animationDelay: "220ms" }}>
-              <Section
-                id="security"
-                icon="🔐"
-                title="امنیت ورود"
-                subtitle="نام کاربری و رمز عبور"
-                gradient="from-purple-400 to-pink-500"
-              >
+              <Section id="security" icon="🔐" title="امنیت ورود" subtitle="نام کاربری و رمز عبور" gradient="from-purple-400 to-pink-500">
                 <div className="grid gap-3 md:grid-cols-2">
                   <FieldBox label="نام کاربری" icon="👤">
                     <Input value={settings.username || "admin"} onChange={e => set({ username: e.target.value })} />
@@ -654,15 +637,8 @@ export default function SettingsPage() {
               </Section>
             </div>
 
-            {/* ═══════════ درباره ═══════════ */}
             <div className="st-up" style={{ animationDelay: "260ms" }}>
-              <Section
-                id="about"
-                icon="ℹ️"
-                title="درباره سیستم"
-                subtitle="نسخه و اطلاعات فنی"
-                gradient="from-slate-400 to-slate-600"
-              >
+              <Section id="about" icon="ℹ️" title="درباره سیستم" subtitle="نسخه و اطلاعات فنی" gradient="from-slate-400 to-slate-600">
                 <div className={`grid gap-2 text-xs ${dk ? "text-slate-300" : "text-slate-600"}`}>
                   <div className={`flex justify-between p-2.5 rounded-lg ${sectionBg}`}>
                     <span className={subText}>نام سیستم:</span>
@@ -685,7 +661,6 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* دکمه ذخیره نهایی */}
           <div className="st-up sticky bottom-4 mt-6" style={{ animationDelay: "300ms" }}>
             <button
               onClick={saveSettings}
@@ -698,7 +673,6 @@ export default function SettingsPage() {
             </button>
           </div>
 
-          {/* پیام‌ها */}
           {error && (
             <div className={`mt-4 rounded-xl p-3 text-sm font-bold ${dk ? "bg-rose-400/15 text-rose-300 border border-rose-400/30" : "bg-rose-50 text-rose-700 border border-rose-200"}`}>
               {error}
