@@ -37,17 +37,7 @@ function timeLabel(s: string) { try { const d = new Date(s); if (Number.isNaN(d.
 
 const emptyForm: FormState = { name: "", tazkira: "", phone: "", address: "", note: "", telegram: "" };
 const safeGetItem = (key: string): any => { if (typeof window === "undefined") return null; try { const r = localStorage.getItem(key); return r ? JSON.parse(r) : null; } catch { return null; } };
-
-const loadCustomers = (): Customer[] => {
-  if (typeof window === "undefined") return defaultCustomers;
-  try {
-    const p = safeGetItem(CUSTOMERS_KEY);
-    if (Array.isArray(p) && p.length > 0 && p[0]?.id && p[0]?.name) {
-      return p.map((c: any) => ({ id: c.id || generateId(), name: c.name || "", phone: c.phone || "", tazkira: c.tazkira || "", address: c.address || "", note: c.note || "", telegram: c.telegram || "", registeredAt: c.registeredAt || new Date().toISOString(), balances: { AFN: Number(c.balances?.AFN || 0) || 0, USD: Number(c.balances?.USD || 0) || 0, EUR: Number(c.balances?.EUR || 0) || 0, IRR: Number(c.balances?.IRR || 0) || 0, PKR: Number(c.balances?.PKR || 0) || 0 } }));
-    }
-    return defaultCustomers;
-  } catch { return defaultCustomers; }
-};
+const loadCustomers = (): Customer[] => { if (typeof window === "undefined") return defaultCustomers; try { const p = safeGetItem(CUSTOMERS_KEY); if (Array.isArray(p) && p.length > 0 && p[0]?.id && p[0]?.name) return p.map((c: any) => ({ id: c.id || generateId(), name: c.name || "", phone: c.phone || "", tazkira: c.tazkira || "", address: c.address || "", note: c.note || "", telegram: c.telegram || "", registeredAt: c.registeredAt || new Date().toISOString(), balances: { AFN: Number(c.balances?.AFN || 0) || 0, USD: Number(c.balances?.USD || 0) || 0, EUR: Number(c.balances?.EUR || 0) || 0, IRR: Number(c.balances?.IRR || 0) || 0, PKR: Number(c.balances?.PKR || 0) || 0 } })); return defaultCustomers; } catch { return defaultCustomers; } };
 const loadTransactions = (): any[] => { if (typeof window === "undefined") return []; try { const p = safeGetItem(TRANSACTIONS_KEY); return Array.isArray(p) ? p : []; } catch { return []; } };
 const loadHawalas = (): any[] => { if (typeof window === "undefined") return []; try { const p = safeGetItem(HAWALAS_KEY); return Array.isArray(p) ? p : []; } catch { return []; } };
 const loadCashEntries = (): any[] => { if (typeof window === "undefined") return []; try { const p = safeGetItem(CASH_KEY); return Array.isArray(p) ? p : []; } catch { return []; } };
@@ -370,10 +360,7 @@ export default function CustomersPage() {
                               <tr key={c.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/70"}`}>
                                 <td className="px-4 py-3.5 text-center align-middle"><span className={`inline-grid h-8 w-8 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500"}`}>{idx + 1}</span></td>
                                 <td className="px-4 py-3.5 text-center align-middle">
-                                  <div className="flex flex-col items-center gap-1">
-                                    <div className={`grid h-9 w-9 place-items-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 text-white font-black text-sm shadow`}>{c.name.charAt(0)}</div>
-                                    <div className={`text-[13px] font-black ${dk ? "text-slate-100" : "text-slate-800"}`}>{c.name}</div>
-                                  </div>
+                                  <div className={`text-[13px] font-black ${dk ? "text-slate-100" : "text-slate-800"}`}>{c.name}</div>
                                 </td>
                                 <td className="px-4 py-3.5 text-center align-middle">
                                   <div className={`text-[12px] font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`} dir="ltr">📱 {c.phone || "-"}</div>
