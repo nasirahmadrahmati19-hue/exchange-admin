@@ -275,16 +275,37 @@ const sortByHawalaNumber = (items: Hawala[], order: "asc" | "desc") =>
 
 type BalanceChange = { customerName: string; customerId?: string; currency: Currency; amount: number; };
 
+// ===== تابع اصلاح‌شده: کارمزد بر اساس feePayer از فرستنده یا گیرنده کسر می‌شود =====
 function getBalanceChangesForHawala(h: Hawala, action: "register" | "settle" | "cancel"): BalanceChange[] {
   const changes: BalanceChange[] = [];
   try {
     if (action === "register") {
+      // فرستنده amountFrom را می‌دهد
       changes.push({ customerName: h.senderName, customerId: h.senderId, currency: h.currencyFrom, amount: -h.amountFrom });
+      // کارمزد از فرستنده (اگر انتخاب شده)
+      if (h.feePayer === "sender" && h.fee > 0) {
+        changes.push({ customerName: h.senderName, customerId: h.senderId, currency: h.feeCurrency, amount: -h.fee });
+      }
     } else if (action === "settle") {
+      // گیرنده finalAmount را می‌گیرد
       changes.push({ customerName: h.receiverName, customerId: h.receiverId, currency: h.currencyTo, amount: h.finalAmount });
+      // کارمزد از گیرنده (اگر انتخاب شده)
+      if (h.feePayer === "receiver" && h.fee > 0) {
+        changes.push({ customerName: h.receiverName, customerId: h.receiverId, currency: h.feeCurrency, amount: -h.fee });
+      }
     } else if (action === "cancel") {
+      // معکوس کردن register
       changes.push({ customerName: h.senderName, customerId: h.senderId, currency: h.currencyFrom, amount: h.amountFrom });
-      if (h.status === "paid") changes.push({ customerName: h.receiverName, customerId: h.receiverId, currency: h.currencyTo, amount: -h.finalAmount });
+      if (h.feePayer === "sender" && h.fee > 0) {
+        changes.push({ customerName: h.senderName, customerId: h.senderId, currency: h.feeCurrency, amount: h.fee });
+      }
+      // اگر قبلاً settle شده بود، معکوس کنیم
+      if (h.status === "paid") {
+        changes.push({ customerName: h.receiverName, customerId: h.receiverId, currency: h.currencyTo, amount: -h.finalAmount });
+        if (h.feePayer === "receiver" && h.fee > 0) {
+          changes.push({ customerName: h.receiverName, customerId: h.receiverId, currency: h.feeCurrency, amount: h.fee });
+        }
+      }
     }
   } catch {}
   return changes;
@@ -320,7 +341,7 @@ const iconPaths = {
   swap: "M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5",
   rate: "M2.25 18 9 11.25l4.306 4.306a11.95 11.95 0 0 1 5.814-5.518l2.74-1.22m0 0-5.94-2.281m5.94 2.28-2.28 5.941",
   info: "m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z",
-  sun: "M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z",
+  sun: "M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.375 3.375 0 1 1-7.5 0 3.375 3.375 0 0 1 7.5 0Z",
   moon: "M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z",
   plus: "M12 4.5v15m7.5-7.5h-15",
   tag: "M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z",
@@ -468,7 +489,17 @@ export default function HawalaPage() {
     } catch { return 0; }
   }, [amountFrom, rateValue, rateMode, form.currencyFrom, form.currencyTo, directCounter, directBaseValue]);
 
-  const finalAmount = Math.max(0, convertedAmount - feeValue);
+  // ===== تغییر مهم: finalAmount بر اساس feePayer محاسبه می‌شود =====
+  const finalAmount = useMemo(() => {
+    if (form.feePayer === "receiver") {
+      // کارمزد از گیرنده کم می‌شود، پس finalAmount شامل کسر کارمزد است
+      return Math.max(0, convertedAmount - feeValue);
+    } else {
+      // کارمزد از فرستنده کم می‌شود، پس finalAmount بدون کسر کارمزد است
+      return Math.max(0, convertedAmount);
+    }
+  }, [convertedAmount, feeValue, form.feePayer]);
+
   const nextHawalaNumber = getNextTrackingCode();
   const isHerat = form.province === "هرات";
   const destinationText = formatDestination(form.province, form.district);
@@ -595,7 +626,7 @@ export default function HawalaPage() {
       console.error("Register error:", err);
       showToast("خطا در ثبت حواله");
     }
-  }, [form, rateMode, rateValue, afnForeign, directCounter, directBaseValue, feeValue, amountFrom, destinationText, customers, showToast]);
+  }, [form, rateMode, rateValue, afnForeign, directCounter, directBaseValue, feeValue, amountFrom, destinationText, customers, showToast, finalAmount]);
 
   const resetForm = useCallback(() => { setForm(emptyForm); setErrors({}); showToast("فورم پاک شد."); }, [showToast]);
 
@@ -651,9 +682,25 @@ export default function HawalaPage() {
   }, [cancelTarget, cancelReason, customers, showToast]);
 
   const restoreToSent = useCallback((item: Hawala) => {
+    // معکوس کردن تغییرات cancel
+    if (item.senderId || customers.some(c => c.name === item.senderName)) {
+      const reverseChanges: BalanceChange[] = [];
+      reverseChanges.push({ customerName: item.senderName, customerId: item.senderId, currency: item.currencyFrom, amount: -item.amountFrom });
+      if (item.feePayer === "sender" && item.fee > 0) {
+        reverseChanges.push({ customerName: item.senderName, customerId: item.senderId, currency: item.feeCurrency, amount: -item.fee });
+      }
+      if (item.status === "cancelled" && item.paidAmount) {
+        // اگر قبلاً paid بوده و cancel شده، باید paid را هم معکوس کنیم
+        reverseChanges.push({ customerName: item.receiverName, customerId: item.receiverId, currency: item.currencyTo, amount: item.finalAmount });
+        if (item.feePayer === "receiver" && item.fee > 0) {
+          reverseChanges.push({ customerName: item.receiverName, customerId: item.receiverId, currency: item.feeCurrency, amount: item.fee });
+        }
+      }
+      setCustomers(prev => applyBalanceChanges(prev, reverseChanges));
+    }
     setHawalas(prev => prev.map(h => h.id === item.id ? { ...h, status: "sent" as HawalaStatus, paidAt: undefined, paidBy: undefined, paidAmount: undefined, cancelReason: undefined } : h));
     showToast("حواله به وضعیت ارسال‌شده برگشت و به تب جاری منتقل شد.");
-  }, [showToast]);
+  }, [customers, showToast]);
 
   const deleteHawala = useCallback((item: Hawala) => {
     const msg = `آیا از حذف کامل حواله ${item.number} مطمئن هستید؟\n\nاین عملیات قابل بازگشت نیست و حواله از سیستم پاک می‌شود.`;
@@ -663,13 +710,22 @@ export default function HawalaPage() {
       if (item.status === "pending" || item.status === "sent") {
         if (item.senderId || customers.some(c => c.name === item.senderName)) {
           changes.push({ customerName: item.senderName, customerId: item.senderId, currency: item.currencyFrom, amount: item.amountFrom });
+          if (item.feePayer === "sender" && item.fee > 0) {
+            changes.push({ customerName: item.senderName, customerId: item.senderId, currency: item.feeCurrency, amount: item.fee });
+          }
         }
       } else if (item.status === "paid") {
         if (item.senderId || customers.some(c => c.name === item.senderName)) {
           changes.push({ customerName: item.senderName, customerId: item.senderId, currency: item.currencyFrom, amount: item.amountFrom });
+          if (item.feePayer === "sender" && item.fee > 0) {
+            changes.push({ customerName: item.senderName, customerId: item.senderId, currency: item.feeCurrency, amount: item.fee });
+          }
         }
         if (item.receiverId || customers.some(c => c.name === item.receiverName)) {
           changes.push({ customerName: item.receiverName, customerId: item.receiverId, currency: item.currencyTo, amount: -item.finalAmount });
+          if (item.feePayer === "receiver" && item.fee > 0) {
+            changes.push({ customerName: item.receiverName, customerId: item.receiverId, currency: item.feeCurrency, amount: item.fee });
+          }
         }
       }
       if (changes.length > 0) {
