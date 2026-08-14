@@ -275,13 +275,13 @@ export default function CashPage() {
           {subtitle && <div className={`text-[8px] font-bold ${subText}`}>{subtitle}</div>}
         </div>
       </div>
-      <div className="space-y-1">
+      <div className="space-y-0.5">
         {currencies.map(cur => {
           const bal = data[cur];
           return (
-            <div key={cur} className={`flex items-center justify-between rounded-md px-2 py-1 ${dk ? "bg-slate-900/50" : "bg-white"}`}>
-              <span className={`text-[11px] font-black ${subText}`}>{labels[cur]}</span>
-              <span className={`text-[12px] font-black tabular-nums ${colorFn(bal)}`}>{fmt(bal)}</span>
+            <div key={cur} className={`flex items-center justify-between rounded-md px-1.5 py-0.5 ${dk ? "bg-slate-900/50" : "bg-white"}`}>
+              <span className={`text-xs font-black ${subText}`}>{labels[cur]}</span>
+              <span className={`text-sm font-black tabular-nums ${colorFn(bal)}`}>{fmt(bal)}</span>
             </div>
           );
         })}
