@@ -341,6 +341,7 @@ const iconPaths = {
   wallet: "M21 12a2.25 2.25 0 0 0-2.25-2.25H15a3 3 0 1 1-6 0H5.25A2.25 2.25 0 0 0 3 12m18 0v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 9m18 0V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v3",
   trash: "M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0",
   undo: "M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3",
+  more: "M12 6.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 12.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 18.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Z",
 };
 
 type IconName = keyof typeof iconPaths;
@@ -383,6 +384,21 @@ export default function HawalaPage() {
   const [paidAmount, setPaidAmount] = useState("");
   const [cancelReason, setCancelReason] = useState("");
   const [toast, setToast] = useState("");
+  
+  // 🆕 اضافه شده برای لیست کشویی ستون عملیات
+  const [openActionId, setOpenActionId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!openActionId) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.action-dropdown')) {
+        setOpenActionId(null);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [openActionId]);
 
   useEffect(() => {
     try { const saved = window.localStorage.getItem("hawala-theme"); if (saved === "dark" || saved === "light") setTheme(saved); } catch {}
@@ -789,79 +805,89 @@ export default function HawalaPage() {
     );
   });
 
-  /* ✅ ستون عملیات جدید: دکمه‌های مستقیم بدون dropdown */
+  /* 🆕 ستون عملیات به صورت لیست کشویی (Dropdown) */
   const ActionButtons = memo(function ActionButtons({ item, isInHistory }: { item: Hawala; isInHistory: boolean }) {
     const isPending = item.status === "pending";
     const isSent = item.status === "sent";
     const isPaid = item.status === "paid";
     const isCancelled = item.status === "cancelled";
+    const isOpen = openActionId === item.id;
 
-    const btn = "grid h-8 w-8 place-items-center rounded-lg border transition-all duration-150 active:scale-90 cursor-pointer";
-
+    const btn = "flex w-full items-center gap-2 px-3 py-2 text-right text-xs font-bold transition";
+    const btnBase = dk ? "text-slate-200 hover:bg-slate-700/60" : "text-slate-700 hover:bg-slate-100";
+    
     return (
-      <div className="flex items-center gap-1.5">
-        {!isInHistory && (
-          <>
-            {isPending && (
-              <button
-                title="ارسال"
-                onClick={() => markAsSent(item)}
-                className={`${btn} ${dk ? "border-sky-400/30 text-sky-300 hover:bg-sky-400/15 hover:border-sky-400/60" : "border-sky-200 text-sky-600 hover:bg-sky-50 hover:border-sky-400"}`}
-              >
-                <Ic n="send" className="h-3.5 w-3.5" />
-              </button>
-            )}
-            {(isPending || isSent) && (
+      <div className="relative action-dropdown">
+        <button
+          onClick={(e) => { e.stopPropagation(); setOpenActionId(isOpen ? null : item.id); }}
+          className={`grid h-8 w-8 place-items-center rounded-lg border transition-all duration-150 active:scale-90 cursor-pointer ${dk ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-200 text-slate-500 hover:bg-slate-100"}`}
+          title="عملیات"
+        >
+          <Ic n="more" className="h-4 w-4" />
+        </button>
+        
+        {isOpen && (
+          <div className={`absolute right-0 top-full z-40 mt-1.5 w-44 overflow-hidden rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
+            {!isInHistory && (
               <>
-                <button
-                  title="تسویه"
-                  onClick={() => openSettlement(item)}
-                  className={`${btn} ${dk ? "border-emerald-400/30 text-emerald-300 hover:bg-emerald-400/15 hover:border-emerald-400/60" : "border-emerald-200 text-emerald-600 hover:bg-emerald-50 hover:border-emerald-400"}`}
-                >
-                  <Ic n="check" className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  title="ابطال"
-                  onClick={() => openCancel(item)}
-                  className={`${btn} ${dk ? "border-amber-400/30 text-amber-300 hover:bg-amber-400/15 hover:border-amber-400/60" : "border-amber-200 text-amber-600 hover:bg-amber-50 hover:border-amber-400"}`}
-                >
-                  <Ic n="xCircle" className="h-3.5 w-3.5" />
-                </button>
+                {isPending && (
+                  <button
+                    onClick={() => { markAsSent(item); setOpenActionId(null); }}
+                    className={`${btn} ${btnBase} ${dk ? "text-sky-300 hover:bg-sky-400/15" : "text-sky-600 hover:bg-sky-50"}`}
+                  >
+                    <Ic n="send" className="h-3.5 w-3.5" /> ارسال حواله
+                  </button>
+                )}
+                {(isPending || isSent) && (
+                  <>
+                    <button
+                      onClick={() => { openSettlement(item); setOpenActionId(null); }}
+                      className={`${btn} ${btnBase} ${dk ? "text-emerald-300 hover:bg-emerald-400/15" : "text-emerald-600 hover:bg-emerald-50"}`}
+                    >
+                      <Ic n="check" className="h-3.5 w-3.5" /> تسویه حواله
+                    </button>
+                    <button
+                      onClick={() => { openCancel(item); setOpenActionId(null); }}
+                      className={`${btn} ${btnBase} ${dk ? "text-amber-300 hover:bg-amber-400/15" : "text-amber-600 hover:bg-amber-50"}`}
+                    >
+                      <Ic n="xCircle" className="h-3.5 w-3.5" /> ابطال حواله
+                    </button>
+                  </>
+                )}
               </>
             )}
-          </>
-        )}
 
-        {isInHistory && (
-          <>
-            {isCancelled && (
-              <button
-                title="برگشت به ارسال"
-                onClick={() => restoreToSent(item)}
-                className={`${btn} ${dk ? "border-sky-400/30 text-sky-300 hover:bg-sky-400/15 hover:border-sky-400/60" : "border-sky-200 text-sky-600 hover:bg-sky-50 hover:border-sky-400"}`}
-              >
-                <Ic n="undo" className="h-3.5 w-3.5" />
-              </button>
+            {isInHistory && (
+              <>
+                {isCancelled && (
+                  <button
+                    onClick={() => { restoreToSent(item); setOpenActionId(null); }}
+                    className={`${btn} ${btnBase} ${dk ? "text-sky-300 hover:bg-sky-400/15" : "text-sky-600 hover:bg-sky-50"}`}
+                  >
+                    <Ic n="undo" className="h-3.5 w-3.5" /> برگشت به ارسال
+                  </button>
+                )}
+                {isPaid && (
+                  <button
+                    onClick={() => { openCancel(item); setOpenActionId(null); }}
+                    className={`${btn} ${btnBase} ${dk ? "text-amber-300 hover:bg-amber-400/15" : "text-amber-600 hover:bg-amber-50"}`}
+                  >
+                    <Ic n="xCircle" className="h-3.5 w-3.5" /> ابطال حواله
+                  </button>
+                )}
+              </>
             )}
-            {isPaid && (
-              <button
-                title="ابطال"
-                onClick={() => openCancel(item)}
-                className={`${btn} ${dk ? "border-amber-400/30 text-amber-300 hover:bg-amber-400/15 hover:border-amber-400/60" : "border-amber-200 text-amber-600 hover:bg-amber-50 hover:border-amber-400"}`}
-              >
-                <Ic n="xCircle" className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </>
-        )}
 
-        <button
-          title="حذف"
-          onClick={() => deleteHawala(item)}
-          className={`${btn} ${dk ? "border-rose-400/30 text-rose-300 hover:bg-rose-400/15 hover:border-rose-400/60" : "border-rose-200 text-rose-500 hover:bg-rose-50 hover:border-rose-400"}`}
-        >
-          <Ic n="trash" className="h-3.5 w-3.5" />
-        </button>
+            <div className={`my-1 h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
+            
+            <button
+              onClick={() => { deleteHawala(item); setOpenActionId(null); }}
+              className={`${btn} ${dk ? "text-rose-300 hover:bg-rose-400/15" : "text-rose-500 hover:bg-rose-50"}`}
+            >
+              <Ic n="trash" className="h-3.5 w-3.5" /> حذف حواله
+            </button>
+          </div>
+        )}
       </div>
     );
   });
@@ -1211,7 +1237,7 @@ export default function HawalaPage() {
           )}
 
           {activeTab === "history" && (
-            <section className={`hw-up overflow-hidden ${uiCard}`}>
+            <section className={`hw-up Overflow-hidden ${uiCard}`}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
                 <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identHwIcon}`}><Ic n="doc" className="h-5 w-5" /></span>
                 <div className="flex-1 min-w-0">
@@ -1273,6 +1299,7 @@ export default function HawalaPage() {
         </div>
       </div>
 
+      {/* 🆕 مودال پیش‌نمایش با جزئیات کامل حواله‌دهنده، مبلغ و حواله‌گیرنده */}
       {previewOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => setPreviewOpen(false)}>
           <div className={`hw-up w-full max-w-2xl overflow-hidden rounded-xl md:rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={(e) => e.stopPropagation()}>
@@ -1283,22 +1310,74 @@ export default function HawalaPage() {
               </b>
               <button onClick={() => setPreviewOpen(false)} className={`grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-all duration-300 hover:rotate-90 ${dk ? "hover:bg-slate-700 hover:text-white" : "hover:bg-slate-100 hover:text-slate-700"}`}><Ic n="x" className="h-4 w-4" /></button>
             </div>
-            <div className="max-h-[70vh] overflow-y-auto px-4 md:px-5 py-4 space-y-4">
-              <div className={`flex items-center justify-between rounded-xl border p-3 ${dk ? "border-cyan-400/30 bg-cyan-400/10" : "border-sky-300 bg-sky-50"}`}>
-                <b className={`text-xs font-black ${dk ? "text-cyan-300" : "text-sky-700"}`}>کد پیگیری</b>
-                <span className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-black tabular-nums ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-sky-300 bg-sky-50 text-sky-700"}`} dir="ltr">
-                  <Ic n="tag" className="h-3.5 w-3.5" />{nextHawalaNumber}
-                </span>
-              </div>
-              <div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"}`}>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div><span className={subText}>تاریخ: </span><b>{currentDateTime}</b></div>
-                  <div><span className={subText}>نوع: </span><b>{form.type === "send" ? "ارسال" : "دریافت"}</b></div>
-                  <div><span className={subText}>مقصد: </span><b>{destinationText}</b></div>
-                  <div><span className={subText}>مبلغ: </span><b>{fmt(amountFrom)} {labels[form.currencyFrom]}</b></div>
-                  <div><span className={subText}>مبلغ نهایی: </span><b className={dk ? "text-emerald-300" : "text-emerald-700"}>{fmt(finalAmount)} {labels[form.currencyTo]}</b></div>
+            <div className="max-h-[75vh] overflow-y-auto px-4 md:px-5 py-4 space-y-4">
+              <div className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3 ${dk ? "border-cyan-400/30 bg-cyan-400/10" : "border-sky-300 bg-sky-50"}`}>
+                <div>
+                   <div className={`text-[10px] font-bold ${subText}`}>کد پیگیری</div>
+                   <span className={`inline-flex items-center gap-1.5 text-[14px] font-black tabular-nums ${dk ? "text-cyan-300" : "text-sky-700"}`} dir="ltr">
+                     <Ic n="tag" className="h-4 w-4" />{nextHawalaNumber}
+                   </span>
+                </div>
+                <div className="text-left">
+                   <div className={`text-[10px] font-bold ${subText}`}>تاریخ ثبت</div>
+                   <div className={`text-[13px] font-black tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`}>{currentDateTime}</div>
                 </div>
               </div>
+
+              <div className={`rounded-xl border p-4 ${dk ? "border-blue-400/20 bg-blue-400/5" : "border-blue-200 bg-blue-50/50"}`}>
+                <div className="flex items-center gap-2 mb-3">
+                  <Ic n="send" className={`h-4 w-4 ${dk ? "text-blue-300" : "text-blue-600"}`} />
+                  <b className={`text-sm font-black ${dk ? "text-blue-300" : "text-blue-700"}`}>مشخصات حواله‌دهنده</b>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                  <div><span className={subText}>نام: </span><b className={dk ? "text-slate-100" : "text-slate-800"}>{form.senderName}</b></div>
+                  <div><span className={subText}>تلفن: </span><b dir="ltr" className={dk ? "text-slate-100" : "text-slate-800"}>{form.senderPhone}</b></div>
+                  {form.senderTelegram && <div><span className={subText}>تلگرام: </span><b dir="ltr" className={dk ? "text-slate-100" : "text-slate-800"}>{form.senderTelegram}</b></div>}
+                </div>
+              </div>
+
+              <div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"}`}>
+                <div className="flex items-center gap-2 mb-3">
+                  <Ic n="swap" className={`h-4 w-4 ${dk ? "text-emerald-300" : "text-emerald-600"}`} />
+                  <b className={`text-sm font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}>جزئیات حواله و مبلغ</b>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                  <div><span className={subText}>نوع: </span><b>{form.type === "send" ? "ارسال" : "دریافت"}</b></div>
+                  <div><span className={subText}>مبلغ اولیه: </span><b>{fmt(amountFrom)} {labels[form.currencyFrom]}</b></div>
+                  {rateMode !== "same" && <div><span className={subText}>نرخ: </span><b dir="ltr">{form.rate}</b></div>}
+                  <div><span className={subText}>کارمزد: </span><b>{fmt(feeValue)} {labels[form.feeCurrency]}</b></div>
+                  <div><span className={subText}>پرداخت‌کننده کارمزد: </span><b>{form.feePayer === "sender" ? "حواله‌دهنده" : "حواله‌گیرنده"}</b></div>
+                  <div className={`col-span-2 sm:col-span-3 mt-2 pt-2 border-t border-dashed ${dk ? 'border-slate-700' : 'border-slate-300'}`}>
+                    <span className={subText}>مبلغ نهایی قابل پرداخت: </span>
+                    <b className={`text-lg ${dk ? "text-emerald-300" : "text-emerald-700"}`}>{fmt(finalAmount)} {labels[form.currencyTo]}</b>
+                  </div>
+                </div>
+              </div>
+
+              <div className={`rounded-xl border p-4 ${dk ? "border-amber-400/20 bg-amber-400/5" : "border-amber-200 bg-amber-50/50"}`}>
+                <div className="flex items-center gap-2 mb-3">
+                  <Ic n="receive" className={`h-4 w-4 ${dk ? "text-amber-300" : "text-amber-600"}`} />
+                  <b className={`text-sm font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>مشخصات حواله‌گیرنده و مقصد</b>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                  <div><span className={subText}>نام: </span><b>{form.receiverName}</b></div>
+                  <div><span className={subText}>تذکره: </span><b dir="ltr">{form.receiverTazkira}</b></div>
+                  <div><span className={subText}>تلفن: </span><b dir="ltr">{form.receiverPhone}</b></div>
+                  <div><span className={subText}>مقصد: </span><b>{destinationText}</b></div>
+                  {form.receiverAddress && <div className="col-span-1 sm:col-span-2"><span className={subText}>آدرس: </span><b>{form.receiverAddress}</b></div>}
+                </div>
+              </div>
+              
+              {form.note && (
+                <div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/30" : "border-slate-200 bg-slate-50"}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Ic n="info" className={`h-4 w-4 ${dk ? "text-slate-400" : "text-slate-500"}`} />
+                    <b className={`text-sm font-black ${dk ? "text-slate-300" : "text-slate-600"}`}>یادداشت</b>
+                  </div>
+                  <p className={`text-sm ${dk ? "text-slate-300" : "text-slate-600"}`}>{form.note}</p>
+                </div>
+              )}
+
               <div className="flex flex-wrap gap-3 pt-2">
                 <button onClick={confirmRegister} className={`flex h-[48px] flex-1 min-w-[180px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-sm font-black shadow-lg transition-all hover:brightness-110 active:scale-[0.98] ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 to-teal-500 text-white"}`}>
                   ثبت نهایی حواله<Ic n="check" className="h-4 w-4" />
