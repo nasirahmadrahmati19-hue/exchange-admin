@@ -263,28 +263,25 @@ export default function CashPage() {
   const tabs = [{ id: "register" as const, label: "ثبت عملیات", icon: "plus" as IconName }, { id: "ledger" as const, label: "روزنامچه صندوق", icon: "history" as IconName, count: entries.length }, { id: "close" as const, label: "بستن صندوق", icon: "lock" as IconName }];
   const entryTypeOptions: [string, string][] = [["customer_deposit", "واریز مشتری به حساب"], ["customer_withdraw", "برداشت مشتری از حساب"], ["owner_deposit", "واریز مالک به صندوق"], ["owner_withdraw", "برداشت مالک از صندوق"]];
 
-  const TwoColCard = ({ title, subtitle, icon, borderColor, iconBg, data, colorFn, statusFn }: {
+  const TwoColCard = ({ title, subtitle, icon, borderColor, iconBg, data, colorFn }: {
     title: string; subtitle?: string; icon: IconName; borderColor: string; iconBg: string;
-    data: Record<Currency, number>; colorFn: (v: number) => string; statusFn: (v: number) => string;
+    data: Record<Currency, number>; colorFn: (v: number) => string;
   }) => (
-    <div className={`rounded-2xl border p-4 ${borderColor}`}>
-      <div className="flex items-center gap-2 mb-3">
-        <span className={`grid h-8 w-8 place-items-center rounded-lg ${iconBg}`}><Ic n={icon} className="h-4 w-4" /></span>
+    <div className={`rounded-2xl border p-3 ${borderColor}`}>
+      <div className="flex items-center gap-2 mb-2">
+        <span className={`grid h-7 w-7 place-items-center rounded-lg ${iconBg}`}><Ic n={icon} className="h-3.5 w-3.5" /></span>
         <div className="flex-1">
-          <b className={`text-sm font-black ${heading}`}>{title}</b>
-          {subtitle && <div className={`text-[9px] font-bold ${subText}`}>{subtitle}</div>}
+          <b className={`text-xs font-black ${heading}`}>{title}</b>
+          {subtitle && <div className={`text-[8px] font-bold ${subText}`}>{subtitle}</div>}
         </div>
       </div>
-      <div className="space-y-1.5">
+      <div className="space-y-1">
         {currencies.map(cur => {
           const bal = data[cur];
           return (
-            <div key={cur} className={`flex items-center justify-between rounded-lg px-3 py-2 ${dk ? "bg-slate-900/50" : "bg-white"}`}>
-              <span className={`text-xs font-black ${subText}`}>{labels[cur]}</span>
-              <div className="text-left">
-                <span className={`text-sm font-black tabular-nums ${colorFn(bal)}`}>{fmt(bal)}</span>
-                <span className={`mr-2 text-[9px] font-bold ${colorFn(bal)}`}>{statusFn(bal)}</span>
-              </div>
+            <div key={cur} className={`flex items-center justify-between rounded-md px-2 py-1 ${dk ? "bg-slate-900/50" : "bg-white"}`}>
+              <span className={`text-[11px] font-black ${subText}`}>{labels[cur]}</span>
+              <span className={`text-[12px] font-black tabular-nums ${colorFn(bal)}`}>{fmt(bal)}</span>
             </div>
           );
         })}
@@ -309,22 +306,26 @@ export default function CashPage() {
             </div>
           </header>
 
-          {/* ===== ۵ کارت منظم ===== */}
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {/* ===== ردیف اول: ۳ کارت ===== */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="cs-up" style={{ animationDelay: "70ms" }}>
-              <TwoColCard title="موجودی واقعی صندوق" subtitle="نقدی + کسر قرض‌های مشتریان" icon="wallet" borderColor={dk ? "border-emerald-400/25 bg-emerald-400/[0.07]" : "border-emerald-300 bg-emerald-50"} iconBg={dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"} data={realCashBalances} colorFn={(v) => v < 0 ? "text-rose-500" : dk ? "text-emerald-300" : "text-emerald-700"} statusFn={(v) => v < 0 ? "کسری" : "موجودی"} />
+              <TwoColCard title="موجودی واقعی صندوق" subtitle="نقدی + کسر قرض‌ها" icon="wallet" borderColor={dk ? "border-emerald-400/25 bg-emerald-400/[0.07]" : "border-emerald-300 bg-emerald-50"} iconBg={dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"} data={realCashBalances} colorFn={(v) => v < 0 ? "text-rose-500" : dk ? "text-emerald-300" : "text-emerald-700"} />
             </div>
             <div className="cs-up" style={{ animationDelay: "90ms" }}>
-              <TwoColCard title="موجودی مشتریان نزد صرافی" subtitle="پول مشتری نزد صرافی" icon="user" borderColor={dk ? "border-sky-400/25 bg-sky-400/[0.07]" : "border-sky-300 bg-sky-50"} iconBg={dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-600"} data={customerTotalBalances} colorFn={(v) => v > 0 ? dk ? "text-emerald-300" : "text-emerald-700" : subText} statusFn={(v) => v > 0 ? "موجودی" : "—"} />
+              <TwoColCard title="موجودی مشتریان نزد صرافی" subtitle="پول مشتری نزد صرافی" icon="user" borderColor={dk ? "border-sky-400/25 bg-sky-400/[0.07]" : "border-sky-300 bg-sky-50"} iconBg={dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-600"} data={customerTotalBalances} colorFn={(v) => v > 0 ? dk ? "text-emerald-300" : "text-emerald-700" : subText} />
             </div>
             <div className="cs-up" style={{ animationDelay: "110ms" }}>
-              <TwoColCard title="قرض مشتریان از صرافی" subtitle="صرافی به مشتری قرض داده" icon="alert" borderColor={dk ? "border-rose-400/25 bg-rose-400/[0.07]" : "border-rose-300 bg-rose-50"} iconBg={dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600"} data={customerDebts} colorFn={(v) => v > 0 ? "text-rose-500" : subText} statusFn={(v) => v > 0 ? "قرضدار" : "—"} />
+              <TwoColCard title="قرض مشتریان از صرافی" subtitle="صرافی به مشتری قرض داده" icon="alert" borderColor={dk ? "border-rose-400/25 bg-rose-400/[0.07]" : "border-rose-300 bg-rose-50"} iconBg={dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600"} data={customerDebts} colorFn={(v) => v > 0 ? "text-rose-500" : subText} />
             </div>
+          </div>
+
+          {/* ===== ردیف دوم: ۲ کارت ===== */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="cs-up" style={{ animationDelay: "130ms" }}>
-              <TwoColCard title="قرض صرافی از مشتریان" subtitle="پولی که صرافی از مشتریان قرض گرفته" icon="arrowDown" borderColor={dk ? "border-violet-400/25 bg-violet-400/[0.07]" : "border-violet-300 bg-violet-50"} iconBg={dk ? "bg-violet-400/15 text-violet-300" : "bg-violet-100 text-violet-600"} data={customerTotalBalances} colorFn={(v) => v > 0 ? dk ? "text-violet-300" : "text-violet-700" : subText} statusFn={(v) => v > 0 ? "قرض صرافی" : "—"} />
+              <TwoColCard title="قرض صرافی از مشتریان" subtitle="پولی که صرافی از مشتریان قرض گرفته" icon="arrowDown" borderColor={dk ? "border-violet-400/25 bg-violet-400/[0.07]" : "border-violet-300 bg-violet-50"} iconBg={dk ? "bg-violet-400/15 text-violet-300" : "bg-violet-100 text-violet-600"} data={customerTotalBalances} colorFn={(v) => v > 0 ? dk ? "text-violet-300" : "text-violet-700" : subText} />
             </div>
             <div className="cs-up" style={{ animationDelay: "150ms" }}>
-              <TwoColCard title="مفاد کارمزد صرافی" subtitle="از معاملات و حواله‌ها" icon="check" borderColor={dk ? "border-emerald-400/25 bg-emerald-400/[0.07]" : "border-emerald-300 bg-emerald-50"} iconBg={dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"} data={commissionProfit} colorFn={(v) => v > 0 ? dk ? "text-emerald-300" : "text-emerald-700" : subText} statusFn={(v) => v > 0 ? "مفاد" : "—"} />
+              <TwoColCard title="مفاد کارمزد صرافی" subtitle="از معاملات و حواله‌ها" icon="check" borderColor={dk ? "border-emerald-400/25 bg-emerald-400/[0.07]" : "border-emerald-300 bg-emerald-50"} iconBg={dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"} data={commissionProfit} colorFn={(v) => v > 0 ? dk ? "text-emerald-300" : "text-emerald-700" : subText} />
             </div>
           </div>
 
