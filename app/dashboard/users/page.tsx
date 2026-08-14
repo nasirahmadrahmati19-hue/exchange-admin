@@ -52,7 +52,7 @@ const loadTransactions = (): any[] => { if (typeof window === "undefined") retur
 const loadHawalas = (): any[] => { if (typeof window === "undefined") return []; try { const p = safeGetItem(HAWALAS_KEY); return Array.isArray(p) ? p : []; } catch { return []; } };
 const loadCashEntries = (): any[] => { if (typeof window === "undefined") return []; try { const p = safeGetItem(CASH_KEY); return Array.isArray(p) ? p : []; } catch { return []; } };
 
-const iconPaths = { users: "M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z", user: "M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z", search: "m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 1 10.607 10.607Z", plus: "M12 4.5v15m7.5-7.5h-15", chevron: "m19.5 8.25-7.5 7.5-7.5-7.5", x: "M6 18 18 6M6 6l12 12", check: "M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z", doc: "M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z", wallet: "M21 12a2.25 2.25 0 0 0-2.25-2.25H15a3 3 0 1 1-6 0H5.25A2.25 2.25 0 0 0 3 12m18 0v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 9m18 0V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v3", history: "M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z", chart: "M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z", printer: "M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0 1 10.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0 .229 2.523a1.125 1.125 0 0 1-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0 0 21 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 0 0-1.913-.247M6.34 18H5.25A2.25 2.25 0 0 1 3 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 0 1 1.913-.247m10.5 0a48.536 48.536 0 0 0-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5Zm-3 0h.008v.008H15V10.5Z", arrowUp: "M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18", arrowDown: "M19.5 13.5 12 21m0 0-7.5-7.5M12 21V3", edit: "m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125", eye: "M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z", inbox: "M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h3.218a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H6.911a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661Z", alert: "M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z", info: "m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z", sun: "M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.375 3.375 0 1 1-7.5 0 3.375 3.375 0 0 1 7.5 0Z", moon: "M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z", sparkle: "M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z", arrowLeft: "M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18", trash: "M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0", dots: "M6.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM12.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM18.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z" };
+const iconPaths = { users: "M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z", user: "M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z", search: "m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 1 10.607 10.607Z", plus: "M12 4.5v15m7.5-7.5h-15", chevron: "m19.5 8.25-7.5 7.5-7.5-7.5", x: "M6 18 18 6M6 6l12 12", check: "M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z", doc: "M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z", wallet: "M21 12a2.25 2.25 0 0 0-2.25-2.25H15a3 3 0 1 1-6 0H5.25A2.25 2.25 0 0 0 3 12m18 0v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 9m18 0V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v3", history: "M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z", printer: "M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0 1 10.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0 .229 2.523a1.125 1.125 0 0 1-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0 0 21 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 0 0-1.913-.247M6.34 18H5.25A2.25 2.25 0 0 1 3 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 0 1 1.913-.247m10.5 0a48.536 48.536 0 0 0-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5Zm-3 0h.008v.008H15V10.5Z", arrowUp: "M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18", arrowDown: "M19.5 13.5 12 21m0 0-7.5-7.5M12 21V3", edit: "m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125", eye: "M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z", inbox: "M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h3.218a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H6.911a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661Z", alert: "M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z", info: "m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z", sun: "M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.375 3.375 0 1 1-7.5 0 3.375 3.375 0 0 1 7.5 0Z", moon: "M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z", sparkle: "M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z", arrowLeft: "M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18", trash: "M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" };
 type IconName = keyof typeof iconPaths;
 function Ic({ n, className = "h-5 w-5" }: { n: IconName; className?: string }) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true"><path d={iconPaths[n]} /></svg>; }
 
@@ -183,6 +183,9 @@ export default function CustomersPage() {
   const customerBalances = useMemo(() => selectedCustomer ? selectedCustomer.balances : null, [selectedCustomer]);
   const filteredLedger = useMemo(() => { const q = normalizeDigits(ledgerSearch.trim()).toLowerCase(); return customerLedger.filter(e => { if (ledgerTypeFilter !== "all" && e.type !== ledgerTypeFilter) return false; if (ledgerCurrencyFilter !== "all" && e.currency !== ledgerCurrencyFilter) return false; if (ledgerDirFilter !== "all" && e.direction !== ledgerDirFilter) return false; if (!q) return true; return [e.description, e.referenceNumber || "", getCurrencyLabel(e.currency), String(e.amount)].some(f => normalizeDigits(String(f)).toLowerCase().includes(q)); }).reverse(); }, [customerLedger, ledgerSearch, ledgerTypeFilter, ledgerCurrencyFilter, ledgerDirFilter]);
 
+  const withBalanceCount = customers.filter(c => currencies.some(cur => c.balances[cur] !== 0)).length;
+  const withoutBalanceCount = customers.filter(c => currencies.every(cur => c.balances[cur] === 0)).length;
+
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(""), 3500); };
   const setField = (f: keyof FormState, v: string) => { setForm(p => ({ ...p, [f]: v })); setErrors(p => ({ ...p, [f]: undefined })); };
   const openProfile = (id: string) => { setSelectedCustomerId(id); setProfileTab("info"); setActiveTab("profile"); setOpenMenuId(null); };
@@ -232,9 +235,6 @@ export default function CustomersPage() {
     if (!selectedCustomer || !customerBalances) return;
     try {
       const win = window.open("", "_blank", "width=1000,height=700"); if (!win) return;
-      const tIn: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-      const tOut: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-      for (const e of customerLedger) { if (!isCurrency(e.currency)) continue; if (e.direction === "in") tIn[e.currency] += e.amount; else tOut[e.currency] += e.amount; }
       win.document.write(`<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8"><title>صورت‌حساب</title><style>body{font-family:Tahoma;padding:24px;direction:rtl}h1{color:#0369a1}table{width:100%;border-collapse:collapse;font-size:12px;margin:12px 0}th,td{border:1px solid #cbd5e1;padding:6px 8px;text-align:right}th{background:#f0f9ff}.in{color:#059669;font-weight:bold}.out{color:#dc2626;font-weight:bold}.box{display:inline-block;padding:8px 14px;border:2px solid #0ea5e9;border-radius:8px;margin:4px;font-weight:bold}</style></head><body><h1>صورت‌حساب ${selectedCustomer.name}</h1><p>تلفن: ${selectedCustomer.phone || "-"} | تذکره: ${selectedCustomer.tazkira || "-"} | تلگرام: ${selectedCustomer.telegram || "-"}</p><h3>مانده</h3><div>${currencies.map(c => `<span class="box">${labels[c]}: ${fmt(customerBalances[c])}</span>`).join("")}</div><h3>گردش (${customerLedger.length})</h3><table><tr><th>شماره</th><th>تاریخ</th><th>ساعت</th><th>سند</th><th>نوع</th><th>شرح</th><th>ارز</th><th>دریافت</th><th>پرداخت</th><th>مانده</th></tr>${customerLedger.map((e, i) => `<tr><td>${i + 1}</td><td>${shortDateLabel(e.date)}</td><td>${timeLabel(e.date)}</td><td>${e.referenceNumber || "-"}</td><td>${txLabels[e.type]}</td><td>${e.description}</td><td>${labels[e.currency]}</td><td class="in">${e.direction === "in" ? fmt(e.amount) : ""}</td><td class="out">${e.direction === "out" ? fmt(e.amount) : ""}</td><td>${fmt(e.balanceAfter)}</td></tr>`).join("")}</table><script>window.print()</script></body></html>`);
       win.document.close(); win.focus();
     } catch { showToast("خطا در چاپ"); }
@@ -251,7 +251,6 @@ export default function CustomersPage() {
   const uiInput = `h-12 w-full px-3.5 ${inputShell}`;
   const errInput = dk ? "border-rose-400/70" : "border-rose-400";
   const uiLabel = `mb-1.5 block text-[11px] font-black tracking-wide ${dk ? "text-slate-400" : "text-slate-500"}`;
-  const chevPos = `pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${dk ? "text-slate-500" : "text-slate-400"}`;
   const identIcon = dk ? "from-emerald-400/20 to-teal-400/5 text-emerald-300 ring-emerald-400/25" : "from-emerald-400/20 to-teal-400/10 text-emerald-600 ring-emerald-400/30";
   const fld = (label: string, node: ReactNode) => (<div><label className={uiLabel}>{label}</label>{node}</div>);
   const errBox = (list: string[]) => list.length === 0 ? null : (<div className={`space-y-2 rounded-xl border p-4 ${dk ? "border-rose-400/30 bg-rose-400/10 text-rose-300" : "border-rose-300 bg-rose-50 text-rose-600"}`}><b className="flex items-center gap-2 text-sm"><Ic n="alert" className="h-5 w-5 shrink-0" />تکمیل کنید:</b><ul className="list-disc pr-5 text-sm space-y-1">{list.map((m, i) => <li key={i}>{m}</li>)}</ul></div>);
@@ -273,48 +272,162 @@ export default function CustomersPage() {
               <button onClick={() => setTheme(dk ? "light" : "dark")} className={`group grid h-10 w-10 md:h-11 md:w-11 cursor-pointer place-items-center rounded-lg md:rounded-xl border shadow-sm backdrop-blur transition-all duration-300 active:scale-90 ${dk ? "border-slate-600 bg-slate-800/85 text-amber-300 hover:border-amber-300" : "border-slate-200 bg-white/85 text-slate-600 hover:border-emerald-400"}`}>{dk ? <Ic n="sun" className="h-4 w-4 group-hover:rotate-45 transition-transform duration-500" /> : <Ic n="moon" className="h-4 w-4 group-hover:-rotate-12 transition-transform duration-500" />}</button>
             </div>
           </header>
-          <div className="cu-up grid grid-cols-2 md:grid-cols-3 gap-3" style={{ animationDelay: "70ms" }}>
-            {[{ label: "کل مشتریان", value: customers.length, icon: "users" as IconName, color: "from-emerald-500 to-teal-500", text: dk ? "text-emerald-300" : "text-emerald-600" }, { label: "رویدادهای مالی", value: ledger.length, icon: "history" as IconName, color: "from-amber-500 to-orange-500", text: dk ? "text-amber-300" : "text-amber-600" }, { label: "با موجودی", value: customers.filter(c => currencies.some(cur => c.balances[cur] !== 0)).length, icon: "wallet" as IconName, color: "from-sky-500 to-cyan-500", text: dk ? "text-sky-300" : "text-sky-600" }].map((s, i) => (<div key={i} className={`group relative overflow-hidden rounded-2xl border p-4 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${glassCard}`}><div className={`absolute inset-0 bg-gradient-to-br ${s.color} opacity-0 transition-opacity group-hover:opacity-10`} /><div className="relative flex items-center justify-between"><div><div className={`text-[10px] font-black ${subText}`}>{s.label}</div><div className={`text-2xl md:text-3xl font-black tabular-nums mt-1 ${s.text}`}>{s.value}</div></div><div className={`grid h-10 w-10 md:h-12 md:w-12 place-items-center rounded-xl bg-gradient-to-br ${s.color} text-white shadow-lg`}><Ic n={s.icon} className="h-5 w-5 md:h-6 md:w-6" /></div></div></div>))}
+
+          <div className="cu-up grid grid-cols-2 md:grid-cols-4 gap-3" style={{ animationDelay: "70ms" }}>
+            {[
+              { label: "کل مشتریان", value: customers.length, icon: "users" as IconName, color: "from-emerald-500 to-teal-500", text: dk ? "text-emerald-300" : "text-emerald-600" },
+              { label: "رویدادهای مالی", value: ledger.length, icon: "history" as IconName, color: "from-amber-500 to-orange-500", text: dk ? "text-amber-300" : "text-amber-600" },
+              { label: "با موجودی", value: withBalanceCount, icon: "wallet" as IconName, color: "from-sky-500 to-cyan-500", text: dk ? "text-sky-300" : "text-sky-600" },
+              { label: "بدون موجودی", value: withoutBalanceCount, icon: "x" as IconName, color: "from-rose-500 to-pink-500", text: dk ? "text-rose-300" : "text-rose-600" }
+            ].map((s, i) => (
+              <div key={i} className={`group relative overflow-hidden rounded-2xl border p-4 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${glassCard}`}>
+                <div className={`absolute inset-0 bg-gradient-to-br ${s.color} opacity-0 transition-opacity group-hover:opacity-10`} />
+                <div className="relative flex items-center justify-between">
+                  <div><div className={`text-[10px] font-black ${subText}`}>{s.label}</div><div className={`text-2xl md:text-3xl font-black tabular-nums mt-1 ${s.text}`}>{s.value}</div></div>
+                  <div className={`grid h-10 w-10 md:h-12 md:w-12 place-items-center rounded-xl bg-gradient-to-br ${s.color} text-white shadow-lg`}><Ic n={s.icon} className="h-5 w-5 md:h-6 md:w-6" /></div>
+                </div>
+              </div>
+            ))}
           </div>
+
           <div className={`cu-up flex gap-1.5 md:gap-2 rounded-xl md:rounded-2xl border p-1.5 md:p-2 shadow-sm backdrop-blur ${glassChip}`} style={{ animationDelay: "140ms" }}>
-            {[{ id: "list" as const, label: "فهرست مشتریان", icon: "users" as IconName, count: customers.length }, { id: "new" as const, label: "ثبت مشتری جدید", icon: "plus" as IconName, count: null }].map(tab => (<button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 md:gap-2 rounded-lg md:rounded-xl px-3 md:px-5 py-2.5 md:py-3 text-xs md:text-sm font-black transition-all duration-300 active:scale-[0.97] ${activeTab === tab.id ? `bg-gradient-to-l shadow-lg ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 to-teal-500 text-white"}` : dk ? "text-slate-400 hover:bg-slate-700/60 hover:text-slate-100" : "text-slate-500 hover:bg-emerald-50 hover:text-slate-800"}`}><Ic n={tab.icon} className="h-4 w-4" /><span>{tab.label}</span>{tab.count !== null && <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-black ${activeTab === tab.id ? dk ? "bg-slate-950/20 text-slate-950" : "bg-white/30 text-white" : dk ? "bg-slate-700 text-slate-300" : "bg-emerald-100 text-emerald-700"}`}>{tab.count}</span>}</button>))}
-            {selectedCustomer && (<button onClick={() => setActiveTab("profile")} className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg md:rounded-xl px-3 md:px-5 py-2.5 md:py-3 text-xs md:text-sm font-black transition-all duration-300 active:scale-[0.97] ${activeTab === "profile" ? `bg-gradient-to-l shadow-lg ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 to-teal-500 text-white"}` : dk ? "text-slate-400 hover:bg-slate-700/60" : "text-slate-500 hover:bg-emerald-50"}`}><Ic n="sparkle" className="h-4 w-4" /><span className="truncate max-w-[100px]">{selectedCustomer.name}</span></button>)}
+            {[{ id: "list" as const, label: "فهرست مشتریان", icon: "users" as IconName, count: customers.length }, { id: "new" as const, label: "ثبت مشتری جدید", icon: "plus" as IconName, count: null }].map(tab => (
+              <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 md:gap-2 rounded-lg md:rounded-xl px-3 md:px-5 py-2.5 md:py-3 text-xs md:text-sm font-black transition-all duration-300 active:scale-[0.97] ${activeTab === tab.id ? `bg-gradient-to-l shadow-lg ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 to-teal-500 text-white"}` : dk ? "text-slate-400 hover:bg-slate-700/60 hover:text-slate-100" : "text-slate-500 hover:bg-emerald-50 hover:text-slate-800"}`}>
+                <Ic n={tab.icon} className="h-4 w-4" /><span>{tab.label}</span>
+                {tab.count !== null && <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-black ${activeTab === tab.id ? dk ? "bg-slate-950/20 text-slate-950" : "bg-white/30 text-white" : dk ? "bg-slate-700 text-slate-300" : "bg-emerald-100 text-emerald-700"}`}>{tab.count}</span>}
+              </button>
+            ))}
+            {selectedCustomer && (
+              <button onClick={() => setActiveTab("profile")} className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg md:rounded-xl px-3 md:px-5 py-2.5 md:py-3 text-xs md:text-sm font-black transition-all duration-300 active:scale-[0.97] ${activeTab === "profile" ? `bg-gradient-to-l shadow-lg ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 to-teal-500 text-white"}` : dk ? "text-slate-400 hover:bg-slate-700/60" : "text-slate-500 hover:bg-emerald-50"}`}>
+                <Ic n="sparkle" className="h-4 w-4" /><span className="truncate max-w-[100px]">{selectedCustomer.name}</span>
+              </button>
+            )}
           </div>
+
           {activeTab === "list" && (
             <section className={`cu-up overflow-hidden ${uiCard}`} style={{ animationDelay: "160ms" }}>
-              <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6"><span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identIcon}`}><Ic n="users" className="h-5 w-5" /></span><div className="flex-1 min-w-0"><h2 className={`cu-display text-xl md:text-2xl leading-none ${heading}`}>فهرست مشتریان</h2><p className={`mt-1 text-[11px] font-bold ${subText}`}>جستجو و مدیریت</p></div><button onClick={() => { setForm(emptyForm); setActiveTab("new"); }} className={`flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-l px-4 py-2.5 text-sm font-black shadow-lg transition-all hover:brightness-110 active:scale-95 ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 to-teal-500 text-white"}`}><Ic n="plus" className="h-4 w-4" />ثبت مشتری جدید</button></div>
+              <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
+                <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identIcon}`}><Ic n="users" className="h-5 w-5" /></span>
+                <div className="flex-1 min-w-0"><h2 className={`cu-display text-xl md:text-2xl leading-none ${heading}`}>فهرست مشتریان</h2><p className={`mt-1 text-[11px] font-bold ${subText}`}>جستجو و مدیریت</p></div>
+                <button onClick={() => { setForm(emptyForm); setActiveTab("new"); }} className={`flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-l px-4 py-2.5 text-sm font-black shadow-lg transition-all hover:brightness-110 active:scale-95 ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 to-teal-500 text-white"}`}><Ic n="plus" className="h-4 w-4" />ثبت مشتری جدید</button>
+              </div>
               <div className="px-4 md:px-7 pb-4 space-y-3">
-                <div className="relative"><input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="جستجو: نام، تلفن، تذکره، تلگرام…" className={`${uiInput} pr-10`} /><span className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 ${dk ? "text-slate-500" : "text-slate-400"}`}><Ic n="search" className="h-4 w-4" /></span></div>
-                {filteredCustomers.length === 0 ? (<div className={`flex flex-col items-center gap-3 px-6 py-16 ${dk ? "text-slate-500" : "text-slate-400"}`}><span className={`grid h-16 w-16 place-items-center rounded-2xl border border-dashed ${dk ? "border-slate-600 bg-slate-800/40" : "border-slate-300 bg-slate-50"}`}><Ic n="inbox" className="h-7 w-7 opacity-70" /></span><p className="text-sm font-black">{customers.length === 0 ? "مشتری ثبت نشده." : "یافت نشد."}</p></div>) : (<>
-                  <div className="md:hidden space-y-2">
-                    {filteredCustomers.map(c => (<div key={c.id} className={`rounded-2xl border p-4 ${glassCard}`}><div className="flex items-start gap-3"><div className={`grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white font-black text-lg shadow-lg`}>{c.name.charAt(0)}</div><div className="flex-1 min-w-0"><b className={`text-sm font-black ${dk ? "text-slate-100" : "text-slate-800"}`}>{c.name}</b><div className={`text-[11px] ${subText} mt-1 space-y-0.5`}><div>📱 <span dir="ltr">{c.phone || "-"}</span></div><div>🆔 <span dir="ltr">{c.tazkira || "-"}</span></div>{c.telegram && <div>💬 <span dir="ltr">{c.telegram}</span></div>}</div></div></div><div className="grid grid-cols-5 gap-1 mt-3">{currencies.map(cur => (<div key={cur} className={`rounded-lg px-1.5 py-1.5 text-center ${dk ? "bg-slate-900/50" : "bg-slate-50"}`}><div className={`text-[8px] font-black ${subText}`}>{cur}</div><div className={`text-[10px] font-black tabular-nums ${c.balances[cur] >= 0 ? currencyColors[cur][dk ? "dark" : "light"] : "text-rose-500"}`}>{fmt(c.balances[cur])}</div></div>))}</div><div className="flex flex-col gap-1.5 mt-3"><button onClick={() => openProfile(c.id)} className={`flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-bold cursor-pointer ${dk ? "border-emerald-400/30 text-emerald-300" : "border-emerald-300 text-emerald-600"}`}><Ic n="eye" className="h-3.5 w-3.5" />مشاهده</button><button onClick={() => openEdit(c.id)} className={`flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-bold cursor-pointer ${dk ? "border-sky-400/30 text-sky-300" : "border-sky-300 text-sky-600"}`}><Ic n="edit" className="h-3.5 w-3.5" />ویرایش</button><button onClick={() => deleteCustomer(c.id)} className={`flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-bold cursor-pointer ${dk ? "border-rose-400/30 text-rose-300" : "border-rose-300 text-rose-600"}`}><Ic n="trash" className="h-3.5 w-3.5" />حذف</button></div></div>))}
+                <div className="relative">
+                  <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="جستجو: نام، تلفن، تذکره، تلگرام…" className={`${uiInput} pr-10`} />
+                  <span className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 ${dk ? "text-slate-500" : "text-slate-400"}`}><Ic n="search" className="h-4 w-4" /></span>
+                </div>
+                {filteredCustomers.length === 0 ? (
+                  <div className={`flex flex-col items-center gap-3 px-6 py-16 ${dk ? "text-slate-500" : "text-slate-400"}`}>
+                    <span className={`grid h-16 w-16 place-items-center rounded-2xl border border-dashed ${dk ? "border-slate-600 bg-slate-800/40" : "border-slate-300 bg-slate-50"}`}><Ic n="inbox" className="h-7 w-7 opacity-70" /></span>
+                    <p className="text-sm font-black">{customers.length === 0 ? "مشتری ثبت نشده." : "یافت نشد."}</p>
                   </div>
-                  <div className="hidden md:block overflow-x-auto cu-scroll">
-                    <table className="w-full min-w-[900px] text-sm">
-                      <thead><tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>{["شماره", "مشتری", "تماس", "هویت", "موجودی", "عملیات"].map(h => (<th key={h} className="px-4 py-3 text-center text-[11px] font-black text-slate-400">{h}</th>))}</tr></thead>
-                      <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
-                        {filteredCustomers.map((c, idx) => {
-                          const hasBal = currencies.some(cur => c.balances[cur] !== 0);
-                          const isOpen = openMenuId === c.id;
-                          return (<tr key={c.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/70"}`}>
-                            <td className="px-4 py-3.5 text-center align-middle"><span className={`inline-grid h-8 w-8 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500"}`}>{idx + 1}</span></td>
-                            <td className="px-4 py-3.5 text-center align-middle"><div className="flex flex-col items-center gap-1"><div className={`grid h-9 w-9 place-items-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 text-white font-black text-sm shadow`}>{c.name.charAt(0)}</div><div className={`text-[13px] font-black ${dk ? "text-slate-100" : "text-slate-800"}`}>{c.name}</div><div className={`text-[10px] ${subText}`}>{c.address || "—"}</div>{c.telegram && <div className={`text-[10px] ${subText}`} dir="ltr">💬 {c.telegram}</div>}</div></td>
-                            <td className="px-4 py-3.5 text-center align-middle"><div className={`text-[12px] font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`} dir="ltr">📱 {c.phone || "-"}</div><div className={`text-[10px] tabular-nums mt-1 ${subText}`} dir="ltr">🆔 {c.tazkira || "-"}</div></td>
-                            <td className="px-4 py-3.5 text-center align-middle"><div className={`text-[11px] tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{shortDateLabel(c.registeredAt)}</div><div className={`text-[10px] mt-1 ${subText}`}>{ledger.filter(e => e.customerId === c.id).length} رویداد</div></td>
-                            <td className="px-4 py-3.5 text-center align-middle">{hasBal ? (<div className="flex flex-col items-center gap-0.5">{currencies.map(cur => c.balances[cur] !== 0 && (<div key={cur} className="flex items-center gap-1"><span className={`text-[11px] font-black tabular-nums ${c.balances[cur] < 0 ? "text-rose-500" : currencyColors[cur][dk ? "dark" : "light"]}`}>{fmt(c.balances[cur])}</span><span className={`text-[9px] ${subText}`}>{labels[cur]}</span></div>))}</div>) : <span className={`text-[10px] ${subText}`}>بدون موجودی</span>}</td>
-                            <td className="px-4 py-3.5 text-center align-middle"><div className="relative inline-block" ref={isOpen ? menuRef : null}><button data-menu-toggle onClick={(e) => { e.stopPropagation(); setOpenMenuId(isOpen ? null : c.id); }} className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-black transition-all ${isOpen ? dk ? "border-emerald-400/50 bg-emerald-400/20 text-emerald-300" : "border-emerald-400 bg-emerald-50 text-emerald-600" : dk ? "border-slate-600 bg-slate-900 text-emerald-300 hover:border-emerald-400/50" : "border-slate-200 bg-white text-emerald-600 hover:border-emerald-300"}`}>عملیات<Ic n="chevron" className={`h-3 w-3 transition-transform ${isOpen ? "rotate-180" : ""}`} /></button>{isOpen && (<ul className={`cu-menu absolute right-1/2 translate-x-1/2 top-full z-20 mt-1.5 w-36 space-y-1 rounded-xl border p-1.5 shadow-xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`}><li><button onClick={() => openProfile(c.id)} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold cursor-pointer ${dk ? "text-slate-300 hover:bg-emerald-400/10" : "text-slate-600 hover:bg-emerald-50"}`}><Ic n="eye" className="h-3.5 w-3.5" />مشاهده</button></li><li><button onClick={() => openEdit(c.id)} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold cursor-pointer ${dk ? "text-sky-300 hover:bg-sky-400/10" : "text-sky-600 hover:bg-sky-50"}`}><Ic n="edit" className="h-3.5 w-3.5" />ویرایش</button></li><li className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} /><li><button onClick={() => deleteCustomer(c.id)} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold cursor-pointer ${dk ? "text-rose-300 hover:bg-rose-400/10" : "text-rose-500 hover:bg-rose-50"}`}><Ic n="trash" className="h-3.5 w-3.5" />حذف</button></li></ul>)}</div></td>
-                          </tr>);
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </>)}
+                ) : (
+                  <>
+                    <div className="md:hidden space-y-2">
+                      {filteredCustomers.map(c => (
+                        <div key={c.id} className={`rounded-2xl border p-4 ${glassCard}`}>
+                          <div className="flex items-start gap-3">
+                            <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white font-black text-lg shadow-lg`}>{c.name.charAt(0)}</div>
+                            <div className="flex-1 min-w-0">
+                              <b className={`text-sm font-black ${dk ? "text-slate-100" : "text-slate-800"}`}>{c.name}</b>
+                              <div className={`text-[11px] ${subText} mt-1 space-y-0.5`}>
+                                <div>📱 <span dir="ltr">{c.phone || "-"}</span></div>
+                                <div>🆔 <span dir="ltr">{c.tazkira || "-"}</span></div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-5 gap-1 mt-3">
+                            {currencies.map(cur => (
+                              <div key={cur} className={`rounded-lg px-1.5 py-1.5 text-center ${dk ? "bg-slate-900/50" : "bg-slate-50"}`}>
+                                <div className={`text-[8px] font-black ${subText}`}>{cur}</div>
+                                <div className={`text-[10px] font-black tabular-nums ${c.balances[cur] >= 0 ? currencyColors[cur][dk ? "dark" : "light"] : "text-rose-500"}`}>{fmt(c.balances[cur])}</div>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex flex-col gap-1.5 mt-3">
+                            <button onClick={() => openProfile(c.id)} className={`flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-bold cursor-pointer ${dk ? "border-emerald-400/30 text-emerald-300" : "border-emerald-300 text-emerald-600"}`}><Ic n="eye" className="h-3.5 w-3.5" />مشاهده</button>
+                            <button onClick={() => openEdit(c.id)} className={`flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-bold cursor-pointer ${dk ? "border-sky-400/30 text-sky-300" : "border-sky-300 text-sky-600"}`}><Ic n="edit" className="h-3.5 w-3.5" />ویرایش</button>
+                            <button onClick={() => deleteCustomer(c.id)} className={`flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-bold cursor-pointer ${dk ? "border-rose-400/30 text-rose-300" : "border-rose-300 text-rose-600"}`}><Ic n="trash" className="h-3.5 w-3.5" />حذف</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="hidden md:block overflow-x-auto cu-scroll">
+                      <table className="w-full min-w-[900px] text-sm">
+                        <thead>
+                          <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
+                            {["شماره", "مشتری", "تماس", "هویت", "موجودی", "عملیات"].map(h => (
+                              <th key={h} className="px-4 py-3 text-center text-[11px] font-black text-slate-400">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
+                          {filteredCustomers.map((c, idx) => {
+                            const hasBal = currencies.some(cur => c.balances[cur] !== 0);
+                            const isOpen = openMenuId === c.id;
+                            return (
+                              <tr key={c.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/70"}`}>
+                                <td className="px-4 py-3.5 text-center align-middle"><span className={`inline-grid h-8 w-8 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500"}`}>{idx + 1}</span></td>
+                                <td className="px-4 py-3.5 text-center align-middle">
+                                  <div className="flex flex-col items-center gap-1">
+                                    <div className={`grid h-9 w-9 place-items-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 text-white font-black text-sm shadow`}>{c.name.charAt(0)}</div>
+                                    <div className={`text-[13px] font-black ${dk ? "text-slate-100" : "text-slate-800"}`}>{c.name}</div>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3.5 text-center align-middle">
+                                  <div className={`text-[12px] font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`} dir="ltr">📱 {c.phone || "-"}</div>
+                                  <div className={`text-[10px] tabular-nums mt-1 ${subText}`} dir="ltr">🆔 {c.tazkira || "-"}</div>
+                                </td>
+                                <td className="px-4 py-3.5 text-center align-middle">
+                                  <div className={`text-[11px] tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{shortDateLabel(c.registeredAt)}</div>
+                                  <div className={`text-[10px] mt-1 ${subText}`}>{ledger.filter(e => e.customerId === c.id).length} رویداد</div>
+                                </td>
+                                <td className="px-4 py-3.5 text-center align-middle">
+                                  {hasBal ? (
+                                    <div className="flex flex-col items-center gap-0.5">
+                                      {currencies.map(cur => c.balances[cur] !== 0 && (
+                                        <div key={cur} className="flex items-center gap-1">
+                                          <span className={`text-[11px] font-black tabular-nums ${c.balances[cur] < 0 ? "text-rose-500" : currencyColors[cur][dk ? "dark" : "light"]}`}>{fmt(c.balances[cur])}</span>
+                                          <span className={`text-[9px] ${subText}`}>{labels[cur]}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : <span className={`text-[10px] ${subText}`}>بدون موجودی</span>}
+                                </td>
+                                <td className="px-4 py-3.5 text-center align-middle">
+                                  <div className="relative inline-block" ref={isOpen ? menuRef : null}>
+                                    <button data-menu-toggle onClick={(e) => { e.stopPropagation(); setOpenMenuId(isOpen ? null : c.id); }} className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-black transition-all ${isOpen ? dk ? "border-emerald-400/50 bg-emerald-400/20 text-emerald-300" : "border-emerald-400 bg-emerald-50 text-emerald-600" : dk ? "border-slate-600 bg-slate-900 text-emerald-300 hover:border-emerald-400/50" : "border-slate-200 bg-white text-emerald-600 hover:border-emerald-300"}`}>
+                                      عملیات<Ic n="chevron" className={`h-3 w-3 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+                                    </button>
+                                    {isOpen && (
+                                      <ul className={`cu-menu absolute right-1/2 translate-x-1/2 top-full z-20 mt-1.5 w-36 space-y-1 rounded-xl border p-1.5 shadow-xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`}>
+                                        <li><button onClick={() => openProfile(c.id)} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold cursor-pointer ${dk ? "text-slate-300 hover:bg-emerald-400/10" : "text-slate-600 hover:bg-emerald-50"}`}><Ic n="eye" className="h-3.5 w-3.5" />مشاهده</button></li>
+                                        <li><button onClick={() => openEdit(c.id)} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold cursor-pointer ${dk ? "text-sky-300 hover:bg-sky-400/10" : "text-sky-600 hover:bg-sky-50"}`}><Ic n="edit" className="h-3.5 w-3.5" />ویرایش</button></li>
+                                        <li className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
+                                        <li><button onClick={() => deleteCustomer(c.id)} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold cursor-pointer ${dk ? "text-rose-300 hover:bg-rose-400/10" : "text-rose-500 hover:bg-rose-50"}`}><Ic n="trash" className="h-3.5 w-3.5" />حذف</button></li>
+                                      </ul>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
               </div>
             </section>
           )}
+
           {activeTab === "new" && (
             <section className={`cu-up space-y-4 md:space-y-5 p-4 md:p-7 ${uiCard}`}>
-              <div className="flex flex-wrap items-center gap-3"><span className={`grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identIcon}`}><Ic n="plus" className="h-5 w-5" /></span><div className="flex-1 min-w-0"><h2 className={`cu-display text-xl md:text-2xl leading-none ${heading}`}>ثبت مشتری جدید</h2><p className={`mt-1 text-[11px] font-bold ${subText}`}>ایجاد پروندهٔ جدید</p></div></div>
+              <div className="flex flex-wrap items-center gap-3">
+                <span className={`grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identIcon}`}><Ic n="plus" className="h-5 w-5" /></span>
+                <div className="flex-1 min-w-0"><h2 className={`cu-display text-xl md:text-2xl leading-none ${heading}`}>ثبت مشتری جدید</h2><p className={`mt-1 text-[11px] font-bold ${subText}`}>ایجاد پروندهٔ جدید</p></div>
+              </div>
               <div className="grid gap-4 md:grid-cols-2">
                 {fld("نام و نام خانوادگی *", (<input className={`${uiInput} ${errors.name ? errInput : ""}`} value={form.name} onChange={e => setField("name", e.target.value)} placeholder="مثلاً علی احمدی" />))}
                 {fld("شماره تماس *", (<input className={`${uiInput} ${errors.phone ? errInput : ""}`} value={form.phone} onChange={e => setField("phone", e.target.value)} placeholder="07xxxxxxxx" />))}
@@ -330,6 +443,7 @@ export default function CustomersPage() {
               </div>
             </section>
           )}
+
           {activeTab === "profile" && selectedCustomer && customerBalances && (
             <section className="cu-up space-y-4 md:space-y-5">
               <div className={`relative overflow-hidden rounded-2xl border p-5 md:p-7 ${uiCard}`}>
@@ -351,19 +465,207 @@ export default function CustomersPage() {
                   </div>
                 </div>
               </div>
+
               <div className={`rounded-2xl border p-4 md:p-5 ${uiCard}`}>
-                <div className="flex items-center gap-2 mb-3"><span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}><Ic n="wallet" className="h-4 w-4" /></span><b className={`text-sm font-black ${heading}`}>موجودی فعلی</b><span className={`ml-auto text-[10px] font-bold ${subText}`}>از تمام منابع</span></div>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}><Ic n="wallet" className="h-4 w-4" /></span>
+                  <b className={`text-sm font-black ${heading}`}>موجودی فعلی</b>
+                  <span className={`ml-auto text-[10px] font-bold ${subText}`}>از تمام منابع</span>
+                </div>
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-                  {currencies.map(cur => { const bal = customerBalances[cur]; const colors = currencyColors[cur]; return (<div key={cur} className={`rounded-xl border p-3 text-center ${dk ? "border-slate-700 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}><div className={`text-[10px] font-black ${subText} mb-1`}>{labels[cur]}</div><div className={`text-lg font-black tabular-nums ${bal < 0 ? "text-rose-500" : colors[dk ? "dark" : "light"]}`}>{fmt(bal)}</div>{bal < 0 && <div className="text-[9px] font-bold text-rose-500 mt-1">قرض</div>}{bal > 0 && <div className={`text-[9px] font-bold mt-1 ${subText}`}>طلب</div>}</div>); })}
+                  {currencies.map(cur => {
+                    const bal = customerBalances[cur]; const colors = currencyColors[cur];
+                    return (
+                      <div key={cur} className={`rounded-xl border p-3 text-center ${dk ? "border-slate-700 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
+                        <div className={`text-[10px] font-black ${subText} mb-1`}>{labels[cur]}</div>
+                        <div className={`text-lg font-black tabular-nums ${bal < 0 ? "text-rose-500" : colors[dk ? "dark" : "light"]}`}>{fmt(bal)}</div>
+                        {bal < 0 && <div className="text-[9px] font-bold text-rose-500 mt-1">قرض</div>}
+                        {bal > 0 && <div className={`text-[9px] font-bold mt-1 ${subText}`}>طلب</div>}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
+
               <div className={`flex flex-wrap gap-1.5 rounded-xl border p-1.5 ${glassChip}`}>
-                {([{ id: "info" as const, l: "اطلاعات", i: "user" as IconName }, { id: "balances" as const, l: "موجودی", i: "wallet" as IconName }, { id: "ledger" as const, l: "روزنامچه", i: "history" as IconName }, { id: "statement" as const, l: "صورت‌حساب", i: "doc" as IconName }]).map(pt => (<button key={pt.id} onClick={() => setProfileTab(pt.id)} className={`flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-black transition-all ${profileTab === pt.id ? dk ? "bg-emerald-400/15 text-emerald-300 ring-1 ring-emerald-400/30" : "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-300" : dk ? "text-slate-400 hover:bg-slate-700/60" : "text-slate-500 hover:bg-slate-50"}`}><Ic n={pt.i} className="h-3.5 w-3.5" />{pt.l}</button>))}
+                {([{ id: "info" as const, l: "اطلاعات", i: "user" as IconName }, { id: "balances" as const, l: "موجودی", i: "wallet" as IconName }, { id: "ledger" as const, l: "روزنامچه", i: "history" as IconName }, { id: "statement" as const, l: "صورت‌حساب", i: "doc" as IconName }]).map(pt => (
+                  <button key={pt.id} onClick={() => setProfileTab(pt.id)} className={`flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-black transition-all ${profileTab === pt.id ? dk ? "bg-emerald-400/15 text-emerald-300 ring-1 ring-emerald-400/30" : "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-300" : dk ? "text-slate-400 hover:bg-slate-700/60" : "text-slate-500 hover:bg-slate-50"}`}>
+                    <Ic n={pt.i} className="h-3.5 w-3.5" />{pt.l}
+                  </button>
+                ))}
               </div>
-              {profileTab === "info" && (<div className={`rounded-2xl border p-4 md:p-6 ${uiCard}`}><div className="flex items-center gap-2 mb-4"><span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}><Ic n="edit" className="h-4 w-4" /></span><b className={`text-sm font-black ${heading}`}>ویرایش اطلاعات</b></div><div className="grid gap-4 md:grid-cols-2">{fld("نام", (<input className={uiInput} value={form.name} onChange={e => setField("name", e.target.value)} />))}{fld("تلفن", (<input className={uiInput} value={form.phone} onChange={e => setField("phone", e.target.value)} />))}{fld("تذکره", (<input className={uiInput} value={form.tazkira} onChange={e => setField("tazkira", e.target.value)} />))}{fld("تلگرام", (<input className={uiInput} value={form.telegram} onChange={e => setField("telegram", e.target.value)} />))}<div className="md:col-span-2">{fld("آدرس", (<input className={uiInput} value={form.address} onChange={e => setField("address", e.target.value)} />))}</div><div className="md:col-span-2">{fld("توضیحات", (<textarea rows={3} className={`${uiInput} h-auto py-3 resize-none`} value={form.note} onChange={e => setField("note", e.target.value)} />))}</div></div><button onClick={updateCustomer} className={`mt-4 flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-l px-5 py-2.5 text-sm font-black shadow-lg ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 to-teal-500 text-white"}`}><Ic n="check" className="h-4 w-4" />ذخیره</button></div>)}
-              {profileTab === "balances" && (<div className={`rounded-2xl border p-4 md:p-6 ${uiCard}`}><div className="space-y-2">{currencies.map(cur => { const bal = customerBalances[cur]; const cnt = customerLedger.filter(e => e.currency === cur).length; const tIn = customerLedger.filter(e => e.currency === cur && e.direction === "in").reduce((s, e) => s + e.amount, 0); const tOut = customerLedger.filter(e => e.currency === cur && e.direction === "out").reduce((s, e) => s + e.amount, 0); const colors = currencyColors[cur]; return (<div key={cur} className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-200 bg-white"}`}><div className="flex items-center justify-between mb-3"><div className="flex items-center gap-2"><span className={`grid h-10 w-10 place-items-center rounded-lg bg-gradient-to-br ${colors.gradient} text-white font-black shadow-md`}>{cur}</span><div><b className={`text-sm font-black ${heading}`}>{labels[cur]}</b><div className={`text-[10px] ${subText}`}>{cnt} رویداد</div></div></div><div className={`text-2xl font-black tabular-nums ${bal >= 0 ? colors[dk ? "dark" : "light"] : "text-rose-500"}`}>{fmt(bal)}</div></div><div className="grid grid-cols-2 gap-2 pt-3 border-t border-dashed border-slate-300/30"><div className={`flex items-center gap-2 rounded-lg px-3 py-2 ${dk ? "bg-emerald-400/10" : "bg-emerald-50"}`}><Ic n="arrowDown" className={`h-4 w-4 ${dk ? "text-emerald-300" : "text-emerald-600"}`} /><div><div className={`text-[10px] ${subText}`}>دریافت</div><div className={`text-sm font-black tabular-nums ${dk ? "text-emerald-300" : "text-emerald-700"}`}>{fmt(tIn)}</div></div></div><div className={`flex items-center gap-2 rounded-lg px-3 py-2 ${dk ? "bg-rose-400/10" : "bg-rose-50"}`}><Ic n="arrowUp" className={`h-4 w-4 ${dk ? "text-rose-300" : "text-rose-600"}`} /><div><div className={`text-[10px] ${subText}`}>پرداخت</div><div className={`text-sm font-black tabular-nums ${dk ? "text-rose-300" : "text-rose-700"}`}>{fmt(tOut)}</div></div></div></div></div>); })}</div></div>)}
-              {profileTab === "ledger" && (<div className={`rounded-2xl border p-4 md:p-6 ${uiCard}`}><div className="flex items-center gap-2 mb-4"><span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="history" className="h-4 w-4" /></span><b className={`text-sm font-black ${heading}`}>روزنامچه</b><span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${dk ? "bg-slate-700 text-slate-300" : "bg-slate-200 text-slate-600"}`}>{filteredLedger.length}</span></div><div className="grid gap-2 mb-4 md:grid-cols-[1fr_auto_auto_auto]"><div className="relative"><input value={ledgerSearch} onChange={e => setLedgerSearch(e.target.value)} placeholder="جستجو…" className={`${uiInput} pr-10`} /><span className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 ${dk ? "text-slate-500" : "text-slate-400"}`}><Ic n="search" className="h-4 w-4" /></span></div><select value={ledgerTypeFilter} onChange={e => setLedgerTypeFilter(e.target.value as any)} className={`${uiInput} cursor-pointer appearance-none pl-9 w-auto min-w-[130px]`}><option value="all">همه</option>{(Object.keys(txLabels) as TxType[]).map(t => <option key={t} value={t}>{txLabels[t]}</option>)}</select><select value={ledgerCurrencyFilter} onChange={e => setLedgerCurrencyFilter(e.target.value as any)} className={`${uiInput} cursor-pointer appearance-none pl-9 w-auto min-w-[120px]`}><option value="all">همه ارزها</option>{currencies.map(c => <option key={c} value={c}>{labels[c]}</option>)}</select><select value={ledgerDirFilter} onChange={e => setLedgerDirFilter(e.target.value as any)} className={`${uiInput} cursor-pointer appearance-none pl-9 w-auto min-w-[110px]`}><option value="all">همه</option><option value="in">دریافت</option><option value="out">پرداخت</option></select></div>{filteredLedger.length === 0 ? (<div className={`flex flex-col items-center gap-3 py-12 ${dk ? "text-slate-500" : "text-slate-400"}`}><Ic n="inbox" className="h-8 w-8 opacity-70" /><p className="text-sm font-black">رویدادی یافت نشد.</p></div>) : (<div className="overflow-x-auto cu-scroll"><table className="w-full min-w-[950px] text-sm"><thead><tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>{["شماره", "تاریخ", "ساعت", "سند", "نوع", "شرح", "ارز", "دریافت", "پرداخت", "مانده"].map(h => <th key={h} className="px-3 py-2.5 text-center text-[10px] font-black text-slate-400">{h}</th>)}</tr></thead><tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>{filteredLedger.map((e, i) => (<tr key={e.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/50"}`}><td className="px-3 py-2.5 text-center text-[11px] font-black tabular-nums">{filteredLedger.length - i}</td><td className={`px-3 py-2.5 text-center text-[11px] tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{shortDateLabel(e.date)}</td><td className={`px-3 py-2.5 text-center text-[11px] tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{timeLabel(e.date)}</td><td className="px-3 py-2.5 text-center"><span className={`inline-flex rounded-md border px-1.5 py-0.5 text-[10px] font-black tabular-nums ${dk ? "border-slate-600 text-slate-300" : "border-slate-200 text-slate-600"}`} dir="ltr">{e.referenceNumber || "-"}</span></td><td className="px-3 py-2.5 text-center"><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${txColors[e.type][dk ? "dark" : "light"]}`}>{txLabels[e.type]}</span></td><td className={`px-3 py-2.5 text-center text-[11px] max-w-[200px] truncate ${dk ? "text-slate-200" : "text-slate-700"}`}>{e.description}</td><td className={`px-3 py-2.5 text-center text-[11px] font-black ${currencyColors[e.currency][dk ? "dark" : "light"]}`}>{labels[e.currency]}</td><td className={`px-3 py-2.5 text-center text-[11px] font-black tabular-nums ${e.direction === "in" ? "text-emerald-500" : ""}`}>{e.direction === "in" ? fmt(e.amount) : ""}</td><td className={`px-3 py-2.5 text-center text-[11px] font-black tabular-nums ${e.direction === "out" ? "text-rose-500" : ""}`}>{e.direction === "out" ? fmt(e.amount) : ""}</td><td className={`px-3 py-2.5 text-center text-[11px] font-black tabular-nums ${currencyColors[e.currency][dk ? "dark" : "light"]}`}>{fmt(e.balanceAfter)}</td></tr>))}</tbody></table></div>)}</div>)}
-              {profileTab === "statement" && (<div className={`rounded-2xl border p-4 md:p-6 ${uiCard}`}><div className="flex flex-wrap items-center justify-between gap-3 mb-4"><div className="flex items-center gap-2"><span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}><Ic n="doc" className="h-4 w-4" /></span><b className={`text-sm font-black ${heading}`}>صورت‌حساب کامل</b></div><button onClick={printStatement} className={`flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-l px-4 py-2 text-sm font-black shadow-lg ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 to-teal-500 text-white"}`}><Ic n="printer" className="h-4 w-4" />چاپ</button></div><div className="grid gap-3 md:grid-cols-2 mb-4"><div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-200 bg-white"}`}><b className={`text-xs font-black ${heading}`}>مشخصات</b><div className={`space-y-1 text-xs mt-2 ${dk ? "text-slate-300" : "text-slate-600"}`}><div><b>نام:</b> {selectedCustomer.name}</div><div><b>کد:</b> <span dir="ltr">{selectedCustomer.id.slice(-6)}</span></div><div><b>تلفن:</b> <span dir="ltr">{selectedCustomer.phone || "-"}</span></div><div><b>تذکره:</b> <span dir="ltr">{selectedCustomer.tazkira || "-"}</span></div><div><b>تلگرام:</b> <span dir="ltr">{selectedCustomer.telegram || "-"}</span></div></div></div><div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-200 bg-white"}`}><b className={`text-xs font-black ${heading}`}>آمار</b><div className={`space-y-1 text-xs mt-2 ${dk ? "text-slate-300" : "text-slate-600"}`}><div><b>رویدادها:</b> {customerLedger.length}</div><div><b>اولین:</b> {customerLedger.length > 0 ? shortDateLabel(customerLedger[0].date) : "-"}</div><div><b>آخرین:</b> {customerLedger.length > 0 ? shortDateLabel(customerLedger[customerLedger.length - 1].date) : "-"}</div></div></div></div>{customerLedger.length > 0 && (<div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-200 bg-white"}`}><b className={`text-xs font-black ${heading}`}>گردش کامل حساب</b><div className="overflow-x-auto cu-scroll mt-3"><table className="w-full min-w-[1000px] text-xs"><thead><tr className={`border-b ${dk ? "border-slate-700" : "border-slate-200"}`}>{["شماره", "تاریخ", "ساعت", "سند", "نوع", "شرح", "ارز", "دریافت", "پرداخت", "مانده"].map(h => <th key={h} className="px-3 py-2 text-center font-black text-slate-400 whitespace-nowrap">{h}</th>)}</tr></thead><tbody>{customerLedger.map((e, i) => (<tr key={e.id} className={`border-b ${dk ? "border-slate-700/50" : "border-slate-100"} ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/50"}`}><td className="px-3 py-2 text-center font-black tabular-nums">{i + 1}</td><td className={`px-3 py-2 text-center tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{shortDateLabel(e.date)}</td><td className={`px-3 py-2 text-center tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{timeLabel(e.date)}</td><td className="px-3 py-2 text-center"><span className={`inline-flex rounded-md border px-1.5 py-0.5 text-[10px] font-black tabular-nums ${dk ? "border-slate-600 text-slate-300" : "border-slate-200 text-slate-600"}`} dir="ltr">{e.referenceNumber || "-"}</span></td><td className="px-3 py-2 text-center"><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${txColors[e.type][dk ? "dark" : "light"]}`}>{txLabels[e.type]}</span></td><td className={`px-3 py-2 text-center max-w-[200px] truncate ${dk ? "text-slate-200" : "text-slate-700"}`}>{e.description}</td><td className={`px-3 py-2 text-center font-black ${currencyColors[e.currency][dk ? "dark" : "light"]}`}>{labels[e.currency]}</td><td className={`px-3 py-2 text-center font-black tabular-nums ${e.direction === "in" ? "text-emerald-500" : ""}`}>{e.direction === "in" ? fmt(e.amount) : ""}</td><td className={`px-3 py-2 text-center font-black tabular-nums ${e.direction === "out" ? "text-rose-500" : ""}`}>{e.direction === "out" ? fmt(e.amount) : ""}</td><td className={`px-3 py-2 text-center font-black tabular-nums ${currencyColors[e.currency][dk ? "dark" : "light"]}`}>{fmt(e.balanceAfter)}</td></tr>))}</tbody></table></div></div>)}<div className={`rounded-xl border p-4 mt-3 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-200 bg-white"}`}><b className={`text-xs font-black ${heading}`}>خلاصه نهایی</b><div className="overflow-x-auto cu-scroll mt-2"><table className="w-full text-xs"><thead><tr className={`border-b ${dk ? "border-slate-700" : "border-slate-200"}`}><th className="px-3 py-2 text-center font-black text-slate-400">ارز</th><th className="px-3 py-2 text-center font-black text-emerald-500">دریافت</th><th className="px-3 py-2 text-center font-black text-rose-500">پرداخت</th><th className="px-3 py-2 text-center font-black text-slate-400">خالص</th><th className="px-3 py-2 text-center font-black text-slate-400">مانده</th></tr></thead><tbody>{currencies.map(cur => { const tIn = customerLedger.filter(e => e.currency === cur && e.direction === "in").reduce((s, e) => s + e.amount, 0); const tOut = customerLedger.filter(e => e.currency === cur && e.direction === "out").reduce((s, e) => s + e.amount, 0); const net = tIn - tOut; if (tIn === 0 && tOut === 0) return null; return (<tr key={cur} className={`border-b ${dk ? "border-slate-700/50" : "border-slate-100"}`}><td className={`px-3 py-2 text-center font-black ${currencyColors[cur][dk ? "dark" : "light"]}`}>{labels[cur]}</td><td className="px-3 py-2 text-center font-black tabular-nums text-emerald-500">{fmt(tIn)}</td><td className="px-3 py-2 text-center font-black tabular-nums text-rose-500">{fmt(tOut)}</td><td className={`px-3 py-2 text-center font-black tabular-nums ${net >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{net >= 0 ? "+" : ""}{fmt(net)}</td><td className={`px-3 py-2 text-center font-black tabular-nums ${currencyColors[cur][dk ? "dark" : "light"]}`}>{fmt(customerBalances[cur])}</td></tr>); })}</tbody></table></div></div></div>)}
+
+              {profileTab === "info" && (
+                <div className={`rounded-2xl border p-4 md:p-6 ${uiCard}`}>
+                  <div className="flex items-center gap-2 mb-4"><span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}><Ic n="edit" className="h-4 w-4" /></span><b className={`text-sm font-black ${heading}`}>ویرایش اطلاعات</b></div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {fld("نام", (<input className={uiInput} value={form.name} onChange={e => setField("name", e.target.value)} />))}
+                    {fld("تلفن", (<input className={uiInput} value={form.phone} onChange={e => setField("phone", e.target.value)} />))}
+                    {fld("تذکره", (<input className={uiInput} value={form.tazkira} onChange={e => setField("tazkira", e.target.value)} />))}
+                    {fld("تلگرام", (<input className={uiInput} value={form.telegram} onChange={e => setField("telegram", e.target.value)} />))}
+                    <div className="md:col-span-2">{fld("آدرس", (<input className={uiInput} value={form.address} onChange={e => setField("address", e.target.value)} />))}</div>
+                    <div className="md:col-span-2">{fld("توضیحات", (<textarea rows={3} className={`${uiInput} h-auto py-3 resize-none`} value={form.note} onChange={e => setField("note", e.target.value)} />))}</div>
+                  </div>
+                  <button onClick={updateCustomer} className={`mt-4 flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-l px-5 py-2.5 text-sm font-black shadow-lg ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 to-teal-500 text-white"}`}><Ic n="check" className="h-4 w-4" />ذخیره</button>
+                </div>
+              )}
+
+              {profileTab === "balances" && (
+                <div className={`rounded-2xl border p-4 md:p-6 ${uiCard}`}>
+                  <div className="space-y-2">
+                    {currencies.map(cur => {
+                      const bal = customerBalances[cur];
+                      const cnt = customerLedger.filter(e => e.currency === cur).length;
+                      const tIn = customerLedger.filter(e => e.currency === cur && e.direction === "in").reduce((s, e) => s + e.amount, 0);
+                      const tOut = customerLedger.filter(e => e.currency === cur && e.direction === "out").reduce((s, e) => s + e.amount, 0);
+                      const colors = currencyColors[cur];
+                      return (
+                        <div key={cur} className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-200 bg-white"}`}>
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2"><span className={`grid h-10 w-10 place-items-center rounded-lg bg-gradient-to-br ${colors.gradient} text-white font-black shadow-md`}>{cur}</span><div><b className={`text-sm font-black ${heading}`}>{labels[cur]}</b><div className={`text-[10px] ${subText}`}>{cnt} رویداد</div></div></div>
+                            <div className={`text-2xl font-black tabular-nums ${bal >= 0 ? colors[dk ? "dark" : "light"] : "text-rose-500"}`}>{fmt(bal)}</div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 pt-3 border-t border-dashed border-slate-300/30">
+                            <div className={`flex items-center gap-2 rounded-lg px-3 py-2 ${dk ? "bg-emerald-400/10" : "bg-emerald-50"}`}><Ic n="arrowDown" className={`h-4 w-4 ${dk ? "text-emerald-300" : "text-emerald-600"}`} /><div><div className={`text-[10px] ${subText}`}>دریافت</div><div className={`text-sm font-black tabular-nums ${dk ? "text-emerald-300" : "text-emerald-700"}`}>{fmt(tIn)}</div></div></div>
+                            <div className={`flex items-center gap-2 rounded-lg px-3 py-2 ${dk ? "bg-rose-400/10" : "bg-rose-50"}`}><Ic n="arrowUp" className={`h-4 w-4 ${dk ? "text-rose-300" : "text-rose-600"}`} /><div><div className={`text-[10px] ${subText}`}>پرداخت</div><div className={`text-sm font-black tabular-nums ${dk ? "text-rose-300" : "text-rose-700"}`}>{fmt(tOut)}</div></div></div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {profileTab === "ledger" && (
+                <div className={`rounded-2xl border p-4 md:p-6 ${uiCard}`}>
+                  <div className="flex items-center gap-2 mb-4">
+                    <span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="history" className="h-4 w-4" /></span>
+                    <b className={`text-sm font-black ${heading}`}>روزنامچه</b>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${dk ? "bg-slate-700 text-slate-300" : "bg-slate-200 text-slate-600"}`}>{filteredLedger.length}</span>
+                  </div>
+                  <div className="grid gap-2 mb-4 md:grid-cols-[1fr_auto_auto_auto]">
+                    <div className="relative"><input value={ledgerSearch} onChange={e => setLedgerSearch(e.target.value)} placeholder="جستجو…" className={`${uiInput} pr-10`} /><span className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 ${dk ? "text-slate-500" : "text-slate-400"}`}><Ic n="search" className="h-4 w-4" /></span></div>
+                    <select value={ledgerTypeFilter} onChange={e => setLedgerTypeFilter(e.target.value as any)} className={`${uiInput} cursor-pointer appearance-none pl-9 w-auto min-w-[130px]`}><option value="all">همه</option>{(Object.keys(txLabels) as TxType[]).map(t => <option key={t} value={t}>{txLabels[t]}</option>)}</select>
+                    <select value={ledgerCurrencyFilter} onChange={e => setLedgerCurrencyFilter(e.target.value as any)} className={`${uiInput} cursor-pointer appearance-none pl-9 w-auto min-w-[120px]`}><option value="all">همه ارزها</option>{currencies.map(c => <option key={c} value={c}>{labels[c]}</option>)}</select>
+                    <select value={ledgerDirFilter} onChange={e => setLedgerDirFilter(e.target.value as any)} className={`${uiInput} cursor-pointer appearance-none pl-9 w-auto min-w-[110px]`}><option value="all">همه</option><option value="in">دریافت</option><option value="out">پرداخت</option></select>
+                  </div>
+                  {filteredLedger.length === 0 ? (
+                    <div className={`flex flex-col items-center gap-3 py-12 ${dk ? "text-slate-500" : "text-slate-400"}`}><Ic n="inbox" className="h-8 w-8 opacity-70" /><p className="text-sm font-black">رویدادی یافت نشد.</p></div>
+                  ) : (
+                    <div className="overflow-x-auto cu-scroll">
+                      <table className="w-full min-w-[950px] text-sm">
+                        <thead><tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
+                          {["شماره", "تاریخ", "ساعت", "سند", "نوع", "شرح", "ارز", "دریافت", "پرداخت", "مانده"].map(h => <th key={h} className="px-3 py-2.5 text-center text-[10px] font-black text-slate-400">{h}</th>)}
+                        </tr></thead>
+                        <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
+                          {filteredLedger.map((e, i) => (
+                            <tr key={e.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/50"}`}>
+                              <td className="px-3 py-2.5 text-center text-[11px] font-black tabular-nums">{filteredLedger.length - i}</td>
+                              <td className={`px-3 py-2.5 text-center text-[11px] tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{shortDateLabel(e.date)}</td>
+                              <td className={`px-3 py-2.5 text-center text-[11px] tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{timeLabel(e.date)}</td>
+                              <td className="px-3 py-2.5 text-center"><span className={`inline-flex rounded-md border px-1.5 py-0.5 text-[10px] font-black tabular-nums ${dk ? "border-slate-600 text-slate-300" : "border-slate-200 text-slate-600"}`} dir="ltr">{e.referenceNumber || "-"}</span></td>
+                              <td className="px-3 py-2.5 text-center"><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${txColors[e.type][dk ? "dark" : "light"]}`}>{txLabels[e.type]}</span></td>
+                              <td className={`px-3 py-2.5 text-center text-[11px] max-w-[200px] truncate ${dk ? "text-slate-200" : "text-slate-700"}`}>{e.description}</td>
+                              <td className={`px-3 py-2.5 text-center text-[11px] font-black ${currencyColors[e.currency][dk ? "dark" : "light"]}`}>{labels[e.currency]}</td>
+                              <td className={`px-3 py-2.5 text-center text-[11px] font-black tabular-nums ${e.direction === "in" ? "text-emerald-500" : ""}`}>{e.direction === "in" ? fmt(e.amount) : ""}</td>
+                              <td className={`px-3 py-2.5 text-center text-[11px] font-black tabular-nums ${e.direction === "out" ? "text-rose-500" : ""}`}>{e.direction === "out" ? fmt(e.amount) : ""}</td>
+                              <td className={`px-3 py-2.5 text-center text-[11px] font-black tabular-nums ${currencyColors[e.currency][dk ? "dark" : "light"]}`}>{fmt(e.balanceAfter)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {profileTab === "statement" && (
+                <div className={`rounded-2xl border p-4 md:p-6 ${uiCard}`}>
+                  <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    <div className="flex items-center gap-2"><span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}><Ic n="doc" className="h-4 w-4" /></span><b className={`text-sm font-black ${heading}`}>صورت‌حساب کامل</b></div>
+                    <button onClick={printStatement} className={`flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-l px-4 py-2 text-sm font-black shadow-lg ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 to-teal-500 text-white"}`}><Ic n="printer" className="h-4 w-4" />چاپ</button>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2 mb-4">
+                    <div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-200 bg-white"}`}>
+                      <b className={`text-xs font-black ${heading}`}>مشخصات</b>
+                      <div className={`space-y-1 text-xs mt-2 ${dk ? "text-slate-300" : "text-slate-600"}`}>
+                        <div><b>نام:</b> {selectedCustomer.name}</div>
+                        <div><b>کد:</b> <span dir="ltr">{selectedCustomer.id.slice(-6)}</span></div>
+                        <div><b>تلفن:</b> <span dir="ltr">{selectedCustomer.phone || "-"}</span></div>
+                        <div><b>تذکره:</b> <span dir="ltr">{selectedCustomer.tazkira || "-"}</span></div>
+                        <div><b>تلگرام:</b> <span dir="ltr">{selectedCustomer.telegram || "-"}</span></div>
+                      </div>
+                    </div>
+                    <div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-200 bg-white"}`}>
+                      <b className={`text-xs font-black ${heading}`}>آمار</b>
+                      <div className={`space-y-1 text-xs mt-2 ${dk ? "text-slate-300" : "text-slate-600"}`}>
+                        <div><b>رویدادها:</b> {customerLedger.length}</div>
+                        <div><b>اولین:</b> {customerLedger.length > 0 ? shortDateLabel(customerLedger[0].date) : "-"}</div>
+                        <div><b>آخرین:</b> {customerLedger.length > 0 ? shortDateLabel(customerLedger[customerLedger.length - 1].date) : "-"}</div>
+                      </div>
+                    </div>
+                  </div>
+                  {customerLedger.length > 0 && (
+                    <div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-200 bg-white"}`}>
+                      <b className={`text-xs font-black ${heading}`}>گردش کامل حساب</b>
+                      <div className="overflow-x-auto cu-scroll mt-3">
+                        <table className="w-full min-w-[1000px] text-xs">
+                          <thead><tr className={`border-b ${dk ? "border-slate-700" : "border-slate-200"}`}>
+                            {["شماره", "تاریخ", "ساعت", "سند", "نوع", "شرح", "ارز", "دریافت", "پرداخت", "مانده"].map(h => <th key={h} className="px-3 py-2 text-center font-black text-slate-400 whitespace-nowrap">{h}</th>)}
+                          </tr></thead>
+                          <tbody>
+                            {customerLedger.map((e, i) => (
+                              <tr key={e.id} className={`border-b ${dk ? "border-slate-700/50" : "border-slate-100"} ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/50"}`}>
+                                <td className="px-3 py-2 text-center font-black tabular-nums">{i + 1}</td>
+                                <td className={`px-3 py-2 text-center tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{shortDateLabel(e.date)}</td>
+                                <td className={`px-3 py-2 text-center tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{timeLabel(e.date)}</td>
+                                <td className="px-3 py-2 text-center"><span className={`inline-flex rounded-md border px-1.5 py-0.5 text-[10px] font-black tabular-nums ${dk ? "border-slate-600 text-slate-300" : "border-slate-200 text-slate-600"}`} dir="ltr">{e.referenceNumber || "-"}</span></td>
+                                <td className="px-3 py-2 text-center"><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${txColors[e.type][dk ? "dark" : "light"]}`}>{txLabels[e.type]}</span></td>
+                                <td className={`px-3 py-2 text-center max-w-[200px] truncate ${dk ? "text-slate-200" : "text-slate-700"}`}>{e.description}</td>
+                                <td className={`px-3 py-2 text-center font-black ${currencyColors[e.currency][dk ? "dark" : "light"]}`}>{labels[e.currency]}</td>
+                                <td className={`px-3 py-2 text-center font-black tabular-nums ${e.direction === "in" ? "text-emerald-500" : ""}`}>{e.direction === "in" ? fmt(e.amount) : ""}</td>
+                                <td className={`px-3 py-2 text-center font-black tabular-nums ${e.direction === "out" ? "text-rose-500" : ""}`}>{e.direction === "out" ? fmt(e.amount) : ""}</td>
+                                <td className={`px-3 py-2 text-center font-black tabular-nums ${currencyColors[e.currency][dk ? "dark" : "light"]}`}>{fmt(e.balanceAfter)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                  <div className={`rounded-xl border p-4 mt-3 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-200 bg-white"}`}>
+                    <b className={`text-xs font-black ${heading}`}>خلاصه نهایی</b>
+                    <div className="overflow-x-auto cu-scroll mt-2">
+                      <table className="w-full text-xs">
+                        <thead><tr className={`border-b ${dk ? "border-slate-700" : "border-slate-200"}`}>
+                          <th className="px-3 py-2 text-center font-black text-slate-400">ارز</th>
+                          <th className="px-3 py-2 text-center font-black text-emerald-500">دریافت</th>
+                          <th className="px-3 py-2 text-center font-black text-rose-500">پرداخت</th>
+                          <th className="px-3 py-2 text-center font-black text-slate-400">خالص</th>
+                          <th className="px-3 py-2 text-center font-black text-slate-400">مانده</th>
+                        </tr></thead>
+                        <tbody>
+                          {currencies.map(cur => {
+                            const tIn = customerLedger.filter(e => e.currency === cur && e.direction === "in").reduce((s, e) => s + e.amount, 0);
+                            const tOut = customerLedger.filter(e => e.currency === cur && e.direction === "out").reduce((s, e) => s + e.amount, 0);
+                            const net = tIn - tOut;
+                            if (tIn === 0 && tOut === 0) return null;
+                            return (
+                              <tr key={cur} className={`border-b ${dk ? "border-slate-700/50" : "border-slate-100"}`}>
+                                <td className={`px-3 py-2 text-center font-black ${currencyColors[cur][dk ? "dark" : "light"]}`}>{labels[cur]}</td>
+                                <td className="px-3 py-2 text-center font-black tabular-nums text-emerald-500">{fmt(tIn)}</td>
+                                <td className="px-3 py-2 text-center font-black tabular-nums text-rose-500">{fmt(tOut)}</td>
+                                <td className={`px-3 py-2 text-center font-black tabular-nums ${net >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{net >= 0 ? "+" : ""}{fmt(net)}</td>
+                                <td className={`px-3 py-2 text-center font-black tabular-nums ${currencyColors[cur][dk ? "dark" : "light"]}`}>{fmt(customerBalances[cur])}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
             </section>
           )}
         </div>
