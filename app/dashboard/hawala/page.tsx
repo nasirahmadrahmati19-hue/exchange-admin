@@ -305,20 +305,6 @@ function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): C
   } catch { return customers; }
 }
 
-function createCustomerFromName(name: string, phone: string = "", telegram: string = ""): Customer {
-  return {
-    id: generateId(),
-    name: name.trim(),
-    phone: phone.trim(),
-    telegram: telegram.trim(),
-    address: "",
-    note: "",
-    tazkira: "",
-    registeredAt: new Date().toISOString(),
-    balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 },
-  };
-}
-
 const iconPaths = {
   send: "M6 12 3.269 3.126A59.768 59.768 0 0 1 21.485 12 59.77 59.77 0 0 1 3.27 20.876L5.999 12Zm0 0h7.5",
   receive: "M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3",
@@ -385,7 +371,6 @@ export default function HawalaPage() {
   const [cancelReason, setCancelReason] = useState("");
   const [toast, setToast] = useState("");
   
-  // 🆕 اضافه شده برای لیست کشویی ستون عملیات
   const [openActionId, setOpenActionId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -566,23 +551,16 @@ export default function HawalaPage() {
     setPreviewOpen(true);
   }, [validateForm, showToast]);
 
+  /* 🆕 تغییر اول: حذف ذخیره مشتری جدید در لیست مشتریان */
   const confirmRegister = useCallback(() => {
     try {
       const nowDate = new Date();
       const senderName = form.senderName.trim();
       const receiverName = form.receiverName.trim();
 
-      let sender = customers.find(c => c.id === form.senderId || c.name === senderName);
-      if (!sender && senderName) {
-        sender = createCustomerFromName(senderName, form.senderPhone, form.senderTelegram);
-        setCustomers(prev => [...prev, sender!]);
-      }
-
-      let receiver = customers.find(c => c.id === form.receiverId || c.name === receiverName);
-      if (!receiver && receiverName) {
-        receiver = createCustomerFromName(receiverName, form.receiverPhone, "");
-        setCustomers(prev => [...prev, receiver!]);
-      }
+      // فقط جستجو در لیست مشتریان موجود - اضافه کردن مشتری جدید حذف شد
+      const sender = customers.find(c => c.id === form.senderId || c.name === senderName) || null;
+      const receiver = customers.find(c => c.id === form.receiverId || c.name === receiverName) || null;
 
       let rateLabel = "";
       const txRate = rateMode === "same" ? 1 : rateValue;
@@ -604,6 +582,7 @@ export default function HawalaPage() {
         receiverAddress: form.receiverAddress, status: "pending" as HawalaStatus
       };
 
+      // تغییر موجودی فقط برای مشتریان موجود در لیست
       if (sender) {
         setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForHawala(newHawala, "register")));
       }
@@ -805,7 +784,6 @@ export default function HawalaPage() {
     );
   });
 
-  /* 🆕 ستون عملیات به صورت لیست کشویی (Dropdown) */
   const ActionButtons = memo(function ActionButtons({ item, isInHistory }: { item: Hawala; isInHistory: boolean }) {
     const isPending = item.status === "pending";
     const isSent = item.status === "sent";
@@ -899,6 +877,9 @@ export default function HawalaPage() {
     { id: "current" as const, label: "حواله‌های جاری", icon: "clock" as IconName, count: currentHawalas.length },
     { id: "history" as const, label: "تاریخچه حواله‌ها", icon: "doc" as IconName, count: historyHawalas.length },
   ];
+
+  /* 🆕 ارتفاع حداکثر برای ۱۲ ردیف (هر ردیف حدود ۵۶px) */
+  const tableMaxHeight = "max-h-[672px]";
 
   return (
     <div dir="rtl" className={dk ? "dark" : ""}>
@@ -1012,7 +993,7 @@ export default function HawalaPage() {
                             ))
                           )}
                           <div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
-                          <div className={`px-3 py-2 text-[10px] text-center ${subText}`}>یا نام جدید بنویسید (خودکار ثبت می‌شود)</div>
+                          <div className={`px-3 py-2 text-[10px] text-center ${subText}`}>نام جدید در لیست ذخیره نمی‌شود</div>
                         </div>
                       )}
                     </div>
@@ -1147,7 +1128,7 @@ export default function HawalaPage() {
                             ))
                           )}
                           <div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
-                          <div className={`px-3 py-2 text-[10px] text-center ${subText}`}>یا نام جدید بنویسید (خودکار ثبت می‌شود)</div>
+                          <div className={`px-3 py-2 text-[10px] text-center ${subText}`}>نام جدید در لیست ذخیره نمی‌شود</div>
                         </div>
                       )}
                     </div>
@@ -1199,37 +1180,40 @@ export default function HawalaPage() {
                     <p className="text-sm font-black text-center">هیچ حواله جاری وجود ندارد.</p>
                   </div>
                 ) : (
+                  /* 🆕 تغییر دوم: نوار اسکرول برای ۱۲ مورد */
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[1000px] text-sm">
-                      <thead>
-                        <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
-                          {["شماره", "کد پیگیری", "تاریخ", "حواله‌دهنده", "حواله‌گیرنده", "مبلغ نهایی", "کارمزد", "پرداخت‌کننده", "مقصد", "وضعیت", "عملیات"].map((h) => (
-                            <th key={h} className="px-4 py-3 text-right text-[11px] font-black text-slate-400">{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
-                        {currentHawalas.map((item, index) => (
-                          <tr key={item.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-blue-50/70"}`}>
-                            <td className="px-4 py-3.5"><span className={`grid h-8 w-8 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500"}`}>{index + 1}</span></td>
-                            <td className="px-4 py-3.5">
-                              <span className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-black tabular-nums ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-sky-300 bg-sky-50 text-sky-700"}`} dir="ltr">
-                                <Ic n="tag" className="h-3 w-3" />{item.number}
-                              </span>
-                            </td>
-                            <td className={`whitespace-nowrap px-4 py-3.5 text-xs tabular-nums ${dk ? "text-slate-400" : "text-slate-500"}`}><span dir="ltr">{dateLabel(item.date)}</span></td>
-                            <td className={`px-4 py-3.5 text-[13px] font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>{item.senderName}</td>
-                            <td className={`px-4 py-3.5 text-[13px] font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>{item.receiverName}</td>
-                            <td className="px-4 py-3.5"><div className="text-[13px] font-black tabular-nums">{fmt(item.finalAmount)}</div><div className={`text-[10px] font-bold ${subText}`}>{labels[item.currencyTo]}</div></td>
-                            <td className="px-4 py-3.5 text-xs font-bold tabular-nums">{fmt(item.fee)} {labels[item.feeCurrency]}</td>
-                            <td className="px-4 py-3.5"><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${item.feePayer === "sender" ? dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-700" : dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-700"}`}>{item.feePayer === "sender" ? "از فرستنده" : "از گیرنده"}</span></td>
-                            <td className={`px-4 py-3.5 text-xs ${subText}`}>{item.destinationText}</td>
-                            <td className="px-4 py-3.5"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${statusColors[item.status][dk ? "dark" : "light"]}`}>{statusLabels[item.status]}</span></td>
-                            <td className="px-4 py-3.5"><ActionButtons item={item} isInHistory={false} /></td>
+                    <div className={`${tableMaxHeight} overflow-y-auto`}>
+                      <table className="w-full min-w-[1000px] text-sm">
+                        <thead className="sticky top-0 z-10">
+                          <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
+                            {["شماره", "کد پیگیری", "تاریخ", "حواله‌دهنده", "حواله‌گیرنده", "مبلغ نهایی", "کارمزد", "پرداخت‌کننده", "مقصد", "وضعیت", "عملیات"].map((h) => (
+                              <th key={h} className="px-4 py-3 text-right text-[11px] font-black text-slate-400">{h}</th>
+                            ))}
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
+                          {currentHawalas.map((item, index) => (
+                            <tr key={item.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-blue-50/70"}`}>
+                              <td className="px-4 py-3.5"><span className={`grid h-8 w-8 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500"}`}>{index + 1}</span></td>
+                              <td className="px-4 py-3.5">
+                                <span className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-black tabular-nums ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-sky-300 bg-sky-50 text-sky-700"}`} dir="ltr">
+                                  <Ic n="tag" className="h-3 w-3" />{item.number}
+                                </span>
+                              </td>
+                              <td className={`whitespace-nowrap px-4 py-3.5 text-xs tabular-nums ${dk ? "text-slate-400" : "text-slate-500"}`}><span dir="ltr">{dateLabel(item.date)}</span></td>
+                              <td className={`px-4 py-3.5 text-[13px] font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>{item.senderName}</td>
+                              <td className={`px-4 py-3.5 text-[13px] font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>{item.receiverName}</td>
+                              <td className="px-4 py-3.5"><div className="text-[13px] font-black tabular-nums">{fmt(item.finalAmount)}</div><div className={`text-[10px] font-bold ${subText}`}>{labels[item.currencyTo]}</div></td>
+                              <td className="px-4 py-3.5 text-xs font-bold tabular-nums">{fmt(item.fee)} {labels[item.feeCurrency]}</td>
+                              <td className="px-4 py-3.5"><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${item.feePayer === "sender" ? dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-700" : dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-700"}`}>{item.feePayer === "sender" ? "از فرستنده" : "از گیرنده"}</span></td>
+                              <td className={`px-4 py-3.5 text-xs ${subText}`}>{item.destinationText}</td>
+                              <td className="px-4 py-3.5"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${statusColors[item.status][dk ? "dark" : "light"]}`}>{statusLabels[item.status]}</span></td>
+                              <td className="px-4 py-3.5"><ActionButtons item={item} isInHistory={false} /></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1260,37 +1244,40 @@ export default function HawalaPage() {
                     <p className="text-sm font-black text-center">هیچ حواله‌ای در تاریخچه وجود ندارد.</p>
                   </div>
                 ) : (
+                  /* 🆕 تغییر دوم: نوار اسکرول برای ۱۲ مورد */
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[1000px] text-sm">
-                      <thead>
-                        <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
-                          {["شماره", "کد پیگیری", "تاریخ", "حواله‌دهنده", "حواله‌گیرنده", "مبلغ نهایی", "کارمزد", "پرداخت‌کننده", "مقصد", "وضعیت", "عملیات"].map((h) => (
-                            <th key={h} className="px-4 py-3 text-right text-[11px] font-black text-slate-400">{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
-                        {historyHawalas.map((item, index) => (
-                          <tr key={item.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-blue-50/70"}`}>
-                            <td className="px-4 py-3.5"><span className={`grid h-8 w-8 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500"}`}>{index + 1}</span></td>
-                            <td className="px-4 py-3.5">
-                              <span className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-black tabular-nums ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-sky-300 bg-sky-50 text-sky-700"}`} dir="ltr">
-                                <Ic n="tag" className="h-3 w-3" />{item.number}
-                              </span>
-                            </td>
-                            <td className={`whitespace-nowrap px-4 py-3.5 text-xs tabular-nums ${dk ? "text-slate-400" : "text-slate-500"}`}><span dir="ltr">{dateLabel(item.date)}</span></td>
-                            <td className={`px-4 py-3.5 text-[13px] font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>{item.senderName}</td>
-                            <td className={`px-4 py-3.5 text-[13px] font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>{item.receiverName}</td>
-                            <td className="px-4 py-3.5"><div className="text-[13px] font-black tabular-nums">{fmt(item.finalAmount)}</div><div className={`text-[10px] font-bold ${subText}`}>{labels[item.currencyTo]}</div></td>
-                            <td className="px-4 py-3.5 text-xs font-bold tabular-nums">{fmt(item.fee)} {labels[item.feeCurrency]}</td>
-                            <td className="px-4 py-3.5"><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${item.feePayer === "sender" ? dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-700" : dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-700"}`}>{item.feePayer === "sender" ? "از فرستنده" : "از گیرنده"}</span></td>
-                            <td className={`px-4 py-3.5 text-xs ${subText}`}>{item.destinationText}</td>
-                            <td className="px-4 py-3.5"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${statusColors[item.status][dk ? "dark" : "light"]}`}>{statusLabels[item.status]}</span></td>
-                            <td className="px-4 py-3.5"><ActionButtons item={item} isInHistory={true} /></td>
+                    <div className={`${tableMaxHeight} overflow-y-auto`}>
+                      <table className="w-full min-w-[1000px] text-sm">
+                        <thead className="sticky top-0 z-10">
+                          <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
+                            {["شماره", "کد پیگیری", "تاریخ", "حواله‌دهنده", "حواله‌گیرنده", "مبلغ نهایی", "کارمزد", "پرداخت‌کننده", "مقصد", "وضعیت", "عملیات"].map((h) => (
+                              <th key={h} className="px-4 py-3 text-right text-[11px] font-black text-slate-400">{h}</th>
+                            ))}
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
+                          {historyHawalas.map((item, index) => (
+                            <tr key={item.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-blue-50/70"}`}>
+                              <td className="px-4 py-3.5"><span className={`grid h-8 w-8 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500"}`}>{index + 1}</span></td>
+                              <td className="px-4 py-3.5">
+                                <span className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-black tabular-nums ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-sky-300 bg-sky-50 text-sky-700"}`} dir="ltr">
+                                  <Ic n="tag" className="h-3 w-3" />{item.number}
+                                </span>
+                              </td>
+                              <td className={`whitespace-nowrap px-4 py-3.5 text-xs tabular-nums ${dk ? "text-slate-400" : "text-slate-500"}`}><span dir="ltr">{dateLabel(item.date)}</span></td>
+                              <td className={`px-4 py-3.5 text-[13px] font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>{item.senderName}</td>
+                              <td className={`px-4 py-3.5 text-[13px] font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>{item.receiverName}</td>
+                              <td className="px-4 py-3.5"><div className="text-[13px] font-black tabular-nums">{fmt(item.finalAmount)}</div><div className={`text-[10px] font-bold ${subText}`}>{labels[item.currencyTo]}</div></td>
+                              <td className="px-4 py-3.5 text-xs font-bold tabular-nums">{fmt(item.fee)} {labels[item.feeCurrency]}</td>
+                              <td className="px-4 py-3.5"><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${item.feePayer === "sender" ? dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-700" : dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-700"}`}>{item.feePayer === "sender" ? "از فرستنده" : "از گیرنده"}</span></td>
+                              <td className={`px-4 py-3.5 text-xs ${subText}`}>{item.destinationText}</td>
+                              <td className="px-4 py-3.5"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${statusColors[item.status][dk ? "dark" : "light"]}`}>{statusLabels[item.status]}</span></td>
+                              <td className="px-4 py-3.5"><ActionButtons item={item} isInHistory={true} /></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1299,7 +1286,6 @@ export default function HawalaPage() {
         </div>
       </div>
 
-      {/* 🆕 مودال پیش‌نمایش با جزئیات کامل حواله‌دهنده، مبلغ و حواله‌گیرنده */}
       {previewOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => setPreviewOpen(false)}>
           <div className={`hw-up w-full max-w-2xl overflow-hidden rounded-xl md:rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={(e) => e.stopPropagation()}>
