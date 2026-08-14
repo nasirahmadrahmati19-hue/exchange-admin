@@ -363,7 +363,7 @@ export default function HawalaPage() {
 
   const [nameSearch, setNameSearch] = useState("");
   const [amountSearch, setAmountSearch] = useState("");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [settleTarget, setSettleTarget] = useState<Hawala | null>(null);
   const [cancelTarget, setCancelTarget] = useState<Hawala | null>(null);
   const [paidBy, setPaidBy] = useState("");
@@ -551,14 +551,12 @@ export default function HawalaPage() {
     setPreviewOpen(true);
   }, [validateForm, showToast]);
 
-  /* 🆕 تغییر اول: حذف ذخیره مشتری جدید در لیست مشتریان */
   const confirmRegister = useCallback(() => {
     try {
       const nowDate = new Date();
       const senderName = form.senderName.trim();
       const receiverName = form.receiverName.trim();
 
-      // فقط جستجو در لیست مشتریان موجود - اضافه کردن مشتری جدید حذف شد
       const sender = customers.find(c => c.id === form.senderId || c.name === senderName) || null;
       const receiver = customers.find(c => c.id === form.receiverId || c.name === receiverName) || null;
 
@@ -582,7 +580,6 @@ export default function HawalaPage() {
         receiverAddress: form.receiverAddress, status: "pending" as HawalaStatus
       };
 
-      // تغییر موجودی فقط برای مشتریان موجود در لیست
       if (sender) {
         setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForHawala(newHawala, "register")));
       }
@@ -878,7 +875,6 @@ export default function HawalaPage() {
     { id: "history" as const, label: "تاریخچه حواله‌ها", icon: "doc" as IconName, count: historyHawalas.length },
   ];
 
-  /* 🆕 ارتفاع حداکثر برای ۱۲ ردیف (هر ردیف حدود ۵۶px) */
   const tableMaxHeight = "max-h-[672px]";
 
   return (
@@ -1170,8 +1166,8 @@ export default function HawalaPage() {
                   <input value={nameSearch} onChange={e => setNameSearch(e.target.value)} placeholder="نام، کد پیگیری، تلفن یا تذکره…" className={`${uiInput} flex-1 min-w-[200px]`} />
                   <input value={amountSearch} onChange={e => setAmountSearch(e.target.value)} placeholder="جستجو بر اساس مبلغ…" inputMode="numeric" className={`${uiInput} flex-1 min-w-[150px]`} />
                   <select value={sortOrder} onChange={e => setSortOrder(e.target.value as "asc" | "desc")} className={`${uiInput} w-auto min-w-[180px] cursor-pointer appearance-none pl-9`}>
-                    <option value="desc">جدیدترین شماره</option>
-                    <option value="asc">قدیمی‌ترین شماره</option>
+                    <option value="asc">قدیمی‌ترین در اول</option>
+                    <option value="desc">جدیدترین در اول</option>
                   </select>
                 </div>
                 {currentHawalas.length === 0 ? (
@@ -1180,7 +1176,6 @@ export default function HawalaPage() {
                     <p className="text-sm font-black text-center">هیچ حواله جاری وجود ندارد.</p>
                   </div>
                 ) : (
-                  /* 🆕 تغییر دوم: نوار اسکرول برای ۱۲ مورد */
                   <div className="overflow-x-auto">
                     <div className={`${tableMaxHeight} overflow-y-auto`}>
                       <table className="w-full min-w-[1000px] text-sm">
@@ -1221,7 +1216,7 @@ export default function HawalaPage() {
           )}
 
           {activeTab === "history" && (
-            <section className={`hw-up Overflow-hidden ${uiCard}`}>
+            <section className={`hw-up overflow-hidden ${uiCard}`}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
                 <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identHwIcon}`}><Ic n="doc" className="h-5 w-5" /></span>
                 <div className="flex-1 min-w-0">
@@ -1234,8 +1229,8 @@ export default function HawalaPage() {
                   <input value={nameSearch} onChange={e => setNameSearch(e.target.value)} placeholder="نام، کد پیگیری، تلفن یا تذکره…" className={`${uiInput} flex-1 min-w-[200px]`} />
                   <input value={amountSearch} onChange={e => setAmountSearch(e.target.value)} placeholder="جستجو بر اساس مبلغ…" inputMode="numeric" className={`${uiInput} flex-1 min-w-[150px]`} />
                   <select value={sortOrder} onChange={e => setSortOrder(e.target.value as "asc" | "desc")} className={`${uiInput} w-auto min-w-[180px] cursor-pointer appearance-none pl-9`}>
-                    <option value="desc">جدیدترین شماره</option>
-                    <option value="asc">قدیمی‌ترین شماره</option>
+                    <option value="asc">قدیمی‌ترین در اول</option>
+                    <option value="desc">جدیدترین در اول</option>
                   </select>
                 </div>
                 {historyHawalas.length === 0 ? (
@@ -1244,7 +1239,6 @@ export default function HawalaPage() {
                     <p className="text-sm font-black text-center">هیچ حواله‌ای در تاریخچه وجود ندارد.</p>
                   </div>
                 ) : (
-                  /* 🆕 تغییر دوم: نوار اسکرول برای ۱۲ مورد */
                   <div className="overflow-x-auto">
                     <div className={`${tableMaxHeight} overflow-y-auto`}>
                       <table className="w-full min-w-[1000px] text-sm">
