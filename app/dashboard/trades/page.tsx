@@ -76,7 +76,8 @@ function getStoredCustomers(): Customer[] {
 const normalizeDigits = (s: string) => s.replace(/[۰-۹]/g, d => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))).replace(/[٠-٩]/g, d => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
 function toNumericText(v: string) { let s = normalizeDigits(String(v || "")).replace(/[^0-9.]/g, ""); const fd = s.indexOf("."); if (fd !== -1) s = s.slice(0, fd + 1) + s.slice(fd + 1).replace(/\./g, ""); return s; }
 const parseAmount = (v: string) => { const n = Number(normalizeDigits(String(v || "")).replace(/,/g, "")); return Number.isFinite(n) && n >= 0 ? n : 0; };
-const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 8 }) : "0";
+// 🆕 تغییر ۳: فقط دو رقم بعد از اعشار
+const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 0 }) : "0";
 const newId = () => { if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") { try { return crypto.randomUUID(); } catch {} } return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = (Math.random() * 16) | 0; return (c === "x" ? r : (r & 0x3) | 0x8).toString(16); }); };
 const shortId = (id: string) => id.slice(-6);
 
@@ -139,7 +140,6 @@ export default function CurrencyExchangePage() {
   const [convertFilter, setConvertFilter] = useState("");
   const convertListRef = useRef<HTMLDivElement>(null);
 
-  // 🆕 state برای dropdown ستون عملیات
   const [openActionId, setOpenActionId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -218,18 +218,22 @@ export default function CurrencyExchangePage() {
 
   const anyDropdownOpen = showCustomerList || showSenderList || showReceiverList || showConvertList;
 
+  // 🆕 تغییر ۲: اصلاح مشکل کلیک بیرون از dropdown مشتری
   useEffect(() => {
     if (!anyDropdownOpen) return;
     const handler = (e: MouseEvent) => {
       const t = e.target as Node;
-      if (showCustomerList && customerListRef.current && !customerListRef.current.contains(t)) setShowCustomerList(false);
-      if (showSenderList && senderListRef.current && !senderListRef.current.contains(t)) setShowSenderList(false);
-      if (showReceiverList && receiverListRef.current && !receiverListRef.current.contains(t)) setShowReceiverList(false);
-      if (showConvertList && convertListRef.current && !convertListRef.current.contains(t)) setShowConvertList(false);
+      const isOutside = (ref: React.RefObject<HTMLDivElement>, show: boolean) => 
+        show && ref.current && !ref.current.contains(t);
+      
+      if (isOutside(customerListRef, showCustomerList)) setShowCustomerList(false);
+      if (isOutside(senderListRef, showSenderList)) setShowSenderList(false);
+      if (isOutside(receiverListRef, showReceiverList)) setShowReceiverList(false);
+      if (isOutside(convertListRef, showConvertList)) setShowConvertList(false);
     };
-    const timer = setTimeout(() => document.addEventListener("mousedown", handler), 0);
-    return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); };
-  }, [anyDropdownOpen, showCustomerList, showSenderList, showReceiverList, showConvertList]);
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [anyDropdownOpen, showCustomerList, showSenderList, showReceiverList, showConvertList, customerListRef, senderListRef, receiverListRef, convertListRef]);
 
   const filteredCustomerList = useMemo(() => { if (!customerFilter) return customers; const q = normalizeDigits(customerFilter.trim()).toLowerCase(); return customers.filter(c => c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))); }, [customers, customerFilter]);
   const filteredSenderList = useMemo(() => { if (!senderFilter) return customers; const q = normalizeDigits(senderFilter.trim()).toLowerCase(); return customers.filter(c => c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))); }, [customers, senderFilter]);
@@ -258,8 +262,7 @@ export default function CurrencyExchangePage() {
   const convertFromAmount = parseAmount(convertAmount); const convertToAmount = parseAmount(convertedAmount); const convertRateValue = parseAmount(convertRate); const convertCommissionValue = Math.max(0, parseAmount(convertCommission));
   const submitConvert = useCallback(() => { const errs = validateConvert(); setConvertErrors(errs); if (Object.values(errs).some(Boolean)) return; let rl = ""; const tr = convertMode === "same" ? 1 : convertRateValue; if (convertMode === "same") rl = "بدون تبدیل"; if (convertMode === "afn" && convertForeign) rl = afnRateLabel(convertForeign, tr); if (convertMode === "direct" && convertDirectCounter) rl = directRateLabel(convertDirectBaseValue, convertDirectCounter, tr); const tx: Transaction = { id: editingConvertId || newId(), trackingCode: editingConvertId ? (transactions.find(t => t.id === editingConvertId)?.trackingCode || getNextTrackingCode()) : getNextTrackingCode(), type: "convert", date: editingConvertId ? (transactions.find(t => t.id === editingConvertId)?.date || new Date().toISOString()) : new Date().toISOString(), customerId: convertCustomer, customerName: convertCustomer, fromCurrency: convertFromCurrency, fromAmount: convertFromAmount, toCurrency: convertToCurrency, toAmount: convertToAmount, rate: tr, rateLabel: rl, rateBase: convertMode === "direct" ? convertDirectBaseValue : undefined, commission: convertCommissionValue, commissionCurrency: convertCommissionCurrency, commissionPayer: "sender", description: convertDescription.trim() || undefined, status: "active", profit: convertCommissionValue, profitCurrency: convertCommissionCurrency }; setPreviewData(tx); setPreviewOpen(true); }, [validateConvert, convertFromAmount, convertToAmount, convertMode, convertRateValue, convertForeign, convertDirectCounter, convertDirectBaseValue, convertDescription, convertCommissionValue, convertCommissionCurrency, editingConvertId, transactions, convertCustomer, convertFromCurrency, convertToCurrency]);
 
-  /* 🆕 تغییر ۳: عدم ذخیره مشتری جدید - فقط اطلاعات در transaction ذخیره می‌شود */
-  const confirmRegister = useCallback(() => { if (!previewData) return; const tx = { ...previewData, trackingCode: consumeTrackingCode() }; if (editingExchangeId) setTransactions(p => p.map(t => t.id === editingExchangeId ? { ...tx, id: editingExchangeId, trackingCode: t.trackingCode, date: t.date } : t)); else if (editingTransferId) setTransactions(p => p.map(t => t.id === editingTransferId ? { ...tx, id: editingTransferId, trackingCode: t.trackingCode, date: t.date } : t)); else if (editingConvertId) setTransactions(p => p.map(t => t.id === editingConvertId ? { ...tx, id: editingConvertId, trackingCode: t.trackingCode, date: t.date } : t)); else setTransactions(x => [...x, tx]); /* 🆕 تغییر ۵: ترتیب صعودی - جدید در آخر */ resetExchangeForm(); resetTransferForm(); resetConvertForm(); setPreviewOpen(false); setPreviewData(null); }, [previewData, editingExchangeId, editingTransferId, editingConvertId, resetExchangeForm, resetTransferForm, resetConvertForm]);
+  const confirmRegister = useCallback(() => { if (!previewData) return; const tx = { ...previewData, trackingCode: consumeTrackingCode() }; if (editingExchangeId) setTransactions(p => p.map(t => t.id === editingExchangeId ? { ...tx, id: editingExchangeId, trackingCode: t.trackingCode, date: t.date } : t)); else if (editingTransferId) setTransactions(p => p.map(t => t.id === editingTransferId ? { ...tx, id: editingTransferId, trackingCode: t.trackingCode, date: t.date } : t)); else if (editingConvertId) setTransactions(p => p.map(t => t.id === editingConvertId ? { ...tx, id: editingConvertId, trackingCode: t.trackingCode, date: t.date } : t)); else setTransactions(x => [...x, tx]); resetExchangeForm(); resetTransferForm(); resetConvertForm(); setPreviewOpen(false); setPreviewData(null); }, [previewData, editingExchangeId, editingTransferId, editingConvertId, resetExchangeForm, resetTransferForm, resetConvertForm]);
 
   const customerName = useCallback((id?: string) => customers.find(c => c.id === id)?.name || customers.find(c => c.name === id)?.name || id || "-", [customers]);
   const transactionCustomerLabel = useCallback((tx: Transaction) => tx.type === "transfer" ? `${customerName(tx.senderId || tx.senderName)} - ${customerName(tx.receiverId || tx.receiverName)}` : customerName(tx.customerId || tx.customerName), [customerName]);
@@ -332,32 +335,71 @@ export default function CurrencyExchangePage() {
 
   const CustomerBalanceCard = memo(({ customer, color }: { customer: Customer | null; color: "cyan" | "orange" | "violet" }) => { if (!customer) return null; const colors = { cyan: { border: dk ? "border-cyan-400/30 bg-cyan-400/10" : "border-cyan-200 bg-cyan-50", text: dk ? "text-cyan-300" : "text-cyan-700", icon: dk ? "text-cyan-300" : "text-cyan-600" }, orange: { border: dk ? "border-orange-400/30 bg-orange-400/10" : "border-orange-200 bg-orange-50", text: dk ? "text-orange-300" : "text-orange-700", icon: dk ? "text-orange-300" : "text-orange-600" }, violet: { border: dk ? "border-violet-400/30 bg-violet-400/10" : "border-violet-200 bg-violet-50", text: dk ? "text-violet-300" : "text-violet-700", icon: dk ? "text-violet-300" : "text-violet-600" } }; const c = colors[color]; return (<div className={`rounded-xl border p-3 ${c.border}`}><div className="flex items-center gap-2 mb-2"><Ic n="wallet" className={`h-4 w-4 ${c.icon}`} /><b className={`text-xs font-black ${c.text}`}>موجودی حساب {customer.name}</b></div><div className="grid grid-cols-3 md:grid-cols-5 gap-2 text-[10px] font-bold">{currencies.map(cur => { const bal = customer.balances[cur] || 0; return (<div key={cur} className={`rounded-lg px-2 py-1.5 ${dk ? "bg-slate-900/50" : "bg-white"}`}><div className={subText}>{labels[cur]}</div><div className={`font-black tabular-nums ${bal < 0 ? "text-rose-500" : bal > 0 ? dk ? "text-emerald-300" : "text-emerald-600" : dk ? "text-slate-400" : "text-slate-500"}`}>{fmt(bal)}</div><div className="min-h-[12px] mt-0.5">{bal < 0 && <div className="text-[8px] font-black text-rose-500">قرض از صرافی</div>}{bal > 0 && <div className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>طلب از صرافی</div>}{bal === 0 && <div className={`text-[8px] font-bold ${subText}`}>بدون بدهی</div>}</div></div>); })}</div></div>); });
 
-  /* 🆕 تغییر ۳: متن راهنما تغییر کرد */
+  // 🆕 تغییر ۲: اصلاح کامل CustomerDropdown
   const CustomerDropdown = memo(({ value, onInputChange, showList, onToggleList, filter, onFilterChange, listRef, filteredList, err }: {
-    value: string; onInputChange: (n: string) => void; showList: boolean; onToggleList: () => void; filter: string; onFilterChange: (v: string) => void; listRef: React.RefObject<HTMLDivElement>; filteredList: Customer[]; err?: boolean;
-  }) => (
-    <div className="relative" ref={listRef}>
-      <input value={value} onChange={e => { onInputChange(e.target.value); onFilterChange(e.target.value); if (!showList) onToggleList(); }} placeholder="انتخاب یا نوشتن نام…" className={`${uiInput} pl-12 ${err ? errInput : ""}`} autoComplete="off" />
-      <button type="button" onClick={(e) => { e.stopPropagation(); onToggleList(); }} className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg ${dk ? "text-slate-400 hover:bg-slate-700" : "text-slate-400 hover:bg-slate-100"}`}>
-        <Ic n="chevron" className={`h-4 w-4 ${showList ? "rotate-180" : ""}`} />
-      </button>
-      {showList && (
-        <div className={`absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
-          {filteredList.length === 0 ? <div className={`px-4 py-3 text-xs text-center ${subText}`}>یافت نشد</div> : filteredList.map((c, idx) => (
-            <button key={c.id} type="button" onClick={() => { onInputChange(c.name); onFilterChange(""); onToggleList(); }} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold ${dk ? "text-slate-200 hover:bg-cyan-400/15" : "text-slate-700 hover:bg-cyan-50"}`}>
-              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-cyan-500 to-sky-500">{idx + 1}</span>
-              <span className="flex-1 truncate">{c.name}</span>
-              {c.phone && <span className={`text-[10px] ${subText}`} dir="ltr">{c.phone}</span>}
-            </button>
-          ))}
-          <div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
-          <div className={`px-3 py-2 text-[10px] text-center ${subText}`}>نام جدید در لیست ذخیره نمی‌شود</div>
-        </div>
-      )}
-    </div>
-  ));
+    value: string; onInputChange: (n: string) => void; showList: boolean; onToggleList: () => void; filter: string; onFilterChange: (v: string) => void; listRef: React.RefObject<HTMLDivElement | null>; filteredList: Customer[]; err?: boolean;
+  }) => {
+    const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+      const val = e.target.value;
+      onInputChange(val);
+      onFilterChange(val);
+      if (!showList) onToggleList();
+    }, [onInputChange, onFilterChange, showList, onToggleList]);
 
-  /* 🆕 تغییر ۲: ستون عملیات به صورت لیست کشویی */
+    const handleToggle = useCallback((e: React.MouseEvent) => {
+      e.stopPropagation();
+      onToggleList();
+    }, [onToggleList]);
+
+    const handleSelect = useCallback((name: string) => {
+      onInputChange(name);
+      onFilterChange("");
+      onToggleList();
+    }, [onInputChange, onFilterChange, onToggleList]);
+
+    return (
+      <div className="relative" ref={listRef}>
+        <input 
+          value={value} 
+          onChange={handleInputChange}
+          onFocus={() => { if (!showList) onToggleList(); }}
+          placeholder="انتخاب یا نوشتن نام…" 
+          className={`${uiInput} pl-12 ${err ? errInput : ""}`} 
+          autoComplete="off" 
+        />
+        <button 
+          type="button" 
+          onClick={handleToggle} 
+          className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg ${dk ? "text-slate-400 hover:bg-slate-700" : "text-slate-400 hover:bg-slate-100"}`}
+        >
+          <Ic n="chevron" className={`h-4 w-4 transition-transform ${showList ? "rotate-180" : ""}`} />
+        </button>
+        {showList && (
+          <div className={`absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
+            {filteredList.length === 0 ? (
+              <div className={`px-4 py-3 text-xs text-center ${subText}`}>یافت نشد</div>
+            ) : (
+              filteredList.map((c, idx) => (
+                <button 
+                  key={c.id} 
+                  type="button" 
+                  onClick={() => handleSelect(c.name)} 
+                  className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-cyan-400/15" : "text-slate-700 hover:bg-cyan-50"}`}
+                >
+                  <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-cyan-500 to-sky-500">{idx + 1}</span>
+                  <span className="flex-1 truncate">{c.name}</span>
+                  {c.phone && <span className={`text-[10px] ${subText}`} dir="ltr">{c.phone}</span>}
+                </button>
+              ))
+            )}
+            <div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
+            <div className={`px-3 py-2 text-[10px] text-center ${subText}`}>نام جدید در لیست ذخیره نمی‌شود</div>
+          </div>
+        )}
+      </div>
+    );
+  });
+
   const ActionButtons = memo(function ActionButtons({ tx }: { tx: Transaction }) {
     const isVoided = tx.status === "voided";
     const isOpen = openActionId === tx.id;
@@ -366,7 +408,7 @@ export default function CurrencyExchangePage() {
     const btnBase = dk ? "text-slate-200 hover:bg-slate-700/60" : "text-slate-700 hover:bg-slate-100";
 
     return (
-      <div className="relative action-dropdown">
+      <div className="relative action-dropdown flex justify-center">
         <button
           onClick={(e) => { e.stopPropagation(); setOpenActionId(isOpen ? null : tx.id); }}
           className={`grid h-8 w-8 place-items-center rounded-lg border transition-all duration-150 active:scale-90 cursor-pointer ${dk ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-200 text-slate-500 hover:bg-slate-100"}`}
@@ -422,26 +464,48 @@ export default function CurrencyExchangePage() {
     );
   });
 
-  const TransactionRow = memo(({ tx, isSearching }: { tx: Transaction; isSearching: boolean }) => {
+  // 🆕 تغییر ۱ و ۴: اضافه کردن ستون شماره و وسط‌چین کردن
+  const TransactionRow = memo(({ tx, index, isSearching }: { tx: Transaction; index: number; isSearching: boolean }) => {
     const ms = transactionMatchesSearch(tx);
     let rc = dk ? "hover:bg-slate-700/30" : "hover:bg-sky-50/70";
     if (isSearching) rc += ms ? dk ? " bg-amber-400/10" : " bg-amber-100" : " opacity-30";
     if (tx.status === "voided") rc += dk ? " bg-rose-400/[0.05]" : " bg-rose-50";
-    return (<tr className={rc}>
-      <td className="px-4 py-3.5"><span className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-black ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-cyan-300 bg-cyan-50 text-cyan-700"}`} dir="ltr"><Ic n="tag" className="h-3 w-3" />{tx.trackingCode}</span></td>
-      <td className={`px-4 py-3.5 text-[13px] font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>{transactionCustomerLabel(tx)}</td>
-      <td className={`px-4 py-3.5 text-xs ${dk ? "text-slate-400" : "text-slate-500"}`} dir="ltr">{dateLabel(tx.date)}</td>
-      <td className="px-4 py-3.5"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${typeChipClass(tx)}`}>{transactionTypeLabel(tx)}</span></td>
-      <td className="px-4 py-3.5"><div className="text-[13px] font-black">{fmt(tx.fromAmount)}</div><div className={`text-[10px] ${subText}`}>{labels[tx.fromCurrency]}</div></td>
-      <td className="px-4 py-3.5"><div className="text-[13px] font-black">{fmt(tx.toAmount)}</div><div className={`text-[10px] ${subText}`}>{labels[tx.toCurrency]}</div></td>
-      <td className={`px-4 py-3.5 text-[11px] ${dk ? "text-slate-400" : "text-slate-500"}`}>{tx.rateLabel}</td>
-      <td className="px-4 py-3.5 text-xs font-bold">{transactionCommissionLabel(tx)}</td>
-      <td className={`px-4 py-3.5 text-xs ${dk ? "text-slate-300" : "text-slate-600"}`}>{commissionPayerLabel(tx)}</td>
-      <td className="px-4 py-3.5"><ActionButtons tx={tx} /></td>
-    </tr>);
+    // 🆕 تغییر ۴: کلاس text-center برای وسط‌چین
+    const cellClass = "px-4 py-3.5 text-center";
+    return (
+      <tr className={rc}>
+        {/* 🆕 تغییر ۱: ستون شماره */}
+        <td className={cellClass}>
+          <span className={`inline-grid h-7 w-7 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>
+            {index + 1}
+          </span>
+        </td>
+        <td className={cellClass}>
+          <span className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-black ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-cyan-300 bg-cyan-50 text-cyan-700"}`} dir="ltr">
+            <Ic n="tag" className="h-3 w-3" />{tx.trackingCode}
+          </span>
+        </td>
+        <td className={`${cellClass} text-[13px] font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>{transactionCustomerLabel(tx)}</td>
+        <td className={`${cellClass} text-xs ${dk ? "text-slate-400" : "text-slate-500"}`} dir="ltr">{dateLabel(tx.date)}</td>
+        <td className={cellClass}>
+          <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${typeChipClass(tx)}`}>{transactionTypeLabel(tx)}</span>
+        </td>
+        <td className={cellClass}>
+          <div className="text-[13px] font-black tabular-nums">{fmt(tx.fromAmount)}</div>
+          <div className={`text-[10px] ${subText}`}>{labels[tx.fromCurrency]}</div>
+        </td>
+        <td className={cellClass}>
+          <div className="text-[13px] font-black tabular-nums">{fmt(tx.toAmount)}</div>
+          <div className={`text-[10px] ${subText}`}>{labels[tx.toCurrency]}</div>
+        </td>
+        <td className={`${cellClass} text-[11px] ${dk ? "text-slate-400" : "text-slate-500"}`}>{tx.rateLabel}</td>
+        <td className={`${cellClass} text-xs font-bold tabular-nums`}>{transactionCommissionLabel(tx)}</td>
+        <td className={`${cellClass} text-xs ${dk ? "text-slate-300" : "text-slate-600"}`}>{commissionPayerLabel(tx)}</td>
+        <td className={cellClass}><ActionButtons tx={tx} /></td>
+      </tr>
+    );
   });
 
-  /* 🆕 ارتفاع حداکثر برای ۱۲ ردیف (هر ردیف حدود ۵۶px) */
   const tableMaxHeight = "max-h-[672px]";
 
   return (
@@ -567,15 +631,24 @@ export default function CurrencyExchangePage() {
               <div className="flex-1 min-w-0"><h2 className={`fx-display text-xl md:text-2xl ${heading}`}>آخرین معاملات</h2></div>
               {isSearching && <button onClick={() => setSearch("")} className={`flex items-center gap-1 rounded-full px-3 py-1.5 text-[10px] font-black ${dk ? "bg-amber-400/10 text-amber-300" : "bg-amber-100 text-amber-700"}`}>پاک کردن<Ic n="x" className="h-3 w-3" /></button>}
             </div>
-            {/* 🆕 تغییر ۴: نوار اسکرول برای ۱۲ مورد با هدر ثابت */}
             <div className="hidden md:block overflow-x-auto">
               <div className={`${tableMaxHeight} overflow-y-auto`}>
-                <table className="w-full min-w-[1100px] text-sm">
+                <table className="w-full min-w-[1200px] text-sm">
                   <thead className="sticky top-0 z-10">
-                    <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>{["کد","مشتری","تاریخ","نوع","دریافت","پرداخت","نرخ","کارمزد","پرداخت‌کننده","عملیات"].map(h => <th key={h} className="px-4 py-3 text-right text-[11px] font-black text-slate-400">{h}</th>)}</tr>
+                    {/* 🆕 تغییر ۱ و ۴: اضافه کردن ستون شماره و وسط‌چین کردن هدرها */}
+                    <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
+                      {["شماره","کد","مشتری","تاریخ","نوع","دریافت","پرداخت","نرخ","کارمزد","پرداخت‌کننده","عملیات"].map(h => (
+                        <th key={h} className="px-4 py-3 text-center text-[11px] font-black text-slate-400">{h}</th>
+                      ))}
+                    </tr>
                   </thead>
                   <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
-                    {transactions.length === 0 ? <tr><td colSpan={10}><div className={`flex flex-col items-center gap-3 py-14 ${dk ? "text-slate-500" : "text-slate-400"}`}><Ic n="inbox" className="h-7 w-7 opacity-70" /><p className="text-sm font-black">معامله‌ای ثبت نشده</p></div></td></tr> : transactions.map(tx => <TransactionRow key={tx.id} tx={tx} isSearching={isSearching} />)}
+                    {transactions.length === 0 ? (
+                      <tr><td colSpan={11}><div className={`flex flex-col items-center gap-3 py-14 ${dk ? "text-slate-500" : "text-slate-400"}`}><Ic n="inbox" className="h-7 w-7 opacity-70" /><p className="text-sm font-black">معامله‌ای ثبت نشده</p></div></td></tr>
+                    ) : (
+                      // 🆕 تغییر ۱: ارسال index به TransactionRow
+                      transactions.map((tx, index) => <TransactionRow key={tx.id} tx={tx} index={index} isSearching={isSearching} />)
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -606,7 +679,6 @@ export default function CurrencyExchangePage() {
         </div>
       )}
 
-      {/* 🆕 تغییر ۱: مودال پیش‌نمایش کامل با جزئیات جداگانه */}
       {previewOpen && previewData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => { setPreviewOpen(false); setPreviewData(null); }}>
           <div className={`hw-up w-full max-w-2xl overflow-hidden rounded-xl md:rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={e => e.stopPropagation()}>
@@ -631,7 +703,6 @@ export default function CurrencyExchangePage() {
                 </div>
               </div>
 
-              {/* بخش اطلاعات مشتری */}
               {previewData.type === "exchange" && (
                 <div className={`rounded-xl border p-4 ${dk ? "border-cyan-400/20 bg-cyan-400/5" : "border-cyan-200 bg-cyan-50/50"}`}>
                   <div className="flex items-center gap-2 mb-3">
@@ -646,7 +717,6 @@ export default function CurrencyExchangePage() {
                 </div>
               )}
 
-              {/* بخش اطلاعات فرستنده و گیرنده برای transfer */}
               {previewData.type === "transfer" && (
                 <>
                   <div className={`rounded-xl border p-4 ${dk ? "border-orange-400/20 bg-orange-400/5" : "border-orange-200 bg-orange-50/50"}`}>
@@ -670,7 +740,6 @@ export default function CurrencyExchangePage() {
                 </>
               )}
 
-              {/* بخش اطلاعات مشتری برای convert */}
               {previewData.type === "convert" && (
                 <div className={`rounded-xl border p-4 ${dk ? "border-violet-400/20 bg-violet-400/5" : "border-violet-200 bg-violet-50/50"}`}>
                   <div className="flex items-center gap-2 mb-3">
