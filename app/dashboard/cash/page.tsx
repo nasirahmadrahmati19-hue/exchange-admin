@@ -6,29 +6,9 @@ type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type Customer = { id: string; name: string; phone?: string; tazkira?: string; address?: string; note?: string; telegram?: string; registeredAt: string; balances: Record<Currency, number>; };
 type CashEntryType = "customer_deposit" | "customer_withdraw" | "owner_deposit" | "owner_withdraw" | "adjustment";
 type BalanceChange = { customerId?: string; customerName: string; currency: Currency; amount: number; };
-
-type CashEntry = {
-  id: string; trackingCode: string; date: string; type: CashEntryType; currency: Currency; amount: number;
-  direction: "in" | "out"; reason: string; balanceAfter: number; customerId?: string; customerName?: string;
-  customerPhone?: string; customerTazkira?: string; closeActual?: number; closeDiff?: number;
-};
-
-type Transaction = {
-  id: string; trackingCode: string; date: string; type: "exchange" | "transfer" | "convert";
-  fromCurrency: Currency; fromAmount: number; toCurrency: Currency; toAmount: number;
-  rate: number; rateLabel: string; commission?: number; commissionCurrency?: Currency;
-  commissionPayer?: "sender" | "receiver"; status: "active" | "voided";
-  customerId?: string; customerName?: string; senderId?: string; senderName?: string;
-  receiverId?: string; receiverName?: string;
-};
-
-type Hawala = {
-  id: string; number: string; date: string; currencyFrom: Currency; currencyTo: Currency;
-  amountFrom: number; finalAmount: number; fee: number; feeCurrency: Currency;
-  feePayer: "sender" | "receiver"; status: "pending" | "sent" | "paid" | "cancelled";
-  senderId?: string; senderName: string; receiverId?: string; receiverName: string;
-};
-
+type CashEntry = { id: string; trackingCode: string; date: string; type: CashEntryType; currency: Currency; amount: number; direction: "in" | "out"; reason: string; balanceAfter: number; customerId?: string; customerName?: string; customerPhone?: string; customerTazkira?: string; closeActual?: number; closeDiff?: number; };
+type Transaction = { id: string; trackingCode: string; date: string; type: "exchange" | "transfer" | "convert"; fromCurrency: Currency; fromAmount: number; toCurrency: Currency; toAmount: number; rate: number; rateLabel: string; commission?: number; commissionCurrency?: Currency; commissionPayer?: "sender" | "receiver"; status: "active" | "voided"; customerId?: string; customerName?: string; senderId?: string; senderName?: string; receiverId?: string; receiverName?: string; };
+type Hawala = { id: string; number: string; date: string; currencyFrom: Currency; currencyTo: Currency; amountFrom: number; finalAmount: number; fee: number; feeCurrency: Currency; feePayer: "sender" | "receiver"; status: "pending" | "sent" | "paid" | "cancelled"; senderId?: string; senderName: string; receiverId?: string; receiverName: string; };
 type FormState = { type: CashEntryType; currency: Currency; amount: string; reason: string; customerId: string; customerName: string; };
 type FormErrors = Partial<Record<keyof FormState, string>>;
 
@@ -47,7 +27,6 @@ const normalizeDigits = (value: string) => { const pd = "۰۱۲۳۴۵۶۷۸۹", 
 const toNumericText = (v: string) => { let s = normalizeDigits(String(v || "")).replace(/[^0-9.]/g, ""); const fd = s.indexOf("."); if (fd !== -1) s = s.slice(0, fd + 1) + s.slice(fd + 1).replace(/\./g, ""); return s; };
 const parseAmount = (v: string) => { const n = Number(normalizeDigits(String(v || "")).replace(/,/g, "")); return Number.isFinite(n) && n >= 0 ? n : 0; };
 const fmt = (n: number) => (Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 2 }) : "0");
-
 function shamsiParts(d: Date) { try { const parts = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", { year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(d); const get = (type: string) => parts.find((p) => p.type === type)?.value || "0"; return { year: get("year"), month: get("month"), day: get("day") }; } catch { return { year: "0", month: "0", day: "0" }; } }
 function formatDateTime(d: Date) { const pad = (n: number) => String(n).padStart(2, "0"); const s = shamsiParts(d); return `${s.year}/${s.month}/${s.day} ${pad(d.getHours())}:${pad(d.getMinutes())}`; }
 function formatShamsiDate(d: Date) { const s = shamsiParts(d); return `${s.year}/${s.month}/${s.day}`; }
@@ -65,7 +44,6 @@ function loadCustomers(): Customer[] {
     return [];
   } catch { return []; }
 }
-
 function loadCashEntries(): CashEntry[] {
   if (typeof window === "undefined") return [];
   try {
@@ -74,24 +52,20 @@ function loadCashEntries(): CashEntry[] {
     return parsed.filter((e: any) => e?.id).map((e: any): CashEntry => ({ id: e.id, trackingCode: e.trackingCode || "", date: e.date || new Date().toISOString(), type: (["customer_deposit","customer_withdraw","owner_deposit","owner_withdraw","adjustment"].includes(e.type) ? e.type : "customer_deposit") as CashEntryType, currency: currencies.includes(e.currency) ? e.currency : "AFN", amount: Number(e.amount || 0) || 0, direction: e.direction === "out" ? "out" : "in", reason: e.reason || "", balanceAfter: Number(e.balanceAfter || 0) || 0, customerId: e.customerId, customerName: e.customerName, customerPhone: e.customerPhone, customerTazkira: e.customerTazkira, closeActual: e.closeActual, closeDiff: e.closeDiff }));
   } catch { return []; }
 }
-
 function loadTransactions(): Transaction[] {
   if (typeof window === "undefined") return [];
   try { const parsed = safeGetItem(TRANSACTIONS_KEY); return Array.isArray(parsed) ? parsed.filter((t: any) => t?.id && t.status === "active") : []; } catch { return []; }
 }
-
 function loadHawalas(): Hawala[] {
   if (typeof window === "undefined") return [];
   try { const parsed = safeGetItem(HAWALAS_KEY); return Array.isArray(parsed) ? parsed.filter((h: any) => h?.id && h.status !== "cancelled") : []; } catch { return []; }
 }
-
 function computeCashBalances(entries: CashEntry[]): Record<Currency, number> {
   const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
   const sorted = [...entries].sort((a, b) => { try { return new Date(a.date).getTime() - new Date(b.date).getTime(); } catch { return 0; } });
   for (const e of sorted) { if (!currencies.includes(e.currency)) continue; balances[e.currency] += e.direction === "in" ? e.amount : -e.amount; }
   return balances;
 }
-
 function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): Customer[] {
   return customers.map(c => {
     const cc = changes.filter(ch => ch.customerId === c.id || (!ch.customerId && ch.customerName === c.name));
@@ -101,7 +75,6 @@ function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): C
     return { ...c, balances: nb };
   });
 }
-
 function getBalanceChangesForCashEntry(entry: CashEntry, action: "register" | "reverse"): BalanceChange[] {
   const changes: BalanceChange[] = [];
   const sign = action === "register" ? 1 : -1;
@@ -113,7 +86,6 @@ function getBalanceChangesForCashEntry(entry: CashEntry, action: "register" | "r
 }
 
 const emptyForm: FormState = { type: "customer_deposit", currency: "AFN", amount: "", reason: "", customerId: "", customerName: "" };
-
 const iconPaths = { wallet: "M21 12a2.25 2.25 0 0 0-2.25-2.25H15a3 3 0 1 1-6 0H5.25A2.25 2.25 0 0 0 3 12m18 0v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 9m18 0V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v3", plus: "M12 4.5v15m7.5-7.5h-15", arrowDown: "M19.5 13.5 12 21m0 0-7.5-7.5M12 21V3", arrowUp: "M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18", user: "M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z", doc: "M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z", search: "m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 1 10.607 10.607Z", chevron: "m19.5 8.25-7.5 7.5-7.5-7.5", x: "M6 18 18 6M6 6l12 12", check: "M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z", alert: "M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z", inbox: "M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h3.218a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H6.911a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661Z", sun: "M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.375 3.375 0 1 1-7.5 0 3.375 3.375 0 0 1 7.5 0Z", moon: "M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z", clock: "M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z", tag: "M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z", trash: "M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0", lock: "M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z", history: "M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" };
 type IconName = keyof typeof iconPaths;
 const Ic = memo(function Ic({ n, className = "h-5 w-5" }: { n: IconName; className?: string }) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true"><path d={iconPaths[n]} /></svg>; });
@@ -158,21 +130,25 @@ export default function CashPage() {
   const cashBalances = useMemo(() => computeCashBalances(entries), [entries]);
   const nextCode = useMemo(() => getNextTrackingCode(), []);
 
+  const realCashBalances = useMemo(() => {
+    const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+    for (const cur of currencies) {
+      let cash = cashBalances[cur] || 0;
+      for (const c of customers) { const bal = c.balances[cur] || 0; if (bal < 0) cash += bal; }
+      totals[cur] = cash;
+    }
+    return totals;
+  }, [cashBalances, customers]);
+
   const customerTotalBalances = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-    for (const c of customers) for (const cur of currencies) totals[cur] += c.balances[cur] || 0;
+    for (const c of customers) for (const cur of currencies) { const bal = c.balances[cur] || 0; if (bal > 0) totals[cur] += bal; }
     return totals;
   }, [customers]);
 
-  const exchangeReceivable = useMemo(() => {
+  const customerDebts = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) for (const cur of currencies) { const bal = c.balances[cur] || 0; if (bal < 0) totals[cur] += Math.abs(bal); }
-    return totals;
-  }, [customers]);
-
-  const exchangePayable = useMemo(() => {
-    const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-    for (const c of customers) for (const cur of currencies) { const bal = c.balances[cur] || 0; if (bal > 0) totals[cur] += bal; }
     return totals;
   }, [customers]);
 
@@ -287,23 +263,28 @@ export default function CashPage() {
   const tabs = [{ id: "register" as const, label: "ثبت عملیات", icon: "plus" as IconName }, { id: "ledger" as const, label: "روزنامچه صندوق", icon: "history" as IconName, count: entries.length }, { id: "close" as const, label: "بستن صندوق", icon: "lock" as IconName }];
   const entryTypeOptions: [string, string][] = [["customer_deposit", "واریز مشتری به حساب"], ["customer_withdraw", "برداشت مشتری از حساب"], ["owner_deposit", "واریز مالک به صندوق"], ["owner_withdraw", "برداشت مالک از صندوق"]];
 
-  const CurrencyCard = ({ title, subtitle, icon, iconColor, data, dataColorFn }: { title: string; subtitle?: string; icon: IconName; iconColor: string; data: Record<Currency, number>; dataColorFn: (v: number) => string }) => (
-    <div className={`rounded-2xl border p-4 md:p-5 ${iconColor}`}>
+  const TwoColCard = ({ title, subtitle, icon, borderColor, iconBg, data, colorFn, statusFn }: {
+    title: string; subtitle?: string; icon: IconName; borderColor: string; iconBg: string;
+    data: Record<Currency, number>; colorFn: (v: number) => string; statusFn: (v: number) => string;
+  }) => (
+    <div className={`rounded-2xl border p-4 ${borderColor}`}>
       <div className="flex items-center gap-2 mb-3">
-        <span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-slate-700/50" : "bg-white/80"}`}><Ic n={icon} className="h-4 w-4" /></span>
-        <b className={`text-sm font-black ${heading}`}>{title}</b>
-        {subtitle && <span className={`mr-auto text-[9px] font-bold ${subText}`}>{subtitle}</span>}
+        <span className={`grid h-8 w-8 place-items-center rounded-lg ${iconBg}`}><Ic n={icon} className="h-4 w-4" /></span>
+        <div className="flex-1">
+          <b className={`text-sm font-black ${heading}`}>{title}</b>
+          {subtitle && <div className={`text-[9px] font-bold ${subText}`}>{subtitle}</div>}
+        </div>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+      <div className="space-y-1.5">
         {currencies.map(cur => {
-          const bal = data[cur]; const colors = currencyColors[cur];
+          const bal = data[cur];
           return (
-            <div key={cur} className={`rounded-xl border p-3 text-center transition-all duration-300 hover:-translate-y-0.5 ${dk ? "border-slate-700 bg-slate-900/50" : "border-slate-200 bg-white"}`}>
-              <div className="flex items-center justify-center gap-1 mb-1">
-                <span className={`grid h-5 w-5 place-items-center rounded-md bg-gradient-to-br ${colors.gradient} text-white text-[7px] font-black`}>{cur}</span>
-                <span className={`text-[10px] font-black ${subText}`}>{labels[cur]}</span>
+            <div key={cur} className={`flex items-center justify-between rounded-lg px-3 py-2 ${dk ? "bg-slate-900/50" : "bg-white"}`}>
+              <span className={`text-xs font-black ${subText}`}>{labels[cur]}</span>
+              <div className="text-left">
+                <span className={`text-sm font-black tabular-nums ${colorFn(bal)}`}>{fmt(bal)}</span>
+                <span className={`mr-2 text-[9px] font-bold ${colorFn(bal)}`}>{statusFn(bal)}</span>
               </div>
-              <div className={`text-lg font-black tabular-nums ${dataColorFn(bal)}`}>{fmt(bal)}</div>
             </div>
           );
         })}
@@ -328,26 +309,22 @@ export default function CashPage() {
             </div>
           </header>
 
-          {/* ===== ۵ کارت اصلی ===== */}
-          <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="cs-up" style={{ animationDelay: "70ms" }}>
-              <CurrencyCard title="موجودی صندوق" icon="wallet" iconColor={dk ? "border-emerald-400/25 bg-emerald-400/[0.07]" : "border-emerald-300 bg-emerald-50"} data={cashBalances} dataColorFn={(v) => v < 0 ? "text-rose-500" : currencyColors.AFN[dk ? "dark" : "light"]} />
+              <TwoColCard title="موجودی واقعی صندوق" subtitle="نقدی + کسر قرض‌های مشتریان" icon="wallet" borderColor={dk ? "border-emerald-400/25 bg-emerald-400/[0.07]" : "border-emerald-300 bg-emerald-50"} iconBg={dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"} data={realCashBalances} colorFn={(v) => v < 0 ? "text-rose-500" : dk ? "text-emerald-300" : "text-emerald-700"} statusFn={(v) => v < 0 ? "کسری" : "موجودی"} />
             </div>
             <div className="cs-up" style={{ animationDelay: "90ms" }}>
-              <CurrencyCard title="موجودی مشتریان" icon="user" iconColor={dk ? "border-sky-400/25 bg-sky-400/[0.07]" : "border-sky-300 bg-sky-50"} data={customerTotalBalances} dataColorFn={(v) => v < 0 ? "text-rose-500" : currencyColors.USD[dk ? "dark" : "light"]} />
+              <TwoColCard title="موجودی مشتریان نزد صرافی" subtitle="پول مشتری نزد صرافی" icon="user" borderColor={dk ? "border-sky-400/25 bg-sky-400/[0.07]" : "border-sky-300 bg-sky-50"} iconBg={dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-600"} data={customerTotalBalances} colorFn={(v) => v > 0 ? dk ? "text-emerald-300" : "text-emerald-700" : subText} statusFn={(v) => v > 0 ? "موجودی" : "—"} />
             </div>
             <div className="cs-up" style={{ animationDelay: "110ms" }}>
-              <CurrencyCard title="طلب صرافی از مشتریان" subtitle="مشتریان قرضدار" icon="arrowUp" iconColor={dk ? "border-amber-400/25 bg-amber-400/[0.07]" : "border-amber-300 bg-amber-50"} data={exchangeReceivable} dataColorFn={(v) => v > 0 ? "text-amber-500" : subText} />
+              <TwoColCard title="قرض مشتریان از صرافی" subtitle="صرافی به مشتری قرض داده" icon="alert" borderColor={dk ? "border-rose-400/25 bg-rose-400/[0.07]" : "border-rose-300 bg-rose-50"} iconBg={dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600"} data={customerDebts} colorFn={(v) => v > 0 ? "text-rose-500" : subText} statusFn={(v) => v > 0 ? "قرضدار" : "—"} />
             </div>
             <div className="cs-up" style={{ animationDelay: "130ms" }}>
-              <CurrencyCard title="بدهی صرافی به مشتریان" subtitle="مشتریان طلبکار" icon="arrowDown" iconColor={dk ? "border-rose-400/25 bg-rose-400/[0.07]" : "border-rose-300 bg-rose-50"} data={exchangePayable} dataColorFn={(v) => v > 0 ? "text-rose-500" : subText} />
-            </div>
-            <div className="cs-up" style={{ animationDelay: "150ms" }}>
-              <CurrencyCard title="مفاد کارمزد صرافی" subtitle="از معاملات و حواله‌ها" icon="check" iconColor={dk ? "border-emerald-400/25 bg-emerald-400/[0.07]" : "border-emerald-300 bg-emerald-50"} data={commissionProfit} dataColorFn={(v) => v > 0 ? "text-emerald-500" : subText} />
+              <TwoColCard title="مفاد کارمزد صرافی" subtitle="از معاملات و حواله‌ها" icon="check" borderColor={dk ? "border-emerald-400/25 bg-emerald-400/[0.07]" : "border-emerald-300 bg-emerald-50"} iconBg={dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"} data={commissionProfit} colorFn={(v) => v > 0 ? dk ? "text-emerald-300" : "text-emerald-700" : subText} statusFn={(v) => v > 0 ? "مفاد" : "—"} />
             </div>
           </div>
 
-          <div className={`cs-up flex gap-1.5 md:gap-2 rounded-xl md:rounded-2xl border p-1.5 md:p-2 shadow-sm backdrop-blur ${glassChip}`} style={{ animationDelay: "170ms" }}>
+          <div className={`cs-up flex gap-1.5 md:gap-2 rounded-xl md:rounded-2xl border p-1.5 md:p-2 shadow-sm backdrop-blur ${glassChip}`} style={{ animationDelay: "150ms" }}>
             {tabs.map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 md:gap-2 rounded-lg md:rounded-xl px-3 md:px-5 py-2.5 md:py-3 text-xs md:text-sm font-black transition-all duration-300 active:scale-[0.97] ${activeTab === tab.id ? `bg-gradient-to-l shadow-lg ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 via-teal-500 to-cyan-500 text-white"}` : dk ? "text-slate-400 hover:bg-slate-700/60 hover:text-slate-100" : "text-slate-500 hover:bg-emerald-50 hover:text-slate-800"}`}>
                 <Ic n={tab.icon} className="h-4 w-4" /><span>{tab.label}</span>
@@ -357,7 +334,7 @@ export default function CashPage() {
           </div>
 
           {activeTab === "register" && (
-            <section className={`cs-up space-y-4 md:space-y-5 p-4 md:p-7 ${uiCard}`} style={{ animationDelay: "190ms" }}>
+            <section className={`cs-up space-y-4 md:space-y-5 p-4 md:p-7 ${uiCard}`} style={{ animationDelay: "170ms" }}>
               <div className="flex flex-wrap items-center gap-3"><span className={`grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identIcon}`}><Ic n="plus" className="h-5 w-5" /></span><div className="flex-1 min-w-0"><h2 className={`cs-display text-xl md:text-2xl leading-none ${heading}`}>ثبت عملیات صندوق</h2><p className={`mt-1 text-[11px] font-bold ${subText}`}>واریز و برداشت مشتری یا مالک</p></div></div>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                 {fld("نوع عملیات *", (<div className="relative"><select value={form.type} onChange={e => { setField("type", e.target.value); if (e.target.value !== "customer_deposit" && e.target.value !== "customer_withdraw") { setField("customerId", ""); setField("customerName", ""); } }} className={`${uiInput} cursor-pointer appearance-none pl-9`}>{entryTypeOptions.map(o => <option key={o[0]} value={o[0]}>{o[1]}</option>)}</select><span className={chevPos}><Ic n="chevron" className="h-4 w-4" /></span></div>))}
@@ -409,7 +386,7 @@ export default function CashPage() {
           )}
 
           {activeTab === "ledger" && (
-            <section className={`cs-up overflow-hidden ${uiCard}`} style={{ animationDelay: "190ms" }}>
+            <section className={`cs-up overflow-hidden ${uiCard}`} style={{ animationDelay: "170ms" }}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6"><span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identIcon}`}><Ic n="history" className="h-5 w-5" /></span><div className="flex-1 min-w-0"><h2 className={`cs-display text-xl md:text-2xl leading-none ${heading}`}>روزنامچه صندوق</h2><p className={`mt-1 text-[11px] font-bold ${subText}`}>تمام دریافتی‌ها و پرداختی‌ها با جزئیات کامل</p></div><span className={`rounded-full px-3 py-1.5 text-[10px] font-black ${dk ? "bg-slate-700 text-slate-300" : "bg-emerald-100 text-emerald-700"}`}>{filteredEntries.length} عملیات</span></div>
               <div className="px-4 md:px-7 pb-4 space-y-4">
                 <div className="flex flex-wrap gap-3">
@@ -454,7 +431,7 @@ export default function CashPage() {
           )}
 
           {activeTab === "close" && (
-            <section className={`cs-up space-y-4 md:space-y-5 p-4 md:p-7 ${uiCard}`} style={{ animationDelay: "190ms" }}>
+            <section className={`cs-up space-y-4 md:space-y-5 p-4 md:p-7 ${uiCard}`} style={{ animationDelay: "170ms" }}>
               <div className="flex flex-wrap items-center gap-3"><span className={`grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identIcon}`}><Ic n="lock" className="h-5 w-5" /></span><div className="flex-1 min-w-0"><h2 className={`cs-display text-xl md:text-2xl leading-none ${heading}`}>بستن صندوق و شمارش واقعی</h2><p className={`mt-1 text-[11px] font-bold ${subText}`}>مقایسه موجودی ثبت‌شده با شمارش واقعی در پایان روز</p></div></div>
               <div className={`rounded-xl border p-4 ${dk ? "border-amber-400/25 bg-amber-400/[0.07]" : "border-amber-300 bg-amber-50"}`}><div className="flex items-start gap-2"><Ic n="alert" className={`h-4 w-4 shrink-0 mt-0.5 ${dk ? "text-amber-300" : "text-amber-600"}`} /><span className={`text-xs leading-6 ${dk ? "text-amber-200" : "text-amber-800"}`}>موجودی واقعی هر ارز را که در صندوق فیزیکی شمارش کرده‌اید وارد کنید. سیستم اختلاف را محاسبه و به‌صورت خودکار در روزنامچه ثبت می‌کند.</span></div></div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
