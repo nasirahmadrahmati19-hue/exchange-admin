@@ -8,7 +8,7 @@ const menuItems = [
   { title: "داشبورد", href: "/dashboard" },
   { title: "حواله‌جات", href: "/dashboard/hawala" },
   { title: "تبادل ارز", href: "/dashboard/trades" },
-  { title: "نرخ ارزها", href: "/dashboard/rates" },
+  { title: "صندوق", href: "/dashboard/cash" },
   { title: "مشتریان", href: "/dashboard/users" },
   { title: "تیکت‌ها", href: "/dashboard/tickets" },
   { title: "تنظیمات", href: "/dashboard/settings" },
