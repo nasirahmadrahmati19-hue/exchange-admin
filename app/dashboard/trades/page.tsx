@@ -318,32 +318,28 @@ export default function CurrencyExchangePage() {
 
   const CustomerBalanceCard = memo(({ customer, color }: { customer: Customer | null; color: "cyan" | "orange" | "violet" }) => { if (!customer) return null; const colors = { cyan: { border: dk ? "border-cyan-400/30 bg-cyan-400/10" : "border-cyan-200 bg-cyan-50", text: dk ? "text-cyan-300" : "text-cyan-700", icon: dk ? "text-cyan-300" : "text-cyan-600" }, orange: { border: dk ? "border-orange-400/30 bg-orange-400/10" : "border-orange-200 bg-orange-50", text: dk ? "text-orange-300" : "text-orange-700", icon: dk ? "text-orange-300" : "text-orange-600" }, violet: { border: dk ? "border-violet-400/30 bg-violet-400/10" : "border-violet-200 bg-violet-50", text: dk ? "text-violet-300" : "text-violet-700", icon: dk ? "text-violet-300" : "text-violet-600" } }; const c = colors[color]; return (<div className={`rounded-xl border p-3 ${c.border}`}><div className="flex items-center gap-2 mb-2"><Ic n="wallet" className={`h-4 w-4 ${c.icon}`} /><b className={`text-xs font-black ${c.text}`}>موجودی حساب {customer.name}</b></div><div className="grid grid-cols-3 md:grid-cols-5 gap-2 text-[10px] font-bold">{currencies.map(cur => { const bal = customer.balances[cur] || 0; return (<div key={cur} className={`rounded-lg px-2 py-1.5 ${dk ? "bg-slate-900/50" : "bg-white"}`}><div className={subText}>{labels[cur]}</div><div className={`font-black tabular-nums ${bal < 0 ? "text-rose-500" : bal > 0 ? dk ? "text-emerald-300" : "text-emerald-600" : dk ? "text-slate-400" : "text-slate-500"}`}>{fmt(bal)}</div><div className="min-h-[12px] mt-0.5">{bal < 0 && <div className="text-[8px] font-black text-rose-500">قرض از صرافی</div>}{bal > 0 && <div className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>طلب از صرافی</div>}{bal === 0 && <div className={`text-[8px] font-bold ${subText}`}>بدون بدهی</div>}</div></div>); })}</div></div>); });
 
+  /* ✅ اصلاح کامل CustomerDropdown بدون useCallback مشکل‌دار */
   const CustomerDropdown = memo(({ value, onInputChange, showList, onToggleList, filter, onFilterChange, listRef, filteredList, err }: {
-    value: string; onInputChange: (n: string) => void; showList: boolean; onToggleList: () => void; filter: string; onFilterChange: (v: string) => void; listRef: React.RefObject<HTMLDivElement>; filteredList: Customer[]; err?: boolean;
+    value: string; 
+    onInputChange: (n: string) => void; 
+    showList: boolean; 
+    onToggleList: () => void; 
+    filter: string; 
+    onFilterChange: (v: string) => void; 
+    listRef: React.RefObject<HTMLDivElement>; 
+    filteredList: Customer[]; 
+    err?: boolean;
   }) => {
-    const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-      const val = e.target.value;
-      onInputChange(val);
-      onFilterChange(val);
-      if (!showList) onToggleList();
-    }, [onInputChange, onFilterChange, showList, onToggleList]);
-
-    const handleToggle = useCallback((e: React.MouseEvent) => {
-      e.stopPropagation();
-      onToggleList();
-    }, [onToggleList]);
-
-    const handleSelect = useCallback((name: string) => {
-      onInputChange(name);
-      onFilterChange("");
-      onToggleList();
-    }, [onInputChange, onFilterChange, onToggleList]);
-
     return (
       <div className="relative" ref={listRef}>
         <input 
           value={value} 
-          onChange={handleInputChange}
+          onChange={(e) => {
+            const val = e.target.value;
+            onInputChange(val);
+            onFilterChange(val);
+            if (!showList) onToggleList();
+          }}
           onFocus={() => { if (!showList) onToggleList(); }}
           placeholder="انتخاب یا نوشتن نام…" 
           className={`${uiInput} pl-12 ${err ? errInput : ""}`} 
@@ -351,7 +347,10 @@ export default function CurrencyExchangePage() {
         />
         <button 
           type="button" 
-          onClick={handleToggle} 
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleList();
+          }}
           className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg ${dk ? "text-slate-400 hover:bg-slate-700" : "text-slate-400 hover:bg-slate-100"}`}
         >
           <Ic n="chevron" className={`h-4 w-4 transition-transform ${showList ? "rotate-180" : ""}`} />
@@ -365,7 +364,11 @@ export default function CurrencyExchangePage() {
                 <button 
                   key={c.id} 
                   type="button" 
-                  onClick={() => handleSelect(c.name)} 
+                  onClick={() => {
+                    onInputChange(c.name);
+                    onFilterChange("");
+                    onToggleList();
+                  }}
                   className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-cyan-400/15" : "text-slate-700 hover:bg-cyan-50"}`}
                 >
                   <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-cyan-500 to-sky-500">{idx + 1}</span>
