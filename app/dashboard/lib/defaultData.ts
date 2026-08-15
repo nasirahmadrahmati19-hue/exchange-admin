@@ -1,7 +1,13 @@
+// ============================================================
 // app/dashboard/lib/defaultData.ts
+// فایل مشترک داده‌های پیش‌فرض برای همه تب‌ها
+// نسخه اصلاح‌شده: حل مشکل بازگشت مشتریان پیش‌فرض
+// ============================================================
 
 export type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
+
 export const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
+
 export const labels: Record<Currency, string> = {
   AFN: "افغانی",
   USD: "دالر",
@@ -63,67 +69,95 @@ export const defaultCustomers: CustomerBase[] = [
   },
 ];
 
-const safeParse = (raw: string | null): any[] => {
-  if (!raw) return [];
-  try {
-    const p = JSON.parse(raw);
-    return Array.isArray(p) ? p : [];
-  } catch {
-    return [];
-  }
-};
-
+// ============================================================
+// تابع بارگذاری مشتریان (اصلاح‌شده)
+// ============================================================
 export const loadCustomersShared = (): CustomerBase[] => {
+  // در سمت سرور (SSR)، default برگردان
   if (typeof window === "undefined") return defaultCustomers;
+
   try {
-    const p = safeParse(localStorage.getItem(CUSTOMERS_KEY));
-    if (p.length > 0 && p[0]?.id && p[0]?.name) {
-      return p.map((c: any) => ({
-        id: c.id || "",
-        name: c.name || "",
-        phone: c.phone || "",
-        tazkira: c.tazkira || "",
-        address: c.address || "",
-        note: c.note || "",
-        telegram: c.telegram || "",
-        registeredAt: c.registeredAt || new Date().toISOString(),
-        balances: {
-          AFN: Number(c.balances?.AFN || 0) || 0,
-          USD: Number(c.balances?.USD || 0) || 0,
-          EUR: Number(c.balances?.EUR || 0) || 0,
-          IRR: Number(c.balances?.IRR || 0) || 0,
-          PKR: Number(c.balances?.PKR || 0) || 0,
-        },
-      }));
+    const raw = localStorage.getItem(CUSTOMERS_KEY);
+
+    // ✅ اگر کلید اصلاً وجود ندارد (اولین بار)، default برگردان
+    if (raw === null) return defaultCustomers;
+
+    const parsed = JSON.parse(raw);
+
+    if (Array.isArray(parsed)) {
+      // ✅ اگر آرایه خالی است (کاربر همه مشتریان را حذف کرده)
+      // آرایه خالی برگردان، NOT defaultCustomers
+      if (parsed.length === 0) return [];
+
+      // ✅ اگر داده معتبر دارد، داده‌ها را برگردان
+      if (parsed.length > 0 && parsed[0]?.id && parsed[0]?.name) {
+        return parsed.map((c: any) => ({
+          id: c.id || "",
+          name: c.name || "",
+          phone: c.phone || "",
+          tazkira: c.tazkira || "",
+          address: c.address || "",
+          note: c.note || "",
+          telegram: c.telegram || "",
+          registeredAt: c.registeredAt || new Date().toISOString(),
+          balances: {
+            AFN: Number(c.balances?.AFN || 0) || 0,
+            USD: Number(c.balances?.USD || 0) || 0,
+            EUR: Number(c.balances?.EUR || 0) || 0,
+            IRR: Number(c.balances?.IRR || 0) || 0,
+            PKR: Number(c.balances?.PKR || 0) || 0,
+          },
+        }));
+      }
     }
+
+    // اگر داده نامعتبر بود، default برگردان
     return defaultCustomers;
   } catch {
     return defaultCustomers;
   }
 };
 
+// ============================================================
+// تابع بارگذاری تراکنش‌ها
+// ============================================================
 export const loadTransactionsShared = (): any[] => {
   if (typeof window === "undefined") return [];
   try {
-    return safeParse(localStorage.getItem(TRANSACTIONS_KEY));
+    const raw = localStorage.getItem(TRANSACTIONS_KEY);
+    if (raw === null) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
 };
 
+// ============================================================
+// تابع بارگذاری حواله‌ها
+// ============================================================
 export const loadHawalasShared = (): any[] => {
   if (typeof window === "undefined") return [];
   try {
-    return safeParse(localStorage.getItem(HAWALAS_KEY));
+    const raw = localStorage.getItem(HAWALAS_KEY);
+    if (raw === null) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
 };
 
+// ============================================================
+// تابع بارگذاری اسناد صندوق
+// ============================================================
 export const loadCashEntriesShared = (): any[] => {
   if (typeof window === "undefined") return [];
   try {
-    return safeParse(localStorage.getItem(CASH_KEY));
+    const raw = localStorage.getItem(CASH_KEY);
+    if (raw === null) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
