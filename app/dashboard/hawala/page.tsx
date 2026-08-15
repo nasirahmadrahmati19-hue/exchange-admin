@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState, useRef, useCallback, memo, type ReactNode, type ChangeEvent } from "react";
 import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem, getTrackingNumberValue } from "../lib/trackingCode";
-import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, loadCustomersShared, loadTransactionsShared, loadHawalasShared } from "../lib/defaultData";
+import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY, loadCustomersShared, loadTransactionsShared, loadHawalasShared } from "../lib/defaultData";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type RateMode = "same" | "afn" | "direct";
@@ -80,6 +80,120 @@ function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): C
   } catch { return customers; }
 }
 
+// ===== توابع sync با صندوق =====
+function loadCashEntriesLocal(): any[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(CASH_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+}
+
+function saveCashEntriesLocal(entries: any[]) {
+  if (typeof window === "undefined") return;
+  try { localStorage.setItem(CASH_KEY, JSON.stringify(entries)); } catch {}
+}
+
+function recomputeCashBalancesLocal(entries: any[]): any[] {
+  const sorted = [...entries].sort((a, b) => {
+    const t1 = new Date(a.date).getTime();
+    const t2 = new Date(b.date).getTime();
+    if (t1 !== t2) return t1 - t2;
+    if (a.direction === "in" && b.direction === "out") return -1;
+    if (a.direction === "out" && b.direction === "in") return 1;
+    return 0;
+  });
+  const bals: Record<string, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+  return sorted.map(e => {
+    if (e.currency && bals[e.currency] !== undefined) {
+      bals[e.currency] += e.direction === "in" ? (e.amount || 0) : -(e.amount || 0);
+    }
+    return { ...e, balanceAfter: bals[e.currency] || 0 };
+  });
+}
+
+function syncCashEntriesForHawala(action: "add" | "remove", h: Hawala | null, oldHawalaId?: string) {
+  let entries = loadCashEntriesLocal();
+  const targetId = oldHawalaId || h?.id;
+
+  if (targetId) {
+    entries = entries.filter((e: any) => e.linkedHawalaId !== targetId);
+  }
+
+  if (action === "add" && h) {
+    const dateStr = h.date || new Date().toISOString();
+
+    entries.push({
+      id: generateId(),
+      trackingCode: `${h.number}-HW-OUT`,
+      date: dateStr,
+      type: "customer_withdraw",
+      currency: h.currencyFrom,
+      amount: h.amountFrom,
+      direction: "out",
+      reason: `ارسال حواله ${h.number} - ${h.senderName} به ${h.receiverName}`,
+      balanceAfter: 0,
+      customerId: h.senderId,
+      customerName: h.senderName,
+      customerPhone: h.senderPhone,
+      linkedHawalaId: h.id,
+    });
+
+    if (h.fee > 0 && h.feePayer === "sender") {
+      entries.push({
+        id: generateId(),
+        trackingCode: `${h.number}-HW-FEE`,
+        date: dateStr,
+        type: "customer_deposit",
+        currency: h.feeCurrency,
+        amount: h.fee,
+        direction: "in",
+        reason: `کارمزد حواله ${h.number}`,
+        balanceAfter: 0,
+        customerId: h.senderId,
+        customerName: h.senderName,
+        customerPhone: h.senderPhone,
+        linkedHawalaId: h.id,
+      });
+    }
+  }
+
+  entries = recomputeCashBalancesLocal(entries);
+  saveCashEntriesLocal(entries);
+}
+
+function syncCashEntriesForHawalaSettlement(action: "add" | "remove", h: Hawala) {
+  let entries = loadCashEntriesLocal();
+
+  if (action === "remove") {
+    entries = entries.filter((e: any) => e.linkedHawalaSettleId !== h.id);
+  }
+
+  if (action === "add" && h.feePayer === "receiver" && h.fee > 0) {
+    const dateStr = h.paidAt || h.date || new Date().toISOString();
+    entries.push({
+      id: generateId(),
+      trackingCode: `${h.number}-HW-FEE-R`,
+      date: dateStr,
+      type: "customer_deposit",
+      currency: h.feeCurrency,
+      amount: h.fee,
+      direction: "in",
+      reason: `کارمزد حواله ${h.number} (از گیرنده)`,
+      balanceAfter: 0,
+      customerId: h.receiverId,
+      customerName: h.receiverName,
+      customerPhone: h.receiverPhone,
+      linkedHawalaSettleId: h.id,
+    });
+  }
+
+  entries = recomputeCashBalancesLocal(entries);
+  saveCashEntriesLocal(entries);
+}
+
 const iconPaths = { send: "M6 12 3.269 3.126A59.768 59.768 0 0 1 21.485 12 59.77 59.77 0 0 1 3.27 20.876L5.999 12Zm0 0h7.5", receive: "M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3", clock: "M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z", chevron: "m19.5 8.25-7.5 7.5-7.5-7.5", check: "M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z", x: "M6 18 18 6M6 6l12 12", xCircle: "m9.75 9.75 4.5 4.5m0-4.5-4.5 4.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z", alert: "M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z", doc: "M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z", inbox: "M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h3.218a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H6.911a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661Z", arrowLeft: "M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18", swap: "M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5", rate: "M2.25 18 9 11.25l4.306 4.306a11.95 11.95 0 0 1 5.814-5.518l2.74-1.22m0 0-5.94-2.281m5.94 2.28-2.28 5.941", info: "m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z", sun: "M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.375 3.375 0 1 1-7.5 0 3.375 3.375 0 0 1 7.5 0Z", moon: "M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z", plus: "M12 4.5v15m7.5-7.5h-15", tag: "M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z", wallet: "M21 12a2.25 2.25 0 0 0-2.25-2.25H15a3 3 0 1 1-6 0H5.25A2.25 2.25 0 0 0 3 12m18 0v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 9m18 0V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v3", trash: "M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0", undo: "M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3", more: "M12 6.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 12.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 18.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Z" };
 type IconName = keyof typeof iconPaths;
 const Ic = memo(function Ic({ n, className = "h-5 w-5" }: { n: IconName; className?: string }) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true"><path d={iconPaths[n]} /></svg>; });
@@ -116,42 +230,11 @@ export default function HawalaPage() {
   useEffect(() => { try { window.localStorage.setItem("hawala-theme", theme); } catch {} }, [theme]);
   const dk = theme === "dark";
 
-  // ===== بارگذاری اولیه =====
-  useEffect(() => {
-    try {
-      setCustomers(loadCustomersShared() as Customer[]);
-      setTransactions(loadTransactionsShared());
-      setHawalas(loadHawalasShared() as Hawala[]);
-      initTrackingSystem();
-    } catch (err) { console.error("Load error:", err); }
-    setMounted(true);
-  }, []);
+  useEffect(() => { try { setCustomers(loadCustomersShared() as Customer[]); setTransactions(loadTransactionsShared()); setHawalas(loadHawalasShared() as Hawala[]); initTrackingSystem(); } catch (err) { console.error("Load error:", err); } setMounted(true); }, []);
 
-  // ===== SYNC بین تب‌ها =====
-  useEffect(() => {
-    const handleStorage = (e: StorageEvent) => {
-      try {
-        if (e.key === CUSTOMERS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setCustomers(p); }
-        if (e.key === HAWALAS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setHawalas(p); }
-        if (e.key === TRANSACTIONS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setTransactions(p); }
-      } catch {}
-    };
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
-  }, []);
+  useEffect(() => { const handleStorage = (e: StorageEvent) => { try { if (e.key === CUSTOMERS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setCustomers(p); } if (e.key === HAWALAS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setHawalas(p); } if (e.key === TRANSACTIONS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setTransactions(p); } } catch {} }; window.addEventListener("storage", handleStorage); return () => window.removeEventListener("storage", handleStorage); }, []);
 
-  // ===== بازخوانی هنگام focus =====
-  useEffect(() => {
-    const handleFocus = () => {
-      try {
-        setCustomers(loadCustomersShared() as Customer[]);
-        setHawalas(loadHawalasShared() as Hawala[]);
-        setTransactions(loadTransactionsShared());
-      } catch {}
-    };
-    window.addEventListener("focus", handleFocus);
-    return () => window.removeEventListener("focus", handleFocus);
-  }, []);
+  useEffect(() => { const handleFocus = () => { try { setCustomers(loadCustomersShared() as Customer[]); setHawalas(loadHawalasShared() as Hawala[]); setTransactions(loadTransactionsShared()); } catch {} }; window.addEventListener("focus", handleFocus); return () => window.removeEventListener("focus", handleFocus); }, []);
 
   useEffect(() => { if (!openActionId) return; const handler = (e: MouseEvent) => { const target = e.target as HTMLElement; if (!target.closest('.action-dropdown')) setOpenActionId(null); }; document.addEventListener("mousedown", handler); return () => document.removeEventListener("mousedown", handler); }, [openActionId]);
   const [now, setNow] = useState<Date | null>(null);
@@ -225,6 +308,10 @@ export default function HawalaPage() {
       const newHawala: Hawala = { id: generateId(), number: trackingNumber, date: nowDate.toISOString(), time: "", type: form.type, destinationCountry: "افغانستان", province: form.province, district: form.province === "هرات" ? form.district : form.province, destinationText, currencyFrom: form.currencyFrom, currencyTo: form.currencyTo, amountFrom, rate: txRate, rateLabel, rateBase: rateMode === "direct" ? directBaseValue : undefined, fee: feeValue, feeCurrency: form.feeCurrency, feePayer: form.feePayer, finalAmount, balance: form.balance, note: form.note, profit: feeValue, profitCurrency: form.feeCurrency, senderId: sender?.id, senderName, senderPhone: form.senderPhone, senderTelegram: form.senderTelegram, receiverId: receiver?.id, receiverName, receiverTazkira: form.receiverTazkira, receiverPhone: form.receiverPhone, receiverAddress: form.receiverAddress, status: "pending" as HawalaStatus };
       if (sender) setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForHawala(newHawala, "register")));
       setHawalas(prev => [newHawala, ...prev]);
+
+      // ✅ sync با صندوق
+      syncCashEntriesForHawala("add", newHawala);
+
       setLastNames({ senderName, receiverName });
       setForm(emptyForm); setErrors({}); setPreviewOpen(false); setActiveTab("current");
       showToast("حواله با موفقیت ثبت شد.");
@@ -242,7 +329,17 @@ export default function HawalaPage() {
     if (!Number.isFinite(amountPaid) || amountPaid <= 0) { showToast("مبلغ پرداخت‌شده معتبر نیست."); return; }
     try {
       const paidHawala = { ...settleTarget, status: "paid" as HawalaStatus };
-      if (settleTarget.receiverId || customers.some(c => c.name === settleTarget.receiverName)) setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForHawala(paidHawala, "settle")));
+      const isRegisteredReceiver = !!settleTarget.receiverId || customers.some(c => c.name === settleTarget.receiverName);
+
+      if (isRegisteredReceiver) {
+        setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForHawala(paidHawala, "settle")));
+      }
+
+      // ✅ اگر کارمزد از گیرنده باشد، به صندوق اضافه شود
+      if (paidHawala.feePayer === "receiver") {
+        syncCashEntriesForHawalaSettlement("add", paidHawala);
+      }
+
       setHawalas(prev => prev.map(item => item.id === settleTarget.id ? { ...item, status: "paid" as HawalaStatus, paidAt: new Date().toISOString(), paidBy, paidAmount: amountPaid } : item));
       setSettleTarget(null);
       showToast("حواله تسویه شد و به تاریخچه منتقل شد.");
@@ -256,6 +353,15 @@ export default function HawalaPage() {
     if (!cancelReason.trim()) { showToast("دلیل لغو حواله را بنویسید."); return; }
     try {
       if (cancelTarget.senderId || customers.some(c => c.name === cancelTarget.senderName)) setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForHawala(cancelTarget, "cancel")));
+
+      // ✅ معکوس کردن sync با صندوق
+      syncCashEntriesForHawala("remove", null, cancelTarget.id);
+
+      // ✅ اگر کارمزد از گیرنده باشد و تسویه شده باشد
+      if (cancelTarget.feePayer === "receiver" && cancelTarget.status === "paid") {
+        syncCashEntriesForHawalaSettlement("remove", cancelTarget);
+      }
+
       setHawalas(prev => prev.map(item => item.id === cancelTarget.id ? { ...item, status: "cancelled" as HawalaStatus, cancelReason } : item));
       setCancelTarget(null);
       showToast("حواله ابطال شد و به تاریخچه منتقل شد.");
@@ -273,6 +379,10 @@ export default function HawalaPage() {
       }
       setCustomers(prev => applyBalanceChanges(prev, reverseChanges));
     }
+
+    // ✅ sync با صندوق (دوباره کم شود)
+    syncCashEntriesForHawala("add", item);
+
     setHawalas(prev => prev.map(h => h.id === item.id ? { ...h, status: "sent" as HawalaStatus, paidAt: undefined, paidBy: undefined, paidAmount: undefined, cancelReason: undefined } : h));
     showToast("حواله به وضعیت ارسال‌شده برگشت و به تب جاری منتقل شد.");
   }, [customers, showToast]);
@@ -298,6 +408,15 @@ export default function HawalaPage() {
         }
       }
       if (changes.length > 0) setCustomers(prev => applyBalanceChanges(prev, changes));
+
+      // ✅ معکوس کردن sync با صندوق
+      if (item.status !== "cancelled") {
+        syncCashEntriesForHawala("remove", null, item.id);
+        if (item.feePayer === "receiver" && item.status === "paid") {
+          syncCashEntriesForHawalaSettlement("remove", item);
+        }
+      }
+
       setHawalas(prev => prev.filter(h => h.id !== item.id));
       showToast(`حواله ${item.number} حذف شد.`);
     } catch (err) { console.error("Delete error:", err); showToast("خطا در حذف حواله"); }
@@ -434,7 +553,7 @@ export default function HawalaPage() {
             </section>
           )}
           {activeTab === "current" && (
-            <section className={`hw-up overflow-hidden ${uiCard}`}>
+            <section className={`hw-up Overflow-hidden ${uiCard}`}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6"><span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identHwIcon}`}><Ic n="clock" className="h-5 w-5" /></span><div className="flex-1 min-w-0"><h2 className={`hw-display text-xl md:text-2xl leading-none ${heading}`}>حواله‌های جاری</h2><p className={`mt-1 text-[11px] font-bold ${subText}`}>حواله‌های در انتظار و ارسال‌شده</p></div></div>
               <div className="px-4 md:px-7 pb-4 space-y-4">
                 <div className="flex flex-wrap gap-3"><input value={nameSearch} onChange={e => setNameSearch(e.target.value)} placeholder="نام، کد پیگیری، تلفن یا تذکره…" className={`${uiInput} flex-1 min-w-[200px]`} /><input value={amountSearch} onChange={e => setAmountSearch(e.target.value)} placeholder="جستجو بر اساس مبلغ…" inputMode="numeric" className={`${uiInput} flex-1 min-w-[150px]`} /><select value={sortOrder} onChange={e => setSortOrder(e.target.value as "asc" | "desc")} className={`${uiInput} w-auto min-w-[180px] cursor-pointer appearance-none pl-9`}><option value="asc">قدیمی‌ترین در اول</option><option value="desc">جدیدترین در اول</option></select></div>
