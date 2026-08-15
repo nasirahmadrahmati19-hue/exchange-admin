@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState, useRef, useCallback, memo, type ReactNode, type ChangeEvent } from "react";
 import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem, getTrackingNumberValue } from "../lib/trackingCode";
+import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, loadCustomersShared, loadTransactionsShared, loadHawalasShared } from "../lib/defaultData";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type RateMode = "same" | "afn" | "direct";
@@ -18,13 +19,6 @@ const heratDistricts = ["گلران","مرکز هرات","ادرسکن","چشت 
 const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
 const labels: Record<Currency, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
 const rateUnits: Record<Currency, number> = { AFN: 1, USD: 1, EUR: 1, IRR: 1000, PKR: 1000 };
-const CUSTOMERS_KEY = "fx-customers", HAWALAS_KEY = "hawalas", TRANSACTIONS_KEY = "fx-transactions";
-
-const defaultCustomers: Customer[] = [
-  { id: "1", name: "احمد رحیمی", phone: "0700123456", tazkira: "1400-001-001", address: "هرات، گلران", note: "مشتری ویژه", telegram: "@ahmad_rahimi", registeredAt: "2025-01-15T10:00:00Z", balances: { AFN: 500000, USD: 10000, EUR: 0, IRR: 0, PKR: 0 } },
-  { id: "2", name: "محمد ظاهر", phone: "0700654321", tazkira: "1400-002-002", address: "هرات، انجیل", note: "", telegram: "@mohammad_zahir", registeredAt: "2025-02-20T14:30:00Z", balances: { AFN: 200000, USD: 5000, EUR: 0, IRR: 0, PKR: 0 } },
-  { id: "3", name: "فاطمه حسینی", phone: "0700789123", tazkira: "1400-003-003", address: "هرات، مرکز", note: "معاملات عمده", telegram: "@fatema_hosseini", registeredAt: "2025-03-05T09:15:00Z", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 50000000, PKR: 0 } },
-];
 
 const generateId = (): string => { if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") { try { return crypto.randomUUID(); } catch {} } return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => { const r = (Math.random() * 16) | 0; return (c === "x" ? r : (r & 0x3) | 0x8).toString(16); }); };
 const isCurrency = (v: any): v is Currency => typeof v === "string" && (currencies as string[]).includes(v);
@@ -38,29 +32,6 @@ function formatDateTime(d: Date) { const pad = (n: number) => String(n).padStart
 function dateLabel(s: string) { try { const d = new Date(s); return Number.isNaN(d.getTime()) ? "-" : formatDateTime(d); } catch { return "-"; } }
 
 const emptyForm: FormState = { type: "", currencyFrom: "AFN", currencyTo: "USD", senderId: "", senderName: "", senderPhone: "", senderTelegram: "", amountFrom: "", rate: "", fee: "", feeCurrency: "AFN", feePayer: "sender", balance: "", province: "هرات", district: "گلران", receiverId: "", receiverName: "", receiverTazkira: "", receiverPhone: "", receiverAddress: "", note: "" };
-const safeGetItem = (key: string): any => { if (typeof window === "undefined") return null; try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : null; } catch { return null; } };
-
-const loadCustomers = (): Customer[] => {
-  if (typeof window === "undefined") return defaultCustomers;
-  try {
-    const parsed = safeGetItem(CUSTOMERS_KEY);
-    if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === "object" && parsed[0] !== null && "id" in parsed[0] && "name" in parsed[0]) {
-      return parsed.map((c: any) => ({ id: c.id || generateId(), name: c.name || "", phone: c.phone || "", tazkira: c.tazkira || "", address: c.address || "", note: c.note || "", telegram: c.telegram || "", registeredAt: c.registeredAt || c.createdAt || new Date().toISOString(), balances: { AFN: Number(c.balances?.AFN || 0) || 0, USD: Number(c.balances?.USD || 0) || 0, EUR: Number(c.balances?.EUR || 0) || 0, IRR: Number(c.balances?.IRR || 0) || 0, PKR: Number(c.balances?.PKR || 0) || 0 } }));
-    }
-    return defaultCustomers;
-  } catch { return defaultCustomers; }
-};
-
-const loadTransactions = (): any[] => { if (typeof window === "undefined") return []; try { const parsed = safeGetItem(TRANSACTIONS_KEY); return Array.isArray(parsed) ? parsed : []; } catch { return []; } };
-
-const loadHawalas = (): Hawala[] => {
-  if (typeof window === "undefined") return [];
-  try {
-    const parsed = safeGetItem(HAWALAS_KEY);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((h: any) => h?.id && h?.number).map((h: any): Hawala => ({ id: h.id, number: h.number, date: h.date || new Date().toISOString(), time: h.time || "", type: h.type === "receive" ? "receive" : "send", destinationCountry: h.destinationCountry || "افغانستان", province: h.province || "", district: h.district || "", destinationText: h.destinationText || "", currencyFrom: isCurrency(h.currencyFrom) ? h.currencyFrom : "AFN", currencyTo: isCurrency(h.currencyTo) ? h.currencyTo : "AFN", amountFrom: Number(h.amountFrom || 0) || 0, rate: Number(h.rate || 0) || 0, rateLabel: h.rateLabel || "", rateBase: h.rateBase, fee: Number(h.fee || 0) || 0, feeCurrency: isCurrency(h.feeCurrency) ? h.feeCurrency : "AFN", feePayer: h.feePayer === "receiver" ? "receiver" : "sender", finalAmount: Number(h.finalAmount || 0) || 0, balance: h.balance || "", note: h.note || "", profit: Number(h.profit || 0) || 0, profitCurrency: isCurrency(h.profitCurrency) ? h.profitCurrency : "AFN", senderId: h.senderId, senderName: h.senderName || "", senderPhone: h.senderPhone || "", senderTelegram: h.senderTelegram || "", receiverId: h.receiverId, receiverName: h.receiverName || "", receiverTazkira: h.receiverTazkira || "", receiverPhone: h.receiverPhone || "", receiverAddress: h.receiverAddress || "", status: h.status === "sent" ? "sent" : h.status === "paid" ? "paid" : h.status === "cancelled" ? "cancelled" : "pending", paidAt: h.paidAt, paidBy: h.paidBy, paidAmount: h.paidAmount, cancelReason: h.cancelReason }));
-  } catch { return []; }
-};
 
 function getRateMode(from: Currency, to: Currency): RateMode { if (from === to) return "same"; if (from === "AFN" || to === "AFN") return "afn"; return "direct"; }
 function getAfnForeign(from: Currency, to: Currency): Currency | null { if (from === to) return null; if (from === "AFN") return to; if (to === "AFN") return from; return null; }
@@ -115,7 +86,7 @@ const Ic = memo(function Ic({ n, className = "h-5 w-5" }: { n: IconName; classNa
 
 export default function HawalaPage() {
   const [mounted, setMounted] = useState(false);
-  const [customers, setCustomers] = useState<Customer[]>(defaultCustomers);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [hawalas, setHawalas] = useState<Hawala[]>([]);
   const [lastNames, setLastNames] = useState<LastNames>({ senderName: "", receiverName: "" });
@@ -141,13 +112,48 @@ export default function HawalaPage() {
   const [toast, setToast] = useState("");
   const [openActionId, setOpenActionId] = useState<string | null>(null);
 
-  useEffect(() => { if (!openActionId) return; const handler = (e: MouseEvent) => { const target = e.target as HTMLElement; if (!target.closest('.action-dropdown')) setOpenActionId(null); }; document.addEventListener("mousedown", handler); return () => document.removeEventListener("mousedown", handler); }, [openActionId]);
   useEffect(() => { try { const saved = window.localStorage.getItem("hawala-theme"); if (saved === "dark" || saved === "light") setTheme(saved); } catch {} }, []);
   useEffect(() => { try { window.localStorage.setItem("hawala-theme", theme); } catch {} }, [theme]);
   const dk = theme === "dark";
 
-  useEffect(() => { try { setCustomers(loadCustomers()); setTransactions(loadTransactions()); setHawalas(loadHawalas()); initTrackingSystem(); } catch (err) { console.error("Load error:", err); } setMounted(true); }, []);
+  // ===== بارگذاری اولیه =====
+  useEffect(() => {
+    try {
+      setCustomers(loadCustomersShared() as Customer[]);
+      setTransactions(loadTransactionsShared());
+      setHawalas(loadHawalasShared() as Hawala[]);
+      initTrackingSystem();
+    } catch (err) { console.error("Load error:", err); }
+    setMounted(true);
+  }, []);
 
+  // ===== SYNC بین تب‌ها =====
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      try {
+        if (e.key === CUSTOMERS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setCustomers(p); }
+        if (e.key === HAWALAS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setHawalas(p); }
+        if (e.key === TRANSACTIONS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setTransactions(p); }
+      } catch {}
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
+
+  // ===== بازخوانی هنگام focus =====
+  useEffect(() => {
+    const handleFocus = () => {
+      try {
+        setCustomers(loadCustomersShared() as Customer[]);
+        setHawalas(loadHawalasShared() as Hawala[]);
+        setTransactions(loadTransactionsShared());
+      } catch {}
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, []);
+
+  useEffect(() => { if (!openActionId) return; const handler = (e: MouseEvent) => { const target = e.target as HTMLElement; if (!target.closest('.action-dropdown')) setOpenActionId(null); }; document.addEventListener("mousedown", handler); return () => document.removeEventListener("mousedown", handler); }, [openActionId]);
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => { setNow(new Date()); const timer = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(timer); }, []);
   const currentDateTime = now ? formatDateTime(now) : "";
@@ -437,7 +443,7 @@ export default function HawalaPage() {
             </section>
           )}
           {activeTab === "history" && (
-            <section className={`hw-up overflow-hidden ${uiCard}`}>
+            <section className={`hw-up Overflow-hidden ${uiCard}`}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6"><span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identHwIcon}`}><Ic n="doc" className="h-5 w-5" /></span><div className="flex-1 min-w-0"><h2 className={`hw-display text-xl md:text-2xl leading-none ${heading}`}>تاریخچه حواله‌ها</h2><p className={`mt-1 text-[11px] font-bold ${subText}`}>حواله‌های پرداخت‌شده و ابطال‌شده</p></div></div>
               <div className="px-4 md:px-7 pb-4 space-y-4">
                 <div className="flex flex-wrap gap-3"><input value={nameSearch} onChange={e => setNameSearch(e.target.value)} placeholder="نام، کد پیگیری، تلفن یا تذکره…" className={`${uiInput} flex-1 min-w-[200px]`} /><input value={amountSearch} onChange={e => setAmountSearch(e.target.value)} placeholder="جستجو بر اساس مبلغ…" inputMode="numeric" className={`${uiInput} flex-1 min-w-[150px]`} /><select value={sortOrder} onChange={e => setSortOrder(e.target.value as "asc" | "desc")} className={`${uiInput} w-auto min-w-[180px] cursor-pointer appearance-none pl-9`}><option value="asc">قدیمی‌ترین در اول</option><option value="desc">جدیدترین در اول</option></select></div>
