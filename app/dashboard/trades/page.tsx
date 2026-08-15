@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, useMemo, useRef, useCallback, memo, type ReactNode } from "react";
 import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem } from "../lib/trackingCode";
+import { CUSTOMERS_KEY, TRANSACTIONS_KEY, CASH_KEY, loadCustomersShared, loadTransactionsShared, loadCashEntriesShared } from "../lib/defaultData";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type RateMode = "same" | "afn" | "direct";
@@ -22,26 +23,6 @@ type BalanceChange = { customerId?: string; customerName: string; currency: Curr
 const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
 const labels: Record<Currency, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
 const rateUnits: Record<Currency, number> = { AFN: 1, USD: 1, EUR: 1, IRR: 1000, PKR: 1000 };
-const CUSTOMERS_KEY = "fx-customers";
-const TRANSACTIONS_KEY = "fx-transactions";
-const CASH_KEY = "cash-entries";
-
-const initialCustomers: Customer[] = [
-  { id: "1", name: "احمد رحیمی", phone: "0700123456", telegram: "@ahmad_rahimi", balances: { AFN: 500000, USD: 10000, EUR: 0, IRR: 0, PKR: 0 } },
-  { id: "2", name: "محمد ظاهر", phone: "0700654321", telegram: "@mohammad_zahir", balances: { AFN: 200000, USD: 5000, EUR: 0, IRR: 0, PKR: 0 } },
-  { id: "3", name: "فاطمه حسینی", phone: "0700789123", telegram: "@fatema_hosseini", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 50000000, PKR: 0 } },
-];
-
-function getStoredCustomers(): Customer[] {
-  if (typeof window === "undefined") return initialCustomers;
-  try {
-    const raw = localStorage.getItem(CUSTOMERS_KEY);
-    if (!raw) return initialCustomers;
-    const p = JSON.parse(raw);
-    if (Array.isArray(p) && p.length > 0 && "id" in p[0] && "name" in p[0]) return p as Customer[];
-    return initialCustomers;
-  } catch { return initialCustomers; }
-}
 
 const normalizeDigits = (s: string) => s.replace(/[۰-۹]/g, d => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))).replace(/[٠-٩]/g, d => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
 function toNumericText(v: string) {
@@ -182,7 +163,6 @@ function getBalanceChangesForTransaction(tx: Transaction, action: "register" | "
   return changes;
 }
 
-// ===== توابع یکپارچه‌سازی با صندوق (Cash Box Integration) =====
 function loadCashEntries(): any[] {
   if (typeof window === "undefined") return [];
   try {
@@ -296,16 +276,50 @@ const DetailRow = memo(function DetailRow({ label, value, valueClass = "", dark 
   );
 });
 
+function getStoredCustomers(): Customer[] {
+  return loadCustomersShared() as Customer[];
+}
+
 export default function CurrencyExchangePage() {
   const [customers, setCustomers] = useState<Customer[]>(getStoredCustomers);
   const [transactions, setTransactions] = useState<Transaction[]>(() => {
     if (typeof window === "undefined") return [];
-    try { const s = window.localStorage.getItem(TRANSACTIONS_KEY); return s ? JSON.parse(s) : []; } catch { return []; }
+    try { return loadTransactionsShared(); } catch { return []; }
   });
 
   useEffect(() => { try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); } catch {} }, [customers]);
   useEffect(() => { try { window.localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(transactions)); } catch {} }, [transactions]);
   useEffect(() => { try { initTrackingSystem(); } catch {} }, []);
+
+  // ===== SYNC بین تب‌ها =====
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      try {
+        if (e.key === CUSTOMERS_KEY && e.newValue) {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) setCustomers(parsed);
+        }
+        if (e.key === TRANSACTIONS_KEY && e.newValue) {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) setTransactions(parsed);
+        }
+      } catch {}
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
+
+  // ===== بازخوانی هنگام focus =====
+  useEffect(() => {
+    const handleFocus = () => {
+      try {
+        setCustomers(loadCustomersShared() as Customer[]);
+        setTransactions(loadTransactionsShared());
+      } catch {}
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, []);
 
   const [tab, setTab] = useState<"exchange" | "transfer" | "convert">("exchange");
   const [now, setNow] = useState<Date | null>(null);
