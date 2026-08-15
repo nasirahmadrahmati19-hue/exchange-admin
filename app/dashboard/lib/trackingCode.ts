@@ -1,5 +1,3 @@
-// lib/trackingCode.ts
-
 /**
  * ═══════════════════════════════════════════════════════════
  * سیستم تولید کد پیگیری یکتا
@@ -8,15 +6,15 @@
  * - 1405: سال هجری شمسی (خودکار)
  * - 00001: شماره مسلسل ۵ رقمی (ریست در سال جدید)
  * ظرفیت: 99,999 تراکنش در سال
+ * 
+ * ✅ نسخه اصلاح‌شده:
+ * - کد پیگیری بر اساس تعداد معاملات موجود محاسبه می‌شود
+ * - وقتی معامله حذف می‌شود، جای خالی پر می‌شود
+ * - وقتی همه معاملات حذف شوند، از ۱ شروع می‌شود
  * ═══════════════════════════════════════════════════════════
  */
 
-const COUNTERS_KEY = "tracking-counters";
 const SEQUENCE_LENGTH = 5; // ✅ 5 رقم برای ظرفیت بیشتر
-
-interface YearlyCounters {
-  [year: string]: number;
-}
 
 /**
  * گرفتن سال هجری شمسی فعلی
@@ -29,80 +27,6 @@ export function getCurrentShamsiYear(): string {
     return parts.find((p) => p.type === "year")?.value || "1405";
   } catch {
     return "1405";
-  }
-}
-
-/**
- * خواندن شمارنده‌ها از localStorage
- */
-function getCounters(): YearlyCounters {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = localStorage.getItem(COUNTERS_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (typeof parsed === "object" && parsed !== null) {
-      const safe: YearlyCounters = {};
-      for (const [year, count] of Object.entries(parsed)) {
-        safe[year] = Number(count) || 0;
-      }
-      return safe;
-    }
-    return {};
-  } catch {
-    return {};
-  }
-}
-
-/**
- * ذخیره شمارنده‌ها در localStorage
- */
-function setCounters(counters: YearlyCounters): void {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(COUNTERS_KEY, JSON.stringify(counters));
-  } catch (err) {
-    console.error("Failed to save tracking counters:", err);
-  }
-}
-
-/**
- * پیش‌نمایش کد پیگیری بعدی (بدون افزایش شمارنده)
- * برای نمایش در فرم‌ها قبل از ثبت
- */
-export function getNextTrackingCode(): string {
-  const year = getCurrentShamsiYear();
-  const counters = getCounters();
-  const currentCount = counters[year] || 0;
-  const nextCount = currentCount + 1;
-  return `TR-${year}-${String(nextCount).padStart(SEQUENCE_LENGTH, "0")}`;
-}
-
-/**
- * تولید و مصرف کد پیگیری (با افزایش شمارنده)
- * برای ثبت نهایی تراکنش
- */
-export function consumeTrackingCode(): string {
-  const year = getCurrentShamsiYear();
-  const counters = getCounters();
-  const currentCount = counters[year] || 0;
-  const nextCount = currentCount + 1;
-  
-  counters[year] = nextCount;
-  setCounters(counters);
-  
-  return `TR-${year}-${String(nextCount).padStart(SEQUENCE_LENGTH, "0")}`;
-}
-
-/**
- * مقداردهی اولیه سیستم
- */
-export function initTrackingSystem(): void {
-  const year = getCurrentShamsiYear();
-  const counters = getCounters();
-  if (!counters[year]) {
-    counters[year] = 0;
-    setCounters(counters);
   }
 }
 
@@ -122,6 +46,96 @@ export function getTrackingNumberValue(code: string): number {
   if (oldFormat) return Number(oldFormat[1]) || 0;
   
   return 0;
+}
+
+/**
+ * جمع‌آوری تمام کدهای پیگیری استفاده‌شده از همه بخش‌ها
+ */
+function collectUsedTrackingNumbers(): Set<number> {
+  const usedNumbers = new Set<number>();
+  
+  // بررسی معاملات (transactions)
+  try {
+    const rawTx = localStorage.getItem("fx-transactions");
+    if (rawTx) {
+      const txs = JSON.parse(rawTx);
+      if (Array.isArray(txs)) {
+        for (const tx of txs) {
+          const num = getTrackingNumberValue(tx.trackingCode || tx.number || "");
+          if (num > 0) usedNumbers.add(num);
+        }
+      }
+    }
+  } catch {}
+  
+  // بررسی حواله‌ها (hawalas)
+  try {
+    const rawHw = localStorage.getItem("hawalas");
+    if (rawHw) {
+      const hws = JSON.parse(rawHw);
+      if (Array.isArray(hws)) {
+        for (const hw of hws) {
+          const num = getTrackingNumberValue(hw.number || "");
+          if (num > 0) usedNumbers.add(num);
+        }
+      }
+    }
+  } catch {}
+  
+  // بررسی اسناد صندوق (cash entries)
+  try {
+    const rawCe = localStorage.getItem("cash-entries");
+    if (rawCe) {
+      const ces = JSON.parse(rawCe);
+      if (Array.isArray(ces)) {
+        for (const ce of ces) {
+          const num = getTrackingNumberValue(ce.trackingCode || "");
+          if (num > 0) usedNumbers.add(num);
+        }
+      }
+    }
+  } catch {}
+  
+  return usedNumbers;
+}
+
+/**
+ * پیش‌نمایش کد پیگیری بعدی (بدون افزایش شمارنده)
+ * برای نمایش در فرم‌ها قبل از ثبت
+ * 
+ * ✅ روش جدید: پیدا کردن اولین جای خالی در شماره‌ها
+ */
+export function getNextTrackingCode(): string {
+  const year = getCurrentShamsiYear();
+  const usedNumbers = collectUsedTrackingNumbers();
+  
+  // پیدا کردن اولین جای خالی
+  let nextNumber = 1;
+  while (usedNumbers.has(nextNumber)) {
+    nextNumber++;
+  }
+  
+  return `TR-${year}-${String(nextNumber).padStart(SEQUENCE_LENGTH, "0")}`;
+}
+
+/**
+ * تولید و مصرف کد پیگیری (با افزایش شمارنده)
+ * برای ثبت نهایی تراکنش
+ * 
+ * ✅ روش جدید: چون getNextTrackingCode بر اساس معاملات موجود کار می‌کند،
+ * consumeTrackingCode فقط همان کد را برمی‌گرداند
+ */
+export function consumeTrackingCode(): string {
+  return getNextTrackingCode();
+}
+
+/**
+ * مقداردهی اولیه سیستم
+ * ✅ دیگر نیازی به ذخیره شمارنده نیست
+ */
+export function initTrackingSystem(): void {
+  // هیچ کاری لازم نیست انجام شود
+  // سیستم به صورت خودکار بر اساس معاملات موجود کار می‌کند
 }
 
 /**
