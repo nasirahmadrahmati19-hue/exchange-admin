@@ -80,7 +80,7 @@ function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): C
   } catch { return customers; }
 }
 
-// ===== ✅ توابع sync با صندوق (اصلاح‌شده) =====
+// ===== توابع sync با صندوق =====
 function loadCashEntriesLocal(): any[] {
   if (typeof window === "undefined") return [];
   try {
@@ -101,9 +101,8 @@ function recomputeCashBalancesLocal(entries: any[]): any[] {
     const t1 = new Date(a.date).getTime();
     const t2 = new Date(b.date).getTime();
     if (t1 !== t2) return t1 - t2;
-    // ✅ برای اسناد مرتبط با حواله، out قبل از in
-    const aIsHawala = a.trackingCode && (a.linkedHawalaId || a.linkedHawalaSettleId);
-    const bIsHawala = b.trackingCode && (b.linkedHawalaId || b.linkedHawalaSettleId);
+    const aIsHawala = a.linkedHawalaId || a.linkedHawalaSettleId;
+    const bIsHawala = b.linkedHawalaId || b.linkedHawalaSettleId;
     if (aIsHawala && bIsHawala) {
       if (a.direction === "out" && b.direction === "in") return -1;
       if (a.direction === "in" && b.direction === "out") return 1;
@@ -122,7 +121,7 @@ function recomputeCashBalancesLocal(entries: any[]): any[] {
   });
 }
 
-// ✅ اصلاح‌شده: کد پیگیری ساده + کارمزد به حساب مشتری اضافه نمی‌شود
+// ✅ اصلاح‌شده: type "fee" + کد پیگیری ساده
 function syncCashEntriesForHawala(action: "add" | "remove", h: Hawala | null, oldHawalaId?: string) {
   let entries = loadCashEntriesLocal();
   const targetId = oldHawalaId || h?.id;
@@ -133,8 +132,6 @@ function syncCashEntriesForHawala(action: "add" | "remove", h: Hawala | null, ol
 
   if (action === "add" && h) {
     const dateStr = h.date || new Date().toISOString();
-
-    // ✅ کد پیگیری ساده: TR-1405-00002
     const outCode = getNextTrackingCode();
 
     entries.push({
@@ -154,7 +151,6 @@ function syncCashEntriesForHawala(action: "add" | "remove", h: Hawala | null, ol
     });
 
     if (h.fee > 0 && h.feePayer === "sender") {
-      // ✅ کد پیگیری ساده بعدی: TR-1405-00003
       const outNum = getTrackingNumberValue(outCode);
       const feeCode = `TR-${getCurrentShamsiYear()}-${String(outNum + 1).padStart(5, "0")}`;
 
@@ -162,14 +158,13 @@ function syncCashEntriesForHawala(action: "add" | "remove", h: Hawala | null, ol
         id: generateId(),
         trackingCode: feeCode,
         date: dateStr,
-        type: "adjustment",
+        type: "fee",
         currency: h.feeCurrency,
         amount: h.fee,
         direction: "in",
         reason: `کارمزد حواله ${h.number}`,
         balanceAfter: 0,
         linkedHawalaId: h.id,
-        // ✅ customerId حذف شد → به حساب مشتری اضافه نمی‌شود
       });
     }
   }
@@ -178,7 +173,7 @@ function syncCashEntriesForHawala(action: "add" | "remove", h: Hawala | null, ol
   saveCashEntriesLocal(entries);
 }
 
-// ✅ اصلاح‌شده: کارمزد از گیرنده هم به حساب مشتری اضافه نمی‌شود
+// ✅ اصلاح‌شده: type "fee"
 function syncCashEntriesForHawalaSettlement(action: "add" | "remove", h: Hawala) {
   let entries = loadCashEntriesLocal();
 
@@ -194,14 +189,13 @@ function syncCashEntriesForHawalaSettlement(action: "add" | "remove", h: Hawala)
       id: generateId(),
       trackingCode: feeCode,
       date: dateStr,
-      type: "adjustment",
+      type: "fee",
       currency: h.feeCurrency,
       amount: h.fee,
       direction: "in",
       reason: `کارمزد حواله ${h.number} (از گیرنده)`,
       balanceAfter: 0,
       linkedHawalaSettleId: h.id,
-      // ✅ customerId حذف شد → به حساب مشتری اضافه نمی‌شود
     });
   }
 
@@ -247,7 +241,7 @@ export default function HawalaPage() {
 
   useEffect(() => { try { setCustomers(loadCustomersShared() as Customer[]); setTransactions(loadTransactionsShared()); setHawalas(loadHawalasShared() as Hawala[]); initTrackingSystem(); } catch (err) { console.error("Load error:", err); } setMounted(true); }, []);
 
-  useEffect(() => { const handleStorage = (e: StorageEvent) => { try { if (e.key === CUSTOMERS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setCustomers(p); } if (e.key === HAWALAS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setHawalas(p); } if (e.key === TRANSACTIONS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setTransactions(p); } if (e.key === CASH_KEY && e.newValue) { /* فقط برای sync */ } } catch {} }; window.addEventListener("storage", handleStorage); return () => window.removeEventListener("storage", handleStorage); }, []);
+  useEffect(() => { const handleStorage = (e: StorageEvent) => { try { if (e.key === CUSTOMERS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setCustomers(p); } if (e.key === HAWALAS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setHawalas(p); } if (e.key === TRANSACTIONS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setTransactions(p); } } catch {} }; window.addEventListener("storage", handleStorage); return () => window.removeEventListener("storage", handleStorage); }, []);
 
   useEffect(() => { const handleFocus = () => { try { setCustomers(loadCustomersShared() as Customer[]); setHawalas(loadHawalasShared() as Hawala[]); setTransactions(loadTransactionsShared()); } catch {} }; window.addEventListener("focus", handleFocus); return () => window.removeEventListener("focus", handleFocus); }, []);
 
@@ -323,10 +317,7 @@ export default function HawalaPage() {
       const newHawala: Hawala = { id: generateId(), number: trackingNumber, date: nowDate.toISOString(), time: "", type: form.type, destinationCountry: "افغانستان", province: form.province, district: form.province === "هرات" ? form.district : form.province, destinationText, currencyFrom: form.currencyFrom, currencyTo: form.currencyTo, amountFrom, rate: txRate, rateLabel, rateBase: rateMode === "direct" ? directBaseValue : undefined, fee: feeValue, feeCurrency: form.feeCurrency, feePayer: form.feePayer, finalAmount, balance: form.balance, note: form.note, profit: feeValue, profitCurrency: form.feeCurrency, senderId: sender?.id, senderName, senderPhone: form.senderPhone, senderTelegram: form.senderTelegram, receiverId: receiver?.id, receiverName, receiverTazkira: form.receiverTazkira, receiverPhone: form.receiverPhone, receiverAddress: form.receiverAddress, status: "pending" as HawalaStatus };
       if (sender) setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForHawala(newHawala, "register")));
       setHawalas(prev => [newHawala, ...prev]);
-
-      // ✅ sync با صندوق (کد پیگیری ساده + کارمزد به حساب مشتری اضافه نمی‌شود)
       syncCashEntriesForHawala("add", newHawala);
-
       setLastNames({ senderName, receiverName });
       setForm(emptyForm); setErrors({}); setPreviewOpen(false); setActiveTab("current");
       showToast("حواله با موفقیت ثبت شد.");
@@ -345,16 +336,12 @@ export default function HawalaPage() {
     try {
       const paidHawala = { ...settleTarget, status: "paid" as HawalaStatus };
       const isRegisteredReceiver = !!settleTarget.receiverId || customers.some(c => c.name === settleTarget.receiverName);
-
       if (isRegisteredReceiver) {
         setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForHawala(paidHawala, "settle")));
       }
-
-      // ✅ اگر کارمزد از گیرنده باشد، به صندوق اضافه شود (نه به حساب مشتری)
       if (paidHawala.feePayer === "receiver") {
         syncCashEntriesForHawalaSettlement("add", paidHawala);
       }
-
       setHawalas(prev => prev.map(item => item.id === settleTarget.id ? { ...item, status: "paid" as HawalaStatus, paidAt: new Date().toISOString(), paidBy, paidAmount: amountPaid } : item));
       setSettleTarget(null);
       showToast("حواله تسویه شد و به تاریخچه منتقل شد.");
@@ -368,14 +355,10 @@ export default function HawalaPage() {
     if (!cancelReason.trim()) { showToast("دلیل لغو حواله را بنویسید."); return; }
     try {
       if (cancelTarget.senderId || customers.some(c => c.name === cancelTarget.senderName)) setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForHawala(cancelTarget, "cancel")));
-
-      // ✅ معکوس کردن sync با صندوق
       syncCashEntriesForHawala("remove", null, cancelTarget.id);
-
       if (cancelTarget.feePayer === "receiver" && cancelTarget.status === "paid") {
         syncCashEntriesForHawalaSettlement("remove", cancelTarget);
       }
-
       setHawalas(prev => prev.map(item => item.id === cancelTarget.id ? { ...item, status: "cancelled" as HawalaStatus, cancelReason } : item));
       setCancelTarget(null);
       showToast("حواله ابطال شد و به تاریخچه منتقل شد.");
@@ -393,10 +376,7 @@ export default function HawalaPage() {
       }
       setCustomers(prev => applyBalanceChanges(prev, reverseChanges));
     }
-
-    // ✅ sync با صندوق (دوباره کم شود)
     syncCashEntriesForHawala("add", item);
-
     setHawalas(prev => prev.map(h => h.id === item.id ? { ...h, status: "sent" as HawalaStatus, paidAt: undefined, paidBy: undefined, paidAmount: undefined, cancelReason: undefined } : h));
     showToast("حواله به وضعیت ارسال‌شده برگشت و به تب جاری منتقل شد.");
   }, [customers, showToast]);
@@ -422,15 +402,12 @@ export default function HawalaPage() {
         }
       }
       if (changes.length > 0) setCustomers(prev => applyBalanceChanges(prev, changes));
-
-      // ✅ معکوس کردن sync با صندوق
       if (item.status !== "cancelled") {
         syncCashEntriesForHawala("remove", null, item.id);
         if (item.feePayer === "receiver" && item.status === "paid") {
           syncCashEntriesForHawalaSettlement("remove", item);
         }
       }
-
       setHawalas(prev => prev.filter(h => h.id !== item.id));
       showToast(`حواله ${item.number} حذف شد.`);
     } catch (err) { console.error("Delete error:", err); showToast("خطا در حذف حواله"); }
