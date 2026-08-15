@@ -87,8 +87,10 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
       if (h.feePayer === "receiver" && hFee > 0 && isCurrency(hFeeCur)) entries.push({ id: `${h.id}-hr-fee`, date: h.paidAt || h.date || date, customerId: receiver.id, type: "fee", description: "کارمزد حواله", currency: hFeeCur, amount: hFee, direction: "out", balanceAfter: 0, referenceId: h.id, referenceNumber: refNum });
     }
   }
-  for (const ce of cashEntries) {
+ for (const ce of cashEntries) {
     if (!ce || typeof ce !== "object") continue;
+    // ✅ اسناد مرتبط با حواله را نادیده بگیر (چون در بخش حواله‌ها شمرده شده‌اند)
+    if (ce.linkedHawalaId || ce.linkedHawalaSettleId) continue;
     if (ce.type !== "customer_deposit" && ce.type !== "customer_withdraw") continue;
     if (!ce.customerId) continue;
     if (!customers.find(c => c.id === ce.customerId)) continue;
