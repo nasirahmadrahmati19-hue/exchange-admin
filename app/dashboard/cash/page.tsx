@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState, useRef, useCallback, memo, type ReactNode } from "react";
 import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem } from "../lib/trackingCode";
+import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY, loadCustomersShared, loadTransactionsShared, loadHawalasShared, loadCashEntriesShared } from "../lib/defaultData";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type Customer = { id: string; name: string; phone?: string; tazkira?: string; address?: string; note?: string; telegram?: string; registeredAt: string; balances: Record<Currency, number>; };
@@ -12,10 +13,6 @@ type Hawala = { id: string; number: string; date: string; currencyFrom: Currency
 type FormState = { type: CashEntryType; currency: Currency; amount: string; reason: string; customerId: string; customerName: string; };
 type FormErrors = Partial<Record<keyof FormState, string>>;
 
-const CASH_KEY = "cash-entries";
-const CUSTOMERS_KEY = "fx-customers";
-const TRANSACTIONS_KEY = "fx-transactions";
-const HAWALAS_KEY = "hawalas";
 const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
 const labels: Record<Currency, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
 const entryTypeLabels: Record<CashEntryType, string> = { customer_deposit: "واریز مشتری", customer_withdraw: "برداشت مشتری", owner_deposit: "واریز مالک", owner_withdraw: "برداشت مالک", adjustment: "اصلاح صندوق" };
@@ -33,34 +30,7 @@ function formatDateTime(d: Date) { const pad = (n: number) => String(n).padStart
 function formatShamsiDate(d: Date) { const s = shamsiParts(d); return `${s.year}/${s.month}/${s.day}`; }
 function shortDateLabel(s: string) { try { const d = new Date(s); return Number.isNaN(d.getTime()) ? "-" : formatShamsiDate(d); } catch { return "-"; } }
 function timeLabel(s: string) { try { const d = new Date(s); if (Number.isNaN(d.getTime())) return "-"; const pad = (n: number) => String(n).padStart(2, "0"); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; } catch { return "-"; } }
-const safeGetItem = (key: string): any => { if (typeof window === "undefined") return null; try { const raw = localStorage.getItem(key); if (!raw) return null; return JSON.parse(raw); } catch { return null; } };
 
-function loadCustomers(): Customer[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const parsed = safeGetItem(CUSTOMERS_KEY);
-    if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === "object" && parsed[0] !== null && "id" in parsed[0] && "name" in parsed[0]) {
-      return parsed.map((c: any) => ({ id: c.id || generateId(), name: c.name || "", phone: c.phone || "", tazkira: c.tazkira || "", address: c.address || "", note: c.note || "", telegram: c.telegram || "", registeredAt: c.registeredAt || c.createdAt || new Date().toISOString(), balances: { AFN: Number(c.balances?.AFN || 0) || 0, USD: Number(c.balances?.USD || 0) || 0, EUR: Number(c.balances?.EUR || 0) || 0, IRR: Number(c.balances?.IRR || 0) || 0, PKR: Number(c.balances?.PKR || 0) || 0 } }));
-    }
-    return [];
-  } catch { return []; }
-}
-function loadCashEntries(): CashEntry[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const parsed = safeGetItem(CASH_KEY);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((e: any) => e?.id).map((e: any): CashEntry => ({ id: e.id, trackingCode: e.trackingCode || "", date: e.date || new Date().toISOString(), type: (["customer_deposit","customer_withdraw","owner_deposit","owner_withdraw","adjustment"].includes(e.type) ? e.type : "customer_deposit") as CashEntryType, currency: currencies.includes(e.currency) ? e.currency : "AFN", amount: Number(e.amount || 0) || 0, direction: e.direction === "out" ? "out" : "in", reason: e.reason || "", balanceAfter: Number(e.balanceAfter || 0) || 0, customerId: e.customerId, customerName: e.customerName, customerPhone: e.customerPhone, customerTazkira: e.customerTazkira, linkedExchangeId: e.linkedExchangeId, status: e.status === "voided" ? "voided" : "active" }));
-  } catch { return []; }
-}
-function loadTransactions(): Transaction[] {
-  if (typeof window === "undefined") return [];
-  try { const parsed = safeGetItem(TRANSACTIONS_KEY); return Array.isArray(parsed) ? parsed.filter((t: any) => t?.id && t.status === "active") : []; } catch { return []; }
-}
-function loadHawalas(): Hawala[] {
-  if (typeof window === "undefined") return [];
-  try { const parsed = safeGetItem(HAWALAS_KEY); return Array.isArray(parsed) ? parsed.filter((h: any) => h?.id && h.status !== "cancelled") : []; } catch { return []; }
-}
 function computeCashBalances(entries: CashEntry[]): Record<Currency, number> {
   const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
   const sorted = [...entries].sort((a, b) => { try { return new Date(a.date).getTime() - new Date(b.date).getTime(); } catch { return 0; } });
@@ -68,31 +38,12 @@ function computeCashBalances(entries: CashEntry[]): Record<Currency, number> {
   return balances;
 }
 function recomputeCashBalances(entries: CashEntry[]): CashEntry[] {
-  const sorted = [...entries].sort((a, b) => {
-    const t1 = new Date(a.date).getTime();
-    const t2 = new Date(b.date).getTime();
-    if (t1 !== t2) return t1 - t2;
-    if (a.direction === "in" && b.direction === "out") return -1;
-    if (a.direction === "out" && b.direction === "in") return 1;
-    return 0;
-  });
+  const sorted = [...entries].sort((a, b) => { const t1 = new Date(a.date).getTime(); const t2 = new Date(b.date).getTime(); if (t1 !== t2) return t1 - t2; if (a.direction === "in" && b.direction === "out") return -1; if (a.direction === "out" && b.direction === "in") return 1; return 0; });
   const bals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-  return sorted.map(e => {
-    if (e.status === "voided") return { ...e, balanceAfter: bals[e.currency] || 0 };
-    if (e.currency && bals[e.currency] !== undefined) {
-      bals[e.currency] += e.direction === "in" ? (e.amount || 0) : -(e.amount || 0);
-    }
-    return { ...e, balanceAfter: bals[e.currency] || 0 };
-  });
+  return sorted.map(e => { if (e.status === "voided") return { ...e, balanceAfter: bals[e.currency] || 0 }; if (e.currency && bals[e.currency] !== undefined) { bals[e.currency] += e.direction === "in" ? (e.amount || 0) : -(e.amount || 0); } return { ...e, balanceAfter: bals[e.currency] || 0 }; });
 }
 function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): Customer[] {
-  return customers.map(c => {
-    const cc = changes.filter(ch => ch.customerId === c.id || (!ch.customerId && ch.customerName === c.name));
-    if (cc.length === 0) return c;
-    const nb = { ...c.balances };
-    for (const ch of cc) { if (nb[ch.currency] === undefined) nb[ch.currency] = 0; nb[ch.currency] = (nb[ch.currency] || 0) + ch.amount; }
-    return { ...c, balances: nb };
-  });
+  return customers.map(c => { const cc = changes.filter(ch => ch.customerId === c.id || (!ch.customerId && ch.customerName === c.name)); if (cc.length === 0) return c; const nb = { ...c.balances }; for (const ch of cc) { if (nb[ch.currency] === undefined) nb[ch.currency] = 0; nb[ch.currency] = (nb[ch.currency] || 0) + ch.amount; } return { ...c, balances: nb }; });
 }
 function getBalanceChangesForCashEntry(entry: CashEntry, action: "register" | "reverse"): BalanceChange[] {
   const changes: BalanceChange[] = [];
@@ -136,7 +87,45 @@ export default function CashPage() {
   useEffect(() => { try { window.localStorage.setItem("fx-theme", theme); } catch {} }, [theme]);
   const dk = theme === "dark";
 
-  useEffect(() => { try { setEntries(loadCashEntries()); setCustomers(loadCustomers()); setTransactions(loadTransactions()); setHawalas(loadHawalas()); initTrackingSystem(); } catch (err) { console.error("Load error:", err); } setMounted(true); }, []);
+  // ===== بارگذاری اولیه =====
+  useEffect(() => {
+    try {
+      setEntries(loadCashEntriesShared() as CashEntry[]);
+      setCustomers(loadCustomersShared() as Customer[]);
+      setTransactions(loadTransactionsShared().filter((t: any) => t?.id && t.status === "active") as Transaction[]);
+      setHawalas(loadHawalasShared().filter((h: any) => h?.id && h.status !== "cancelled") as Hawala[]);
+      initTrackingSystem();
+    } catch (err) { console.error("Load error:", err); }
+    setMounted(true);
+  }, []);
+
+  // ===== SYNC بین تب‌ها =====
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      try {
+        if (e.key === CASH_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setEntries(p); }
+        if (e.key === CUSTOMERS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setCustomers(p); }
+        if (e.key === TRANSACTIONS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setTransactions(p.filter((t: any) => t?.id && t.status === "active")); }
+        if (e.key === HAWALAS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setHawalas(p.filter((h: any) => h?.id && h.status !== "cancelled")); }
+      } catch {}
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
+
+  // ===== بازخوانی هنگام بازگشت به تب =====
+  useEffect(() => {
+    const handleFocus = () => {
+      try {
+        setEntries(loadCashEntriesShared() as CashEntry[]);
+        setCustomers(loadCustomersShared() as Customer[]);
+        setTransactions(loadTransactionsShared().filter((t: any) => t?.id && t.status === "active") as Transaction[]);
+        setHawalas(loadHawalasShared().filter((h: any) => h?.id && h.status !== "cancelled") as Hawala[]);
+      } catch {}
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, []);
 
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => { setNow(new Date()); const timer = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(timer); }, []);
@@ -146,54 +135,18 @@ export default function CashPage() {
   useEffect(() => { if (!mounted) return; try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); } catch {} }, [customers, mounted]);
 
   useEffect(() => { if (!showCustomerList) return; const handler = (e: MouseEvent) => { if (customerListRef.current && !customerListRef.current.contains(e.target as Node)) setShowCustomerList(false); }; const timer = setTimeout(() => document.addEventListener("mousedown", handler), 0); return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); }; }, [showCustomerList]);
-
   useEffect(() => { if (!openActionId) return; const handler = (e: MouseEvent) => { const target = e.target as HTMLElement; if (!target.closest('.action-dropdown')) setOpenActionId(null); }; document.addEventListener("mousedown", handler); return () => document.removeEventListener("mousedown", handler); }, [openActionId]);
 
   const cashBalances = useMemo(() => computeCashBalances(entries), [entries]);
-  const nextCode = useMemo(() => {
-    if (editingEntryId) { const entry = entries.find(e => e.id === editingEntryId); return entry?.trackingCode || getNextTrackingCode(); }
-    return getNextTrackingCode();
-  }, [editingEntryId, entries]);
+  const nextCode = useMemo(() => { if (editingEntryId) { const entry = entries.find(e => e.id === editingEntryId); return entry?.trackingCode || getNextTrackingCode(); } return getNextTrackingCode(); }, [editingEntryId, entries]);
 
-  const realCashBalances = useMemo(() => {
-    const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-    for (const cur of currencies) {
-      let cash = cashBalances[cur] || 0;
-      for (const c of customers) { const bal = c.balances[cur] || 0; if (bal < 0) cash += bal; }
-      totals[cur] = cash;
-    }
-    return totals;
-  }, [cashBalances, customers]);
-
-  const customerTotalBalances = useMemo(() => {
-    const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-    for (const c of customers) for (const cur of currencies) { const bal = c.balances[cur] || 0; if (bal > 0) totals[cur] += bal; }
-    return totals;
-  }, [customers]);
-
-  const customerDebts = useMemo(() => {
-    const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-    for (const c of customers) for (const cur of currencies) { const bal = c.balances[cur] || 0; if (bal < 0) totals[cur] += Math.abs(bal); }
-    return totals;
-  }, [customers]);
-
-  const commissionProfit = useMemo(() => {
-    const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-    for (const tx of transactions) { if (tx.commission && tx.commission > 0 && tx.commissionCurrency) totals[tx.commissionCurrency] += tx.commission; }
-    for (const h of hawalas) { if (h.fee && h.fee > 0 && h.feeCurrency && h.status !== "cancelled") totals[h.feeCurrency] += h.fee; }
-    return totals;
-  }, [transactions, hawalas]);
+  const realCashBalances = useMemo(() => { const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; for (const cur of currencies) { let cash = cashBalances[cur] || 0; for (const c of customers) { const bal = c.balances[cur] || 0; if (bal < 0) cash += bal; } totals[cur] = cash; } return totals; }, [cashBalances, customers]);
+  const customerTotalBalances = useMemo(() => { const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; for (const c of customers) for (const cur of currencies) { const bal = c.balances[cur] || 0; if (bal > 0) totals[cur] += bal; } return totals; }, [customers]);
+  const customerDebts = useMemo(() => { const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; for (const c of customers) for (const cur of currencies) { const bal = c.balances[cur] || 0; if (bal < 0) totals[cur] += Math.abs(bal); } return totals; }, [customers]);
+  const commissionProfit = useMemo(() => { const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; for (const tx of transactions) { if (tx.commission && tx.commission > 0 && tx.commissionCurrency) totals[tx.commissionCurrency] += tx.commission; } for (const h of hawalas) { if (h.fee && h.fee > 0 && h.feeCurrency && h.status !== "cancelled") totals[h.feeCurrency] += h.fee; } return totals; }, [transactions, hawalas]);
 
   const filteredCustomerList = useMemo(() => { if (!customerFilter) return customers; const q = normalizeDigits(customerFilter.trim()).toLowerCase(); return customers.filter(c => c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q)) || (c.tazkira && normalizeDigits(c.tazkira).includes(q))); }, [customers, customerFilter]);
-
-  const filteredEntries = useMemo(() => {
-    let result = [...entries];
-    if (filterType !== "all") result = result.filter(e => e.type === filterType);
-    if (filterCurrency !== "all") result = result.filter(e => e.currency === filterCurrency);
-    const q = normalizeDigits(search.trim()).toLowerCase();
-    if (q) result = result.filter(e => { const fields = [e.trackingCode, e.reason, entryTypeLabels[e.type], e.customerName || "", e.customerPhone || "", e.customerTazkira || ""].map(f => normalizeDigits(String(f)).toLowerCase()); return fields.some(f => f.includes(q)); });
-    return result.sort((a, b) => { try { return new Date(b.date).getTime() - new Date(a.date).getTime(); } catch { return 0; } });
-  }, [entries, search, filterType, filterCurrency]);
+  const filteredEntries = useMemo(() => { let result = [...entries]; if (filterType !== "all") result = result.filter(e => e.type === filterType); if (filterCurrency !== "all") result = result.filter(e => e.currency === filterCurrency); const q = normalizeDigits(search.trim()).toLowerCase(); if (q) result = result.filter(e => { const fields = [e.trackingCode, e.reason, entryTypeLabels[e.type], e.customerName || "", e.customerPhone || "", e.customerTazkira || ""].map(f => normalizeDigits(String(f)).toLowerCase()); return fields.some(f => f.includes(q)); }); return result.sort((a, b) => { try { return new Date(b.date).getTime() - new Date(a.date).getTime(); } catch { return 0; } }); }, [entries, search, filterType, filterCurrency]);
 
   const activeCount = useMemo(() => entries.filter(e => e.status === "active").length, [entries]);
   const voidedCount = entries.length - activeCount;
@@ -266,7 +219,6 @@ export default function CashPage() {
   const confirmRegister = useCallback(() => {
     if (!previewData) return;
     const wasEditing = !!editingEntryId;
-
     if (wasEditing) {
       const oldEntry = entries.find(e => e.id === editingEntryId);
       if (oldEntry) setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForCashEntry(oldEntry, "reverse")));
@@ -280,7 +232,6 @@ export default function CashPage() {
       setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForCashEntry(entry, "register")));
       setEntries(prev => recomputeCashBalances([...prev, entry]));
     }
-
     setForm(emptyForm); setErrors({}); setEditingEntryId(null); setPreviewOpen(false); setPreviewData(null);
     showToast(wasEditing ? "سند با موفقیت ویرایش شد." : "عملیات صندوق با موفقیت ثبت شد.");
   }, [previewData, editingEntryId, entries, customers, showToast]);
@@ -303,10 +254,7 @@ export default function CashPage() {
   const tabs = [{ id: "register" as const, label: "ثبت عملیات", icon: "plus" as IconName }, { id: "ledger" as const, label: "روزنامچه صندوق", icon: "history" as IconName, count: entries.length }];
   const entryTypeOptions: [string, string][] = [["customer_deposit", "واریز مشتری به حساب"], ["customer_withdraw", "برداشت مشتری از حساب"], ["owner_deposit", "واریز مالک به صندوق"], ["owner_withdraw", "برداشت مالک از صندوق"]];
 
-  const TwoColCard = ({ title, subtitle, icon, borderColor, iconBg, data, colorFn }: {
-    title: string; subtitle?: string; icon: IconName; borderColor: string; iconBg: string;
-    data: Record<Currency, number>; colorFn: (v: number) => string;
-  }) => (
+  const TwoColCard = ({ title, subtitle, icon, borderColor, iconBg, data, colorFn }: { title: string; subtitle?: string; icon: IconName; borderColor: string; iconBg: string; data: Record<Currency, number>; colorFn: (v: number) => string; }) => (
     <div className={`rounded-2xl border p-3 ${borderColor}`}>
       <div className="flex items-center gap-2 mb-2">
         <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg ${iconBg}`}><Ic n={icon} className="h-3.5 w-3.5" /></span>
@@ -316,15 +264,7 @@ export default function CashPage() {
         </div>
       </div>
       <div className="space-y-0.5">
-        {currencies.map(cur => {
-          const bal = data[cur];
-          return (
-            <div key={cur} className={`flex items-center justify-between rounded-md px-1.5 py-0.5 ${dk ? "bg-slate-900/50" : "bg-white"}`}>
-              <span className={`text-[10px] font-black ${subText}`}>{labels[cur]}</span>
-              <span className={`text-xs font-black tabular-nums ${colorFn(bal)}`}>{fmt(bal)}</span>
-            </div>
-          );
-        })}
+        {currencies.map(cur => { const bal = data[cur]; return (<div key={cur} className={`flex items-center justify-between rounded-md px-1.5 py-0.5 ${dk ? "bg-slate-900/50" : "bg-white"}`}><span className={`text-[10px] font-black ${subText}`}>{labels[cur]}</span><span className={`text-xs font-black tabular-nums ${colorFn(bal)}`}>{fmt(bal)}</span></div>); })}
       </div>
     </div>
   );
@@ -366,14 +306,12 @@ export default function CashPage() {
           {activeTab === "register" && (
             <section className={`cs-up space-y-4 md:space-y-5 p-4 md:p-7 ${uiCard}`} style={{ animationDelay: "110ms" }}>
               <div className="flex flex-wrap items-center gap-3"><span className={`grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identIcon}`}><Ic n="plus" className="h-5 w-5" /></span><div className="flex-1 min-w-0"><h2 className={`cs-display text-xl md:text-2xl leading-none ${heading}`}>ثبت عملیات صندوق</h2><p className={`mt-1 text-[11px] font-bold ${subText}`}>واریز و برداشت مشتری یا مالک</p></div></div>
-
               {editingEntryId && editingEntry && (
                 <div className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm font-bold ${dk ? "border-amber-400/30 bg-amber-400/10 text-amber-300" : "border-amber-300 bg-amber-100/70 text-amber-800"}`}>
                   <span className="flex items-center gap-2"><Ic n="pencil" className="h-4 w-4 shrink-0" />ویرایش سند <b dir="ltr">{editingEntry.trackingCode}</b></span>
                   <button onClick={cancelEdit} className="cursor-pointer rounded-lg bg-amber-400/30 px-3.5 py-1.5 text-xs font-black transition hover:bg-amber-400/50">انصراف</button>
                 </div>
               )}
-
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                 {fld("نوع عملیات *", (<div className="relative"><select value={form.type} onChange={e => { setField("type", e.target.value); if (e.target.value !== "customer_deposit" && e.target.value !== "customer_withdraw") { setField("customerId", ""); setField("customerName", ""); } }} className={`${uiInput} cursor-pointer appearance-none pl-9`}>{entryTypeOptions.map(o => <option key={o[0]} value={o[0]}>{o[1]}</option>)}</select><span className={chevPos}><Ic n="chevron" className="h-4 w-4" /></span></div>))}
                 {fld("نوع ارز *", (<div className="relative"><select value={form.currency} onChange={e => setField("currency", e.target.value)} className={`${uiInput} cursor-pointer appearance-none pl-9`}>{currencies.map(c => <option key={c} value={c}>{labels[c]}</option>)}</select><span className={chevPos}><Ic n="chevron" className="h-4 w-4" /></span></div>))}
