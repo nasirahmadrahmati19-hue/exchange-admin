@@ -5,7 +5,7 @@ import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY, loadCustomersSh
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type Customer = { id: string; name: string; phone?: string; tazkira?: string; address?: string; note?: string; telegram?: string; registeredAt: string; balances: Record<Currency, number>; };
-type CashEntryType = "customer_deposit" | "customer_withdraw" | "owner_deposit" | "owner_withdraw" | "adjustment";
+type CashEntryType = "customer_deposit" | "customer_withdraw" | "owner_deposit" | "owner_withdraw" | "adjustment" | "fee";
 type BalanceChange = { customerId?: string; customerName: string; currency: Currency; amount: number; };
 type CashEntry = { id: string; trackingCode: string; date: string; type: CashEntryType; currency: Currency; amount: number; direction: "in" | "out"; reason: string; balanceAfter: number; customerId?: string; customerName?: string; customerPhone?: string; customerTazkira?: string; linkedExchangeId?: string; linkedHawalaId?: string; linkedHawalaSettleId?: string; customerDeleted?: boolean; status: "active" | "voided"; };
 type Transaction = { id: string; trackingCode: string; date: string; type: "exchange" | "transfer" | "convert"; fromCurrency: Currency; fromAmount: number; toCurrency: Currency; toAmount: number; rate: number; rateLabel: string; commission?: number; commissionCurrency?: Currency; commissionPayer?: "sender" | "receiver"; status: "active" | "voided"; customerId?: string; customerName?: string; senderId?: string; senderName?: string; receiverId?: string; receiverName?: string; };
@@ -15,8 +15,8 @@ type FormErrors = Partial<Record<keyof FormState, string>>;
 
 const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
 const labels: Record<Currency, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
-const entryTypeLabels: Record<CashEntryType, string> = { customer_deposit: "واریز مشتری", customer_withdraw: "برداشت مشتری", owner_deposit: "واریز مالک", owner_withdraw: "برداشت مالک", adjustment: "اصلاح صندوق" };
-const entryTypeColors: Record<CashEntryType, { light: string; dark: string }> = { customer_deposit: { light: "bg-teal-100 text-teal-700", dark: "bg-teal-400/15 text-teal-300" }, customer_withdraw: { light: "bg-orange-100 text-orange-700", dark: "bg-orange-400/15 text-orange-300" }, owner_deposit: { light: "bg-sky-100 text-sky-700", dark: "bg-sky-400/15 text-sky-300" }, owner_withdraw: { light: "bg-amber-100 text-amber-700", dark: "bg-amber-400/15 text-amber-300" }, adjustment: { light: "bg-violet-100 text-violet-700", dark: "bg-violet-400/15 text-violet-300" } };
+const entryTypeLabels: Record<CashEntryType, string> = { customer_deposit: "واریز مشتری", customer_withdraw: "برداشت مشتری", owner_deposit: "واریز مالک", owner_withdraw: "برداشت مالک", adjustment: "اصلاح صندوق", fee: "کارمزد" };
+const entryTypeColors: Record<CashEntryType, { light: string; dark: string }> = { customer_deposit: { light: "bg-teal-100 text-teal-700", dark: "bg-teal-400/15 text-teal-300" }, customer_withdraw: { light: "bg-orange-100 text-orange-700", dark: "bg-orange-400/15 text-orange-300" }, owner_deposit: { light: "bg-sky-100 text-sky-700", dark: "bg-sky-400/15 text-sky-300" }, owner_withdraw: { light: "bg-amber-100 text-amber-700", dark: "bg-amber-400/15 text-amber-300" }, adjustment: { light: "bg-violet-100 text-violet-700", dark: "bg-violet-400/15 text-violet-300" }, fee: { light: "bg-emerald-100 text-emerald-700", dark: "bg-emerald-400/15 text-emerald-300" } };
 const currencyColors: Record<Currency, { light: string; dark: string; gradient: string }> = { AFN: { light: "text-emerald-700", dark: "text-emerald-300", gradient: "from-emerald-500 to-teal-400" }, USD: { light: "text-sky-700", dark: "text-sky-300", gradient: "from-sky-500 to-cyan-400" }, EUR: { light: "text-blue-700", dark: "text-blue-300", gradient: "from-blue-600 to-blue-400" }, IRR: { light: "text-amber-700", dark: "text-amber-300", gradient: "from-amber-500 to-orange-400" }, PKR: { light: "text-rose-700", dark: "text-rose-300", gradient: "from-rose-500 to-pink-400" } };
 
 const generateId = (): string => { if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") { try { return crypto.randomUUID(); } catch {} } return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => { const r = (Math.random() * 16) | 0; const v = c === "x" ? r : (r & 0x3) | 0x8; return v.toString(16); }); };
@@ -38,7 +38,7 @@ function computeCashBalances(entries: CashEntry[]): Record<Currency, number> {
   return balances;
 }
 function recomputeCashBalances(entries: CashEntry[]): CashEntry[] {
-  const sorted = [...entries].sort((a, b) => { const t1 = new Date(a.date).getTime(); const t2 = new Date(b.date).getTime(); if (t1 !== t2) return t1 - t2; if (a.direction === "in" && b.direction === "out") return -1; if (a.direction === "out" && b.direction === "in") return 1; return 0; });
+  const sorted = [...entries].sort((a, b) => { const t1 = new Date(a.date).getTime(); const t2 = new Date(b.date).getTime(); if (t1 !== t2) return t1 - t2; const aIsHawala = a.linkedHawalaId || a.linkedHawalaSettleId; const bIsHawala = b.linkedHawalaId || b.linkedHawalaSettleId; if (aIsHawala && bIsHawala) { if (a.direction === "out" && b.direction === "in") return -1; if (a.direction === "in" && b.direction === "out") return 1; } if (a.direction === "in" && b.direction === "out") return -1; if (a.direction === "out" && b.direction === "in") return 1; return 0; });
   const bals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
   return sorted.map(e => {
     if (e.status === "voided") return { ...e, balanceAfter: bals[e.currency] || 0 };
@@ -92,8 +92,7 @@ const Ic = ({ n, className = "h-5 w-5" }: { n: string; className?: string }) => 
     pencil: "m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10",
     more: "M12 6.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 12.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 18.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Z",
     eye: "M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
-    xCircle: "m9.75 9.75 4.5 4.5m0-4.5-4.5 4.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
-    lock: "M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"
+    xCircle: "m9.75 9.75 4.5 4.5m0-4.5-4.5 4.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
   };
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true"><path d={paths[n] || ""} /></svg>;
 };
@@ -156,7 +155,7 @@ export default function CashPage() {
   const activeCount = useMemo(() => entries.filter(e => e.status === "active").length, [entries]);
   const voidedCount = entries.length - activeCount;
 
-  const isInType = form.type === "customer_deposit" || form.type === "owner_deposit";
+  const isInType = form.type === "customer_deposit" || form.type === "owner_deposit" || form.type === "adjustment" || form.type === "fee";
   const isCustomerType = form.type === "customer_deposit" || form.type === "customer_withdraw";
   const selectedCustomer = useMemo(() => customers.find(c => c.id === form.customerId) || null, [customers, form.customerId]);
   const editingEntry = useMemo(() => entries.find(e => e.id === editingEntryId) || null, [entries, editingEntryId]);
@@ -290,7 +289,6 @@ export default function CashPage() {
             </div>
           </header>
 
-          {/* ✅ ۴ کارت به جای ۵ کارت (کارت تکراری حذف شد) */}
           <div className="cs-up grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3" style={{ animationDelay: "70ms" }}>
             <TwoColCard title="موجودی واقعی صندوق" subtitle="نقدی + کسر قرض‌ها" icon="wallet" borderColor={dk ? "border-emerald-400/25 bg-emerald-400/[0.07]" : "border-emerald-300 bg-emerald-50"} iconBg={dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"} data={realCashBalances} colorFn={(v) => v < 0 ? "text-rose-500" : dk ? "text-emerald-300" : "text-emerald-700"} />
             <TwoColCard title="موجودی مشتریان نزد صرافی" subtitle="پول مشتری نزد صرافی" icon="user" borderColor={dk ? "border-sky-400/25 bg-sky-400/[0.07]" : "border-sky-300 bg-sky-50"} iconBg={dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-600"} data={customerTotalBalances} colorFn={(v) => v > 0 ? dk ? "text-emerald-300" : "text-emerald-700" : subText} />
@@ -356,7 +354,7 @@ export default function CashPage() {
                 </div>
               )}
 
-              {fld("دلیل / شرح عملیات *", (<textarea rows={3} value={form.reason} onChange={e => setField("reason", e.target.value)} placeholder={form.type === "customer_deposit" ? "مثلاً: واریز نقدی مشتری به حساب…" : form.type === "customer_withdraw" ? "مثلاً: برداشت نقدی مشتری از حساب…" : form.type === "owner_deposit" ? "مثلاً: واریز سرمایه مالک به صندوق…" : "مثلاً: برداشت مالک برای مصارف شخصی…"} className={`${uiInput} h-auto py-3 resize-none ${errors.reason ? errInput : ""}`} />))}
+              {fld("دلیل / شرح عملیات *", (<textarea rows={3} value={form.reason} onChange={e => setField("reason", e.target.value)} placeholder={form.type === "customer_deposit" ? "مثلاً: واریز نقدی مشتری به حساب…" : form.type === "customer_withdraw" ? "مثلاً: برداشت نقدی مشتری از حساب…" : form.type === "owner_deposit" ? "مثلاً: واریز سرمایه مالک به صندوق…" : form.type === "owner_withdraw" ? "مثلاً: برداشت مالک برای مصارف شخصی…" : form.type === "fee" ? "مثلاً: کارمزد حواله…" : "مثلاً: اصلاح موجودی…"} className={`${uiInput} h-auto py-3 resize-none ${errors.reason ? errInput : ""}`} />))}
 
               <div className={`flex items-center gap-3 rounded-xl border p-4 ${isInType ? dk ? "border-emerald-400/25 bg-emerald-400/[0.07]" : "border-emerald-200 bg-emerald-50" : dk ? "border-rose-400/25 bg-rose-400/[0.07]" : "border-rose-200 bg-rose-50"}`}>
                 <span className={`grid h-10 w-10 place-items-center rounded-xl ${isInType ? dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600" : dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600"}`}><Ic n={isInType ? "arrowDown" : "arrowUp"} className="h-5 w-5" /></span>
@@ -385,7 +383,15 @@ export default function CashPage() {
               <div className="px-4 md:px-7 pb-4 space-y-4">
                 <div className="flex flex-wrap gap-3">
                   <div className="relative flex-1 min-w-[250px]"><input value={search} onChange={e => setSearch(e.target.value)} placeholder="جستجو: نام مشتری، کد پیگیری، شرح…" className={`${uiInput} pr-10`} /><span className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 ${dk ? "text-slate-500" : "text-slate-400"}`}><Ic n="search" className="h-4 w-4" /></span></div>
-                  <select value={filterType} onChange={e => setFilterType(e.target.value as any)} className={`${uiInput} w-auto min-w-[170px] cursor-pointer appearance-none pl-9`}><option value="all">همه انواع</option><option value="customer_deposit">واریز مشتری</option><option value="customer_withdraw">برداشت مشتری</option><option value="owner_deposit">واریز مالک</option><option value="owner_withdraw">برداشت مالک</option><option value="adjustment">اصلاح صندوق</option></select>
+                  <select value={filterType} onChange={e => setFilterType(e.target.value as any)} className={`${uiInput} w-auto min-w-[170px] cursor-pointer appearance-none pl-9`}>
+                    <option value="all">همه انواع</option>
+                    <option value="customer_deposit">واریز مشتری</option>
+                    <option value="customer_withdraw">برداشت مشتری</option>
+                    <option value="owner_deposit">واریز مالک</option>
+                    <option value="owner_withdraw">برداشت مالک</option>
+                    <option value="adjustment">اصلاح صندوق</option>
+                    <option value="fee">کارمزد</option>
+                  </select>
                   <select value={filterCurrency} onChange={e => setFilterCurrency(e.target.value as any)} className={`${uiInput} w-auto min-w-[130px] cursor-pointer appearance-none pl-9`}><option value="all">همه ارزها</option>{currencies.map(c => <option key={c} value={c}>{labels[c]}</option>)}</select>
                   {(search || filterType !== "all" || filterCurrency !== "all") && (<button onClick={() => { setSearch(""); setFilterType("all"); setFilterCurrency("all"); }} className={`flex items-center gap-1.5 rounded-xl border px-4 py-2.5 text-xs font-black transition-all active:scale-95 cursor-pointer ${dk ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}><Ic n="x" className="h-3.5 w-3.5" />پاک کردن</button>)}
                 </div>
@@ -400,6 +406,7 @@ export default function CashPage() {
                           const isIn = e.direction === "in";
                           const isOwner = e.type === "owner_deposit" || e.type === "owner_withdraw";
                           const isAdjust = e.type === "adjustment";
+                          const isFee = e.type === "fee";
                           const isVoided = e.status === "voided";
                           const isDeleted = e.customerDeleted === true;
                           const isOpen = openActionId === e.id;
@@ -418,7 +425,7 @@ export default function CashPage() {
                               </td>
                               <td className={`whitespace-nowrap px-3 py-3 text-center text-[11px] tabular-nums ${dk ? "text-slate-400" : "text-slate-500"} ${voidStrike}`}><div dir="ltr">{shortDateLabel(e.date)}</div><div dir="ltr" className={`text-[9px] ${subText}`}>{timeLabel(e.date)}</div></td>
                               <td className="px-3 py-3 text-center"><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black whitespace-nowrap ${entryTypeColors[e.type][dk ? "dark" : "light"]} ${voidStrike}`}>{entryTypeLabels[e.type]}</span></td>
-                              <td className={`px-3 py-3 text-center text-[12px] font-bold whitespace-nowrap ${dk ? "text-slate-200" : "text-slate-700"} ${voidStrike}`}>{isOwner ? <span className={dk ? "text-amber-300" : "text-amber-700"}>👤 مالک</span> : isAdjust ? <span className={subText}>سیستم</span> : (e.customerName || "—")}</td>
+                              <td className={`px-3 py-3 text-center text-[12px] font-bold whitespace-nowrap ${dk ? "text-slate-200" : "text-slate-700"} ${voidStrike}`}>{isOwner ? <span className={dk ? "text-amber-300" : "text-amber-700"}>👤 مالک</span> : isAdjust ? <span className={subText}>سیستم</span> : isFee ? <span className={subText}>سیستم</span> : (e.customerName || "—")}</td>
                               <td className={`px-3 py-3 text-center text-[11px] tabular-nums whitespace-nowrap ${dk ? "text-slate-300" : "text-slate-600"} ${voidStrike}`} dir="ltr">{e.customerPhone || "—"}</td>
                               <td className={`px-3 py-3 text-center text-[11px] tabular-nums whitespace-nowrap ${dk ? "text-slate-300" : "text-slate-600"} ${voidStrike}`} dir="ltr">{e.customerTazkira || "—"}</td>
                               <td className={`px-3 py-3 text-center text-[11px] max-w-[180px] truncate ${dk ? "text-slate-300" : "text-slate-600"} ${voidStrike}`}>{e.reason || "—"}</td>
