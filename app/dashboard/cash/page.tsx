@@ -6,7 +6,7 @@ type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type Customer = { id: string; name: string; phone?: string; tazkira?: string; address?: string; note?: string; telegram?: string; registeredAt: string; balances: Record<Currency, number>; };
 type CashEntryType = "customer_deposit" | "customer_withdraw" | "owner_deposit" | "owner_withdraw" | "adjustment";
 type BalanceChange = { customerId?: string; customerName: string; currency: Currency; amount: number; };
-type CashEntry = { id: string; trackingCode: string; date: string; type: CashEntryType; currency: Currency; amount: number; direction: "in" | "out"; reason: string; balanceAfter: number; customerId?: string; customerName?: string; customerPhone?: string; customerTazkira?: string; linkedExchangeId?: string; };
+type CashEntry = { id: string; trackingCode: string; date: string; type: CashEntryType; currency: Currency; amount: number; direction: "in" | "out"; reason: string; balanceAfter: number; customerId?: string; customerName?: string; customerPhone?: string; customerTazkira?: string; linkedExchangeId?: string; status: "active" | "voided"; };
 type Transaction = { id: string; trackingCode: string; date: string; type: "exchange" | "transfer" | "convert"; fromCurrency: Currency; fromAmount: number; toCurrency: Currency; toAmount: number; rate: number; rateLabel: string; commission?: number; commissionCurrency?: Currency; commissionPayer?: "sender" | "receiver"; status: "active" | "voided"; customerId?: string; customerName?: string; senderId?: string; senderName?: string; receiverId?: string; receiverName?: string; };
 type Hawala = { id: string; number: string; date: string; currencyFrom: Currency; currencyTo: Currency; amountFrom: number; finalAmount: number; fee: number; feeCurrency: Currency; feePayer: "sender" | "receiver"; status: "pending" | "sent" | "paid" | "cancelled"; senderId?: string; senderName: string; receiverId?: string; receiverName: string; };
 type FormState = { type: CashEntryType; currency: Currency; amount: string; reason: string; customerId: string; customerName: string; };
@@ -50,7 +50,7 @@ function loadCashEntries(): CashEntry[] {
   try {
     const parsed = safeGetItem(CASH_KEY);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((e: any) => e?.id).map((e: any): CashEntry => ({ id: e.id, trackingCode: e.trackingCode || "", date: e.date || new Date().toISOString(), type: (["customer_deposit","customer_withdraw","owner_deposit","owner_withdraw","adjustment"].includes(e.type) ? e.type : "customer_deposit") as CashEntryType, currency: currencies.includes(e.currency) ? e.currency : "AFN", amount: Number(e.amount || 0) || 0, direction: e.direction === "out" ? "out" : "in", reason: e.reason || "", balanceAfter: Number(e.balanceAfter || 0) || 0, customerId: e.customerId, customerName: e.customerName, customerPhone: e.customerPhone, customerTazkira: e.customerTazkira, linkedExchangeId: e.linkedExchangeId }));
+    return parsed.filter((e: any) => e?.id).map((e: any): CashEntry => ({ id: e.id, trackingCode: e.trackingCode || "", date: e.date || new Date().toISOString(), type: (["customer_deposit","customer_withdraw","owner_deposit","owner_withdraw","adjustment"].includes(e.type) ? e.type : "customer_deposit") as CashEntryType, currency: currencies.includes(e.currency) ? e.currency : "AFN", amount: Number(e.amount || 0) || 0, direction: e.direction === "out" ? "out" : "in", reason: e.reason || "", balanceAfter: Number(e.balanceAfter || 0) || 0, customerId: e.customerId, customerName: e.customerName, customerPhone: e.customerPhone, customerTazkira: e.customerTazkira, linkedExchangeId: e.linkedExchangeId, status: e.status === "voided" ? "voided" : "active" }));
   } catch { return []; }
 }
 function loadTransactions(): Transaction[] {
@@ -64,7 +64,7 @@ function loadHawalas(): Hawala[] {
 function computeCashBalances(entries: CashEntry[]): Record<Currency, number> {
   const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
   const sorted = [...entries].sort((a, b) => { try { return new Date(a.date).getTime() - new Date(b.date).getTime(); } catch { return 0; } });
-  for (const e of sorted) { if (!currencies.includes(e.currency)) continue; balances[e.currency] += e.direction === "in" ? e.amount : -e.amount; }
+  for (const e of sorted) { if (!currencies.includes(e.currency)) continue; if (e.status === "voided") continue; balances[e.currency] += e.direction === "in" ? e.amount : -e.amount; }
   return balances;
 }
 function recomputeCashBalances(entries: CashEntry[]): CashEntry[] {
@@ -78,6 +78,7 @@ function recomputeCashBalances(entries: CashEntry[]): CashEntry[] {
   });
   const bals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
   return sorted.map(e => {
+    if (e.status === "voided") return { ...e, balanceAfter: bals[e.currency] || 0 };
     if (e.currency && bals[e.currency] !== undefined) {
       bals[e.currency] += e.direction === "in" ? (e.amount || 0) : -(e.amount || 0);
     }
@@ -104,7 +105,7 @@ function getBalanceChangesForCashEntry(entry: CashEntry, action: "register" | "r
 }
 
 const emptyForm: FormState = { type: "customer_deposit", currency: "AFN", amount: "", reason: "", customerId: "", customerName: "" };
-const iconPaths = { wallet: "M21 12a2.25 2.25 0 0 0-2.25-2.25H15a3 3 0 1 1-6 0H5.25A2.25 2.25 0 0 0 3 12m18 0v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 9m18 0V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v3", plus: "M12 4.5v15m7.5-7.5h-15", arrowDown: "M19.5 13.5 12 21m0 0-7.5-7.5M12 21V3", arrowUp: "M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18", user: "M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z", doc: "M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z", search: "m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 1 10.607 10.607Z", chevron: "m19.5 8.25-7.5 7.5-7.5-7.5", x: "M6 18 18 6M6 6l12 12", check: "M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z", alert: "M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z", inbox: "M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h3.218a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H6.911a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661Z", sun: "M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.375 3.375 0 1 1-7.5 0 3.375 3.375 0 0 1 7.5 0Z", moon: "M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z", clock: "M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z", tag: "M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z", trash: "M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0", lock: "M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z", history: "M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z", pencil: "m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10", more: "M12 6.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 12.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 18.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Z", eye: "M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" };
+const iconPaths = { wallet: "M21 12a2.25 2.25 0 0 0-2.25-2.25H15a3 3 0 1 1-6 0H5.25A2.25 2.25 0 0 0 3 12m18 0v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 9m18 0V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v3", plus: "M12 4.5v15m7.5-7.5h-15", arrowDown: "M19.5 13.5 12 21m0 0-7.5-7.5M12 21V3", arrowUp: "M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18", user: "M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z", doc: "M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z", search: "m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 1 10.607 10.607Z", chevron: "m19.5 8.25-7.5 7.5-7.5-7.5", x: "M6 18 18 6M6 6l12 12", check: "M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z", alert: "M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z", inbox: "M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h3.218a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H6.911a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661Z", sun: "M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.375 3.375 0 1 1-7.5 0 3.375 3.375 0 0 1 7.5 0Z", moon: "M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z", clock: "M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z", tag: "M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z", trash: "M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0", lock: "M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z", history: "M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z", pencil: "m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10", more: "M12 6.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 12.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 18.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Z", eye: "M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z", xCircle: "m9.75 9.75 4.5 4.5m0-4.5-4.5 4.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" };
 type IconName = keyof typeof iconPaths;
 const Ic = memo(function Ic({ n, className = "h-5 w-5" }: { n: IconName; className?: string }) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true"><path d={iconPaths[n]} /></svg>; });
 
@@ -194,6 +195,9 @@ export default function CashPage() {
     return result.sort((a, b) => { try { return new Date(b.date).getTime() - new Date(a.date).getTime(); } catch { return 0; } });
   }, [entries, search, filterType, filterCurrency]);
 
+  const activeCount = useMemo(() => entries.filter(e => e.status === "active").length, [entries]);
+  const voidedCount = entries.length - activeCount;
+
   const isInType = form.type === "customer_deposit" || form.type === "owner_deposit";
   const isCustomerType = form.type === "customer_deposit" || form.type === "customer_withdraw";
   const selectedCustomer = useMemo(() => customers.find(c => c.id === form.customerId) || null, [customers, form.customerId]);
@@ -218,11 +222,29 @@ export default function CashPage() {
   const cancelEdit = useCallback(() => { setEditingEntryId(null); setForm(emptyForm); setErrors({}); }, []);
 
   const editEntry = useCallback((entry: CashEntry) => {
+    if (entry.status === "voided") return;
     setEditingEntryId(entry.id);
     setForm({ type: entry.type, currency: entry.currency, amount: String(entry.amount), reason: entry.reason, customerId: entry.customerId || "", customerName: entry.customerName || "" });
     setErrors({});
     setActiveTab("register");
   }, []);
+
+  const voidEntry = useCallback((entry: CashEntry) => {
+    if (entry.status === "voided") return;
+    if (!window.confirm(`آیا از ابطال سند ${entry.trackingCode} مطمئن هستید؟`)) return;
+    setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForCashEntry(entry, "reverse")));
+    setEntries(prev => recomputeCashBalances(prev.map(e => e.id === entry.id ? { ...e, status: "voided" as const } : e)));
+    showToast(`سند ${entry.trackingCode} ابطال شد.`);
+  }, [showToast]);
+
+  const deleteEntry = useCallback((entry: CashEntry) => {
+    if (!window.confirm(`آیا از حذف سند ${entry.trackingCode} مطمئن هستید؟`)) return;
+    if (entry.status !== "voided") {
+      setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForCashEntry(entry, "reverse")));
+    }
+    setEntries(prev => recomputeCashBalances(prev.filter(e => e.id !== entry.id)));
+    showToast(`سند ${entry.trackingCode} حذف شد.`);
+  }, [showToast]);
 
   const handleSubmitClick = useCallback(() => {
     const errs = validateForm(); setErrors(errs);
@@ -232,11 +254,11 @@ export default function CashPage() {
     let entry: CashEntry;
     if (editingEntryId) {
       const old = entries.find(e => e.id === editingEntryId);
-      entry = { id: editingEntryId, trackingCode: old?.trackingCode || getNextTrackingCode(), date: old?.date || new Date().toISOString(), type: form.type, currency: form.currency, amount, direction, reason: form.reason.trim(), balanceAfter: 0, customerId: isCustomerType ? form.customerId : undefined, customerName: isCustomerType ? form.customerName : undefined };
+      entry = { id: editingEntryId, trackingCode: old?.trackingCode || getNextTrackingCode(), date: old?.date || new Date().toISOString(), type: form.type, currency: form.currency, amount, direction, reason: form.reason.trim(), balanceAfter: 0, customerId: isCustomerType ? form.customerId : undefined, customerName: isCustomerType ? form.customerName : undefined, status: "active" };
     } else {
       const currentBal = cashBalances[form.currency] || 0;
       const newBal = isInType ? currentBal + amount : currentBal - amount;
-      entry = { id: generateId(), trackingCode: getNextTrackingCode(), date: new Date().toISOString(), type: form.type, currency: form.currency, amount, direction, reason: form.reason.trim(), balanceAfter: newBal, customerId: isCustomerType ? form.customerId : undefined, customerName: isCustomerType ? form.customerName : undefined };
+      entry = { id: generateId(), trackingCode: getNextTrackingCode(), date: new Date().toISOString(), type: form.type, currency: form.currency, amount, direction, reason: form.reason.trim(), balanceAfter: newBal, customerId: isCustomerType ? form.customerId : undefined, customerName: isCustomerType ? form.customerName : undefined, status: "active" };
     }
     setPreviewData(entry); setPreviewOpen(true);
   }, [validateForm, form, cashBalances, isInType, isCustomerType, showToast, editingEntryId, entries]);
@@ -248,12 +270,12 @@ export default function CashPage() {
     if (wasEditing) {
       const oldEntry = entries.find(e => e.id === editingEntryId);
       if (oldEntry) setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForCashEntry(oldEntry, "reverse")));
-      const updated: CashEntry = { ...previewData, id: editingEntryId!, trackingCode: oldEntry?.trackingCode || previewData.trackingCode, date: oldEntry?.date || previewData.date };
+      const updated: CashEntry = { ...previewData, id: editingEntryId!, trackingCode: oldEntry?.trackingCode || previewData.trackingCode, date: oldEntry?.date || previewData.date, status: "active" };
       if (updated.customerId) { const cust = customers.find(c => c.id === updated.customerId); if (cust) { updated.customerPhone = cust.phone || ""; updated.customerTazkira = cust.tazkira || ""; } }
       setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForCashEntry(updated, "register")));
       setEntries(prev => recomputeCashBalances(prev.map(e => e.id === editingEntryId ? updated : e)));
     } else {
-      const entry = { ...previewData, trackingCode: consumeTrackingCode() };
+      const entry = { ...previewData, trackingCode: consumeTrackingCode(), status: "active" as const };
       if (entry.customerId) { const cust = customers.find(c => c.id === entry.customerId); if (cust) { entry.customerPhone = cust.phone || ""; entry.customerTazkira = cust.tazkira || ""; } }
       setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForCashEntry(entry, "register")));
       setEntries(prev => recomputeCashBalances([...prev, entry]));
@@ -262,13 +284,6 @@ export default function CashPage() {
     setForm(emptyForm); setErrors({}); setEditingEntryId(null); setPreviewOpen(false); setPreviewData(null);
     showToast(wasEditing ? "سند با موفقیت ویرایش شد." : "عملیات صندوق با موفقیت ثبت شد.");
   }, [previewData, editingEntryId, entries, customers, showToast]);
-
-  const deleteEntry = useCallback((entry: CashEntry) => {
-    if (!window.confirm(`آیا از حذف سند ${entry.trackingCode} مطمئن هستید؟`)) return;
-    setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForCashEntry(entry, "reverse")));
-    setEntries(prev => recomputeCashBalances(prev.filter(e => e.id !== entry.id)));
-    showToast(`سند ${entry.trackingCode} حذف شد.`);
-  }, [showToast]);
 
   if (!mounted) return (<div className="min-h-screen flex items-center justify-center"><div className="text-center"><div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-slate-300 border-t-emerald-500" /><p className="mt-4 text-slate-500">در حال بارگذاری...</p></div></div>);
 
@@ -410,7 +425,14 @@ export default function CashPage() {
 
           {activeTab === "ledger" && (
             <section className={`cs-up overflow-hidden ${uiCard}`} style={{ animationDelay: "110ms" }}>
-              <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6"><span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identIcon}`}><Ic n="history" className="h-5 w-5" /></span><div className="flex-1 min-w-0"><h2 className={`cs-display text-xl md:text-2xl leading-none ${heading}`}>روزنامچه صندوق</h2><p className={`mt-1 text-[11px] font-bold ${subText}`}>تمام دریافتی‌ها و پرداختی‌ها با جزئیات کامل</p></div><span className={`rounded-full px-3 py-1.5 text-[10px] font-black ${dk ? "bg-slate-700 text-slate-300" : "bg-emerald-100 text-emerald-700"}`}>{filteredEntries.length} عملیات</span></div>
+              <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
+                <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identIcon}`}><Ic n="history" className="h-5 w-5" /></span>
+                <div className="flex-1 min-w-0"><h2 className={`cs-display text-xl md:text-2xl leading-none ${heading}`}>روزنامچه صندوق</h2><p className={`mt-1 text-[11px] font-bold ${subText}`}>تمام دریافتی‌ها و پرداختی‌ها با جزئیات کامل</p></div>
+                <div className="flex items-center gap-2">
+                  <span className={`rounded-full px-3 py-1.5 text-[10px] font-black ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-700"}`}>فعال {activeCount}</span>
+                  <span className={`rounded-full px-3 py-1.5 text-[10px] font-black ${dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600"}`}>باطل {voidedCount}</span>
+                </div>
+              </div>
               <div className="px-4 md:px-7 pb-4 space-y-4">
                 <div className="flex flex-wrap gap-3">
                   <div className="relative flex-1 min-w-[250px]"><input value={search} onChange={e => setSearch(e.target.value)} placeholder="جستجو: نام مشتری، کد پیگیری، شرح…" className={`${uiInput} pr-10`} /><span className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 ${dk ? "text-slate-500" : "text-slate-400"}`}><Ic n="search" className="h-4 w-4" /></span></div>
@@ -423,32 +445,46 @@ export default function CashPage() {
                 ) : (
                   <div className="overflow-x-auto cs-scroll">
                     <table className="w-full min-w-[1200px] text-sm">
-                      <thead><tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>{["#", "کد پیگیری", "تاریخ", "نوع عملیات", "مشتری", "تماس", "تذکره", "شرح", "ارز", "دریافت", "پرداخت", "مانده", "عملیات"].map(h => (<th key={h} className="px-3 py-3 text-center text-[10px] font-black text-slate-400 whitespace-nowrap">{h}</th>))}</tr></thead>
+                      <thead><tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>{["شماره", "کد پیگیری", "تاریخ", "نوع عملیات", "مشتری", "تماس", "تذکره", "شرح", "ارز", "دریافت", "پرداخت", "مانده", "عملیات"].map(h => (<th key={h} className="px-3 py-3 text-center text-[10px] font-black text-slate-400 whitespace-nowrap">{h}</th>))}</tr></thead>
                       <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
                         {filteredEntries.map((e, idx) => {
-                          const isIn = e.direction === "in"; const isOwner = e.type === "owner_deposit" || e.type === "owner_withdraw"; const isAdjust = e.type === "adjustment";
+                          const isIn = e.direction === "in";
+                          const isOwner = e.type === "owner_deposit" || e.type === "owner_withdraw";
+                          const isAdjust = e.type === "adjustment";
+                          const isVoided = e.status === "voided";
                           const isOpen = openActionId === e.id;
+                          let rowClass = `transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/70"}`;
+                          if (isVoided) rowClass += dk ? " bg-rose-400/[0.05]" : " bg-rose-50";
+                          const voidStrike = isVoided ? "line-through opacity-50" : "";
                           return (
-                            <tr key={e.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/70"}`}>
+                            <tr key={e.id} className={rowClass}>
                               <td className="px-3 py-3 text-center"><span className={`inline-grid h-7 w-7 place-items-center rounded-lg text-[10px] font-black tabular-nums ${dk ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500"}`}>{idx + 1}</span></td>
-                              <td className="px-3 py-3 text-center"><span className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-black tabular-nums ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-sky-300 bg-sky-50 text-sky-700"}`} dir="ltr"><Ic n="tag" className="h-2.5 w-2.5" />{e.trackingCode}</span></td>
-                              <td className={`whitespace-nowrap px-3 py-3 text-center text-[11px] tabular-nums ${dk ? "text-slate-400" : "text-slate-500"}`}><div dir="ltr">{shortDateLabel(e.date)}</div><div dir="ltr" className={`text-[9px] ${subText}`}>{timeLabel(e.date)}</div></td>
-                              <td className="px-3 py-3 text-center"><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black whitespace-nowrap ${entryTypeColors[e.type][dk ? "dark" : "light"]}`}>{entryTypeLabels[e.type]}</span></td>
-                              <td className={`px-3 py-3 text-center text-[12px] font-bold whitespace-nowrap ${dk ? "text-slate-200" : "text-slate-700"}`}>{isOwner ? <span className={dk ? "text-amber-300" : "text-amber-700"}>👤 مالک</span> : isAdjust ? <span className={subText}>سیستم</span> : (e.customerName || "—")}</td>
-                              <td className={`px-3 py-3 text-center text-[11px] tabular-nums whitespace-nowrap ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{e.customerPhone || "—"}</td>
-                              <td className={`px-3 py-3 text-center text-[11px] tabular-nums whitespace-nowrap ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{e.customerTazkira || "—"}</td>
-                              <td className={`px-3 py-3 text-center text-[11px] max-w-[180px] truncate ${dk ? "text-slate-300" : "text-slate-600"}`}>{e.reason || "—"}</td>
-                              <td className={`px-3 py-3 text-center text-[11px] font-black whitespace-nowrap ${currencyColors[e.currency][dk ? "dark" : "light"]}`}>{labels[e.currency]}</td>
-                              <td className={`px-3 py-3 text-center text-[12px] font-black tabular-nums whitespace-nowrap ${isIn ? "text-emerald-500" : ""}`}>{isIn ? fmt(e.amount) : ""}</td>
-                              <td className={`px-3 py-3 text-center text-[12px] font-black tabular-nums whitespace-nowrap ${!isIn ? "text-rose-500" : ""}`}>{!isIn ? fmt(e.amount) : ""}</td>
-                              <td className={`px-3 py-3 text-center text-[12px] font-black tabular-nums whitespace-nowrap ${currencyColors[e.currency][dk ? "dark" : "light"]}`}>{fmt(e.balanceAfter)}</td>
+                              <td className="px-3 py-3 text-center">
+                                <div className="flex flex-col items-center gap-1">
+                                  <span className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-black tabular-nums ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-sky-300 bg-sky-50 text-sky-700"} ${voidStrike}`} dir="ltr"><Ic n="tag" className="h-2.5 w-2.5" />{e.trackingCode}</span>
+                                  {isVoided && <span className={`inline-flex rounded-full px-2 py-0.5 text-[8px] font-black ${dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600"}`}>باطل شده</span>}
+                                </div>
+                              </td>
+                              <td className={`whitespace-nowrap px-3 py-3 text-center text-[11px] tabular-nums ${dk ? "text-slate-400" : "text-slate-500"} ${voidStrike}`}><div dir="ltr">{shortDateLabel(e.date)}</div><div dir="ltr" className={`text-[9px] ${subText}`}>{timeLabel(e.date)}</div></td>
+                              <td className="px-3 py-3 text-center"><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black whitespace-nowrap ${entryTypeColors[e.type][dk ? "dark" : "light"]} ${voidStrike}`}>{entryTypeLabels[e.type]}</span></td>
+                              <td className={`px-3 py-3 text-center text-[12px] font-bold whitespace-nowrap ${dk ? "text-slate-200" : "text-slate-700"} ${voidStrike}`}>{isOwner ? <span className={dk ? "text-amber-300" : "text-amber-700"}>👤 مالک</span> : isAdjust ? <span className={subText}>سیستم</span> : (e.customerName || "—")}</td>
+                              <td className={`px-3 py-3 text-center text-[11px] tabular-nums whitespace-nowrap ${dk ? "text-slate-300" : "text-slate-600"} ${voidStrike}`} dir="ltr">{e.customerPhone || "—"}</td>
+                              <td className={`px-3 py-3 text-center text-[11px] tabular-nums whitespace-nowrap ${dk ? "text-slate-300" : "text-slate-600"} ${voidStrike}`} dir="ltr">{e.customerTazkira || "—"}</td>
+                              <td className={`px-3 py-3 text-center text-[11px] max-w-[180px] truncate ${dk ? "text-slate-300" : "text-slate-600"} ${voidStrike}`}>{e.reason || "—"}</td>
+                              <td className={`px-3 py-3 text-center text-[11px] font-black whitespace-nowrap ${currencyColors[e.currency][dk ? "dark" : "light"]} ${voidStrike}`}>{labels[e.currency]}</td>
+                              <td className={`px-3 py-3 text-center text-[12px] font-black tabular-nums whitespace-nowrap ${isIn ? "text-emerald-500" : ""} ${voidStrike}`}>{isIn ? fmt(e.amount) : ""}</td>
+                              <td className={`px-3 py-3 text-center text-[12px] font-black tabular-nums whitespace-nowrap ${!isIn ? "text-rose-500" : ""} ${voidStrike}`}>{!isIn ? fmt(e.amount) : ""}</td>
+                              <td className={`px-3 py-3 text-center text-[12px] font-black tabular-nums whitespace-nowrap ${currencyColors[e.currency][dk ? "dark" : "light"]} ${voidStrike}`}>{fmt(e.balanceAfter)}</td>
                               <td className="px-3 py-3 text-center">
                                 <div className="relative action-dropdown flex justify-center">
                                   <button onClick={(ev) => { ev.stopPropagation(); setOpenActionId(isOpen ? null : e.id); }} className={`grid h-8 w-8 place-items-center rounded-lg border transition-all duration-150 active:scale-90 cursor-pointer ${dk ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-200 text-slate-500 hover:bg-slate-100"}`} title="عملیات"><Ic n="more" className="h-4 w-4" /></button>
                                   {isOpen && (
                                     <div className={`absolute right-0 top-full z-40 mt-1.5 w-44 overflow-hidden rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
                                       <button onClick={() => { setSelectedEntry(e); setOpenActionId(null); }} className={`flex w-full items-center gap-2 px-3 py-2 text-right text-xs font-bold transition ${dk ? "text-cyan-300 hover:bg-cyan-400/15" : "text-cyan-600 hover:bg-cyan-50"}`}><Ic n="eye" className="h-3.5 w-3.5" /> مشاهده</button>
-                                      <button onClick={() => { editEntry(e); setOpenActionId(null); }} className={`flex w-full items-center gap-2 px-3 py-2 text-right text-xs font-bold transition ${dk ? "text-sky-300 hover:bg-sky-400/15" : "text-sky-600 hover:bg-sky-50"}`}><Ic n="pencil" className="h-3.5 w-3.5" /> ویرایش</button>
+                                      {!isVoided && (<>
+                                        <button onClick={() => { editEntry(e); setOpenActionId(null); }} className={`flex w-full items-center gap-2 px-3 py-2 text-right text-xs font-bold transition ${dk ? "text-sky-300 hover:bg-sky-400/15" : "text-sky-600 hover:bg-sky-50"}`}><Ic n="pencil" className="h-3.5 w-3.5" /> ویرایش</button>
+                                        <button onClick={() => { voidEntry(e); setOpenActionId(null); }} className={`flex w-full items-center gap-2 px-3 py-2 text-right text-xs font-bold transition ${dk ? "text-amber-300 hover:bg-amber-400/15" : "text-amber-600 hover:bg-amber-50"}`}><Ic n="xCircle" className="h-3.5 w-3.5" /> ابطال</button>
+                                      </>)}
                                       <div className={`my-1 h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
                                       <button onClick={() => { deleteEntry(e); setOpenActionId(null); }} className={`flex w-full items-center gap-2 px-3 py-2 text-right text-xs font-bold transition ${dk ? "text-rose-300 hover:bg-rose-400/15" : "text-rose-500 hover:bg-rose-50"}`}><Ic n="trash" className="h-3.5 w-3.5" /> حذف</button>
                                     </div>
@@ -476,10 +512,10 @@ export default function CashPage() {
               <button onClick={() => setSelectedEntry(null)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 cursor-pointer"><Ic n="x" className="h-4 w-4" /></button>
             </div>
             <div className="max-h-[70vh] overflow-y-auto px-4 py-2">
-              {[["کد پیگیری", selectedEntry.trackingCode], ["تاریخ", `${shortDateLabel(selectedEntry.date)} - ${timeLabel(selectedEntry.date)}`], ["نوع عملیات", entryTypeLabels[selectedEntry.type]], ["مشتری", selectedEntry.customerName || (selectedEntry.type.includes("owner") ? "مالک" : "سیستم")], ["ارز", labels[selectedEntry.currency]], ["مبلغ", fmt(selectedEntry.amount)], ["جهت", selectedEntry.direction === "in" ? "دریافت ➕" : "پرداخت ➖"], ["شرح", selectedEntry.reason || "-"], ["مانده بعد", fmt(selectedEntry.balanceAfter)]].map(([l, v], i) => (
+              {[["کد پیگیری", selectedEntry.trackingCode], ["تاریخ", `${shortDateLabel(selectedEntry.date)} - ${timeLabel(selectedEntry.date)}`], ["نوع عملیات", entryTypeLabels[selectedEntry.type]], ["مشتری", selectedEntry.customerName || (selectedEntry.type.includes("owner") ? "مالک" : "سیستم")], ["ارز", labels[selectedEntry.currency]], ["مبلغ", fmt(selectedEntry.amount)], ["جهت", selectedEntry.direction === "in" ? "دریافت ➕" : "پرداخت ➖"], ["شرح", selectedEntry.reason || "-"], ["مانده بعد", fmt(selectedEntry.balanceAfter)], ["وضعیت", selectedEntry.status === "voided" ? "❌ باطل شده" : "✅ فعال"]].map(([l, v], i) => (
                 <div key={i} className={`flex items-start justify-between gap-4 border-b border-dashed py-3 last:border-0 ${dk ? "border-slate-700" : "border-slate-200"}`}>
                   <span className={`shrink-0 text-[11px] font-black ${dk ? "text-slate-500" : "text-slate-400"}`}>{l}</span>
-                  <span className={`text-left text-[13px] font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>{v}</span>
+                  <span className={`text-left text-[13px] font-bold ${dk ? "text-slate-200" : "text-slate-700"} ${l === "وضعیت" && selectedEntry.status === "voided" ? "text-rose-500" : ""}`}>{v}</span>
                 </div>
               ))}
             </div>
