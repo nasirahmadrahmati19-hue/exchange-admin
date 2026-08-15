@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState, useRef, useCallback, memo, type ReactNode, type ChangeEvent } from "react";
-import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem, getTrackingNumberValue } from "../lib/trackingCode";
+import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem, getTrackingNumberValue, getCurrentShamsiYear } from "../lib/trackingCode";
 import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY, loadCustomersShared, loadTransactionsShared, loadHawalasShared } from "../lib/defaultData";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
@@ -80,7 +80,7 @@ function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): C
   } catch { return customers; }
 }
 
-// ===== توابع sync با صندوق =====
+// ===== ✅ توابع sync با صندوق (اصلاح‌شده) =====
 function loadCashEntriesLocal(): any[] {
   if (typeof window === "undefined") return [];
   try {
@@ -101,12 +101,20 @@ function recomputeCashBalancesLocal(entries: any[]): any[] {
     const t1 = new Date(a.date).getTime();
     const t2 = new Date(b.date).getTime();
     if (t1 !== t2) return t1 - t2;
+    // ✅ برای اسناد مرتبط با حواله، out قبل از in
+    const aIsHawala = a.trackingCode && (a.linkedHawalaId || a.linkedHawalaSettleId);
+    const bIsHawala = b.trackingCode && (b.linkedHawalaId || b.linkedHawalaSettleId);
+    if (aIsHawala && bIsHawala) {
+      if (a.direction === "out" && b.direction === "in") return -1;
+      if (a.direction === "in" && b.direction === "out") return 1;
+    }
     if (a.direction === "in" && b.direction === "out") return -1;
     if (a.direction === "out" && b.direction === "in") return 1;
     return 0;
   });
   const bals: Record<string, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
   return sorted.map(e => {
+    if (e.status === "voided") return { ...e, balanceAfter: bals[e.currency] || 0 };
     if (e.currency && bals[e.currency] !== undefined) {
       bals[e.currency] += e.direction === "in" ? (e.amount || 0) : -(e.amount || 0);
     }
@@ -114,6 +122,7 @@ function recomputeCashBalancesLocal(entries: any[]): any[] {
   });
 }
 
+// ✅ اصلاح‌شده: کد پیگیری ساده + کارمزد به حساب مشتری اضافه نمی‌شود
 function syncCashEntriesForHawala(action: "add" | "remove", h: Hawala | null, oldHawalaId?: string) {
   let entries = loadCashEntriesLocal();
   const targetId = oldHawalaId || h?.id;
@@ -125,9 +134,12 @@ function syncCashEntriesForHawala(action: "add" | "remove", h: Hawala | null, ol
   if (action === "add" && h) {
     const dateStr = h.date || new Date().toISOString();
 
+    // ✅ کد پیگیری ساده: TR-1405-00002
+    const outCode = getNextTrackingCode();
+
     entries.push({
       id: generateId(),
-      trackingCode: `${h.number}-HW-OUT`,
+      trackingCode: outCode,
       date: dateStr,
       type: "customer_withdraw",
       currency: h.currencyFrom,
@@ -142,20 +154,22 @@ function syncCashEntriesForHawala(action: "add" | "remove", h: Hawala | null, ol
     });
 
     if (h.fee > 0 && h.feePayer === "sender") {
+      // ✅ کد پیگیری ساده بعدی: TR-1405-00003
+      const outNum = getTrackingNumberValue(outCode);
+      const feeCode = `TR-${getCurrentShamsiYear()}-${String(outNum + 1).padStart(5, "0")}`;
+
       entries.push({
         id: generateId(),
-        trackingCode: `${h.number}-HW-FEE`,
+        trackingCode: feeCode,
         date: dateStr,
-        type: "customer_deposit",
+        type: "adjustment",
         currency: h.feeCurrency,
         amount: h.fee,
         direction: "in",
         reason: `کارمزد حواله ${h.number}`,
         balanceAfter: 0,
-        customerId: h.senderId,
-        customerName: h.senderName,
-        customerPhone: h.senderPhone,
         linkedHawalaId: h.id,
+        // ✅ customerId حذف شد → به حساب مشتری اضافه نمی‌شود
       });
     }
   }
@@ -164,6 +178,7 @@ function syncCashEntriesForHawala(action: "add" | "remove", h: Hawala | null, ol
   saveCashEntriesLocal(entries);
 }
 
+// ✅ اصلاح‌شده: کارمزد از گیرنده هم به حساب مشتری اضافه نمی‌شود
 function syncCashEntriesForHawalaSettlement(action: "add" | "remove", h: Hawala) {
   let entries = loadCashEntriesLocal();
 
@@ -173,20 +188,20 @@ function syncCashEntriesForHawalaSettlement(action: "add" | "remove", h: Hawala)
 
   if (action === "add" && h.feePayer === "receiver" && h.fee > 0) {
     const dateStr = h.paidAt || h.date || new Date().toISOString();
+    const feeCode = getNextTrackingCode();
+
     entries.push({
       id: generateId(),
-      trackingCode: `${h.number}-HW-FEE-R`,
+      trackingCode: feeCode,
       date: dateStr,
-      type: "customer_deposit",
+      type: "adjustment",
       currency: h.feeCurrency,
       amount: h.fee,
       direction: "in",
       reason: `کارمزد حواله ${h.number} (از گیرنده)`,
       balanceAfter: 0,
-      customerId: h.receiverId,
-      customerName: h.receiverName,
-      customerPhone: h.receiverPhone,
       linkedHawalaSettleId: h.id,
+      // ✅ customerId حذف شد → به حساب مشتری اضافه نمی‌شود
     });
   }
 
@@ -232,7 +247,7 @@ export default function HawalaPage() {
 
   useEffect(() => { try { setCustomers(loadCustomersShared() as Customer[]); setTransactions(loadTransactionsShared()); setHawalas(loadHawalasShared() as Hawala[]); initTrackingSystem(); } catch (err) { console.error("Load error:", err); } setMounted(true); }, []);
 
-  useEffect(() => { const handleStorage = (e: StorageEvent) => { try { if (e.key === CUSTOMERS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setCustomers(p); } if (e.key === HAWALAS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setHawalas(p); } if (e.key === TRANSACTIONS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setTransactions(p); } } catch {} }; window.addEventListener("storage", handleStorage); return () => window.removeEventListener("storage", handleStorage); }, []);
+  useEffect(() => { const handleStorage = (e: StorageEvent) => { try { if (e.key === CUSTOMERS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setCustomers(p); } if (e.key === HAWALAS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setHawalas(p); } if (e.key === TRANSACTIONS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setTransactions(p); } if (e.key === CASH_KEY && e.newValue) { /* فقط برای sync */ } } catch {} }; window.addEventListener("storage", handleStorage); return () => window.removeEventListener("storage", handleStorage); }, []);
 
   useEffect(() => { const handleFocus = () => { try { setCustomers(loadCustomersShared() as Customer[]); setHawalas(loadHawalasShared() as Hawala[]); setTransactions(loadTransactionsShared()); } catch {} }; window.addEventListener("focus", handleFocus); return () => window.removeEventListener("focus", handleFocus); }, []);
 
@@ -309,7 +324,7 @@ export default function HawalaPage() {
       if (sender) setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForHawala(newHawala, "register")));
       setHawalas(prev => [newHawala, ...prev]);
 
-      // ✅ sync با صندوق
+      // ✅ sync با صندوق (کد پیگیری ساده + کارمزد به حساب مشتری اضافه نمی‌شود)
       syncCashEntriesForHawala("add", newHawala);
 
       setLastNames({ senderName, receiverName });
@@ -335,7 +350,7 @@ export default function HawalaPage() {
         setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForHawala(paidHawala, "settle")));
       }
 
-      // ✅ اگر کارمزد از گیرنده باشد، به صندوق اضافه شود
+      // ✅ اگر کارمزد از گیرنده باشد، به صندوق اضافه شود (نه به حساب مشتری)
       if (paidHawala.feePayer === "receiver") {
         syncCashEntriesForHawalaSettlement("add", paidHawala);
       }
@@ -357,7 +372,6 @@ export default function HawalaPage() {
       // ✅ معکوس کردن sync با صندوق
       syncCashEntriesForHawala("remove", null, cancelTarget.id);
 
-      // ✅ اگر کارمزد از گیرنده باشد و تسویه شده باشد
       if (cancelTarget.feePayer === "receiver" && cancelTarget.status === "paid") {
         syncCashEntriesForHawalaSettlement("remove", cancelTarget);
       }
@@ -553,7 +567,7 @@ export default function HawalaPage() {
             </section>
           )}
           {activeTab === "current" && (
-            <section className={`hw-up Overflow-hidden ${uiCard}`}>
+            <section className={`hw-up overflow-hidden ${uiCard}`}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6"><span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identHwIcon}`}><Ic n="clock" className="h-5 w-5" /></span><div className="flex-1 min-w-0"><h2 className={`hw-display text-xl md:text-2xl leading-none ${heading}`}>حواله‌های جاری</h2><p className={`mt-1 text-[11px] font-bold ${subText}`}>حواله‌های در انتظار و ارسال‌شده</p></div></div>
               <div className="px-4 md:px-7 pb-4 space-y-4">
                 <div className="flex flex-wrap gap-3"><input value={nameSearch} onChange={e => setNameSearch(e.target.value)} placeholder="نام، کد پیگیری، تلفن یا تذکره…" className={`${uiInput} flex-1 min-w-[200px]`} /><input value={amountSearch} onChange={e => setAmountSearch(e.target.value)} placeholder="جستجو بر اساس مبلغ…" inputMode="numeric" className={`${uiInput} flex-1 min-w-[150px]`} /><select value={sortOrder} onChange={e => setSortOrder(e.target.value as "asc" | "desc")} className={`${uiInput} w-auto min-w-[180px] cursor-pointer appearance-none pl-9`}><option value="asc">قدیمی‌ترین در اول</option><option value="desc">جدیدترین در اول</option></select></div>
@@ -562,7 +576,7 @@ export default function HawalaPage() {
             </section>
           )}
           {activeTab === "history" && (
-            <section className={`hw-up Overflow-hidden ${uiCard}`}>
+            <section className={`hw-up overflow-hidden ${uiCard}`}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6"><span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identHwIcon}`}><Ic n="doc" className="h-5 w-5" /></span><div className="flex-1 min-w-0"><h2 className={`hw-display text-xl md:text-2xl leading-none ${heading}`}>تاریخچه حواله‌ها</h2><p className={`mt-1 text-[11px] font-bold ${subText}`}>حواله‌های پرداخت‌شده و ابطال‌شده</p></div></div>
               <div className="px-4 md:px-7 pb-4 space-y-4">
                 <div className="flex flex-wrap gap-3"><input value={nameSearch} onChange={e => setNameSearch(e.target.value)} placeholder="نام، کد پیگیری، تلفن یا تذکره…" className={`${uiInput} flex-1 min-w-[200px]`} /><input value={amountSearch} onChange={e => setAmountSearch(e.target.value)} placeholder="جستجو بر اساس مبلغ…" inputMode="numeric" className={`${uiInput} flex-1 min-w-[150px]`} /><select value={sortOrder} onChange={e => setSortOrder(e.target.value as "asc" | "desc")} className={`${uiInput} w-auto min-w-[180px] cursor-pointer appearance-none pl-9`}><option value="asc">قدیمی‌ترین در اول</option><option value="desc">جدیدترین در اول</option></select></div>
