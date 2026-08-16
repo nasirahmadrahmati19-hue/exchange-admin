@@ -116,10 +116,13 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
   return entries;
 }
 
+// ✅ تابع اصلاح‌شده: نوع درست برای هر نوع سند صندوق
 function buildCashBoxLedger(cashEntries: any[]): LedgerEntry[] {
   const entries: LedgerEntry[] = [];
   if (!Array.isArray(cashEntries)) return entries;
-  const sorted = [...cashEntries].sort((a, b) => { try { return new Date(a.date).getTime() - new Date(b.date).getTime(); } catch { return 0; } });
+  const sorted = [...cashEntries].sort((a, b) => {
+    try { return new Date(a.date).getTime() - new Date(b.date).getTime(); } catch { return 0; }
+  });
   const bals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
   for (const ce of sorted) {
     if (ce.status === "voided") continue;
@@ -129,13 +132,29 @@ function buildCashBoxLedger(cashEntries: any[]): LedgerEntry[] {
     if (amt <= 0) continue;
     const isIn = ce.direction === "in";
     bals[cur] += isIn ? amt : -amt;
+
     let txType: TxType = "correction";
     if (ce.type === "customer_deposit") txType = "deposit";
     else if (ce.type === "customer_withdraw") txType = "withdraw";
+    else if (ce.type === "owner_deposit") txType = "deposit";
+    else if (ce.type === "owner_withdraw") txType = "withdraw";
     else if (ce.type === "fee") txType = "fee";
-    else if (ce.type === "owner_deposit" || ce.type === "owner_withdraw") txType = "correction";
+    else if (ce.type === "adjustment") txType = "correction";
     else if (ce.type === "commission_withdraw") txType = "withdraw";
-    entries.push({ id: ce.id, date: ce.date || new Date().toISOString(), customerId: CASH_BOX_ID, type: txType, description: ce.reason || entryTypeLabels[ce.type as CashEntryType] || "", currency: cur, amount: amt, direction: isIn ? "in" : "out", balanceAfter: bals[cur], referenceId: ce.id, referenceNumber: ce.trackingCode || "" });
+
+    entries.push({
+      id: ce.id,
+      date: ce.date || new Date().toISOString(),
+      customerId: CASH_BOX_ID,
+      type: txType,
+      description: ce.reason || entryTypeLabels[ce.type as CashEntryType] || "",
+      currency: cur,
+      amount: amt,
+      direction: isIn ? "in" : "out",
+      balanceAfter: bals[cur],
+      referenceId: ce.id,
+      referenceNumber: ce.trackingCode || ""
+    });
   }
   return entries;
 }
@@ -178,9 +197,7 @@ export default function CustomersPage() {
   const dk = theme === "dark";
 
   useEffect(() => { try { setCustomers(loadCustomersShared() as Customer[]); setTransactions(loadTransactionsShared()); setHawalas(loadHawalasShared()); setCashEntries(loadCashEntriesShared()); initTrackingSystem(); } catch (err) { console.error(err); } setMounted(true); }, []);
-
   useEffect(() => { const handleStorage = (e: StorageEvent) => { try { if (e.key === CUSTOMERS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setCustomers(p); } if (e.key === TRANSACTIONS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setTransactions(p); } if (e.key === HAWALAS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setHawalas(p); } if (e.key === CASH_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setCashEntries(p); } } catch {} }; window.addEventListener("storage", handleStorage); return () => window.removeEventListener("storage", handleStorage); }, []);
-
   useEffect(() => { const handleFocus = () => { try { setCustomers(loadCustomersShared() as Customer[]); setTransactions(loadTransactionsShared()); setHawalas(loadHawalasShared()); setCashEntries(loadCashEntriesShared()); } catch {} }; window.addEventListener("focus", handleFocus); return () => window.removeEventListener("focus", handleFocus); }, []);
 
   const [now, setNow] = useState<Date | null>(null);
@@ -250,18 +267,9 @@ export default function CustomersPage() {
     if (cnt > 0) msg += `\n⚠️ ${cnt} رویداد مالی دارد.`;
     if (hasBal) msg += `\n⚠️ موجودی غیر صفر دارد!`;
     if (!window.confirm(msg)) return;
-    setTransactions(prev => prev.map((t: any) => {
-      if (t.customerId === id || t.customerName === c.name || t.senderId === id || t.senderName === c.name || t.receiverId === id || t.receiverName === c.name) return { ...t, customerDeleted: true };
-      return t;
-    }));
-    setHawalas(prev => prev.map((h: any) => {
-      if (h.senderId === id || h.senderName === c.name || h.receiverId === id || h.receiverName === c.name) return { ...h, customerDeleted: true };
-      return h;
-    }));
-    setCashEntries(prev => prev.map((ce: any) => {
-      if (ce.customerId === id || ce.customerName === c.name) return { ...ce, customerDeleted: true };
-      return ce;
-    }));
+    setTransactions(prev => prev.map((t: any) => { if (t.customerId === id || t.customerName === c.name || t.senderId === id || t.senderName === c.name || t.receiverId === id || t.receiverName === c.name) return { ...t, customerDeleted: true }; return t; }));
+    setHawalas(prev => prev.map((h: any) => { if (h.senderId === id || h.senderName === c.name || h.receiverId === id || h.receiverName === c.name) return { ...h, customerDeleted: true }; return h; }));
+    setCashEntries(prev => prev.map((ce: any) => { if (ce.customerId === id || ce.customerName === c.name) return { ...ce, customerDeleted: true }; return ce; }));
     setCustomers(p => p.filter(x => x.id !== id));
     if (selectedCustomerId === id) { setSelectedCustomerId(null); setActiveTab("list"); }
     showToast(`"${c.name}" حذف شد و داده‌های مرتبط علامت‌گذاری شدند.`);
@@ -547,11 +555,7 @@ export default function CustomersPage() {
                         <div className={`text-[10px] font-black ${subText} mb-1`}>{labels[cur]}</div>
                         <div className={`text-lg font-black tabular-nums ${bal < 0 ? "text-rose-500" : colors[dk ? "dark" : "light"]}`}>{fmt(bal)}</div>
                         <div className="min-h-[14px] mt-1">
-                          {isCashBox ? (
-                            <>{bal < 0 && <span className="text-[8px] font-black text-rose-500">⚠️ کسری صندوق</span>}{bal > 0 && <span className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>✅ موجودی نقدی</span>}{bal === 0 && <span className={`text-[8px] font-bold ${subText}`}>⚪ خالی</span>}</>
-                          ) : (
-                            <>{bal < 0 && <span className="text-[8px] font-black text-rose-500">🔴 قرض</span>}{bal > 0 && <span className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>🟢 طلب</span>}{bal === 0 && <span className={`text-[8px] font-bold ${subText}`}>⚪ صفر</span>}</>
-                          )}
+                          {isCashBox ? (<>{bal < 0 && <span className="text-[8px] font-black text-rose-500">⚠️ کسری صندوق</span>}{bal > 0 && <span className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>✅ موجودی نقدی</span>}{bal === 0 && <span className={`text-[8px] font-bold ${subText}`}>⚪ خالی</span>}</>) : (<>{bal < 0 && <span className="text-[8px] font-black text-rose-500">🔴 قرض</span>}{bal > 0 && <span className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>🟢 طلب</span>}{bal === 0 && <span className={`text-[8px] font-bold ${subText}`}>⚪ صفر</span>}</>)}
                         </div>
                       </div>
                     );
