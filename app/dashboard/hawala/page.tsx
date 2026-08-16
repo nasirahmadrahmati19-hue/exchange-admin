@@ -24,9 +24,9 @@ const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
 const labels: Record<Currency, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
 const CASH_BOX_ID = "CASH_BOX";
 const CASH_BOX_NAME = "صندوق";
-const CASH_BOX_CUSTOMER: Customer = { id: CASH_BOX_ID, name: CASH_BOX_NAME, phone: "", telegram: "", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
+const CASH_BOX_CUSTOMER: Customer = { id: CASH_BOX_ID, name: CASH_BOX_NAME, phone: "", telegram: "", telegramChatId: "", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
 
-// ===== سیستم کد پیگیری (هماهنگ با lib/trackingCode.ts) =====
+// ===== سیستم کد پیگیری (کاملاً هماهنگ با lib/trackingCode.ts) =====
 const SEQUENCE_LENGTH = 5;
 
 function getCurrentShamsiYear(): string {
@@ -99,7 +99,7 @@ function numberToPersianWords(num: number): string {
   return parts.join(" و ");
 }
 
-// ===== تاریخ شمسی =====
+// ===== سیستم رسید تلگرامی =====
 function formatShamsiDateTime(date: Date): string {
   try {
     const parts = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", { year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
@@ -110,24 +110,7 @@ function formatShamsiDateTime(date: Date): string {
     return `${y}/${m}/${d} ${h12}:${min} ${ampm}`;
   } catch { return "-"; }
 }
-function shamsiParts(d: Date) { try { const p = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", { year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(d); const g = (t: string) => p.find(x => x.type === t)?.value || "0"; return { year: g("year"), month: g("month"), day: g("day") }; } catch { return { year: "0", month: "0", day: "0" }; } }
-function formatDateTime(d: Date) { const pad = (n: number) => String(n).padStart(2, "0"); const s = shamsiParts(d); return `${s.year}/${s.month}/${s.day} ${pad(d.getHours())}:${pad(d.getMinutes())}`; }
-function dateLabel(s: string) { try { const d = new Date(s); return Number.isNaN(d.getTime()) ? "-" : formatDateTime(d); } catch { return "-"; } }
 
-// ===== توابع عمومی =====
-const normalizeDigits = (s: string) => s.replace(/[۰-۹]/g, d => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))).replace(/[٠-٩]/g, d => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
-const toNumericText = (v: string) => { let s = normalizeDigits(String(v || "")).replace(/[^0-9.]/g, ""); const fd = s.indexOf("."); if (fd !== -1) s = s.slice(0, fd + 1) + s.slice(fd + 1).replace(/\./g, ""); return s; };
-const parseAmount = (v: string) => { const n = Number(normalizeDigits(String(v || "")).replace(/,/g, "")); return Number.isFinite(n) && n >= 0 ? n : 0; };
-const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 0 }) : "0";
-const newId = () => { try { return crypto.randomUUID(); } catch { return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = (Math.random() * 16) | 0; return (c === "x" ? r : (r & 0x3) | 0x8).toString(16); }); } };
-
-// ===== بارگذاری داده‌ها =====
-function loadCustomers(): Customer[] { try { const r = localStorage.getItem(CUSTOMERS_KEY); if (!r) return []; const p = JSON.parse(r); return Array.isArray(p) ? p : []; } catch { return []; } }
-function loadHawalas(): Hawala[] { try { const r = localStorage.getItem(HAWALAS_KEY); if (!r) return []; const p = JSON.parse(r); return Array.isArray(p) ? p : []; } catch { return []; } }
-function loadCashEntries(): any[] { try { const r = localStorage.getItem(CASH_KEY); if (!r) return []; const p = JSON.parse(r); return Array.isArray(p) ? p : []; } catch { return []; } }
-function saveCashEntries(entries: any[]) { try { localStorage.setItem(CASH_KEY, JSON.stringify(entries)); } catch {} }
-
-// ===== سیستم رسید تلگرامی =====
 async function sendTelegramMessage(botToken: string, chatId: string, text: string): Promise<boolean> {
   if (!botToken || !chatId) return false;
   try {
@@ -173,6 +156,24 @@ async function sendReceipt(data: { type: string; date: Date; trackingCode: strin
   if (data.customerName) { const cChatId = getCustomerChatId(data.customerName); if (cChatId) await sendTelegramMessage(settings.botToken, cChatId, text); }
   if (settings.chatId) await sendTelegramMessage(settings.botToken, settings.chatId, text);
 }
+
+// ===== تاریخ شمسی =====
+function shamsiParts(d: Date) { try { const p = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", { year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(d); const g = (t: string) => p.find(x => x.type === t)?.value || "0"; return { year: g("year"), month: g("month"), day: g("day") }; } catch { return { year: "0", month: "0", day: "0" }; } }
+function formatDateTime(d: Date) { const pad = (n: number) => String(n).padStart(2, "0"); const s = shamsiParts(d); return `${s.year}/${s.month}/${s.day} ${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+function dateLabel(s: string) { try { const d = new Date(s); return Number.isNaN(d.getTime()) ? "-" : formatDateTime(d); } catch { return "-"; } }
+
+// ===== توابع عمومی =====
+const normalizeDigits = (s: string) => s.replace(/[۰-۹]/g, d => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))).replace(/[٠-٩]/g, d => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
+const toNumericText = (v: string) => { let s = normalizeDigits(String(v || "")).replace(/[^0-9.]/g, ""); const fd = s.indexOf("."); if (fd !== -1) s = s.slice(0, fd + 1) + s.slice(fd + 1).replace(/\./g, ""); return s; };
+const parseAmount = (v: string) => { const n = Number(normalizeDigits(String(v || "")).replace(/,/g, "")); return Number.isFinite(n) && n >= 0 ? n : 0; };
+const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 0 }) : "0";
+const newId = () => { try { return crypto.randomUUID(); } catch { return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = (Math.random() * 16) | 0; return (c === "x" ? r : (r & 0x3) | 0x8).toString(16); }); } };
+
+// ===== بارگذاری داده‌ها =====
+function loadCustomers(): Customer[] { try { const r = localStorage.getItem(CUSTOMERS_KEY); if (!r) return []; const p = JSON.parse(r); return Array.isArray(p) ? p : []; } catch { return []; } }
+function loadHawalas(): Hawala[] { try { const r = localStorage.getItem(HAWALAS_KEY); if (!r) return []; const p = JSON.parse(r); return Array.isArray(p) ? p : []; } catch { return []; } }
+function loadCashEntries(): any[] { try { const r = localStorage.getItem(CASH_KEY); if (!r) return []; const p = JSON.parse(r); return Array.isArray(p) ? p : []; } catch { return []; } }
+function saveCashEntries(entries: any[]) { try { localStorage.setItem(CASH_KEY, JSON.stringify(entries)); } catch {} }
 
 // ===== Balance =====
 function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): Customer[] {
@@ -395,6 +396,7 @@ export default function HawalaPage() {
     setCustomers(updatedCustomers);
     resetForm(); setPreviewOpen(false); setPreviewData(null);
 
+    // ✅ ارسال رسید تلگرام
     const senderBalances: Record<string, number> = {};
     for (const cur of currencies) {
       const c = updatedCustomers.find(x => x.id === hawala.senderId);
@@ -406,6 +408,7 @@ export default function HawalaPage() {
       amount: hawala.amountFrom, currency: labels[hawala.currencyFrom],
       customerName: hawala.senderName, balances: senderBalances,
     });
+
     setToast("✅ حواله ثبت شد و رسید ارسال شد");
   };
 
@@ -418,6 +421,7 @@ export default function HawalaPage() {
     syncCashForSettlement("add", paid);
     setOpenActionId(null);
 
+    // ✅ ارسال رسید تسویه
     const receiverBalances: Record<string, number> = {};
     for (const cur of currencies) {
       const c = updatedCustomers.find(x => x.id === h.receiverId);
@@ -429,6 +433,7 @@ export default function HawalaPage() {
       amount: h.finalAmount, currency: labels[h.currencyTo],
       customerName: h.receiverName, balances: receiverBalances,
     });
+
     setToast("✅ حواله تسویه شد و رسید ارسال شد");
   };
 
@@ -441,6 +446,7 @@ export default function HawalaPage() {
     syncCashForHawala("remove", null, h.id);
     setOpenActionId(null);
 
+    // ✅ ارسال رسید ابطال
     const senderBalances: Record<string, number> = {};
     for (const cur of currencies) {
       const c = updatedCustomers.find(x => x.id === h.senderId);
@@ -452,6 +458,7 @@ export default function HawalaPage() {
       amount: h.amountFrom, currency: labels[h.currencyFrom],
       customerName: h.senderName, balances: senderBalances,
     });
+
     setToast("✅ حواله ابطال شد و رسید ارسال شد");
   };
 
