@@ -1,17 +1,12 @@
 "use client";
 import { useEffect, useState, useMemo, useRef, type ReactNode } from "react";
-
-// ===== کلیدهای localStorage (هماهنگ با lib/trackingCode.ts) =====
-const CUSTOMERS_KEY = "fx-customers";
-const HAWALAS_KEY = "hawalas";
-const CASH_KEY = "cash-entries";
-const SETTINGS_KEY = "fx-settings";
-const TX_KEY = "fx-transactions";
+import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem } from "../../lib/trackingCode";
+import { CUSTOMERS_KEY, TRANSACTIONS_KEY, CASH_KEY, HAWALAS_KEY, loadCustomersShared, loadTransactionsShared, loadCashEntriesShared, loadHawalasShared } from "../../lib/defaultData";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type FeePayer = "sender" | "receiver";
 type HawalaStatus = "pending" | "sent" | "paid" | "cancelled";
-type Customer = { id: string; name: string; phone?: string; telegram?: string; telegramChatId?: string; balances: Record<Currency, number>; };
+type Customer = { id: string; name: string; phone?: string; telegram?: string; balances: Record<Currency, number>; };
 type Hawala = {
   id: string; number: string; date: string; currencyFrom: Currency; currencyTo: Currency;
   amountFrom: number; finalAmount: number; fee: number; feeCurrency: Currency; feePayer: FeePayer;
@@ -24,158 +19,18 @@ const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
 const labels: Record<Currency, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
 const CASH_BOX_ID = "CASH_BOX";
 const CASH_BOX_NAME = "صندوق";
-const CASH_BOX_CUSTOMER: Customer = { id: CASH_BOX_ID, name: CASH_BOX_NAME, phone: "", telegram: "", telegramChatId: "", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
+const CASH_BOX_CUSTOMER: Customer = { id: CASH_BOX_ID, name: CASH_BOX_NAME, phone: "", telegram: "", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
 
-// ===== سیستم کد پیگیری (کاملاً هماهنگ با lib/trackingCode.ts) =====
-const SEQUENCE_LENGTH = 5;
-
-function getCurrentShamsiYear(): string {
-  try {
-    const parts = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", { year: "numeric" }).formatToParts(new Date());
-    return parts.find(p => p.type === "year")?.value || "1405";
-  } catch { return "1405"; }
-}
-
-function getTrackingNumberValue(code: string): number {
-  if (!code) return 0;
-  const newFormat = String(code).match(/^TR-\d{4}-(\d{4,5})$/);
-  if (newFormat) return Number(newFormat[1]) || 0;
-  const oldFormat = String(code).match(/^(?:HW|FX)-(\d+)$/);
-  if (oldFormat) return Number(oldFormat[1]) || 0;
-  return 0;
-}
-
-function collectUsedTrackingNumbers(): Set<number> {
-  const usedNumbers = new Set<number>();
-  try {
-    const rawTx = localStorage.getItem(TX_KEY);
-    if (rawTx) { const txs = JSON.parse(rawTx); if (Array.isArray(txs)) for (const tx of txs) { const num = getTrackingNumberValue(tx.trackingCode || tx.number || ""); if (num > 0) usedNumbers.add(num); } }
-  } catch {}
-  try {
-    const rawHw = localStorage.getItem(HAWALAS_KEY);
-    if (rawHw) { const hws = JSON.parse(rawHw); if (Array.isArray(hws)) for (const hw of hws) { const num = getTrackingNumberValue(hw.number || ""); if (num > 0) usedNumbers.add(num); } }
-  } catch {}
-  try {
-    const rawCe = localStorage.getItem(CASH_KEY);
-    if (rawCe) { const ces = JSON.parse(rawCe); if (Array.isArray(ces)) for (const ce of ces) { const num = getTrackingNumberValue(ce.trackingCode || ""); if (num > 0) usedNumbers.add(num); } }
-  } catch {}
-  return usedNumbers;
-}
-
-function getNextTrackingCode(): string {
-  const year = getCurrentShamsiYear();
-  const usedNumbers = collectUsedTrackingNumbers();
-  let nextNumber = 1;
-  while (usedNumbers.has(nextNumber)) nextNumber++;
-  return `TR-${year}-${String(nextNumber).padStart(SEQUENCE_LENGTH, "0")}`;
-}
-
-function consumeTrackingCode(): string { return getNextTrackingCode(); }
-function initTrackingSystem(): void {}
-
-// ===== سیستم تبدیل عدد به حروف فارسی =====
-function numberToPersianWords(num: number): string {
-  if (!Number.isFinite(num) || num === 0) return "صفر";
-  const ones = ["", "یک", "دو", "سه", "چهار", "پنج", "شش", "هفت", "هشت", "نه"];
-  const teens = ["ده", "یازده", "دوازده", "سیزده", "چهارده", "پانزده", "شانزده", "هفده", "هجده", "نوزده"];
-  const tens = ["", "", "بیست", "سی", "چهل", "پنجاه", "شصت", "هفتاد", "هشتاد", "نود"];
-  const hundreds = ["", "یکصد", "دویست", "سیصد", "چهارصد", "پانصد", "ششصد", "هفتصد", "هشتصد", "نهصد"];
-  const scales = ["", "هزار", "میلیون", "میلیارد", "تریلیون"];
-  function threeDigits(n: number): string {
-    if (n === 0) return "";
-    const h = Math.floor(n / 100); const rem = n % 100;
-    const t = Math.floor(rem / 10); const o = rem % 10;
-    let r = hundreds[h];
-    if (rem >= 10 && rem <= 19) { if (r) r += " و "; r += teens[rem - 10]; }
-    else { if (t > 0) { if (r) r += " و "; r += tens[t]; } if (o > 0) { if (r) r += " و "; r += ones[o]; } }
-    return r;
-  }
-  const parts: string[] = []; let si = 0; let n = Math.floor(Math.abs(num));
-  while (n > 0 && si < scales.length) {
-    const chunk = n % 1000;
-    if (chunk > 0) { const cw = threeDigits(chunk); if (si > 0) parts.unshift(`${cw} ${scales[si]}`); else parts.unshift(cw); }
-    n = Math.floor(n / 1000); si++;
-  }
-  return parts.join(" و ");
-}
-
-// ===== سیستم رسید تلگرامی =====
-function formatShamsiDateTime(date: Date): string {
-  try {
-    const parts = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", { year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
-    const g = (t: string) => parts.find(p => p.type === t)?.value || "0";
-    const y = g("year"), m = g("month"), d = g("day");
-    const h = date.getHours(), min = String(date.getMinutes()).padStart(2, "0");
-    const ampm = h >= 12 ? "PM" : "AM"; const h12 = h % 12 || 12;
-    return `${y}/${m}/${d} ${h12}:${min} ${ampm}`;
-  } catch { return "-"; }
-}
-
-async function sendTelegramMessage(botToken: string, chatId: string, text: string): Promise<boolean> {
-  if (!botToken || !chatId) return false;
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text: text }),
-    });
-    const data = await res.json(); return data.ok === true;
-  } catch { return false; }
-}
-
-function getTelegramSettings() {
-  try { const r = localStorage.getItem(SETTINGS_KEY); if (!r) return { enabled: false, botToken: "", chatId: "" };
-    const s = JSON.parse(r); return { enabled: s.telegram?.enabled || false, botToken: s.telegram?.botToken || "", chatId: s.telegram?.chatId || "" };
-  } catch { return { enabled: false, botToken: "", chatId: "" }; }
-}
-
-function getCustomerChatId(name: string): string {
-  try { const r = localStorage.getItem(CUSTOMERS_KEY); if (!r) return ""; const cs = JSON.parse(r); const c = cs.find((x: any) => x.name === name); return c?.telegramChatId || ""; } catch { return ""; }
-}
-
-async function sendReceipt(data: { type: string; date: Date; trackingCode: string; description: string; amount: number; currency: string; customerName?: string; balances: Record<string, number>; rate?: number }) {
-  const settings = getTelegramSettings();
-  if (!settings.enabled || !settings.botToken) return;
-  const isWithdraw = data.type === "withdraw" || data.type === "hawala_cancel";
-  const title = isWithdraw ? "🔴 سند برد" : "🟢 سند رسید";
-  const dateStr = formatShamsiDateTime(data.date);
-  const amountWords = numberToPersianWords(data.amount);
-  const fmtAmount = data.amount.toLocaleString("en-US");
-  let text = `${title}\n\n🗓 تاریخ: ${dateStr}\n\n🛅 پیگیری: ${data.trackingCode}\n\n`;
-  if (data.customerName) text += `👤 مشتری: ${data.customerName}\n\n`;
-  text += `📑 شرح: ${data.description}, مبلغ ${amountWords}\n\n`;
-  if (data.rate && data.rate > 0) text += `📊 نرخ: ${data.rate}\n\n`;
-  text += `💰 مبلغ: ${fmtAmount} ${data.currency}\n\n-------------بیلانس فعلی--------------\n`;
-  const curLabels: Record<string, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
-  for (const [cur, bal] of Object.entries(data.balances)) {
-    const label = curLabels[cur] || cur;
-    const status = bal > 0 ? "طلب" : bal < 0 ? "قرض" : "";
-    const fb = Math.abs(bal).toLocaleString("en-US");
-    text += `${label}: ${fb} ${status}\n`;
-  }
-  text += `\n🏦 صرافی برادران نورزاد — هرات`;
-  if (data.customerName) { const cChatId = getCustomerChatId(data.customerName); if (cChatId) await sendTelegramMessage(settings.botToken, cChatId, text); }
-  if (settings.chatId) await sendTelegramMessage(settings.botToken, settings.chatId, text);
-}
-
-// ===== تاریخ شمسی =====
-function shamsiParts(d: Date) { try { const p = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", { year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(d); const g = (t: string) => p.find(x => x.type === t)?.value || "0"; return { year: g("year"), month: g("month"), day: g("day") }; } catch { return { year: "0", month: "0", day: "0" }; } }
-function formatDateTime(d: Date) { const pad = (n: number) => String(n).padStart(2, "0"); const s = shamsiParts(d); return `${s.year}/${s.month}/${s.day} ${pad(d.getHours())}:${pad(d.getMinutes())}`; }
-function dateLabel(s: string) { try { const d = new Date(s); return Number.isNaN(d.getTime()) ? "-" : formatDateTime(d); } catch { return "-"; } }
-
-// ===== توابع عمومی =====
 const normalizeDigits = (s: string) => s.replace(/[۰-۹]/g, d => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))).replace(/[٠-٩]/g, d => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
 const toNumericText = (v: string) => { let s = normalizeDigits(String(v || "")).replace(/[^0-9.]/g, ""); const fd = s.indexOf("."); if (fd !== -1) s = s.slice(0, fd + 1) + s.slice(fd + 1).replace(/\./g, ""); return s; };
 const parseAmount = (v: string) => { const n = Number(normalizeDigits(String(v || "")).replace(/,/g, "")); return Number.isFinite(n) && n >= 0 ? n : 0; };
 const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 0 }) : "0";
 const newId = () => { try { return crypto.randomUUID(); } catch { return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = (Math.random() * 16) | 0; return (c === "x" ? r : (r & 0x3) | 0x8).toString(16); }); } };
 
-// ===== بارگذاری داده‌ها =====
-function loadCustomers(): Customer[] { try { const r = localStorage.getItem(CUSTOMERS_KEY); if (!r) return []; const p = JSON.parse(r); return Array.isArray(p) ? p : []; } catch { return []; } }
-function loadHawalas(): Hawala[] { try { const r = localStorage.getItem(HAWALAS_KEY); if (!r) return []; const p = JSON.parse(r); return Array.isArray(p) ? p : []; } catch { return []; } }
-function loadCashEntries(): any[] { try { const r = localStorage.getItem(CASH_KEY); if (!r) return []; const p = JSON.parse(r); return Array.isArray(p) ? p : []; } catch { return []; } }
-function saveCashEntries(entries: any[]) { try { localStorage.setItem(CASH_KEY, JSON.stringify(entries)); } catch {} }
+function shamsiParts(d: Date) { try { const p = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", { year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(d); const g = (t: string) => p.find(x => x.type === t)?.value || "0"; return { year: g("year"), month: g("month"), day: g("day") }; } catch { return { year: "0", month: "0", day: "0" }; } }
+function formatDateTime(d: Date) { const pad = (n: number) => String(n).padStart(2, "0"); const s = shamsiParts(d); return `${s.year}/${s.month}/${s.day} ${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+function dateLabel(s: string) { try { const d = new Date(s); return Number.isNaN(d.getTime()) ? "-" : formatDateTime(d); } catch { return "-"; } }
 
-// ===== Balance =====
 function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): Customer[] {
   return customers.map(c => {
     const cc = changes.filter(ch => ch.customerId === c.id && ch.customerId !== CASH_BOX_ID);
@@ -185,6 +40,7 @@ function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): C
     return { ...c, balances: nb };
   });
 }
+
 function getBalanceChangesForHawala(h: Hawala, action: "register" | "reverse"): BalanceChange[] {
   const changes: BalanceChange[] = []; const sign = action === "register" ? 1 : -1;
   if (h.senderId && h.senderId !== CASH_BOX_ID) {
@@ -193,6 +49,7 @@ function getBalanceChangesForHawala(h: Hawala, action: "register" | "reverse"): 
   }
   return changes;
 }
+
 function getBalanceChangesForSettlement(h: Hawala, action: "register" | "reverse"): BalanceChange[] {
   const changes: BalanceChange[] = []; const sign = action === "register" ? 1 : -1;
   if (h.receiverId && h.receiverId !== CASH_BOX_ID) {
@@ -202,7 +59,12 @@ function getBalanceChangesForSettlement(h: Hawala, action: "register" | "reverse
   return changes;
 }
 
-// ===== Cash Sync =====
+function loadCashEntries(): any[] {
+  if (typeof window === "undefined") return [];
+  try { const r = localStorage.getItem(CASH_KEY); if (!r) return []; const p = JSON.parse(r); return Array.isArray(p) ? p : []; } catch { return []; }
+}
+function saveCashEntries(entries: any[]) { if (typeof window === "undefined") return; try { localStorage.setItem(CASH_KEY, JSON.stringify(entries)); } catch {} }
+
 function recomputeCashBalances(entries: any[]): any[] {
   const sorted = [...entries].sort((a, b) => { const t1 = new Date(a.date).getTime(); const t2 = new Date(b.date).getTime(); if (t1 !== t2) return t1 - t2; if (a.direction === "in" && b.direction === "out") return -1; if (a.direction === "out" && b.direction === "in") return 1; return 0; });
   const bals: Record<string, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
@@ -212,6 +74,7 @@ function recomputeCashBalances(entries: any[]): any[] {
     return { ...e, balanceAfter: bals[e.currency] || 0 };
   });
 }
+
 function syncCashForHawala(action: "add" | "remove" | "replace", h: Hawala | null, oldId?: string) {
   let entries = loadCashEntries(); const targetId = oldId || h?.id;
   if (targetId) entries = entries.filter((e: any) => e.linkedHawalaId !== targetId);
@@ -230,6 +93,7 @@ function syncCashForHawala(action: "add" | "remove" | "replace", h: Hawala | nul
   }
   entries = recomputeCashBalances(entries); saveCashEntries(entries);
 }
+
 function syncCashForSettlement(action: "add" | "remove", h: Hawala | null) {
   let entries = loadCashEntries(); if (h) entries = entries.filter((e: any) => e.linkedHawalaSettleId !== h.id);
   if (action === "add" && h) {
@@ -248,7 +112,6 @@ function syncCashForSettlement(action: "add" | "remove", h: Hawala | null) {
   entries = recomputeCashBalances(entries); saveCashEntries(entries);
 }
 
-// ===== Icons =====
 const iconPaths: Record<string, string> = {
   send: "M6 12 3.269 3.126A59.768 59.768 0 0 1 21.485 12 59.77 59.77 0 0 1 3.27 20.876L5.999 12Zm0 0h7.5",
   users: "M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z",
@@ -296,7 +159,7 @@ export default function HawalaPage() {
   useEffect(() => { try { window.localStorage.setItem("fx-theme", theme); } catch {} }, [theme]);
   const dk = theme === "dark";
 
-  useEffect(() => { try { setCustomers(loadCustomers()); setHawalas(loadHawalas()); initTrackingSystem(); } catch {} }, []);
+  useEffect(() => { try { setCustomers(loadCustomersShared() as Customer[]); setHawalas(loadHawalasShared() as Hawala[]); initTrackingSystem(); } catch {} }, []);
 
   useEffect(() => {
     const handler = (e: StorageEvent) => {
@@ -310,7 +173,7 @@ export default function HawalaPage() {
   }, []);
 
   useEffect(() => {
-    const handler = () => { try { setCustomers(loadCustomers()); setHawalas(loadHawalas()); } catch {} };
+    const handler = () => { try { setCustomers(loadCustomersShared() as Customer[]); setHawalas(loadHawalasShared() as Hawala[]); } catch {} };
     window.addEventListener("focus", handler);
     return () => window.removeEventListener("focus", handler);
   }, []);
@@ -375,15 +238,14 @@ export default function HawalaPage() {
     setPreviewData(newHawala); setPreviewOpen(true);
   };
 
-  const confirmRegister = async () => {
+  const confirmRegister = () => {
     if (!previewData) return;
     const hawala = { ...previewData, number: editingId ? previewData.number : consumeTrackingCode() };
 
-    let updatedCustomers = customers;
     if (editingId) {
       const old = hawalas.find(h => h.id === editingId);
       if (old && old.status !== "cancelled" && old.status !== "paid") {
-        updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForHawala(old, "reverse"));
+        setCustomers(p => applyBalanceChanges(p, getBalanceChangesForHawala(old, "reverse")));
       }
       syncCashForHawala("replace", hawala, editingId);
       setHawalas(p => p.map(h => h.id === editingId ? { ...hawala, id: editingId, number: h.number, date: h.date } : h));
@@ -392,74 +254,29 @@ export default function HawalaPage() {
       syncCashForHawala("add", hawala);
     }
 
-    updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForHawala(hawala, "register"));
-    setCustomers(updatedCustomers);
+    setCustomers(p => applyBalanceChanges(p, getBalanceChangesForHawala(hawala, "register")));
     resetForm(); setPreviewOpen(false); setPreviewData(null);
-
-    // ✅ ارسال رسید تلگرام
-    const senderBalances: Record<string, number> = {};
-    for (const cur of currencies) {
-      const c = updatedCustomers.find(x => x.id === hawala.senderId);
-      senderBalances[cur] = c?.balances[cur] || 0;
-    }
-    await sendReceipt({
-      type: "hawala", date: new Date(), trackingCode: hawala.number,
-      description: `حواله ارسالی به ${hawala.receiverName}`,
-      amount: hawala.amountFrom, currency: labels[hawala.currencyFrom],
-      customerName: hawala.senderName, balances: senderBalances,
-    });
-
-    setToast("✅ حواله ثبت شد و رسید ارسال شد");
+    setToast("حواله با موفقیت ثبت شد");
   };
 
-  const settleHawala = async (h: Hawala) => {
+  const settleHawala = (h: Hawala) => {
     if (!window.confirm("این حواله تسویه شود؟")) return;
     const paid: Hawala = { ...h, status: "paid", paidAt: new Date().toISOString() };
     setHawalas(p => p.map(x => x.id === h.id ? paid : x));
-    const updatedCustomers = applyBalanceChanges(customers, getBalanceChangesForSettlement(paid, "register"));
-    setCustomers(updatedCustomers);
+    setCustomers(p => applyBalanceChanges(p, getBalanceChangesForSettlement(paid, "register")));
     syncCashForSettlement("add", paid);
     setOpenActionId(null);
-
-    // ✅ ارسال رسید تسویه
-    const receiverBalances: Record<string, number> = {};
-    for (const cur of currencies) {
-      const c = updatedCustomers.find(x => x.id === h.receiverId);
-      receiverBalances[cur] = c?.balances[cur] || 0;
-    }
-    await sendReceipt({
-      type: "deposit", date: new Date(), trackingCode: h.number,
-      description: `تسویه حواله - پرداخت به ${h.receiverName}`,
-      amount: h.finalAmount, currency: labels[h.currencyTo],
-      customerName: h.receiverName, balances: receiverBalances,
-    });
-
-    setToast("✅ حواله تسویه شد و رسید ارسال شد");
+    setToast("حواله تسویه شد");
   };
 
-  const cancelHawala = async (h: Hawala) => {
+  const cancelHawala = (h: Hawala) => {
     if (!window.confirm("این حواله ابطال شود؟")) return;
     const cancelled: Hawala = { ...h, status: "cancelled" };
     setHawalas(p => p.map(x => x.id === h.id ? cancelled : x));
-    const updatedCustomers = applyBalanceChanges(customers, getBalanceChangesForHawala(h, "reverse"));
-    setCustomers(updatedCustomers);
+    setCustomers(p => applyBalanceChanges(p, getBalanceChangesForHawala(h, "reverse")));
     syncCashForHawala("remove", null, h.id);
     setOpenActionId(null);
-
-    // ✅ ارسال رسید ابطال
-    const senderBalances: Record<string, number> = {};
-    for (const cur of currencies) {
-      const c = updatedCustomers.find(x => x.id === h.senderId);
-      senderBalances[cur] = c?.balances[cur] || 0;
-    }
-    await sendReceipt({
-      type: "hawala_cancel", date: new Date(), trackingCode: h.number,
-      description: `ابطال حواله - بازگشت به ${h.senderName}`,
-      amount: h.amountFrom, currency: labels[h.currencyFrom],
-      customerName: h.senderName, balances: senderBalances,
-    });
-
-    setToast("✅ حواله ابطال شد و رسید ارسال شد");
+    setToast("حواله ابطال شد");
   };
 
   const deleteHawala = (h: Hawala) => {
@@ -655,10 +472,6 @@ export default function HawalaPage() {
                 {fld("توضیحات / مقصد", <textarea rows={4} value={destinationText} onChange={e => setDestinationText(e.target.value)} placeholder="اختیاری - مثلاً: کابل، خانواده" className={`${uiInput} h-auto py-3 resize-none`} />)}
               </div>
 
-              <div className={`rounded-xl border p-3 ${dk ? "border-blue-400/25 bg-blue-400/[0.07]" : "border-blue-200 bg-blue-50"}`}>
-                <p className={`text-[11px] font-bold ${subText}`}>📱 بعد از ثبت، رسید به صورت خودکار از طریق تلگرام برای مشتری و صرافی ارسال می‌شود.</p>
-              </div>
-
               <button onClick={submitForm} className={`flex h-[50px] w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-base font-black shadow-lg ${dk ? "from-blue-400 to-emerald-400 text-slate-950" : "from-blue-500 to-emerald-400 text-white"}`}>
                 {editingId ? "به‌روزرسانی حواله" : "ثبت حواله"}<Ic n="send" className="h-5 w-5" />
               </button>
@@ -776,9 +589,6 @@ export default function HawalaPage() {
                   <div><span className={subText}>پرداخت‌کننده: </span><b>{previewData.feePayer === "sender" ? "فرستنده" : "گیرنده"}</b></div>
                 </div>
                 {previewData.destinationText && <p className={`mt-3 text-sm ${dk ? "text-slate-300" : "text-slate-600"}`}><b>توضیحات:</b> {previewData.destinationText}</p>}
-              </div>
-              <div className={`rounded-xl border p-3 ${dk ? "border-blue-400/25 bg-blue-400/[0.07]" : "border-blue-200 bg-blue-50"}`}>
-                <p className={`text-[11px] font-bold ${subText}`}>📱 بعد از ثبت، رسید به صورت خودکار به تلگرام ارسال می‌شود.</p>
               </div>
               <div className="flex flex-wrap gap-3 pt-2">
                 <button onClick={confirmRegister} className={`flex h-[48px] flex-1 min-w-[180px] cursor-pointer items-center justify-center gap-2 rounded-xl text-sm font-black shadow-lg ${dk ? "bg-blue-400 text-slate-950" : "bg-blue-500 text-white"}`}>ثبت نهایی<Ic n="check" className="h-4 w-4" /></button>
