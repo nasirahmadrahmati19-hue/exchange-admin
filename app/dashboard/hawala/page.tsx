@@ -47,34 +47,58 @@ const statusColors: Record<HawalaStatus, { light: string; dark: string }> = { pe
 const formatDestination = (province: string, district: string) => province === "هرات" ? `${province} — ${district}` : province;
 const sortByHawalaNumber = (items: Hawala[], order: "asc" | "desc") => [...items].sort((a, b) => { const an = getTrackingNumberValue(a.number), bn = getTrackingNumberValue(b.number); return order === "asc" ? an - bn : bn - an; });
 
+// ============================================================================
+// ✅ تغییر ۱: فقط برای مشتریان ثبت‌شده (دارای customerId) تغییرات ایجاد می‌شود
+// ============================================================================
 function getBalanceChangesForHawala(h: Hawala, action: "register" | "settle" | "cancel"): BalanceChange[] {
   const changes: BalanceChange[] = [];
   try {
     if (action === "register") {
-      changes.push({ customerName: h.senderName, customerId: h.senderId, currency: h.currencyFrom, amount: -h.amountFrom });
-      if (h.feePayer === "sender" && h.fee > 0) changes.push({ customerName: h.senderName, customerId: h.senderId, currency: h.feeCurrency, amount: -h.fee });
+      // ✅ فقط اگر فرستنده مشتری ثبت‌شده است
+      if (h.senderId) {
+        changes.push({ customerName: h.senderName, customerId: h.senderId, currency: h.currencyFrom, amount: -h.amountFrom });
+        if (h.feePayer === "sender" && h.fee > 0) {
+          changes.push({ customerName: h.senderName, customerId: h.senderId, currency: h.feeCurrency, amount: -h.fee });
+        }
+      }
     } else if (action === "settle") {
-      changes.push({ customerName: h.receiverName, customerId: h.receiverId, currency: h.currencyTo, amount: h.finalAmount });
-      if (h.feePayer === "receiver" && h.fee > 0) changes.push({ customerName: h.receiverName, customerId: h.receiverId, currency: h.feeCurrency, amount: -h.fee });
+      // ✅ فقط اگر گیرنده مشتری ثبت‌شده است
+      if (h.receiverId) {
+        changes.push({ customerName: h.receiverName, customerId: h.receiverId, currency: h.currencyTo, amount: h.finalAmount });
+        if (h.feePayer === "receiver" && h.fee > 0) {
+          changes.push({ customerName: h.receiverName, customerId: h.receiverId, currency: h.feeCurrency, amount: -h.fee });
+        }
+      }
     } else if (action === "cancel") {
-      changes.push({ customerName: h.senderName, customerId: h.senderId, currency: h.currencyFrom, amount: h.amountFrom });
-      if (h.feePayer === "sender" && h.fee > 0) changes.push({ customerName: h.senderName, customerId: h.senderId, currency: h.feeCurrency, amount: h.fee });
-      if (h.status === "paid") {
+      // ✅ برگشت فقط برای مشتریان ثبت‌شده
+      if (h.senderId) {
+        changes.push({ customerName: h.senderName, customerId: h.senderId, currency: h.currencyFrom, amount: h.amountFrom });
+        if (h.feePayer === "sender" && h.fee > 0) {
+          changes.push({ customerName: h.senderName, customerId: h.senderId, currency: h.feeCurrency, amount: h.fee });
+        }
+      }
+      if (h.status === "paid" && h.receiverId) {
         changes.push({ customerName: h.receiverName, customerId: h.receiverId, currency: h.currencyTo, amount: -h.finalAmount });
-        if (h.feePayer === "receiver" && h.fee > 0) changes.push({ customerName: h.receiverName, customerId: h.receiverId, currency: h.feeCurrency, amount: h.fee });
+        if (h.feePayer === "receiver" && h.fee > 0) {
+          changes.push({ customerName: h.receiverName, customerId: h.receiverId, currency: h.feeCurrency, amount: h.fee });
+        }
       }
     }
   } catch {}
   return changes;
 }
 
+// ✅ اعمال تغییرات فقط با customerId (برای جلوگیری از تطابق نادرست بر اساس نام)
 function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): Customer[] {
   try {
     return customers.map(c => {
-      const cc = changes.filter(ch => ch.customerId === c.id || (!ch.customerId && ch.customerName === c.name));
+      const cc = changes.filter(ch => ch.customerId && ch.customerId === c.id);
       if (cc.length === 0) return c;
       const nb = { ...c.balances };
-      for (const ch of cc) { if (nb[ch.currency] === undefined) nb[ch.currency] = 0; nb[ch.currency] = (nb[ch.currency] || 0) + ch.amount; }
+      for (const ch of cc) {
+        if (nb[ch.currency] === undefined) nb[ch.currency] = 0;
+        nb[ch.currency] = (nb[ch.currency] || 0) + ch.amount;
+      }
       return { ...c, balances: nb };
     });
   } catch { return customers; }
@@ -121,7 +145,9 @@ function recomputeCashBalancesLocal(entries: any[]): any[] {
   });
 }
 
-// ✅ اصلاح‌شده: type "fee" + کد پیگیری ساده
+// ============================================================================
+// ✅ تغییر ۲: فقط در صورتی که فرستنده مشتری ثبت‌شده است، سند برداشت ایجاد شود
+// ============================================================================
 function syncCashEntriesForHawala(action: "add" | "remove", h: Hawala | null, oldHawalaId?: string) {
   let entries = loadCashEntriesLocal();
   const targetId = oldHawalaId || h?.id;
@@ -132,28 +158,49 @@ function syncCashEntriesForHawala(action: "add" | "remove", h: Hawala | null, ol
 
   if (action === "add" && h) {
     const dateStr = h.date || new Date().toISOString();
-    const outCode = getNextTrackingCode();
 
-    entries.push({
-      id: generateId(),
-      trackingCode: outCode,
-      date: dateStr,
-      type: "customer_withdraw",
-      currency: h.currencyFrom,
-      amount: h.amountFrom,
-      direction: "out",
-      reason: `ارسال حواله ${h.number} - ${h.senderName} به ${h.receiverName}`,
-      balanceAfter: 0,
-      customerId: h.senderId,
-      customerName: h.senderName,
-      customerPhone: h.senderPhone,
-      linkedHawalaId: h.id,
-    });
+    // ✅ فقط اگر فرستنده مشتری ثبت‌شده است، سند برداشت ایجاد کن
+    if (h.senderId) {
+      const outCode = getNextTrackingCode();
+      entries.push({
+        id: generateId(),
+        trackingCode: outCode,
+        date: dateStr,
+        type: "customer_withdraw",
+        currency: h.currencyFrom,
+        amount: h.amountFrom,
+        direction: "out",
+        reason: `ارسال حواله ${h.number} - ${h.senderName} به ${h.receiverName}`,
+        balanceAfter: 0,
+        customerId: h.senderId,
+        customerName: h.senderName,
+        customerPhone: h.senderPhone,
+        linkedHawalaId: h.id,
+      });
 
-    if (h.fee > 0 && h.feePayer === "sender") {
-      const outNum = getTrackingNumberValue(outCode);
-      const feeCode = `TR-${getCurrentShamsiYear()}-${String(outNum + 1).padStart(5, "0")}`;
+      // کارمزد از فرستنده (فقط وقتی فرستنده مشتری است)
+      if (h.fee > 0 && h.feePayer === "sender") {
+        const outNum = getTrackingNumberValue(outCode);
+        const feeCode = `TR-${getCurrentShamsiYear()}-${String(outNum + 1).padStart(5, "0")}`;
+        entries.push({
+          id: generateId(),
+          trackingCode: feeCode,
+          date: dateStr,
+          type: "fee",
+          currency: h.feeCurrency,
+          amount: h.fee,
+          direction: "in",
+          reason: `کارمزد حواله ${h.number}`,
+          balanceAfter: 0,
+          linkedHawalaId: h.id,
+        });
+      }
+    }
 
+    // ✅ اگر فرستنده مشتری نیست ولی کارمزد از فرستنده پرداخت می‌شود
+    // این یعنی فرستنده پول نقد داده، فقط کارمزد را در صندوق ثبت می‌کنیم
+    if (!h.senderId && h.fee > 0 && h.feePayer === "sender") {
+      const feeCode = getNextTrackingCode();
       entries.push({
         id: generateId(),
         trackingCode: feeCode,
@@ -162,7 +209,7 @@ function syncCashEntriesForHawala(action: "add" | "remove", h: Hawala | null, ol
         currency: h.feeCurrency,
         amount: h.fee,
         direction: "in",
-        reason: `کارمزد حواله ${h.number}`,
+        reason: `کارمزد حواله ${h.number} (نقدی)`,
         balanceAfter: 0,
         linkedHawalaId: h.id,
       });
@@ -173,7 +220,9 @@ function syncCashEntriesForHawala(action: "add" | "remove", h: Hawala | null, ol
   saveCashEntriesLocal(entries);
 }
 
-// ✅ اصلاح‌شده: type "fee"
+// ============================================================================
+// ✅ تغییر ۳: فقط در صورتی که گیرنده مشتری ثبت‌شده است، سند تسویه ایجاد شود
+// ============================================================================
 function syncCashEntriesForHawalaSettlement(action: "add" | "remove", h: Hawala) {
   let entries = loadCashEntriesLocal();
 
@@ -181,22 +230,44 @@ function syncCashEntriesForHawalaSettlement(action: "add" | "remove", h: Hawala)
     entries = entries.filter((e: any) => e.linkedHawalaSettleId !== h.id);
   }
 
-  if (action === "add" && h.feePayer === "receiver" && h.fee > 0) {
+  if (action === "add" && h) {
     const dateStr = h.paidAt || h.date || new Date().toISOString();
-    const feeCode = getNextTrackingCode();
 
-    entries.push({
-      id: generateId(),
-      trackingCode: feeCode,
-      date: dateStr,
-      type: "fee",
-      currency: h.feeCurrency,
-      amount: h.fee,
-      direction: "in",
-      reason: `کارمزد حواله ${h.number} (از گیرنده)`,
-      balanceAfter: 0,
-      linkedHawalaSettleId: h.id,
-    });
+    // ✅ اگر گیرنده مشتری ثبت‌شده است، سند پرداخت به مشتری
+    if (h.receiverId) {
+      const payCode = getNextTrackingCode();
+      entries.push({
+        id: generateId(),
+        trackingCode: payCode,
+        date: dateStr,
+        type: "customer_deposit",
+        currency: h.currencyTo,
+        amount: h.finalAmount,
+        direction: "out", // پول از صندوق خارج می‌شود و به حساب مشتری می‌رود
+        reason: `پرداخت حواله ${h.number} به ${h.receiverName}`,
+        balanceAfter: 0,
+        customerId: h.receiverId,
+        customerName: h.receiverName,
+        linkedHawalaSettleId: h.id,
+      });
+    }
+
+    // کارمزد از گیرنده (چه مشتری باشد چه نباشد)
+    if (h.feePayer === "receiver" && h.fee > 0) {
+      const feeCode = getNextTrackingCode();
+      entries.push({
+        id: generateId(),
+        trackingCode: feeCode,
+        date: dateStr,
+        type: "fee",
+        currency: h.feeCurrency,
+        amount: h.fee,
+        direction: "in",
+        reason: `کارمزد حواله ${h.number} (از گیرنده)`,
+        balanceAfter: 0,
+        linkedHawalaSettleId: h.id,
+      });
+    }
   }
 
   entries = recomputeCashBalancesLocal(entries);
@@ -285,8 +356,8 @@ export default function HawalaPage() {
   const paidCount = hawalas.filter(item => item.status === "paid").length;
   const cancelledCount = hawalas.filter(item => item.status === "cancelled").length;
 
-  const selectedSender = useMemo(() => customers.find(c => c.id === form.senderId || c.name === form.senderName) || null, [customers, form.senderId, form.senderName]);
-  const selectedReceiver = useMemo(() => customers.find(c => c.id === form.receiverId || c.name === form.receiverName) || null, [customers, form.receiverId, form.receiverName]);
+  const selectedSender = useMemo(() => customers.find(c => c.id === form.senderId) || null, [customers, form.senderId]);
+  const selectedReceiver = useMemo(() => customers.find(c => c.id === form.receiverId) || null, [customers, form.receiverId]);
 
   const matchesSearch = (item: Hawala, query: string) => { const q = normalizeDigits(query).trim().toLowerCase(); if (!q) return true; const fields = [item.senderName, item.receiverName, item.number, item.senderPhone, item.receiverPhone, item.receiverTazkira]; return fields.some(f => f && normalizeDigits(String(f)).toLowerCase().includes(q)); };
   const matchesAmount = (item: Hawala, query: string) => { const raw = normalizeDigits(query).replace(/[,،\s]/g, ""); if (!raw) return true; const queryNumber = Number(raw); const values = [item.amountFrom, item.finalAmount, item.paidAmount]; if (!Number.isNaN(queryNumber)) return values.some(v => typeof v === "number" && (v === queryNumber || String(v).includes(raw))); return values.some(v => String(v ?? "").includes(raw)); };
@@ -306,8 +377,8 @@ export default function HawalaPage() {
     try {
       const nowDate = new Date();
       const senderName = form.senderName.trim(), receiverName = form.receiverName.trim();
-      const sender = customers.find(c => c.id === form.senderId || c.name === senderName) || null;
-      const receiver = customers.find(c => c.id === form.receiverId || c.name === receiverName) || null;
+      const sender = customers.find(c => c.id === form.senderId) || null;
+      const receiver = customers.find(c => c.id === form.receiverId) || null;
       let rateLabel = "";
       const txRate = rateMode === "same" ? 1 : rateValue;
       if (rateMode === "same") rateLabel = "بدون تبدیل";
@@ -315,7 +386,12 @@ export default function HawalaPage() {
       if (rateMode === "direct" && directCounter) rateLabel = directRateLabel(directBaseValue, directCounter, txRate);
       const trackingNumber = consumeTrackingCode();
       const newHawala: Hawala = { id: generateId(), number: trackingNumber, date: nowDate.toISOString(), time: "", type: form.type, destinationCountry: "افغانستان", province: form.province, district: form.province === "هرات" ? form.district : form.province, destinationText, currencyFrom: form.currencyFrom, currencyTo: form.currencyTo, amountFrom, rate: txRate, rateLabel, rateBase: rateMode === "direct" ? directBaseValue : undefined, fee: feeValue, feeCurrency: form.feeCurrency, feePayer: form.feePayer, finalAmount, balance: form.balance, note: form.note, profit: feeValue, profitCurrency: form.feeCurrency, senderId: sender?.id, senderName, senderPhone: form.senderPhone, senderTelegram: form.senderTelegram, receiverId: receiver?.id, receiverName, receiverTazkira: form.receiverTazkira, receiverPhone: form.receiverPhone, receiverAddress: form.receiverAddress, status: "pending" as HawalaStatus };
-      if (sender) setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForHawala(newHawala, "register")));
+
+      // ✅ فقط اگر فرستنده مشتری است، تغییرات حساب اعمال شود
+      if (sender) {
+        setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForHawala(newHawala, "register")));
+      }
+
       setHawalas(prev => [newHawala, ...prev]);
       syncCashEntriesForHawala("add", newHawala);
       setLastNames({ senderName, receiverName });
@@ -335,14 +411,14 @@ export default function HawalaPage() {
     if (!Number.isFinite(amountPaid) || amountPaid <= 0) { showToast("مبلغ پرداخت‌شده معتبر نیست."); return; }
     try {
       const paidHawala = { ...settleTarget, status: "paid" as HawalaStatus };
-      const isRegisteredReceiver = !!settleTarget.receiverId || customers.some(c => c.name === settleTarget.receiverName);
-      if (isRegisteredReceiver) {
+
+      // ✅ فقط اگر گیرنده مشتری است، تغییرات حساب اعمال شود
+      if (paidHawala.receiverId) {
         setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForHawala(paidHawala, "settle")));
       }
-      if (paidHawala.feePayer === "receiver") {
-        syncCashEntriesForHawalaSettlement("add", paidHawala);
-      }
+
       setHawalas(prev => prev.map(item => item.id === settleTarget.id ? { ...item, status: "paid" as HawalaStatus, paidAt: new Date().toISOString(), paidBy, paidAmount: amountPaid } : item));
+      syncCashEntriesForHawalaSettlement("add", paidHawala);
       setSettleTarget(null);
       showToast("حواله تسویه شد و به تاریخچه منتقل شد.");
     } catch (err) { console.error("Settle error:", err); showToast("خطا در تسویه حواله"); }
@@ -354,60 +430,92 @@ export default function HawalaPage() {
     if (!cancelTarget) return;
     if (!cancelReason.trim()) { showToast("دلیل لغو حواله را بنویسید."); return; }
     try {
-      if (cancelTarget.senderId || customers.some(c => c.name === cancelTarget.senderName)) setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForHawala(cancelTarget, "cancel")));
-      syncCashEntriesForHawala("remove", null, cancelTarget.id);
-      if (cancelTarget.feePayer === "receiver" && cancelTarget.status === "paid") {
-        syncCashEntriesForHawalaSettlement("remove", cancelTarget);
+      // ✅ فقط اگر فرستنده مشتری است، تغییرات برگشت اعمال شود
+      if (cancelTarget.senderId) {
+        setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForHawala(cancelTarget, "cancel")));
       }
+
+      syncCashEntriesForHawala("remove", null, cancelTarget.id);
+      syncCashEntriesForHawalaSettlement("remove", cancelTarget);
+
       setHawalas(prev => prev.map(item => item.id === cancelTarget.id ? { ...item, status: "cancelled" as HawalaStatus, cancelReason } : item));
       setCancelTarget(null);
       showToast("حواله ابطال شد و به تاریخچه منتقل شد.");
     } catch (err) { console.error("Cancel error:", err); showToast("خطا در ابطال حواله"); }
   }, [cancelTarget, cancelReason, customers, showToast]);
 
+  // ============================================================================
+  // ✅ تغییر ۴: برگشت به ارسال با بررسی customerId
+  // ============================================================================
   const restoreToSent = useCallback((item: Hawala) => {
-    if (item.senderId || customers.some(c => c.name === item.senderName)) {
-      const reverseChanges: BalanceChange[] = [];
-      reverseChanges.push({ customerName: item.senderName, customerId: item.senderId, currency: item.currencyFrom, amount: -item.amountFrom });
-      if (item.feePayer === "sender" && item.fee > 0) reverseChanges.push({ customerName: item.senderName, customerId: item.senderId, currency: item.feeCurrency, amount: -item.fee });
-      if (item.status === "cancelled" && item.paidAmount) {
-        reverseChanges.push({ customerName: item.receiverName, customerId: item.receiverId, currency: item.currencyTo, amount: item.finalAmount });
-        if (item.feePayer === "receiver" && item.fee > 0) reverseChanges.push({ customerName: item.receiverName, customerId: item.receiverId, currency: item.feeCurrency, amount: item.fee });
+    try {
+      // ✅ فقط اگر فرستنده مشتری است، تغییرات برگشت اعمال شود
+      if (item.senderId) {
+        const reverseChanges: BalanceChange[] = [];
+        reverseChanges.push({ customerName: item.senderName, customerId: item.senderId, currency: item.currencyFrom, amount: -item.amountFrom });
+        if (item.feePayer === "sender" && item.fee > 0) {
+          reverseChanges.push({ customerName: item.senderName, customerId: item.senderId, currency: item.feeCurrency, amount: -item.fee });
+        }
+        if (item.status === "cancelled" && item.receiverId && item.paidAmount) {
+          reverseChanges.push({ customerName: item.receiverName, customerId: item.receiverId, currency: item.currencyTo, amount: item.finalAmount });
+          if (item.feePayer === "receiver" && item.fee > 0) {
+            reverseChanges.push({ customerName: item.receiverName, customerId: item.receiverId, currency: item.feeCurrency, amount: item.fee });
+          }
+        }
+        setCustomers(prev => applyBalanceChanges(prev, reverseChanges));
       }
-      setCustomers(prev => applyBalanceChanges(prev, reverseChanges));
-    }
-    syncCashEntriesForHawala("add", item);
-    setHawalas(prev => prev.map(h => h.id === item.id ? { ...h, status: "sent" as HawalaStatus, paidAt: undefined, paidBy: undefined, paidAmount: undefined, cancelReason: undefined } : h));
-    showToast("حواله به وضعیت ارسال‌شده برگشت و به تب جاری منتقل شد.");
+
+      syncCashEntriesForHawala("add", item);
+      if (item.status === "paid" || (item.status === "cancelled" && item.paidAmount)) {
+        syncCashEntriesForHawalaSettlement("add", item);
+      }
+
+      setHawalas(prev => prev.map(h => h.id === item.id ? { ...h, status: "sent" as HawalaStatus, paidAt: undefined, paidBy: undefined, paidAmount: undefined, cancelReason: undefined } : h));
+      showToast("حواله به وضعیت ارسال‌شده برگشت و به تب جاری منتقل شد.");
+    } catch (err) { console.error("Restore error:", err); showToast("خطا در برگشت حواله"); }
   }, [customers, showToast]);
 
+  // ============================================================================
+  // ✅ تغییر ۵: حذف با بررسی customerId
+  // ============================================================================
   const deleteHawala = useCallback((item: Hawala) => {
     const msg = `آیا از حذف کامل حواله ${item.number} مطمئن هستید؟\n\nاین عملیات قابل بازگشت نیست و حواله از سیستم پاک می‌شود.`;
     if (!window.confirm(msg)) return;
     try {
       const changes: BalanceChange[] = [];
+
+      // ✅ فقط برای مشتریان ثبت‌شده تغییرات ایجاد شود
       if (item.status === "pending" || item.status === "sent") {
-        if (item.senderId || customers.some(c => c.name === item.senderName)) {
+        if (item.senderId) {
           changes.push({ customerName: item.senderName, customerId: item.senderId, currency: item.currencyFrom, amount: item.amountFrom });
-          if (item.feePayer === "sender" && item.fee > 0) changes.push({ customerName: item.senderName, customerId: item.senderId, currency: item.feeCurrency, amount: item.fee });
+          if (item.feePayer === "sender" && item.fee > 0) {
+            changes.push({ customerName: item.senderName, customerId: item.senderId, currency: item.feeCurrency, amount: item.fee });
+          }
         }
       } else if (item.status === "paid") {
-        if (item.senderId || customers.some(c => c.name === item.senderName)) {
+        if (item.senderId) {
           changes.push({ customerName: item.senderName, customerId: item.senderId, currency: item.currencyFrom, amount: item.amountFrom });
-          if (item.feePayer === "sender" && item.fee > 0) changes.push({ customerName: item.senderName, customerId: item.senderId, currency: item.feeCurrency, amount: item.fee });
+          if (item.feePayer === "sender" && item.fee > 0) {
+            changes.push({ customerName: item.senderName, customerId: item.senderId, currency: item.feeCurrency, amount: item.fee });
+          }
         }
-        if (item.receiverId || customers.some(c => c.name === item.receiverName)) {
+        if (item.receiverId) {
           changes.push({ customerName: item.receiverName, customerId: item.receiverId, currency: item.currencyTo, amount: -item.finalAmount });
-          if (item.feePayer === "receiver" && item.fee > 0) changes.push({ customerName: item.receiverName, customerId: item.receiverId, currency: item.feeCurrency, amount: item.fee });
+          if (item.feePayer === "receiver" && item.fee > 0) {
+            changes.push({ customerName: item.receiverName, customerId: item.receiverId, currency: item.feeCurrency, amount: item.fee });
+          }
         }
       }
-      if (changes.length > 0) setCustomers(prev => applyBalanceChanges(prev, changes));
+
+      if (changes.length > 0) {
+        setCustomers(prev => applyBalanceChanges(prev, changes));
+      }
+
       if (item.status !== "cancelled") {
         syncCashEntriesForHawala("remove", null, item.id);
-        if (item.feePayer === "receiver" && item.status === "paid") {
-          syncCashEntriesForHawalaSettlement("remove", item);
-        }
+        syncCashEntriesForHawalaSettlement("remove", item);
       }
+
       setHawalas(prev => prev.filter(h => h.id !== item.id));
       showToast(`حواله ${item.number} حذف شد.`);
     } catch (err) { console.error("Delete error:", err); showToast("خطا در حذف حواله"); }
@@ -553,7 +661,7 @@ export default function HawalaPage() {
             </section>
           )}
           {activeTab === "history" && (
-            <section className={`hw-up overflow-hidden ${uiCard}`}>
+            <section className={`hw-up Overflow-hidden ${uiCard}`}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6"><span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identHwIcon}`}><Ic n="doc" className="h-5 w-5" /></span><div className="flex-1 min-w-0"><h2 className={`hw-display text-xl md:text-2xl leading-none ${heading}`}>تاریخچه حواله‌ها</h2><p className={`mt-1 text-[11px] font-bold ${subText}`}>حواله‌های پرداخت‌شده و ابطال‌شده</p></div></div>
               <div className="px-4 md:px-7 pb-4 space-y-4">
                 <div className="flex flex-wrap gap-3"><input value={nameSearch} onChange={e => setNameSearch(e.target.value)} placeholder="نام، کد پیگیری، تلفن یا تذکره…" className={`${uiInput} flex-1 min-w-[200px]`} /><input value={amountSearch} onChange={e => setAmountSearch(e.target.value)} placeholder="جستجو بر اساس مبلغ…" inputMode="numeric" className={`${uiInput} flex-1 min-w-[150px]`} /><select value={sortOrder} onChange={e => setSortOrder(e.target.value as "asc" | "desc")} className={`${uiInput} w-auto min-w-[180px] cursor-pointer appearance-none pl-9`}><option value="asc">قدیمی‌ترین در اول</option><option value="desc">جدیدترین در اول</option></select></div>
@@ -569,10 +677,11 @@ export default function HawalaPage() {
             <div className={`flex items-center justify-between border-b px-4 md:px-5 py-3 md:py-4 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}><b className={`flex items-center gap-2 text-sm ${dk ? "text-slate-100" : "text-slate-800"}`}><span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-blue-400/10 text-blue-300" : "bg-blue-100 text-blue-600"}`}><Ic n="doc" className="h-4 w-4" /></span>جزئیات حواله قبل از ثبت</b><button onClick={() => setPreviewOpen(false)} className={`grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-all duration-300 hover:rotate-90 ${dk ? "hover:bg-slate-700 hover:text-white" : "hover:bg-slate-100 hover:text-slate-700"}`}><Ic n="x" className="h-4 w-4" /></button></div>
             <div className="max-h-[75vh] overflow-y-auto px-4 md:px-5 py-4 space-y-4">
               <div className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3 ${dk ? "border-cyan-400/30 bg-cyan-400/10" : "border-sky-300 bg-sky-50"}`}><div><div className={`text-[10px] font-bold ${subText}`}>کد پیگیری</div><span className={`inline-flex items-center gap-1.5 text-[14px] font-black tabular-nums ${dk ? "text-cyan-300" : "text-sky-700"}`} dir="ltr"><Ic n="tag" className="h-4 w-4" />{nextHawalaNumber}</span></div><div className="text-left"><div className={`text-[10px] font-bold ${subText}`}>تاریخ ثبت</div><div className={`text-[13px] font-black tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`}>{currentDateTime}</div></div></div>
-              <div className={`rounded-xl border p-4 ${dk ? "border-blue-400/20 bg-blue-400/5" : "border-blue-200 bg-blue-50/50"}`}><div className="flex items-center gap-2 mb-3"><Ic n="send" className={`h-4 w-4 ${dk ? "text-blue-300" : "text-blue-600"}`} /><b className={`text-sm font-black ${dk ? "text-blue-300" : "text-blue-700"}`}>مشخصات حواله‌دهنده</b></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm"><div><span className={subText}>نام: </span><b className={dk ? "text-slate-100" : "text-slate-800"}>{form.senderName}</b></div><div><span className={subText}>تلفن: </span><b dir="ltr" className={dk ? "text-slate-100" : "text-slate-800"}>{form.senderPhone}</b></div>{form.senderTelegram && <div><span className={subText}>تلگرام: </span><b dir="ltr" className={dk ? "text-slate-100" : "text-slate-800"}>{form.senderTelegram}</b></div>}</div></div>
+              <div className={`rounded-xl border p-4 ${dk ? "border-blue-400/20 bg-blue-400/5" : "border-blue-200 bg-blue-50/50"}`}><div className="flex items-center gap-2 mb-3"><Ic n="send" className={`h-4 w-4 ${dk ? "text-blue-300" : "text-blue-600"}`} /><b className={`text-sm font-black ${dk ? "text-blue-300" : "text-blue-700"}`}>مشخصات حواله‌دهنده</b></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm"><div><span className={subText}>نام: </span><b className={dk ? "text-slate-100" : "text-slate-800"}>{form.senderName}</b>{selectedSender && <span className={`mr-2 text-[10px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>✅ مشتری ثبت‌شده</span>}{!selectedSender && form.senderName && <span className={`mr-2 text-[10px] font-black ${dk ? "text-amber-300" : "text-amber-600"}`}>⚠️ غیر مشتری (نقدی)</span>}</div><div><span className={subText}>تلفن: </span><b dir="ltr" className={dk ? "text-slate-100" : "text-slate-800"}>{form.senderPhone}</b></div>{form.senderTelegram && <div><span className={subText}>تلگرام: </span><b dir="ltr" className={dk ? "text-slate-100" : "text-slate-800"}>{form.senderTelegram}</b></div>}</div></div>
               <div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"}`}><div className="flex items-center gap-2 mb-3"><Ic n="swap" className={`h-4 w-4 ${dk ? "text-emerald-300" : "text-emerald-600"}`} /><b className={`text-sm font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}>جزئیات حواله و مبلغ</b></div><div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm"><div><span className={subText}>نوع: </span><b>{form.type === "send" ? "ارسال" : "دریافت"}</b></div><div><span className={subText}>مبلغ اولیه: </span><b>{fmt(amountFrom)} {labels[form.currencyFrom]}</b></div>{rateMode !== "same" && <div><span className={subText}>نرخ: </span><b dir="ltr">{form.rate}</b></div>}<div><span className={subText}>کارمزد: </span><b>{fmt(feeValue)} {labels[form.feeCurrency]}</b></div><div><span className={subText}>پرداخت‌کننده کارمزد: </span><b>{form.feePayer === "sender" ? "حواله‌دهنده" : "حواله‌گیرنده"}</b></div><div className={`col-span-2 sm:col-span-3 mt-2 pt-2 border-t border-dashed ${dk ? 'border-slate-700' : 'border-slate-300'}`}><span className={subText}>مبلغ نهایی قابل پرداخت: </span><b className={`text-lg ${dk ? "text-emerald-300" : "text-emerald-700"}`}>{fmt(finalAmount)} {labels[form.currencyTo]}</b></div></div></div>
-              <div className={`rounded-xl border p-4 ${dk ? "border-amber-400/20 bg-amber-400/5" : "border-amber-200 bg-amber-50/50"}`}><div className="flex items-center gap-2 mb-3"><Ic n="receive" className={`h-4 w-4 ${dk ? "text-amber-300" : "text-amber-600"}`} /><b className={`text-sm font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>مشخصات حواله‌گیرنده و مقصد</b></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm"><div><span className={subText}>نام: </span><b>{form.receiverName}</b></div><div><span className={subText}>تذکره: </span><b dir="ltr">{form.receiverTazkira}</b></div><div><span className={subText}>تلفن: </span><b dir="ltr">{form.receiverPhone}</b></div><div><span className={subText}>مقصد: </span><b>{destinationText}</b></div>{form.receiverAddress && <div className="col-span-1 sm:col-span-2"><span className={subText}>آدرس: </span><b>{form.receiverAddress}</b></div>}</div></div>
+              <div className={`rounded-xl border p-4 ${dk ? "border-amber-400/20 bg-amber-400/5" : "border-amber-200 bg-amber-50/50"}`}><div className="flex items-center gap-2 mb-3"><Ic n="receive" className={`h-4 w-4 ${dk ? "text-amber-300" : "text-amber-600"}`} /><b className={`text-sm font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>مشخصات حواله‌گیرنده و مقصد</b></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm"><div><span className={subText}>نام: </span><b>{form.receiverName}</b>{selectedReceiver && <span className={`mr-2 text-[10px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>✅ مشتری ثبت‌شده</span>}{!selectedReceiver && form.receiverName && <span className={`mr-2 text-[10px] font-black ${dk ? "text-amber-300" : "text-amber-600"}`}>⚠️ غیر مشتری (نقدی)</span>}</div><div><span className={subText}>تذکره: </span><b dir="ltr">{form.receiverTazkira}</b></div><div><span className={subText}>تلفن: </span><b dir="ltr">{form.receiverPhone}</b></div><div><span className={subText}>مقصد: </span><b>{destinationText}</b></div>{form.receiverAddress && <div className="col-span-1 sm:col-span-2"><span className={subText}>آدرس: </span><b>{form.receiverAddress}</b></div>}</div></div>
               {form.note && (<div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/30" : "border-slate-200 bg-slate-50"}`}><div className="flex items-center gap-2 mb-2"><Ic n="info" className={`h-4 w-4 ${dk ? "text-slate-400" : "text-slate-500"}`} /><b className={`text-sm font-black ${dk ? "text-slate-300" : "text-slate-600"}`}>یادداشت</b></div><p className={`text-sm ${dk ? "text-slate-300" : "text-slate-600"}`}>{form.note}</p></div>)}
+              <div className={`rounded-xl border p-4 ${!selectedSender ? (dk ? "border-amber-400/30 bg-amber-400/10" : "border-amber-200 bg-amber-50") : (dk ? "border-slate-700 bg-slate-800/30" : "border-slate-200 bg-slate-50")}`}><div className="flex items-center gap-2 mb-2"><Ic n="info" className={`h-4 w-4 ${!selectedSender ? (dk ? "text-amber-300" : "text-amber-600") : (dk ? "text-slate-400" : "text-slate-500")}`} /><b className={`text-sm font-black ${!selectedSender ? (dk ? "text-amber-300" : "text-amber-600") : (dk ? "text-slate-300" : "text-slate-600")}`}>⚠️ اطلاعیه مهم</b></div><p className={`text-sm ${dk ? "text-slate-300" : "text-slate-600"}`}>{!selectedSender ? `حواله‌دهنده (${form.senderName}) در لیست مشتریان ثبت نشده است. این حواله به صورت **نقدی** پردازش می‌شود و فقط کارمزد در سیستم ثبت خواهد شد. هیچ تغییری در موجودی حساب‌های مشتریان ایجاد نخواهد شد.` : `حواله‌دهنده مشتری ثبت‌شده است. مبلغ ${fmt(amountFrom)} ${labels[form.currencyFrom]} از حساب وی کسر خواهد شد.`}</p></div>
               <div className="flex flex-wrap gap-3 pt-2"><button onClick={confirmRegister} className={`flex h-[48px] flex-1 min-w-[180px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-sm font-black shadow-lg transition-all hover:brightness-110 active:scale-[0.98] ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 to-teal-500 text-white"}`}>ثبت نهایی حواله<Ic n="check" className="h-4 w-4" /></button><button onClick={() => setPreviewOpen(false)} className={`flex h-[48px] px-6 cursor-pointer items-center justify-center rounded-xl border text-sm font-bold transition-all active:scale-95 ${dk ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>انصراف</button></div>
             </div>
           </div>
@@ -583,7 +692,7 @@ export default function HawalaPage() {
           <div className={`hw-up w-full max-w-lg overflow-hidden rounded-xl md:rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={(e) => e.stopPropagation()}>
             <div className={`flex items-center justify-between border-b px-4 md:px-5 py-3 md:py-4 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}><b className={`text-sm ${dk ? "text-slate-100" : "text-slate-800"}`}>تسویه حواله {settleTarget.number}</b><button onClick={() => setSettleTarget(null)} className={`grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-all hover:rotate-90 ${dk ? "hover:bg-slate-700 hover:text-white" : "hover:bg-slate-100 hover:text-slate-700"}`}><Ic n="x" className="h-4 w-4" /></button></div>
             <div className="px-4 md:px-5 py-4 space-y-4">
-              <div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"}`}><div className="grid grid-cols-2 gap-3 text-sm"><div><span className={subText}>گیرنده: </span><b>{settleTarget.receiverName}</b></div><div><span className={subText}>مبلغ نهایی: </span><b className={dk ? "text-emerald-300" : "text-emerald-700"}>{fmt(settleTarget.finalAmount)} {labels[settleTarget.currencyTo]}</b></div></div></div>
+              <div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"}`}><div className="grid grid-cols-2 gap-3 text-sm"><div><span className={subText}>گیرنده: </span><b>{settleTarget.receiverName}</b>{customers.find(c => c.id === settleTarget.receiverId) && <span className={`mr-2 text-[10px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>✅ مشتری</span>}</div><div><span className={subText}>مبلغ نهایی: </span><b className={dk ? "text-emerald-300" : "text-emerald-700"}>{fmt(settleTarget.finalAmount)} {labels[settleTarget.currencyTo]}</b></div></div></div>
               <div className="grid gap-3 sm:grid-cols-2"><div><label className={uiLabel}>نام پرداخت‌کننده</label><input value={paidBy} onChange={e => setPaidBy(e.target.value)} placeholder="مثلاً صندوقکار" className={uiInput} /></div><div><label className={uiLabel}>مبلغ پرداخت‌شده</label><input type="text" inputMode="decimal" dir="ltr" value={paidAmount} onChange={e => setPaidAmount(toNumericText(e.target.value))} className={`${uiInput} text-left tabular-nums`} /></div></div>
               <div className="flex flex-wrap gap-3"><button onClick={confirmSettlement} className={`flex h-[48px] flex-1 min-w-[150px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-sm font-black shadow-lg transition-all hover:brightness-110 active:scale-[0.98] ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 to-teal-500 text-white"}`}>تأیید پرداخت<Ic n="check" className="h-4 w-4" /></button><button onClick={() => setSettleTarget(null)} className={`flex h-[48px] px-6 cursor-pointer items-center justify-center rounded-xl border text-sm font-bold transition-all active:scale-95 ${dk ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>انصراف</button></div>
             </div>
