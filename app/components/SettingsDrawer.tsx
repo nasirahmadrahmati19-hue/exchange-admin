@@ -1,6 +1,12 @@
 "use client";
 import { useEffect, useState, useRef, useCallback, type ReactNode } from "react";
-import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY } from "../lib/defaultData";
+
+// ✅ کلیدهای localStorage - مستقیماً تعریف شده (بدون وابستگی به lib)
+const CUSTOMERS_KEY = "fx-customers";
+const TRANSACTIONS_KEY = "fx-transactions";
+const HAWALAS_KEY = "fx-hawalas";
+const CASH_KEY = "fx-cash";
+const SETTINGS_KEY = "fx-settings";
 
 type Settings = {
   email: string;
@@ -19,8 +25,6 @@ type Settings = {
     notifyExchange: boolean;
   };
 };
-
-const SETTINGS_KEY = "fx-settings";
 
 const defaultSettings: Settings = {
   email: "",
@@ -67,9 +71,7 @@ const Ic = ({ n, className = "h-5 w-5" }: { n: string; className?: string }) => 
     check: "M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
     download: "M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 16.5V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5",
     upload: "M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 16.5V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3",
-    trash: "M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0",
     chevron: "m19.5 8.25-7.5 7.5-7.5-7.5",
-    alert: "M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z",
   };
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true"><path d={paths[n] || ""} /></svg>;
 };
@@ -218,7 +220,7 @@ export default function SettingsDrawer() {
 
   return (
     <>
-      {/* ===== دکمه آیکن تنظیمات - سمت چپ بالا ===== */}
+      {/* دکمه آیکن تنظیمات - سمت چپ بالا */}
       <button
         data-settings-toggle
         onClick={() => setOpen(!open)}
@@ -232,12 +234,12 @@ export default function SettingsDrawer() {
         <Ic n="gear" className={`h-6 w-6 transition-transform duration-500 ${open ? "rotate-90" : ""}`} />
       </button>
 
-      {/* ===== Overlay ===== */}
+      {/* Overlay */}
       {open && (
         <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm transition-opacity" onClick={() => setOpen(false)} />
       )}
 
-      {/* ===== پنل کشویی ===== */}
+      {/* پنل کشویی */}
       <div
         ref={panelRef}
         className={`fixed top-0 left-0 z-50 h-full w-full max-w-md transform transition-transform duration-300 ease-in-out ${open ? "translate-x-0" : "-translate-x-full"} ${panelBg} border-r shadow-2xl overflow-y-auto`}
@@ -264,40 +266,23 @@ export default function SettingsDrawer() {
         {/* محتوای پنل */}
         <div className="space-y-3 p-4">
 
-          {/* ===== 📧 بخش جیمیل ===== */}
+          {/* 📧 بخش جیمیل */}
           <AccordionItem id="email" icon="mail" title="ایمیل (جیمیل)">
             <div className="space-y-3">
               {fld("ایمیل صرافی", (
-                <input
-                  type="email"
-                  dir="ltr"
-                  value={settings.email}
-                  onChange={e => updateSettings({ email: e.target.value })}
-                  placeholder="example@gmail.com"
-                  className={`${uiInput} text-left`}
-                />
+                <input type="email" dir="ltr" value={settings.email} onChange={e => updateSettings({ email: e.target.value })} placeholder="example@gmail.com" className={`${uiInput} text-left`} />
               ))}
               {fld("ایمیل پشتیبانی", (
-                <input
-                  type="email"
-                  dir="ltr"
-                  value={settings.supportEmail}
-                  onChange={e => updateSettings({ supportEmail: e.target.value })}
-                  placeholder="support@gmail.com"
-                  className={`${uiInput} text-left`}
-                />
+                <input type="email" dir="ltr" value={settings.supportEmail} onChange={e => updateSettings({ supportEmail: e.target.value })} placeholder="support@gmail.com" className={`${uiInput} text-left`} />
               ))}
-              <button
-                onClick={() => { saveSettings(settings); showToast("ایمیل ذخیره شد"); }}
-                className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white transition-all hover:bg-emerald-600 active:scale-95"
-              >
+              <button onClick={() => { saveSettings(settings); showToast("ایمیل ذخیره شد"); }} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white transition-all hover:bg-emerald-600 active:scale-95">
                 <Ic n="check" className="h-4 w-4" />
                 ذخیره ایمیل
               </button>
             </div>
           </AccordionItem>
 
-          {/* ===== 🌐 بخش زبان ===== */}
+          {/* 🌐 بخش زبان */}
           <AccordionItem id="language" icon="globe" title="زبان سیستم">
             <div className="space-y-2">
               {([
@@ -316,115 +301,63 @@ export default function SettingsDrawer() {
                 >
                   <span className="text-xl">{lang.flag}</span>
                   <span className={`flex-1 text-right text-sm font-bold ${heading}`}>{lang.label}</span>
-                  {settings.language === lang.value && (
-                    <Ic n="check" className={`h-5 w-5 ${dk ? "text-emerald-300" : "text-emerald-600"}`} />
-                  )}
+                  {settings.language === lang.value && <Ic n="check" className={`h-5 w-5 ${dk ? "text-emerald-300" : "text-emerald-600"}`} />}
                 </button>
               ))}
             </div>
           </AccordionItem>
 
-          {/* ===== 👥 بخش تیم ===== */}
+          {/* 👥 بخش تیم */}
           <AccordionItem id="team" icon="users" title="اطلاعات تیم">
             <div className="space-y-3">
               {fld("نام تیم / صرافی", (
-                <input
-                  value={settings.teamName}
-                  onChange={e => updateSettings({ teamName: e.target.value })}
-                  placeholder="صرافی برادران نورزاد"
-                  className={uiInput}
-                />
+                <input value={settings.teamName} onChange={e => updateSettings({ teamName: e.target.value })} placeholder="صرافی برادران نورزاد" className={uiInput} />
               ))}
               {fld("آدرس", (
-                <input
-                  value={settings.teamAddress}
-                  onChange={e => updateSettings({ teamAddress: e.target.value })}
-                  placeholder="هرات، افغانستان"
-                  className={uiInput}
-                />
+                <input value={settings.teamAddress} onChange={e => updateSettings({ teamAddress: e.target.value })} placeholder="هرات، افغانستان" className={uiInput} />
               ))}
               {fld("شماره تماس", (
-                <input
-                  dir="ltr"
-                  value={settings.teamPhone}
-                  onChange={e => updateSettings({ teamPhone: e.target.value })}
-                  placeholder="+93 700 000 000"
-                  className={`${uiInput} text-left`}
-                />
+                <input dir="ltr" value={settings.teamPhone} onChange={e => updateSettings({ teamPhone: e.target.value })} placeholder="+93 700 000 000" className={`${uiInput} text-left`} />
               ))}
-              <button
-                onClick={() => { saveSettings(settings); showToast("اطلاعات تیم ذخیره شد"); }}
-                className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white transition-all hover:bg-emerald-600 active:scale-95"
-              >
+              <button onClick={() => { saveSettings(settings); showToast("اطلاعات تیم ذخیره شد"); }} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white transition-all hover:bg-emerald-600 active:scale-95">
                 <Ic n="check" className="h-4 w-4" />
                 ذخیره اطلاعات تیم
               </button>
             </div>
           </AccordionItem>
 
-          {/* ===== 💾 بخش پشتیبان‌گیری ===== */}
+          {/* 💾 بخش پشتیبان‌گیری */}
           <AccordionItem id="backup" icon="backup" title="پشتیبان‌گیری">
             <div className="space-y-3">
-              <button
-                onClick={handleBackup}
-                className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white transition-all hover:bg-emerald-600 active:scale-95"
-              >
+              <button onClick={handleBackup} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white transition-all hover:bg-emerald-600 active:scale-95">
                 <Ic n="download" className="h-4 w-4" />
                 دانلود پشتیبان کامل
               </button>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className={`flex h-11 w-full items-center justify-center gap-2 rounded-xl border text-sm font-black transition-all active:scale-95 ${
-                  dk ? "border-slate-600 text-slate-200 hover:bg-slate-700" : "border-slate-300 text-slate-700 hover:bg-slate-50"
-                }`}
-              >
+              <button onClick={() => fileInputRef.current?.click()} className={`flex h-11 w-full items-center justify-center gap-2 rounded-xl border text-sm font-black transition-all active:scale-95 ${dk ? "border-slate-600 text-slate-200 hover:bg-slate-700" : "border-slate-300 text-slate-700 hover:bg-slate-50"}`}>
                 <Ic n="upload" className="h-4 w-4" />
                 بازیابی از فایل
               </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".json"
-                className="hidden"
-                onChange={e => {
-                  const file = e.target.files?.[0];
-                  if (file) handleRestore(file);
-                  e.target.value = "";
-                }}
-              />
+              <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={e => { const file = e.target.files?.[0]; if (file) handleRestore(file); e.target.value = ""; }} />
               <div className={`rounded-lg p-3 text-[11px] font-bold ${dk ? "bg-slate-700/50 text-slate-400" : "bg-slate-50 text-slate-500"}`}>
                 💡 پشتیبان شامل تمام مشتریان، معاملات، حواله‌ها و اسناد صندوق است.
               </div>
             </div>
           </AccordionItem>
 
-          {/* ===== 📱 بخش تلگرام ===== */}
+          {/* 📱 بخش تلگرام */}
           <AccordionItem id="telegram" icon="telegram" title="تنظیمات تلگرام">
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <span className={`text-sm font-bold ${heading}`}>فعال‌سازی تلگرام</span>
                 <Toggle enabled={settings.telegram.enabled} onChange={v => updateTelegram({ enabled: v })} />
               </div>
-
               {settings.telegram.enabled && (
                 <>
                   {fld("توکن بات (Bot Token)", (
-                    <input
-                      dir="ltr"
-                      value={settings.telegram.botToken}
-                      onChange={e => updateTelegram({ botToken: e.target.value })}
-                      placeholder="123456789:ABCdefGHI..."
-                      className={`${uiInput} text-left font-mono text-xs`}
-                    />
+                    <input dir="ltr" value={settings.telegram.botToken} onChange={e => updateTelegram({ botToken: e.target.value })} placeholder="123456789:ABCdefGHI..." className={`${uiInput} text-left font-mono text-xs`} />
                   ))}
                   {fld("چت آی‌دی (Chat ID)", (
-                    <input
-                      dir="ltr"
-                      value={settings.telegram.chatId}
-                      onChange={e => updateTelegram({ chatId: e.target.value })}
-                      placeholder="-1001234567890"
-                      className={`${uiInput} text-left font-mono text-xs`}
-                    />
+                    <input dir="ltr" value={settings.telegram.chatId} onChange={e => updateTelegram({ chatId: e.target.value })} placeholder="-1001234567890" className={`${uiInput} text-left font-mono text-xs`} />
                   ))}
                   <div className={`rounded-xl border p-3 space-y-3 ${dk ? "border-slate-600" : "border-slate-200"}`}>
                     <p className={`text-xs font-black ${heading}`}>اعلان‌ها:</p>
@@ -433,10 +366,7 @@ export default function SettingsDrawer() {
                     <Toggle enabled={settings.telegram.notifyVoid} onChange={v => updateTelegram({ notifyVoid: v })} label="لغو حواله" />
                     <Toggle enabled={settings.telegram.notifyExchange} onChange={v => updateTelegram({ notifyExchange: v })} label="تبادل ارز" />
                   </div>
-                  <button
-                    onClick={() => { saveSettings(settings); showToast("تنظیمات تلگرام ذخیره شد"); }}
-                    className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white transition-all hover:bg-emerald-600 active:scale-95"
-                  >
+                  <button onClick={() => { saveSettings(settings); showToast("تنظیمات تلگرام ذخیره شد"); }} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white transition-all hover:bg-emerald-600 active:scale-95">
                     <Ic n="check" className="h-4 w-4" />
                     ذخیره تنظیمات تلگرام
                   </button>
@@ -445,16 +375,14 @@ export default function SettingsDrawer() {
             </div>
           </AccordionItem>
 
-          {/* ===== فوتر ===== */}
+          {/* فوتر */}
           <div className={`mt-4 rounded-xl p-4 text-center ${dk ? "bg-slate-800/50" : "bg-slate-50"}`}>
-            <p className={`text-[10px] font-bold ${subText}`}>
-              نسخه ۱.۰.۰ — صرافی برادران نورزاد
-            </p>
+            <p className={`text-[10px] font-bold ${subText}`}>نسخه ۱.۰.۰ — صرافی برادران نورزاد</p>
           </div>
         </div>
       </div>
 
-      {/* ===== Toast ===== */}
+      {/* Toast */}
       {toast && (
         <div className={`fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-xl px-5 py-3 text-sm font-black shadow-lg ${
           toastType === "success"
