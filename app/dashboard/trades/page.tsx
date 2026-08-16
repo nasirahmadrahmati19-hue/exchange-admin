@@ -1,114 +1,50 @@
 "use client";
-import { useEffect, useState, useMemo, useRef, useCallback, type ReactNode } from "react";
-import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem } from "../../../lib/trackingCode";
-import { CUSTOMERS_KEY, TRANSACTIONS_KEY, CASH_KEY, loadCustomersShared, loadTransactionsShared } from "../../../lib/defaultData";
+import { useEffect, useState, useMemo, useRef, useCallback, memo, type ReactNode } from "react";
+import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem } from "../lib/trackingCode";
+import { CUSTOMERS_KEY, TRANSACTIONS_KEY, CASH_KEY, loadCustomersShared, loadTransactionsShared, loadCashEntriesShared } from "../lib/defaultData";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type RateMode = "same" | "afn" | "direct";
 type DealType = "buy" | "sell";
 type CommissionPayer = "sender" | "receiver";
-
-interface Customer {
-  id: string;
-  name: string;
-  phone?: string;
-  telegram?: string;
-  balances: Record<Currency, number>;
-}
-
-interface Transaction {
-  id: string;
-  trackingCode: string;
-  type: "exchange" | "transfer" | "convert";
-  dealType?: DealType;
-  date: string;
-  customerId?: string;
-  customerName?: string;
-  senderId?: string;
-  senderName?: string;
-  receiverId?: string;
-  receiverName?: string;
-  fromCurrency: Currency;
-  fromAmount: number;
-  toCurrency: Currency;
-  toAmount: number;
-  rate: number;
-  rateLabel: string;
-  rateBase?: Currency;
-  commission?: number;
-  commissionCurrency?: Currency;
-  commissionPayer?: CommissionPayer;
-  description?: string;
-  status: "active" | "voided";
-  profit?: number;
-  profitCurrency?: Currency;
-  customerPhone?: string;
-  customerTelegram?: string;
-}
-
-interface ExchangeFormErrors {
-  dealType?: string;
-  customer?: string;
-  receivedAmount?: string;
-  rate?: string;
-  paidAmount?: string;
-  exchangeCommission?: string;
-}
-
-interface TransferFormErrors {
-  sender?: string;
-  receiver?: string;
-  senderAmount?: string;
-  transferRate?: string;
-  receiverAmount?: string;
-  commission?: string;
-}
-
-interface ConvertFormErrors {
-  customer?: string;
-  amount?: string;
-  rate?: string;
-  convertedAmount?: string;
-  commission?: string;
-}
-
-interface BalanceChange {
-  customerId?: string;
-  customerName: string;
-  currency: Currency;
-  amount: number;
-}
+type Customer = { id: string; name: string; phone?: string; telegram?: string; balances: Record<Currency, number>; };
+type Transaction = {
+  id: string; trackingCode: string; type: "exchange" | "transfer" | "convert"; dealType?: DealType; date: string;
+  customerId?: string; customerName?: string; senderId?: string; senderName?: string; receiverId?: string; receiverName?: string;
+  fromCurrency: Currency; fromAmount: number; toCurrency: Currency; toAmount: number; rate: number; rateLabel: string; rateBase?: Currency;
+  commission?: number; commissionCurrency?: Currency; commissionPayer?: CommissionPayer; description?: string; status: "active" | "voided";
+  profit?: number; profitCurrency?: Currency; customerPhone?: string; customerTelegram?: string;
+};
+type ExchangeFormErrors = { dealType?: string; customer?: string; receivedAmount?: string; rate?: string; paidAmount?: string; exchangeCommission?: string };
+type TransferFormErrors = { sender?: string; receiver?: string; senderAmount?: string; transferRate?: string; receiverAmount?: string; commission?: string };
+type ConvertFormErrors = { customer?: string; amount?: string; rate?: string; convertedAmount?: string; commission?: string };
+type BalanceChange = { customerId?: string; customerName: string; currency: Currency; amount: number; };
 
 const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
 const labels: Record<Currency, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
 const rateUnits: Record<Currency, number> = { AFN: 1, USD: 1, EUR: 1, IRR: 1000, PKR: 1000 };
 
 const normalizeDigits = (s: string) => s.replace(/[۰-۹]/g, d => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))).replace(/[٠-٩]/g, d => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
-
 function toNumericText(v: string) {
   let s = normalizeDigits(String(v || "")).replace(/[^0-9.]/g, "");
   const fd = s.indexOf(".");
   if (fd !== -1) s = s.slice(0, fd + 1) + s.slice(fd + 1).replace(/\./g, "");
   return s;
 }
-
 const parseAmount = (v: string) => {
   const n = Number(normalizeDigits(String(v || "")).replace(/,/g, ""));
   return Number.isFinite(n) && n >= 0 ? n : 0;
 };
-
 const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 0 }) : "0";
-
 const newId = () => {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    try { return crypto.randomUUID(); } catch (e) { /* ignore */ }
+    try { return crypto.randomUUID(); } catch {}
   }
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
     const r = (Math.random() * 16) | 0;
     return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
   });
 };
-
 const shortId = (id: string) => id.slice(-6);
 
 function shamsiParts(d: Date) {
@@ -116,22 +52,19 @@ function shamsiParts(d: Date) {
     const parts = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", { year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(d);
     const g = (t: string) => parts.find(p => p.type === t)?.value || "0";
     return { year: g("year"), month: g("month"), day: g("day") };
-  } catch (e) { return { year: "0", month: "0", day: "0" }; }
+  } catch { return { year: "0", month: "0", day: "0" }; }
 }
-
 function formatDateTime(d: Date) {
   const pad = (n: number) => String(n).padStart(2, "0");
   const s = shamsiParts(d);
   return `${s.year}/${s.month}/${s.day} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
-
 function dateLabel(s: string) {
   try {
     const d = new Date(s);
     return Number.isNaN(d.getTime()) ? "-" : formatDateTime(d);
-  } catch (e) { return "-"; }
+  } catch { return "-"; }
 }
-
 function splitDateTime(s: string): { datePart: string; timePart: string } {
   try {
     const d = new Date(s);
@@ -139,24 +72,21 @@ function splitDateTime(s: string): { datePart: string; timePart: string } {
     const full = formatDateTime(d);
     const parts = full.split(" ");
     return { datePart: parts[0] || "-", timePart: parts[1] || "" };
-  } catch (e) { return { datePart: "-", timePart: "" }; }
+  } catch { return { datePart: "-", timePart: "" }; }
 }
 
 function dealTypeLabel(d?: DealType) { return d === "buy" ? "خرید" : d === "sell" ? "فروش" : "-"; }
-
 function getRateMode(f: Currency, t: Currency): RateMode {
   if (f === t) return "same";
   if (f === "AFN" || t === "AFN") return "afn";
   return "direct";
 }
-
 function getAfnForeign(f: Currency, t: Currency): Currency | null {
   if (f === t) return null;
   if (f === "AFN") return t;
   if (t === "AFN") return f;
   return null;
 }
-
 function preferredDirectBase(a: Currency, b: Currency): Currency {
   for (const c of ["USD", "EUR", "PKR", "IRR"] as Currency[]) {
     if (a === c) return c;
@@ -164,18 +94,15 @@ function preferredDirectBase(a: Currency, b: Currency): Currency {
   }
   return a;
 }
-
 function getSafeDirectBase(bs: Currency, a: Currency, b: Currency): Currency {
   if (a === bs || b === bs) return bs;
   return preferredDirectBase(a, b);
 }
-
 function getDirectCounter(base: Currency, a: Currency, b: Currency): Currency | null {
   if (a === base) return b;
   if (b === base) return a;
   return null;
 }
-
 function convertAfnRate(amount: number, from: Currency, to: Currency, rate: number) {
   if (!Number.isFinite(amount) || amount === 0 || from === to || !Number.isFinite(rate) || rate <= 0) return 0;
   const f = getAfnForeign(from, to);
@@ -185,7 +112,6 @@ function convertAfnRate(amount: number, from: Currency, to: Currency, rate: numb
   if (from === f && to === "AFN") return (amount / u) * rate;
   return 0;
 }
-
 function convertDirectRate(amount: number, from: Currency, to: Currency, base: Currency, rate: number) {
   if (!Number.isFinite(amount) || amount === 0 || from === to || !Number.isFinite(rate) || rate <= 0) return 0;
   const c = getDirectCounter(base, from, to);
@@ -195,7 +121,6 @@ function convertDirectRate(amount: number, from: Currency, to: Currency, base: C
   if (to === base) return (amount / rate) * ub;
   return 0;
 }
-
 const afnRateLabel = (foreign: Currency, rate: number) => `${fmt(rateUnits[foreign])} ${labels[foreign]} = ${fmt(rate)} ${labels.AFN}`;
 const directRateLabel = (base: Currency, counter: Currency, rate: number) => `${fmt(rateUnits[base])} ${labels[base]} = ${fmt(rate)} ${labels[counter]}`;
 
@@ -212,41 +137,39 @@ function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): C
   });
 }
 
-// ✅ تغییر اصلی: حذف toCurrency از exchange
+// ============================================================================
+// ✅ تغییر ۱: حذف اضافه شدن toCurrency به حساب مشتری در exchange
+// ============================================================================
 function getBalanceChangesForTransaction(tx: Transaction, action: "register" | "reverse"): BalanceChange[] {
   const changes: BalanceChange[] = [];
   const sign = action === "register" ? 1 : -1;
-
+  
   if (tx.type === "exchange" && tx.customerId) {
+    // ✅ فقط fromCurrency کم می‌شود
     changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.fromCurrency, amount: -tx.fromAmount * sign });
+    // ❌ حذف شد: toCurrency به حساب اضافه نمی‌شود (چون نقدی برده)
     if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
       changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.commissionCurrency, amount: -tx.commission * sign });
     }
   }
-
+  
   if (tx.type === "transfer") {
     if (tx.senderId) {
       changes.push({ customerId: tx.senderId, customerName: tx.senderName || "", currency: tx.fromCurrency, amount: -tx.fromAmount * sign });
-      if (tx.commissionPayer === "sender" && tx.commission && tx.commission > 0 && tx.commissionCurrency) {
-        changes.push({ customerId: tx.senderId, customerName: tx.senderName || "", currency: tx.commissionCurrency, amount: -tx.commission * sign });
-      }
+      if (tx.commissionPayer === "sender" && tx.commission && tx.commission > 0 && tx.commissionCurrency) changes.push({ customerId: tx.senderId, customerName: tx.senderName || "", currency: tx.commissionCurrency, amount: -tx.commission * sign });
     }
     if (tx.receiverId) {
       changes.push({ customerId: tx.receiverId, customerName: tx.receiverName || "", currency: tx.toCurrency, amount: tx.toAmount * sign });
-      if (tx.commissionPayer === "receiver" && tx.commission && tx.commission > 0 && tx.commissionCurrency) {
-        changes.push({ customerId: tx.receiverId, customerName: tx.receiverName || "", currency: tx.commissionCurrency, amount: -tx.commission * sign });
-      }
+      if (tx.commissionPayer === "receiver" && tx.commission && tx.commission > 0 && tx.commissionCurrency) changes.push({ customerId: tx.receiverId, customerName: tx.receiverName || "", currency: tx.commissionCurrency, amount: -tx.commission * sign });
     }
   }
-
+  
   if (tx.type === "convert" && tx.customerId) {
     changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.fromCurrency, amount: -tx.fromAmount * sign });
     changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.toCurrency, amount: tx.toAmount * sign });
-    if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
-      changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.commissionCurrency, amount: -tx.commission * sign });
-    }
+    if (tx.commission && tx.commission > 0 && tx.commissionCurrency) changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.commissionCurrency, amount: -tx.commission * sign });
   }
-
+  
   return changes;
 }
 
@@ -257,12 +180,12 @@ function loadCashEntries(): any[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
-  } catch (e) { return []; }
+  } catch { return []; }
 }
 
 function saveCashEntries(entries: any[]) {
   if (typeof window === "undefined") return;
-  try { localStorage.setItem(CASH_KEY, JSON.stringify(entries)); } catch (e) { /* ignore */ }
+  try { localStorage.setItem(CASH_KEY, JSON.stringify(entries)); } catch {}
 }
 
 function recomputeCashBalances(entries: any[]): any[] {
@@ -286,28 +209,28 @@ function recomputeCashBalances(entries: any[]): any[] {
 function syncCashEntriesForExchange(action: "add" | "remove" | "replace", tx: Transaction | null, oldTxId?: string) {
   let entries = loadCashEntries();
   const targetId = oldTxId || tx?.id;
-
+  
   if (targetId) {
     entries = entries.filter((e: any) => e.linkedExchangeId !== targetId);
   }
-
+  
   if ((action === "add" || action === "replace") && tx) {
     const newEntries: any[] = [];
     const dateStr = tx.date || new Date().toISOString();
     const tcBase = tx.trackingCode;
-
+    
     newEntries.push({
       id: newId(), trackingCode: `${tcBase}-IN`, date: dateStr, type: "customer_deposit", currency: tx.fromCurrency,
       amount: tx.fromAmount, direction: "in", reason: `تبادل ارز - دریافت اسکناس از مشتری`, balanceAfter: 0,
       customerId: tx.customerId, customerName: tx.customerName, customerPhone: tx.customerPhone, linkedExchangeId: tx.id,
     });
-
+    
     newEntries.push({
       id: newId(), trackingCode: `${tcBase}-OUT`, date: dateStr, type: "customer_withdraw", currency: tx.toCurrency,
       amount: tx.toAmount, direction: "out", reason: `تبادل ارز - پرداخت اسکناس به مشتری`, balanceAfter: 0,
       customerId: tx.customerId, customerName: tx.customerName, customerPhone: tx.customerPhone, linkedExchangeId: tx.id,
     });
-
+    
     if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
       newEntries.push({
         id: newId(), trackingCode: `${tcBase}-FEE`, date: dateStr, type: "customer_deposit", currency: tx.commissionCurrency,
@@ -317,12 +240,12 @@ function syncCashEntriesForExchange(action: "add" | "remove" | "replace", tx: Tr
     }
     entries = [...entries, ...newEntries];
   }
-
+  
   entries = recomputeCashBalances(entries);
   saveCashEntries(entries);
 }
 
-const iconPaths: Record<string, string> = {
+const iconPaths = {
   swap: "M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5",
   users: "M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z",
   user: "M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z",
@@ -350,21 +273,18 @@ const iconPaths: Record<string, string> = {
   tag: "M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z",
   more: "M12 6.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 12.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 18.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Z"
 };
-
 type IconName = keyof typeof iconPaths;
-
-function Ic({ n, className = "h-5 w-5" }: { n: IconName; className?: string }) {
-  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true"><path d={iconPaths[n] || ""} /></svg>;
-}
-
-function DetailRow({ label, value, valueClass = "", dark = false }: { label: string; value: string; valueClass?: string; dark?: boolean }) {
+const Ic = memo(function Ic({ n, className = "h-5 w-5" }: { n: IconName; className?: string }) {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true"><path d={iconPaths[n]} /></svg>;
+});
+const DetailRow = memo(function DetailRow({ label, value, valueClass = "", dark = false }: { label: string; value: string; valueClass?: string; dark?: boolean }) {
   return (
     <div className={`flex items-start justify-between gap-4 border-b border-dashed py-3 last:border-0 ${dark ? "border-slate-700" : "border-slate-200"}`}>
       <span className={`shrink-0 text-[11px] font-black ${dark ? "text-slate-500" : "text-slate-400"}`}>{label}</span>
       <span className={`text-left text-[13px] font-bold ${dark ? "text-slate-200" : "text-slate-700"} ${valueClass}`}>{value}</span>
     </div>
   );
-}
+});
 
 function getStoredCustomers(): Customer[] {
   return loadCustomersShared() as Customer[];
@@ -374,12 +294,12 @@ export default function CurrencyExchangePage() {
   const [customers, setCustomers] = useState<Customer[]>(getStoredCustomers);
   const [transactions, setTransactions] = useState<Transaction[]>(() => {
     if (typeof window === "undefined") return [];
-    try { return loadTransactionsShared() as Transaction[]; } catch (e) { return []; }
+    try { return loadTransactionsShared(); } catch { return []; }
   });
 
-  useEffect(() => { try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); } catch (e) { /* ignore */ } }, [customers]);
-  useEffect(() => { try { window.localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(transactions)); } catch (e) { /* ignore */ } }, [transactions]);
-  useEffect(() => { try { initTrackingSystem(); } catch (e) { /* ignore */ } }, []);
+  useEffect(() => { try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); } catch {} }, [customers]);
+  useEffect(() => { try { window.localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(transactions)); } catch {} }, [transactions]);
+  useEffect(() => { try { initTrackingSystem(); } catch {} }, []);
 
   useEffect(() => {
     const handleStorage = (e: StorageEvent) => {
@@ -390,9 +310,9 @@ export default function CurrencyExchangePage() {
         }
         if (e.key === TRANSACTIONS_KEY && e.newValue) {
           const parsed = JSON.parse(e.newValue);
-          if (Array.isArray(parsed)) setTransactions(parsed as Transaction[]);
+          if (Array.isArray(parsed)) setTransactions(parsed);
         }
-      } catch (e) { /* ignore */ }
+      } catch {}
     };
     window.addEventListener("storage", handleStorage);
     return () => window.removeEventListener("storage", handleStorage);
@@ -402,8 +322,8 @@ export default function CurrencyExchangePage() {
     const handleFocus = () => {
       try {
         setCustomers(loadCustomersShared() as Customer[]);
-        setTransactions(loadTransactionsShared() as Transaction[]);
-      } catch (e) { /* ignore */ }
+        setTransactions(loadTransactionsShared());
+      } catch {}
     };
     window.addEventListener("focus", handleFocus);
     return () => window.removeEventListener("focus", handleFocus);
@@ -437,9 +357,8 @@ export default function CurrencyExchangePage() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [openActionId]);
-
-  useEffect(() => { try { const s = window.localStorage.getItem("fx-theme"); if (s === "dark" || s === "light") setTheme(s as "light" | "dark"); } catch (e) { /* ignore */ } }, []);
-  useEffect(() => { try { window.localStorage.setItem("fx-theme", theme); } catch (e) { /* ignore */ } }, [theme]);
+  useEffect(() => { try { const s = window.localStorage.getItem("fx-theme"); if (s === "dark" || s === "light") setTheme(s); } catch {} }, []);
+  useEffect(() => { try { window.localStorage.setItem("fx-theme", theme); } catch {} }, [theme]);
   const dk = theme === "dark";
 
   useEffect(() => { setNow(new Date()); const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t); }, []);
@@ -575,19 +494,16 @@ export default function CurrencyExchangePage() {
     const q = normalizeDigits(customerFilter.trim()).toLowerCase();
     return customers.filter(c => c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q)));
   }, [customers, customerFilter]);
-
   const filteredSenderList = useMemo(() => {
     if (!senderFilter) return customers;
     const q = normalizeDigits(senderFilter.trim()).toLowerCase();
     return customers.filter(c => c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q)));
   }, [customers, senderFilter]);
-
   const filteredReceiverList = useMemo(() => {
     if (!receiverFilter) return customers;
     const q = normalizeDigits(receiverFilter.trim()).toLowerCase();
     return customers.filter(c => c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q)));
   }, [customers, receiverFilter]);
-
   const filteredConvertList = useMemo(() => {
     if (!convertFilter) return customers;
     const q = normalizeDigits(convertFilter.trim()).toLowerCase();
@@ -604,12 +520,10 @@ export default function CurrencyExchangePage() {
     setRate(""); setExchangeCommission(""); setExchangeCommissionPayer("sender"); setExchangeCommissionCurrency("AFN");
     setExchangeDescription(""); setExchangeErrors({}); setEditingExchangeId(null);
   }, []);
-
   const resetTransferForm = useCallback(() => {
     setSender(""); setReceiver(""); setSenderAmount(""); setReceiverAmount(""); setTransferRate(""); setCommission("");
     setTransferCommissionPayer("sender"); setTransferCommissionCurrency("AFN"); setTransferDescription(""); setTransferErrors({}); setEditingTransferId(null);
   }, []);
-
   const resetConvertForm = useCallback(() => {
     setConvertCustomer(""); setConvertCustomerPhone(""); setConvertCustomerTelegram(""); setConvertFromCurrency("AFN"); setConvertToCurrency("USD");
     setConvertAmount(""); setConvertRate(""); setConvertedAmount(""); setConvertCommission(""); setConvertCommissionCurrency("AFN");
@@ -659,7 +573,7 @@ export default function CurrencyExchangePage() {
   const exchangeToAmount = parseAmount(paidAmount);
   const exchangeRateValue = parseAmount(rate);
   const exchangeCommissionValue = Math.max(0, parseAmount(exchangeCommission));
-
+  
   const submitExchange = useCallback(() => {
     const errs = validateExchange();
     setExchangeErrors(errs);
@@ -690,7 +604,7 @@ export default function CurrencyExchangePage() {
   const transferToAmount = parseAmount(receiverAmount);
   const transferRateValue = parseAmount(transferRate);
   const commissionValue = Math.max(0, parseAmount(commission));
-
+  
   const submitTransfer = useCallback(() => {
     const errs = validateTransfer();
     setTransferErrors(errs);
@@ -721,7 +635,7 @@ export default function CurrencyExchangePage() {
   const convertToAmount = parseAmount(convertedAmount);
   const convertRateValue = parseAmount(convertRate);
   const convertCommissionValue = Math.max(0, parseAmount(convertCommission));
-
+  
   const submitConvert = useCallback(() => {
     const errs = validateConvert();
     setConvertErrors(errs);
@@ -778,6 +692,8 @@ export default function CurrencyExchangePage() {
 
   const customerName = useCallback((id?: string) => customers.find(c => c.id === id)?.name || customers.find(c => c.name === id)?.name || id || "-", [customers]);
   const transactionCustomerLabel = useCallback((tx: Transaction) => tx.type === "transfer" ? `${customerName(tx.senderId || tx.senderName)} - ${customerName(tx.receiverId || tx.receiverName)}` : customerName(tx.customerId || tx.customerName), [customerName]);
+  
+  // ✅ تغییر ۲: نام تب سوم به "تبدیل ارز مشتری"
   const transactionTypeLabel = useCallback((tx: Transaction) => tx.type === "exchange" ? dealTypeLabel(tx.dealType) : tx.type === "convert" ? "تبدیل ارز مشتری" : "انتقال", []);
   const transactionCommissionLabel = useCallback((tx: Transaction) => tx.commission === undefined ? "-" : `${fmt(tx.commission)} ${tx.commissionCurrency ? labels[tx.commissionCurrency] : ""}`, []);
   const commissionPayerLabel = useCallback((tx: Transaction) => !tx.commissionPayer ? "-" : tx.type === "convert" ? "خود مشتری" : tx.commissionPayer === "sender" ? "فرستنده" : "گیرنده", []);
@@ -787,7 +703,7 @@ export default function CurrencyExchangePage() {
   const isSearching = amountSearch.trim().length > 0;
   const activeCount = useMemo(() => transactions.filter(t => t.status === "active").length, [transactions]);
   const voidedCount = transactions.length - activeCount;
-
+  
   const transactionMatchesSearch = useCallback((tx: Transaction) => {
     if (!isSearching) return true;
     const names = [customerName(tx.customerId || tx.customerName), customerName(tx.senderId || tx.senderName), customerName(tx.receiverId || tx.receiverName), transactionCustomerLabel(tx), tx.trackingCode];
@@ -843,7 +759,7 @@ export default function CurrencyExchangePage() {
       setConvertErrors({});
     }
   }, []);
-
+  
   const viewTransaction = useCallback((tx: Transaction) => setSelectedTransaction(tx), []);
 
   const voidTransaction = useCallback((tx: Transaction) => {
@@ -894,14 +810,14 @@ export default function CurrencyExchangePage() {
   const cAmber = { wrap: dk ? "border-amber-400/25 bg-amber-400/[0.07]" : "border-amber-300 bg-amber-50", icon: dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600", title: dk ? "text-amber-300" : "text-amber-700", badge: dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-700" };
   const cTeal = { wrap: dk ? "border-teal-400/25 bg-teal-400/[0.07]" : "border-teal-300 bg-teal-50", icon: dk ? "bg-teal-400/15 text-teal-300" : "bg-teal-100 text-teal-600", title: dk ? "text-teal-300" : "text-teal-700", badge: dk ? "bg-teal-400/15 text-teal-300" : "bg-teal-100 text-teal-700" };
   const cViolet = { wrap: dk ? "border-violet-400/25 bg-violet-400/[0.07]" : "border-violet-300 bg-violet-50", icon: dk ? "bg-violet-400/15 text-violet-300" : "bg-violet-100 text-violet-600", title: dk ? "text-violet-300" : "text-violet-700", badge: dk ? "bg-violet-400/15 text-violet-300" : "bg-violet-100 text-violet-700" };
-
+  
   const identExIcon = dk ? "from-cyan-400/20 to-cyan-400/5 text-cyan-300 ring-cyan-400/25" : "from-sky-400/20 to-cyan-400/10 text-sky-600 ring-sky-400/30";
   const identExChip = dk ? "bg-cyan-400/10 text-cyan-300 ring-cyan-400/25" : "bg-sky-100 text-sky-700 ring-sky-300/60";
   const identTrIcon = dk ? "from-orange-400/20 to-orange-400/5 text-orange-300 ring-orange-400/25" : "from-orange-400/20 to-amber-400/10 text-orange-600 ring-orange-400/30";
   const identTrChip = dk ? "bg-orange-400/10 text-orange-300 ring-orange-400/25" : "bg-orange-100 text-orange-700 ring-orange-300/60";
   const identCvIcon = dk ? "from-violet-400/20 to-violet-400/5 text-violet-300 ring-violet-400/25" : "from-violet-400/20 to-purple-400/10 text-violet-600 ring-violet-400/30";
   const identCvChip = dk ? "bg-violet-400/10 text-violet-300 ring-violet-400/25" : "bg-violet-100 text-violet-700 ring-violet-300/60";
-
+  
   const typeChipClass = useCallback((tx: Transaction) => {
     if (tx.type === "transfer") return dk ? "bg-orange-400/15 text-orange-300" : "bg-orange-100 text-orange-700";
     if (tx.type === "convert") return dk ? "bg-violet-400/15 text-violet-300" : "bg-violet-100 text-violet-700";
@@ -916,7 +832,7 @@ export default function CurrencyExchangePage() {
       {n}
     </div>
   );
-
+  
   const sel = (v: string, onCh: (v: string) => void, opts: string[][], cls = "") => (
     <div className="relative">
       <select value={v} onChange={e => onCh(e.target.value)} className={`${uiInput} cursor-pointer appearance-none pl-9 ${cls}`}>
@@ -925,25 +841,25 @@ export default function CurrencyExchangePage() {
       <span className={chevPos}><Ic n="chevron" className="h-4 w-4" /></span>
     </div>
   );
-
+  
   const dateField = (v: string) => (
     <div className="relative">
       <input readOnly dir="ltr" value={v} className={`${uiInput} ${roInput} pl-10 text-left tabular-nums`} />
       <span className={chevPos}><Ic n="clock" className="h-4 w-4" /></span>
     </div>
   );
-
+  
   const rateInput = (val: string, onCh: (s: string) => void, err: boolean, w: string) => (
     <input type="text" inputMode="decimal" dir="ltr" value={val} onChange={e => onCh(toNumericText(e.target.value))} placeholder="0" className={`h-12 ${w} px-3 text-left text-sm font-bold tabular-nums ${inputShell} ${err ? errInput : ""}`} />
   );
-
+  
   const moneyField = (val: string, onCh: (s: string) => void, err: boolean, suffix: string, suffixCls: string) => (
     <div className="relative">
       <input type="text" inputMode="decimal" dir="ltr" value={val} onChange={e => onCh(toNumericText(e.target.value))} placeholder="0" className={`${uiInput} pl-24 text-left tabular-nums ${err ? errInput : ""}`} />
       <span className={`pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 rounded-lg px-2 py-1 text-[10px] font-black ${suffixCls}`}>{suffix}</span>
     </div>
   );
-
+  
   const panel = (c: { wrap: string; icon: string; title: string }, icon: IconName, title: string, ch: ReactNode) => (
     <div className={`space-y-4 rounded-2xl border p-4 ${c.wrap}`}>
       <div className="flex items-center gap-2.5">
@@ -953,7 +869,7 @@ export default function CurrencyExchangePage() {
       {ch}
     </div>
   );
-
+  
   const rateBox = (c: { wrap: string; icon: string; title: string }, title: string, form: ReactNode, badges: ReactNode) => (
     <div className={`space-y-4 rounded-2xl border p-4 md:p-5 ${c.wrap}`}>
       <div className="flex items-center gap-2.5">
@@ -964,20 +880,20 @@ export default function CurrencyExchangePage() {
       <div className="flex flex-wrap items-center gap-2.5">{badges}</div>
     </div>
   );
-
+  
   const pill = (cls: string, txt: string, check = false) => !txt ? null : (
     <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black ${cls}`}>
       {check && <Ic n="check" className="h-3.5 w-3.5" />}
       {txt}
     </span>
   );
-
+  
   const midBadge = (icon: IconName, cls: string) => (
     <div className="hidden flex-col items-center justify-center lg:flex">
       <span className={`grid h-12 w-12 place-items-center rounded-full border shadow-md ${cls}`}><Ic n={icon} className="h-5 w-5" /></span>
     </div>
   );
-
+  
   const secHead = (ic: string, icon: IconName, t: string, s: string, cc: string, ct: string) => (
     <div className="flex flex-wrap items-center gap-3">
       <span className={`grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${ic}`}><Ic n={icon} className="h-5 w-5" /></span>
@@ -988,28 +904,28 @@ export default function CurrencyExchangePage() {
       <span className={`rounded-full px-3 py-1.5 text-[10px] font-black ring-1 ${cc}`}>{ct}</span>
     </div>
   );
-
+  
   const editBanner = (txt: ReactNode, cancel: () => void) => (
     <div className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm font-bold ${dk ? "border-amber-400/30 bg-amber-400/10 text-amber-300" : "border-amber-300 bg-amber-100/70 text-amber-800"}`}>
       <span className="flex items-center gap-2"><Ic n="pencil" className="h-4 w-4 shrink-0" />{txt}</span>
       <button onClick={cancel} className="cursor-pointer rounded-lg bg-amber-400/30 px-3.5 py-1.5 text-xs font-black">انصراف</button>
     </div>
   );
-
+  
   const sameBox = (txt: string) => (
     <div className={`flex items-start gap-3 rounded-2xl border p-4 text-sm font-bold ${dk ? "border-slate-600 bg-slate-700/40 text-slate-300" : "border-slate-200 bg-slate-100 text-slate-600"}`}>
       <Ic n="info" className="h-5 w-5 shrink-0 opacity-70 mt-0.5" />
       <span className="leading-6">{txt}</span>
     </div>
   );
-
+  
   const errBox = (list: string[]) => list.length === 0 ? null : (
     <div className={`space-y-2 rounded-xl border p-4 ${dk ? "border-rose-400/30 bg-rose-400/10 text-rose-300" : "border-rose-300 bg-rose-50 text-rose-600"}`}>
       <b className="flex items-center gap-2 text-sm"><Ic n="alert" className="h-5 w-5 shrink-0" />لطفاً تکمیل کنید:</b>
       <ul className="list-disc pr-5 text-sm space-y-1">{list.map((m, i) => <li key={i}>{m}</li>)}</ul>
     </div>
   );
-
+  
   const commissionFields = (pv: CommissionPayer, op: (v: CommissionPayer) => void, cv: Currency, oc: (v: Currency) => void, sp = true) => (
     <div className="grid gap-3 md:gap-4 sm:grid-cols-2">
       {sp && fld("کارمزد از حساب", (
@@ -1028,7 +944,7 @@ export default function CurrencyExchangePage() {
       ))}
     </div>
   );
-
+  
   const currencySelect = (v: Currency, ch: (v: Currency) => void) => (
     <div className="relative">
       <select value={v} onChange={e => ch(e.target.value as Currency)} className={`${uiInput} cursor-pointer appearance-none pl-9`}>
@@ -1038,7 +954,7 @@ export default function CurrencyExchangePage() {
     </div>
   );
 
-  function CustomerBalanceCard({ customer, color }: { customer: Customer | null; color: "cyan" | "orange" | "violet" }) {
+  const CustomerBalanceCard = memo(({ customer, color }: { customer: Customer | null; color: "cyan" | "orange" | "violet" }) => {
     if (!customer) return null;
     const colors = {
       cyan: { border: dk ? "border-cyan-400/30 bg-cyan-400/10" : "border-cyan-200 bg-cyan-50", text: dk ? "text-cyan-300" : "text-cyan-700", icon: dk ? "text-cyan-300" : "text-cyan-600" },
@@ -1070,9 +986,9 @@ export default function CurrencyExchangePage() {
         </div>
       </div>
     );
-  }
+  });
 
-  function ActionButtons({ tx }: { tx: Transaction }) {
+  const ActionButtons = memo(function ActionButtons({ tx }: { tx: Transaction }) {
     const isVoided = tx.status === "voided";
     const isOpen = openActionId === tx.id;
     const btn = "flex w-full items-center gap-2 px-3 py-2 text-right text-xs font-bold transition";
@@ -1108,9 +1024,9 @@ export default function CurrencyExchangePage() {
         )}
       </div>
     );
-  }
+  });
 
-  function TransactionRow({ tx, index, isSearching }: { tx: Transaction; index: number; isSearching: boolean }) {
+  const TransactionRow = memo(({ tx, index, isSearching }: { tx: Transaction; index: number; isSearching: boolean }) => {
     const ms = transactionMatchesSearch(tx);
     let rc = dk ? "hover:bg-slate-700/30" : "hover:bg-sky-50/70";
     if (isSearching) rc += ms ? dk ? " bg-amber-400/10" : " bg-amber-100" : " opacity-30";
@@ -1132,7 +1048,7 @@ export default function CurrencyExchangePage() {
         <td className={cellClass}><ActionButtons tx={tx} /></td>
       </tr>
     );
-  }
+  });
 
   const tableMaxHeight = "max-h-[672px]";
 
@@ -1165,6 +1081,7 @@ export default function CurrencyExchangePage() {
             <span className={`rounded-full px-3 py-1.5 ring-1 ${dk ? "bg-rose-400/15 text-rose-300 ring-rose-400/25" : "bg-rose-400/15 text-rose-600 ring-rose-400/40"}`}>لغو {voidedCount}</span>
           </div>
 
+          {/* ✅ تغییر ۲: نام تب سوم */}
           <div className={`flex gap-1.5 rounded-xl border p-1.5 ${glassChip}`}>
             <button onClick={() => setTab("exchange")} className={`flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-black ${tab === "exchange" ? dk ? "bg-cyan-400 text-slate-950" : "bg-sky-500 text-white" : dk ? "text-slate-400" : "text-slate-500"}`}><Ic n="swap" className="h-4 w-4" />تبادل ارز</button>
             <button onClick={() => setTab("transfer")} className={`flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-black ${tab === "transfer" ? dk ? "bg-orange-400 text-slate-950" : "bg-orange-500 text-white" : dk ? "text-slate-400" : "text-slate-500"}`}><Ic n="users" className="h-4 w-4" />بین مشتریان</button>
@@ -1176,21 +1093,6 @@ export default function CurrencyExchangePage() {
               {secHead(identExIcon, "swap", "تبادل ارز", "دریافت و پرداخت ارز", identExChip, editingExchangeId ? `ویرایش ${shortId(editingExchangeId)}` : "جدید")}
               {editingExchangeId && editBanner(<>ویرایش {shortId(editingExchangeId)}</>, resetExchangeForm)}
               <CustomerBalanceCard customer={selectedCustomer} color="cyan" />
-
-              {selectedCustomer && (
-                <div className={`rounded-xl border p-3 ${dk ? "border-amber-400/20 bg-amber-400/[0.05]" : "border-amber-200 bg-amber-50/50"}`}>
-                  <div className="flex items-start gap-2">
-                    <Ic n="info" className={`h-4 w-4 shrink-0 mt-0.5 ${dk ? "text-amber-300" : "text-amber-600"}`} />
-                    <div className="text-[11px] font-bold">
-                      <b className={dk ? "text-amber-300" : "text-amber-700"}>⚠️ اطلاعیه مهم:</b>
-                      <p className={`mt-1 ${subText}`}>
-                        در تبادل ارز، ارز پرداختی به صورت <b>نقدی</b> به مشتری داده می‌شود و به حساب او اضافه <b>نمی‌شود</b>. برای تبدیل در حساب مشتری، از تب <b>تبدیل ارز مشتری</b> استفاده کنید.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 {fld("تاریخ", dateField(exchangeDateDisplay))}
                 {fld("نوع معامله", sel(exchangeDealType, v => { setExchangeDealType(v as DealType | ""); setExchangeErrors(p => ({ ...p, dealType: undefined })); }, [["", "انتخاب"], ["buy", "خرید"], ["sell", "فروش"]], exchangeErrors.dealType ? errInput : ""))}
@@ -1213,7 +1115,7 @@ export default function CurrencyExchangePage() {
                       <Ic n="chevron" className={`h-4 w-4 transition-transform ${showCustomerList ? "rotate-180" : ""}`} />
                     </button>
                     {showCustomerList && (
-                      <div className={`absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
+                      <div className={`hw-menu absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
                         {filteredCustomerList.length === 0 ? (
                           <div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>
                         ) : (
@@ -1342,7 +1244,7 @@ export default function CurrencyExchangePage() {
                           <Ic n="chevron" className={`h-4 w-4 transition-transform ${showSenderList ? "rotate-180" : ""}`} />
                         </button>
                         {showSenderList && (
-                          <div className={`absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
+                          <div className={`hw-menu absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
                             {filteredSenderList.length === 0 ? (
                               <div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>
                             ) : (
@@ -1387,7 +1289,7 @@ export default function CurrencyExchangePage() {
                           <Ic n="chevron" className={`h-4 w-4 transition-transform ${showReceiverList ? "rotate-180" : ""}`} />
                         </button>
                         {showReceiverList && (
-                          <div className={`absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
+                          <div className={`hw-menu absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
                             {filteredReceiverList.length === 0 ? (
                               <div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>
                             ) : (
@@ -1466,6 +1368,7 @@ export default function CurrencyExchangePage() {
 
           {tab === "convert" && (
             <section className={`space-y-4 p-4 md:p-7 ${uiCard}`}>
+              {/* ✅ تغییر ۲: نام تب تبدیل ارز مشتری */}
               {secHead(identCvIcon, "user", "تبدیل ارز مشتری", "تبدیل در حساب مشتری", identCvChip, editingConvertId ? `ویرایش ${shortId(editingConvertId)}` : "جدید")}
               {editingConvertId && editBanner(<>ویرایش {shortId(editingConvertId)}</>, resetConvertForm)}
               <CustomerBalanceCard customer={selectedConvertCustomer} color="violet" />
@@ -1490,7 +1393,7 @@ export default function CurrencyExchangePage() {
                       <Ic n="chevron" className={`h-4 w-4 transition-transform ${showConvertList ? "rotate-180" : ""}`} />
                     </button>
                     {showConvertList && (
-                      <div className={`absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
+                      <div className={`hw-menu absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
                         {filteredConvertList.length === 0 ? (
                           <div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>
                         ) : (
@@ -1728,7 +1631,8 @@ export default function CurrencyExchangePage() {
                 </div>
               </div>
 
-              {previewData.type === "exchange" && (
+              {/* اطلاعیه پرداخت نقدی برای exchange */}
+              {previewData.type === "exchange" && previewData.customerId && (
                 <div className={`rounded-xl border p-3 ${dk ? "border-amber-400/25 bg-amber-400/[0.07]" : "border-amber-200 bg-amber-50"}`}>
                   <div className="flex items-center gap-2">
                     <Ic n="wallet" className={`h-4 w-4 ${dk ? "text-amber-300" : "text-amber-600"}`} />
@@ -1736,9 +1640,6 @@ export default function CurrencyExchangePage() {
                   </div>
                   <p className={`mt-1 text-[10px] font-bold ${subText} pr-6 leading-5`}>
                     <b>{fmt(previewData.toAmount)} {labels[previewData.toCurrency]}</b> به صورت <b className="text-rose-500">نقدی</b> از صندوق به مشتری پرداخت می‌شود. این مبلغ به حساب مشتری اضافه <b>نمی‌شود</b>.
-                  </p>
-                  <p className={`mt-1 text-[10px] font-bold ${subText} pr-6 leading-5`}>
-                    💡 برای تبدیل در حساب مشتری، از تب <b>تبدیل ارز مشتری</b> استفاده کنید.
                   </p>
                 </div>
               )}
@@ -1750,6 +1651,18 @@ export default function CurrencyExchangePage() {
                     <b className={`text-sm font-black ${dk ? "text-slate-300" : "text-slate-600"}`}>توضیحات</b>
                   </div>
                   <p className={`text-sm ${dk ? "text-slate-300" : "text-slate-600"}`}>{previewData.description}</p>
+                </div>
+              )}
+
+              {previewData.type === "exchange" && (
+                <div className={`rounded-xl border p-3 ${dk ? "border-emerald-400/25 bg-emerald-400/[0.07]" : "border-emerald-300 bg-emerald-50"}`}>
+                  <div className="flex items-center gap-2">
+                    <Ic n="wallet" className={`h-4 w-4 ${dk ? "text-emerald-300" : "text-emerald-600"}`} />
+                    <span className={`text-[11px] font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}>تأثیر خودکار روی صندوق فیزیکی صرافی:</span>
+                  </div>
+                  <p className={`mt-1 text-[10px] font-bold ${subText} pr-6 leading-5`}>
+                    با ثبت این معامله، مبالغ به صورت خودکار در <b>روزنامچه صندوق</b> ثبت شده و موجودی فیزیکی کشوی صرافی به‌روزرسانی می‌شود.
+                  </p>
                 </div>
               )}
               <div className="flex flex-wrap gap-3 pt-2">
