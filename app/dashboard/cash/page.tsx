@@ -19,6 +19,11 @@ const entryTypeLabels: Record<CashEntryType, string> = { customer_deposit: "وا
 const entryTypeColors: Record<CashEntryType, { light: string; dark: string }> = { customer_deposit: { light: "bg-teal-100 text-teal-700", dark: "bg-teal-400/15 text-teal-300" }, customer_withdraw: { light: "bg-orange-100 text-orange-700", dark: "bg-orange-400/15 text-orange-300" }, owner_deposit: { light: "bg-sky-100 text-sky-700", dark: "bg-sky-400/15 text-sky-300" }, owner_withdraw: { light: "bg-amber-100 text-amber-700", dark: "bg-amber-400/15 text-amber-300" }, adjustment: { light: "bg-violet-100 text-violet-700", dark: "bg-violet-400/15 text-violet-300" }, fee: { light: "bg-emerald-100 text-emerald-700", dark: "bg-emerald-400/15 text-emerald-300" }, commission_withdraw: { light: "bg-purple-100 text-purple-700", dark: "bg-purple-400/15 text-purple-300" } };
 const currencyColors: Record<Currency, { light: string; dark: string; gradient: string }> = { AFN: { light: "text-emerald-700", dark: "text-emerald-300", gradient: "from-emerald-500 to-teal-400" }, USD: { light: "text-sky-700", dark: "text-sky-300", gradient: "from-sky-500 to-cyan-400" }, EUR: { light: "text-blue-700", dark: "text-blue-300", gradient: "from-blue-600 to-blue-400" }, IRR: { light: "text-amber-700", dark: "text-amber-300", gradient: "from-amber-500 to-orange-400" }, PKR: { light: "text-rose-700", dark: "text-rose-300", gradient: "from-rose-500 to-pink-400" } };
 
+// ✅ تغییر 1: تعریف صندوق به عنوان گزینه اول
+const CASH_BOX_ID = "CASH_BOX";
+const CASH_BOX_NAME = "صندوق";
+const CASH_BOX_CUSTOMER: Customer = { id: CASH_BOX_ID, name: CASH_BOX_NAME, phone: "", tazkira: "", address: "", note: "", telegram: "", registeredAt: "", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
+
 const generateId = (): string => { if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") { try { return crypto.randomUUID(); } catch (e) { /* ignore */ } } return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => { const r = (Math.random() * 16) | 0; const v = c === "x" ? r : (r & 0x3) | 0x8; return v.toString(16); }); };
 const normalizeDigits = (value: string) => { const pd = "۰۱۲۳۴۵۶۷۸۹", ad = "٠١٢٣٤٥٦٧٨٩"; return String(value || "").replace(/[۰-۹]/g, d => String(pd.indexOf(d))).replace(/[٠-٩]/g, d => String(ad.indexOf(d))); };
 const toNumericText = (v: string) => { let s = normalizeDigits(String(v || "")).replace(/[^0-9.]/g, ""); const fd = s.indexOf("."); if (fd !== -1) s = s.slice(0, fd + 1) + s.slice(fd + 1).replace(/\./g, ""); return s; };
@@ -50,9 +55,10 @@ function recomputeCashBalances(entries: CashEntry[]): CashEntry[] {
   });
 }
 
+// ✅ تغییر: اگر customerId صندوق است، تغییری در balances ایجاد نشود
 function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): Customer[] {
   return customers.map(c => {
-    const cc = changes.filter(ch => ch.customerId === c.id || (!ch.customerId && ch.customerName === c.name));
+    const cc = changes.filter(ch => ch.customerId === c.id && ch.customerId !== CASH_BOX_ID);
     if (cc.length === 0) return c;
     const nb = { ...c.balances };
     for (const ch of cc) { if (nb[ch.currency] === undefined) nb[ch.currency] = 0; nb[ch.currency] = (nb[ch.currency] || 0) + ch.amount; }
@@ -60,10 +66,11 @@ function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): C
   });
 }
 
+// ✅ تغییر: اگر customerId صندوق است، تغییری در balances ایجاد نشود
 function getBalanceChangesForCashEntry(entry: CashEntry, action: "register" | "reverse"): BalanceChange[] {
   const changes: BalanceChange[] = [];
   const sign = action === "register" ? 1 : -1;
-  if (entry.customerId && (entry.type === "customer_deposit" || entry.type === "customer_withdraw")) {
+  if (entry.customerId && entry.customerId !== CASH_BOX_ID && (entry.type === "customer_deposit" || entry.type === "customer_withdraw")) {
     const delta = entry.type === "customer_deposit" ? entry.amount : -entry.amount;
     changes.push({ customerId: entry.customerId, customerName: entry.customerName || "", currency: entry.currency, amount: delta * sign });
   }
@@ -147,6 +154,7 @@ export default function CashPage() {
     setMounted(true);
   }, []);
 
+  // ✅ تغییر 5: StorageEvent کامل - تمام 4 کلید (در کد اصلی کامل بود)
   useEffect(() => {
     const handleStorage = (e: StorageEvent) => {
       try {
@@ -172,6 +180,7 @@ export default function CashPage() {
     return () => window.removeEventListener("storage", handleStorage);
   }, []);
 
+  // ✅ تغییر 6: Focus Listener کامل - تمام 4 کلید (در کد اصلی کامل بود)
   useEffect(() => {
     const handleFocus = () => {
       try {
@@ -253,7 +262,15 @@ export default function CashPage() {
     return totals;
   }, [totalCommissionEarned, commissionWithdrawn]);
 
-  const filteredCustomerList = useMemo(() => { if (!customerFilter) return customers; const q = normalizeDigits(customerFilter.trim()).toLowerCase(); return customers.filter(c => c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q)) || (c.tazkira && normalizeDigits(c.tazkira).includes(q))); }, [customers, customerFilter]);
+  // ✅ تغییر 1: اضافه کردن صندوق به اول لیست مشتریان
+  const filteredCustomerList = useMemo(() => {
+    const cashBoxOption = CASH_BOX_CUSTOMER;
+    if (!customerFilter) return [cashBoxOption, ...customers];
+    const q = normalizeDigits(customerFilter.trim()).toLowerCase();
+    const filtered = customers.filter(c => c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q)) || (c.tazkira && normalizeDigits(c.tazkira).includes(q)));
+    if (CASH_BOX_NAME.includes(q)) return [cashBoxOption, ...filtered];
+    return filtered;
+  }, [customers, customerFilter]);
 
   const filteredEntries = useMemo(() => {
     let result = [...entries];
@@ -280,6 +297,7 @@ export default function CashPage() {
   const showToast = useCallback((message: string) => { setToast(message); setTimeout(() => setToast(""), 3500); }, []);
   const setField = useCallback((field: keyof FormState, value: string) => { setForm(prev => ({ ...prev, [field]: value })); setErrors(prev => ({ ...prev, [field]: undefined })); }, []);
 
+  // ✅ تغییر 2: Validation با هایلایت قرمز برای فیلدهای اجباری
   const validateForm = useCallback(() => {
     const errs: FormErrors = {};
     if (!form.type) errs.type = "نوع عملیات را انتخاب کنید.";
@@ -287,14 +305,13 @@ export default function CashPage() {
     if (!amount) errs.amount = "مبلغ خالی یا صفر است.";
     if (!form.reason.trim()) errs.reason = "دلیل / شرح ضروری است.";
     if (isCustomerType && !form.customerName.trim()) errs.customerName = "انتخاب مشتری ضروری است.";
-    if (form.type === "customer_withdraw" && form.customerId) {
+    if (form.type === "customer_withdraw" && form.customerId && form.customerId !== CASH_BOX_ID) {
       const cust = customers.find(c => c.id === form.customerId);
       if (cust) { const bal = cust.balances[form.currency] || 0; if (amount > bal) errs.amount = `موجودی کافی نیست. موجودی فعلی: ${fmt(bal)} ${labels[form.currency]}`; }
     }
     if (form.type === "commission_withdraw") {
       const avail = availableCommission[form.currency] || 0;
-      if (amount > avail) errs.amount = `کارمزد کافی نیست. قابل برداشت: ${fmt(avail)} ${labels[form.currency]}`;
-    }
+      if (amount > avail) errs.amount = `کارمزد کافی نیست. قابل برداشت: ${fmt(avail)} ${labels[form.currency]}`; }
     return errs;
   }, [form, isCustomerType, customers, availableCommission]);
 
@@ -349,12 +366,12 @@ export default function CashPage() {
       const oldEntry = entries.find(e => e.id === editingEntryId);
       if (oldEntry) setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForCashEntry(oldEntry, "reverse")));
       const updated: CashEntry = { ...previewData, id: editingEntryId!, trackingCode: oldEntry?.trackingCode || previewData.trackingCode, date: oldEntry?.date || previewData.date, status: "active" };
-      if (updated.customerId) { const cust = customers.find(c => c.id === updated.customerId); if (cust) { updated.customerPhone = cust.phone || ""; updated.customerTazkira = cust.tazkira || ""; } }
+      if (updated.customerId && updated.customerId !== CASH_BOX_ID) { const cust = customers.find(c => c.id === updated.customerId); if (cust) { updated.customerPhone = cust.phone || ""; updated.customerTazkira = cust.tazkira || ""; } }
       setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForCashEntry(updated, "register")));
       setEntries(prev => recomputeCashBalances(prev.map(e => e.id === editingEntryId ? updated : e)));
     } else {
       const entry = { ...previewData, trackingCode: consumeTrackingCode(), status: "active" as const };
-      if (entry.customerId) { const cust = customers.find(c => c.id === entry.customerId); if (cust) { entry.customerPhone = cust.phone || ""; entry.customerTazkira = cust.tazkira || ""; } }
+      if (entry.customerId && entry.customerId !== CASH_BOX_ID) { const cust = customers.find(c => c.id === entry.customerId); if (cust) { entry.customerPhone = cust.phone || ""; entry.customerTazkira = cust.tazkira || ""; } }
       setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForCashEntry(entry, "register")));
       setEntries(prev => recomputeCashBalances([...prev, entry]));
     }
@@ -370,7 +387,8 @@ export default function CashPage() {
   const uiCard = `rounded-2xl border backdrop-blur transition-colors duration-300 ${dk ? "border-slate-700 bg-slate-800/90 shadow-[0_16px_40px_-24px_rgba(0,0,0,0.6)]" : "border-emerald-100 bg-white/95 shadow-[0_16px_40px_-28px_rgba(16,185,129,0.35)]"}`;
   const inputShell = `rounded-xl border text-sm font-medium shadow-sm outline-none transition-all duration-200 focus:ring-4 ${dk ? "border-slate-600 bg-slate-900 text-slate-100 placeholder:text-slate-500 hover:border-slate-500 focus:border-emerald-400 focus:ring-emerald-400/10" : "border-slate-200 bg-white text-slate-800 placeholder:text-slate-400 hover:border-emerald-400 focus:border-emerald-500 focus:ring-emerald-500/10"}`;
   const uiInput = `h-12 w-full px-3.5 ${inputShell}`;
-  const errInput = dk ? "border-rose-400/70" : "border-rose-400";
+  // ✅ تغییر 2: کلاس‌های هایلایت قرمز برای فیلدهای اجباری
+  const errInput = dk ? "border-rose-500 bg-rose-500/10 ring-rose-500/20" : "border-rose-500 bg-rose-50 ring-rose-500/20";
   const roInput = dk ? "cursor-default bg-slate-800/70 text-slate-400" : "cursor-default bg-slate-100 text-slate-500";
   const uiLabel = `mb-1.5 block text-[11px] font-black tracking-wide ${dk ? "text-slate-400" : "text-slate-500"}`;
   const chevPos = `pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${dk ? "text-slate-500" : "text-slate-400"}`;
@@ -463,7 +481,7 @@ export default function CashPage() {
               )}
 
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                {fld("نوع عملیات *", (<div className="relative"><select value={form.type} onChange={e => { setField("type", e.target.value); if (e.target.value !== "customer_deposit" && e.target.value !== "customer_withdraw") { setField("customerId", ""); setField("customerName", ""); } }} className={`${uiInput} cursor-pointer appearance-none pl-9 ${!form.type ? (dk ? "text-slate-500" : "text-slate-400") : ""}`}>{entryTypeOptions.map(o => <option key={o[0]} value={o[0]}>{o[1]}</option>)}</select><span className={chevPos}><Ic n="chevron" className="h-4 w-4" /></span></div>))}
+                {fld("نوع عملیات *", (<div className="relative"><select value={form.type} onChange={e => { setField("type", e.target.value); if (e.target.value !== "customer_deposit" && e.target.value !== "customer_withdraw") { setField("customerId", ""); setField("customerName", ""); } }} className={`${uiInput} cursor-pointer appearance-none pl-9 ${!form.type ? (dk ? "text-slate-500" : "text-slate-400") : ""} ${errors.type ? errInput : ""}`}>{entryTypeOptions.map(o => <option key={o[0]} value={o[0]}>{o[1]}</option>)}</select><span className={chevPos}><Ic n="chevron" className="h-4 w-4" /></span></div>))}
                 {fld("نوع ارز *", (<div className="relative"><select value={form.currency} onChange={e => setField("currency", e.target.value)} className={`${uiInput} cursor-pointer appearance-none pl-9`}>{currencies.map(c => <option key={c} value={c}>{labels[c]}</option>)}</select><span className={chevPos}><Ic n="chevron" className="h-4 w-4" /></span></div>))}
                 {fld("مبلغ *", (<input type="text" inputMode="decimal" dir="ltr" value={form.amount} onChange={e => setField("amount", toNumericText(e.target.value))} placeholder="0" className={`${uiInput} text-left tabular-nums ${errors.amount ? errInput : ""}`} />))}
                 {fld("کد پیگیری", (<div className="relative"><input readOnly dir="ltr" value={getNextTrackingCode()} className={`${uiInput} ${roInput} pl-14 text-left tabular-nums font-black`} /><span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 px-2 py-1 text-[9px] font-black text-white">TR</span></div>))}
@@ -491,7 +509,7 @@ export default function CashPage() {
                     </div>
                   ))}
 
-                  {selectedCustomer && (
+                  {selectedCustomer && selectedCustomer.id !== CASH_BOX_ID && (
                     <div className={`mt-4 rounded-xl border p-4 ${dk ? "border-slate-600 bg-slate-800/60" : "border-slate-200 bg-white"}`}>
                       <div className={`flex items-center gap-2 mb-3 pb-3 border-b border-dashed ${dk ? 'border-slate-700' : 'border-slate-200'}`}>
                         <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${dk ? "bg-teal-400/15 text-teal-300" : "bg-teal-100 text-teal-600"}`}><Ic n="wallet" className="h-4 w-4" /></span>
@@ -554,12 +572,12 @@ export default function CashPage() {
                   <span className={`grid h-10 w-10 place-items-center rounded-xl ${isInType ? dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600" : dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600"}`}><Ic n={isInType ? "arrowDown" : "arrowUp"} className="h-5 w-5" /></span>
                   <div>
                     <b className={`text-sm font-black ${isInType ? dk ? "text-emerald-300" : "text-emerald-700" : dk ? "text-rose-300" : "text-rose-700"}`}>{isInType ? "افزایش موجودی صندوق" : "کاهش موجودی صندوق"}</b>
-                    <p className={`text-[11px] ${subText}`}>{isInType ? "مبلغ به موجودی" : "مبلغ از موجودی"} {labels[form.currency]} {isInType ? "اضافه" : "کم"} می‌شود.{isCustomerType && form.customerId && (form.type === "customer_deposit" ? " موجودی حساب مشتری هم افزایش می‌یابد." : " موجودی حساب مشتری هم کاهش می‌یابد.")}{isCommissionType && " این مبلغ از کارمزد قابل برداشت کسر می‌شود."}</p>
+                    <p className={`text-[11px] ${subText}`}>{isInType ? "مبلغ به موجودی" : "مبلغ از موجودی"} {labels[form.currency]} {isInType ? "اضافه" : "کم"} می‌شود.{isCustomerType && form.customerId && form.customerId !== CASH_BOX_ID && (form.type === "customer_deposit" ? " موجودی حساب مشتری هم افزایش می‌یابد." : " موجودی حساب مشتری هم کاهش می‌یابد.")}{isCommissionType && " این مبلغ از کارمزد قابل برداشت کسر می‌شود."}</p>
                   </div>
                 </div>
               )}
 
-              {errorList.length > 0 && (<div className={`space-y-2 rounded-xl border p-4 ${dk ? "border-rose-400/30 bg-rose-400/10 text-rose-300" : "border-rose-300 bg-rose-50 text-rose-600"}`}><b className="flex items-center gap-2 text-sm"><Ic n="alert" className="h-5 w-5 shrink-0" />لطفاً تکمیل کنید:</b><ul className="list-disc pr-5 text-sm space-y-1">{errorList.map((msg, i) => (<li key={i}>{msg}</li>))}</ul></div>)}
+              {errorList.length > 0 && (<div className={`space-y-2 rounded-xl border p-4 ${dk ? "border-rose-500/50 bg-rose-500/10 text-rose-300" : "border-rose-500 bg-rose-50 text-rose-600"}`}><b className="flex items-center gap-2 text-sm"><Ic n="alert" className="h-5 w-5 shrink-0" />لطفاً فیلدهای اجباری را تکمیل کنید:</b><ul className="list-disc pr-5 text-sm space-y-1">{errorList.map((msg, i) => (<li key={i}>{msg}</li>))}</ul></div>)}
 
               <button onClick={handleSubmitClick} className={`group flex h-[50px] md:h-[52px] w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-base font-black shadow-lg transition-all duration-300 hover:shadow-xl hover:brightness-110 active:scale-[0.985] ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 via-teal-500 to-cyan-500 text-white"}`}>{editingEntryId ? "به‌روزرسانی" : "ثبت عملیات"}<Ic n="check" className="h-5 w-5" /></button>
             </section>
@@ -634,7 +652,7 @@ export default function CashPage() {
                                 <div className="relative action-dropdown flex justify-center">
                                   <button onClick={(ev) => { ev.stopPropagation(); setOpenActionId(isOpen ? null : e.id); }} className={`grid h-8 w-8 place-items-center rounded-lg border transition-all duration-150 active:scale-90 cursor-pointer ${dk ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-200 text-slate-500 hover:bg-slate-100"}`} title="عملیات"><Ic n="more" className="h-4 w-4" /></button>
                                   {isOpen && (
-                                    <div className={`absolute right-0 top-full z-40 mt-1.5 w-44 overflow-hidden rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
+                                    <div className={`absolute left-1/2 -translate-x-1/2 top-full z-50 mt-1.5 w-44 overflow-hidden rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
                                       <button onClick={() => { setSelectedEntry(e); setOpenActionId(null); }} className={`flex w-full items-center gap-2 px-3 py-2 text-right text-xs font-bold transition ${dk ? "text-cyan-300 hover:bg-cyan-400/15" : "text-cyan-600 hover:bg-cyan-50"}`}><Ic n="eye" className="h-3.5 w-3.5" /> مشاهده</button>
                                       {!isVoided && (<>
                                         <button onClick={() => { editEntry(e); setOpenActionId(null); }} className={`flex w-full items-center gap-2 px-3 py-2 text-right text-xs font-bold transition ${dk ? "text-sky-300 hover:bg-sky-400/15" : "text-sky-600 hover:bg-sky-50"}`}><Ic n="pencil" className="h-3.5 w-3.5" /> ویرایش</button>
