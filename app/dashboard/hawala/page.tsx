@@ -1,12 +1,12 @@
 "use client";
 import { useEffect, useState, useMemo, useRef, type ReactNode } from "react";
 
-// ===== کلیدهای localStorage =====
+// ===== کلیدهای localStorage (هماهنگ با lib/trackingCode.ts) =====
 const CUSTOMERS_KEY = "fx-customers";
-const HAWALAS_KEY = "fx-hawalas";
-const CASH_KEY = "fx-cash";
+const HAWALAS_KEY = "hawalas";
+const CASH_KEY = "cash-entries";
 const SETTINGS_KEY = "fx-settings";
-const TRACKING_KEY = "fx-tracking";
+const TX_KEY = "fx-transactions";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type FeePayer = "sender" | "receiver";
@@ -26,28 +26,52 @@ const CASH_BOX_ID = "CASH_BOX";
 const CASH_BOX_NAME = "صندوق";
 const CASH_BOX_CUSTOMER: Customer = { id: CASH_BOX_ID, name: CASH_BOX_NAME, phone: "", telegram: "", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
 
-// ===== سیستم کد پیگیری =====
-function getNextTrackingCode(): string {
+// ===== سیستم کد پیگیری (هماهنگ با lib/trackingCode.ts) =====
+const SEQUENCE_LENGTH = 5;
+
+function getCurrentShamsiYear(): string {
   try {
-    const raw = localStorage.getItem(TRACKING_KEY);
-    const current = raw ? parseInt(raw, 10) : 100000;
-    return String(current + 1);
-  } catch { return "100001"; }
+    const parts = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", { year: "numeric" }).formatToParts(new Date());
+    return parts.find(p => p.type === "year")?.value || "1405";
+  } catch { return "1405"; }
 }
-function consumeTrackingCode(): string {
-  try {
-    const raw = localStorage.getItem(TRACKING_KEY);
-    const current = raw ? parseInt(raw, 10) : 100000;
-    const next = current + 1;
-    localStorage.setItem(TRACKING_KEY, String(next));
-    return String(next);
-  } catch { return "100001"; }
+
+function getTrackingNumberValue(code: string): number {
+  if (!code) return 0;
+  const newFormat = String(code).match(/^TR-\d{4}-(\d{4,5})$/);
+  if (newFormat) return Number(newFormat[1]) || 0;
+  const oldFormat = String(code).match(/^(?:HW|FX)-(\d+)$/);
+  if (oldFormat) return Number(oldFormat[1]) || 0;
+  return 0;
 }
-function initTrackingSystem() {
+
+function collectUsedTrackingNumbers(): Set<number> {
+  const usedNumbers = new Set<number>();
   try {
-    if (!localStorage.getItem(TRACKING_KEY)) localStorage.setItem(TRACKING_KEY, "100000");
+    const rawTx = localStorage.getItem(TX_KEY);
+    if (rawTx) { const txs = JSON.parse(rawTx); if (Array.isArray(txs)) for (const tx of txs) { const num = getTrackingNumberValue(tx.trackingCode || tx.number || ""); if (num > 0) usedNumbers.add(num); } }
   } catch {}
+  try {
+    const rawHw = localStorage.getItem(HAWALAS_KEY);
+    if (rawHw) { const hws = JSON.parse(rawHw); if (Array.isArray(hws)) for (const hw of hws) { const num = getTrackingNumberValue(hw.number || ""); if (num > 0) usedNumbers.add(num); } }
+  } catch {}
+  try {
+    const rawCe = localStorage.getItem(CASH_KEY);
+    if (rawCe) { const ces = JSON.parse(rawCe); if (Array.isArray(ces)) for (const ce of ces) { const num = getTrackingNumberValue(ce.trackingCode || ""); if (num > 0) usedNumbers.add(num); } }
+  } catch {}
+  return usedNumbers;
 }
+
+function getNextTrackingCode(): string {
+  const year = getCurrentShamsiYear();
+  const usedNumbers = collectUsedTrackingNumbers();
+  let nextNumber = 1;
+  while (usedNumbers.has(nextNumber)) nextNumber++;
+  return `TR-${year}-${String(nextNumber).padStart(SEQUENCE_LENGTH, "0")}`;
+}
+
+function consumeTrackingCode(): string { return getNextTrackingCode(); }
+function initTrackingSystem(): void {}
 
 // ===== سیستم تبدیل عدد به حروف فارسی =====
 function numberToPersianWords(num: number): string {
@@ -128,19 +152,16 @@ function getCustomerChatId(name: string): string {
 async function sendReceipt(data: { type: string; date: Date; trackingCode: string; description: string; amount: number; currency: string; customerName?: string; balances: Record<string, number>; rate?: number }) {
   const settings = getTelegramSettings();
   if (!settings.enabled || !settings.botToken) return;
-  
   const isWithdraw = data.type === "withdraw" || data.type === "hawala_cancel";
   const title = isWithdraw ? "🔴 سند برد" : "🟢 سند رسید";
   const dateStr = formatShamsiDateTime(data.date);
   const amountWords = numberToPersianWords(data.amount);
   const fmtAmount = data.amount.toLocaleString("en-US");
-  
   let text = `${title}\n\n🗓 تاریخ: ${dateStr}\n\n🛅 پیگیری: ${data.trackingCode}\n\n`;
   if (data.customerName) text += `👤 مشتری: ${data.customerName}\n\n`;
   text += `📑 شرح: ${data.description}, مبلغ ${amountWords}\n\n`;
   if (data.rate && data.rate > 0) text += `📊 نرخ: ${data.rate}\n\n`;
   text += `💰 مبلغ: ${fmtAmount} ${data.currency}\n\n-------------بیلانس فعلی--------------\n`;
-  
   const curLabels: Record<string, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
   for (const [cur, bal] of Object.entries(data.balances)) {
     const label = curLabels[cur] || cur;
@@ -149,11 +170,7 @@ async function sendReceipt(data: { type: string; date: Date; trackingCode: strin
     text += `${label}: ${fb} ${status}\n`;
   }
   text += `\n🏦 صرافی برادران نورزاد — هرات`;
-  
-  if (data.customerName) {
-    const cChatId = getCustomerChatId(data.customerName);
-    if (cChatId) await sendTelegramMessage(settings.botToken, cChatId, text);
-  }
+  if (data.customerName) { const cChatId = getCustomerChatId(data.customerName); if (cChatId) await sendTelegramMessage(settings.botToken, cChatId, text); }
   if (settings.chatId) await sendTelegramMessage(settings.botToken, settings.chatId, text);
 }
 
