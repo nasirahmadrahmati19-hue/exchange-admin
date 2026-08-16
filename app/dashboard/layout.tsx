@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback, type ReactNode } from "react";
+import { useEffect, useState, useRef, useCallback, memo, type ReactNode } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 
@@ -13,12 +13,13 @@ const menuItems = [
   { title: "تیکت‌ها", href: "/dashboard/tickets" },
 ];
 
-// ===== کلیدهای localStorage =====
 const CUSTOMERS_KEY = "fx-customers";
 const TRANSACTIONS_KEY = "fx-transactions";
 const HAWALAS_KEY = "fx-hawalas";
 const CASH_KEY = "fx-cash";
 const SETTINGS_KEY = "fx-settings";
+
+type TelegramUser = { id: number; name: string; username: string; chat_id: number };
 
 type Settings = {
   email: string;
@@ -59,6 +60,30 @@ const saveSettings = (s: Settings) => {
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch {}
 };
 
+// ===== دریافت کاربران ربات تلگرام =====
+async function fetchTelegramUsers(botToken: string): Promise<TelegramUser[]> {
+  if (!botToken.trim()) return [];
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${botToken.trim()}/getUpdates`);
+    const data = await res.json();
+    if (!data.ok || !data.result) return [];
+    const usersMap = new Map<number, TelegramUser>();
+    data.result.forEach((update: any) => {
+      const from = update.message?.from || update.callback_query?.message?.from;
+      const chat = update.message?.chat || update.callback_query?.message?.chat;
+      if (from && chat) {
+        usersMap.set(from.id, {
+          id: from.id,
+          name: `${from.first_name || ""} ${from.last_name || ""}`.trim() || "بدون نام",
+          username: from.username ? `@${from.username}` : "—",
+          chat_id: chat.id,
+        });
+      }
+    });
+    return Array.from(usersMap.values());
+  } catch { return []; }
+}
+
 // ===== آیکون‌ها =====
 const Ic = ({ n, className = "h-5 w-5" }: { n: string; className?: string }) => {
   const paths: Record<string, string> = {
@@ -73,38 +98,73 @@ const Ic = ({ n, className = "h-5 w-5" }: { n: string; className?: string }) => 
     download: "M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 16.5V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5",
     upload: "M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 16.5V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3",
     chevron: "m19.5 8.25-7.5 7.5-7.5-7.5",
+    refresh: "M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99",
+    star: "M11.48 3.499a.562.562 0 0 1 1.04 0l2.125 5.111a.563.563 0 0 0 .475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 0 0-.182.557l1.285 5.385a.562.562 0 0 1-.84.61l-4.725-2.885a.562.562 0 0 0-.586 0L6.982 20.54a.562.562 0 0 1-.84-.61l1.285-5.386a.562.562 0 0 0-.182-.557l-4.204-3.602a.562.562 0 0 1 .321-.988l5.518-.442a.563.563 0 0 0 .475-.345L11.48 3.5Z",
   };
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true"><path d={paths[n] || ""} /></svg>;
 };
 
-// ===== کامپوننت پنل تنظیمات =====
+// ===== کامپوننت Toggle (خارج از SettingsPanel برای جلوگیری از re-render) =====
+const Toggle = memo(({ enabled, onChange, label }: { enabled: boolean; onChange: (v: boolean) => void; label?: string }) => (
+  <button type="button" onClick={() => onChange(!enabled)} className="flex items-center gap-3 cursor-pointer">
+    <span className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${enabled ? "bg-emerald-500" : "bg-slate-600"}`}>
+      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-md transition-transform ${enabled ? "-translate-x-1" : "-translate-x-6"}`} />
+    </span>
+    {label && <span className="text-sm font-bold text-slate-200">{label}</span>}
+  </button>
+));
+
+// ===== کامپوننت AccordionItem (خارج از SettingsPanel) =====
+const AccordionItem = memo(({ id, icon, title, isOpen, onToggle, children }: { id: string; icon: string; title: string; isOpen: boolean; onToggle: () => void; children: ReactNode }) => (
+  <div className="rounded-xl border border-slate-700 bg-slate-800/50 overflow-hidden">
+    <button type="button" onClick={onToggle} className="flex w-full items-center justify-between gap-3 px-4 py-3.5 hover:bg-slate-700/50 transition-colors">
+      <div className="flex items-center gap-3">
+        <span className="grid h-8 w-8 place-items-center rounded-lg bg-emerald-400/15 text-emerald-300"><Ic n={icon} className="h-4 w-4" /></span>
+        <span className="text-sm font-black text-white">{title}</span>
+      </div>
+      <Ic n="chevron" className={`h-4 w-4 text-slate-500 transition-transform duration-300 ${isOpen ? "rotate-180" : ""}`} />
+    </button>
+    <div className={`transition-all duration-300 overflow-hidden ${isOpen ? "max-h-[800px] opacity-100" : "max-h-0 opacity-0"}`}>
+      <div className="px-4 pb-4 pt-2 border-t border-slate-700">{children}</div>
+    </div>
+  </div>
+));
+
+// ===== پنل تنظیمات =====
 function SettingsPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [settings, setSettings] = useState<Settings>(defaultSettings);
   const [toast, setToast] = useState("");
   const [activeAccordion, setActiveAccordion] = useState<string | null>("email");
   const [mounted, setMounted] = useState(false);
+  const [telegramUsers, setTelegramUsers] = useState<TelegramUser[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setSettings(loadSettings()); setMounted(true); }, []);
 
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-        const target = e.target as HTMLElement;
-        if (!target.closest("[data-settings-toggle]")) onClose();
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open, onClose]);
+  const showToast = useCallback((m: string) => { setToast(m); setTimeout(() => setToast(""), 3000); }, []);
 
-  const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(""), 3000); };
-  const updateSettings = (u: Partial<Settings>) => setSettings(p => { const n = { ...p, ...u }; saveSettings(n); return n; });
-  const updateTelegram = (u: Partial<Settings["telegram"]>) => setSettings(p => { const n = { ...p, telegram: { ...p.telegram, ...u } }; saveSettings(n); return n; });
+  const updateSettings = useCallback((u: Partial<Settings>) => {
+    setSettings(p => { const n = { ...p, ...u }; saveSettings(n); return n; });
+  }, []);
 
-  const handleBackup = () => {
+  const updateTelegram = useCallback((u: Partial<Settings["telegram"]>) => {
+    setSettings(p => { const n = { ...p, telegram: { ...p.telegram, ...u } }; saveSettings(n); return n; });
+  }, []);
+
+  const handleRefreshUsers = useCallback(async () => {
+    if (!settings.telegram.botToken.trim()) {
+      showToast("ابتدا توکن ربات را وارد کنید");
+      return;
+    }
+    setLoadingUsers(true);
+    const users = await fetchTelegramUsers(settings.telegram.botToken);
+    setTelegramUsers(users);
+    setLoadingUsers(false);
+    showToast(users.length > 0 ? `${users.length} کاربر یافت شد` : "کاربری یافت نشد. به ربات /start بفرستید");
+  }, [settings.telegram.botToken, showToast]);
+
+  const handleBackup = useCallback(() => {
     try {
       const data = {
         version: "1.0", exportDate: new Date().toISOString(), settings: loadSettings(),
@@ -121,9 +181,9 @@ function SettingsPanel({ open, onClose }: { open: boolean; onClose: () => void }
       URL.revokeObjectURL(url);
       showToast("پشتیبان دانلود شد");
     } catch { showToast("خطا در پشتیبان‌گیری"); }
-  };
+  }, [showToast]);
 
-  const handleRestore = (file: File) => {
+  const handleRestore = useCallback((file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
@@ -138,48 +198,24 @@ function SettingsPanel({ open, onClose }: { open: boolean; onClose: () => void }
       } catch { showToast("خطا در خواندن فایل"); }
     };
     reader.readAsText(file);
-  };
+  }, [showToast]);
+
+  const toggleAccordion = useCallback((id: string) => {
+    setActiveAccordion(p => p === id ? null : id);
+  }, []);
 
   if (!mounted) return null;
 
-  const uiInput = "h-11 w-full px-3.5 rounded-xl border border-slate-600 bg-slate-800 text-slate-100 placeholder:text-slate-500 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/10 text-sm";
+  const uiInput = "h-11 w-full px-3.5 rounded-xl border border-slate-600 bg-slate-800 text-slate-100 placeholder:text-slate-500 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/10 text-sm transition-all";
   const uiLabel = "mb-1.5 block text-[11px] font-black text-slate-400";
   const fld = (l: string, n: ReactNode) => (<div><label className={uiLabel}>{l}</label>{n}</div>);
-
-  const AccordionItem = ({ id, icon, title, children }: { id: string; icon: string; title: string; children: ReactNode }) => {
-    const isOpen = activeAccordion === id;
-    return (
-      <div className="rounded-xl border border-slate-700 bg-slate-800/50 overflow-hidden">
-        <button onClick={() => setActiveAccordion(isOpen ? null : id)} className="flex w-full items-center justify-between gap-3 px-4 py-3.5 hover:bg-slate-700/50 transition-colors">
-          <div className="flex items-center gap-3">
-            <span className="grid h-8 w-8 place-items-center rounded-lg bg-emerald-400/15 text-emerald-300"><Ic n={icon} className="h-4 w-4" /></span>
-            <span className="text-sm font-black text-white">{title}</span>
-          </div>
-          <Ic n="chevron" className={`h-4 w-4 text-slate-500 transition-transform duration-300 ${isOpen ? "rotate-180" : ""}`} />
-        </button>
-        <div className={`transition-all duration-300 overflow-hidden ${isOpen ? "max-h-[600px] opacity-100" : "max-h-0 opacity-0"}`}>
-          <div className="px-4 pb-4 pt-2 border-t border-slate-700">{children}</div>
-        </div>
-      </div>
-    );
-  };
-
-  const Toggle = ({ enabled, onChange, label }: { enabled: boolean; onChange: (v: boolean) => void; label?: string }) => (
-    <button type="button" onClick={() => onChange(!enabled)} className="flex items-center gap-3 cursor-pointer">
-      <span className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${enabled ? "bg-emerald-500" : "bg-slate-600"}`}>
-        <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-md transition-transform ${enabled ? "-translate-x-1" : "-translate-x-6"}`} />
-      </span>
-      {label && <span className="text-sm font-bold text-slate-200">{label}</span>}
-    </button>
-  );
 
   return (
     <>
       {open && <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-[55]" onClick={onClose} />}
-      <div
-        ref={panelRef}
-        className={`fixed top-0 left-0 z-[60] h-full w-full max-w-md transform transition-transform duration-300 ease-in-out ${open ? "translate-x-0" : "-translate-x-full"} bg-slate-900 border-r border-slate-700 shadow-2xl overflow-y-auto`}
-      >
+
+      <div className={`fixed top-0 left-0 z-[60] h-full w-full max-w-md transform transition-transform duration-300 ease-in-out ${open ? "translate-x-0" : "-translate-x-full"} bg-slate-900 border-r border-slate-700 shadow-2xl overflow-y-auto`}>
+        {/* هدر پنل */}
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-700 px-5 py-4 backdrop-blur bg-slate-900/95">
           <div className="flex items-center gap-3">
             <span className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-400/15 text-emerald-300"><Ic n="gear" className="h-5 w-5" /></span>
@@ -192,17 +228,20 @@ function SettingsPanel({ open, onClose }: { open: boolean; onClose: () => void }
         </div>
 
         <div className="space-y-3 p-4">
-          <AccordionItem id="email" icon="mail" title="ایمیل (جیمیل)">
+
+          {/* 📧 ایمیل */}
+          <AccordionItem id="email" icon="mail" title="ایمیل (جیمیل)" isOpen={activeAccordion === "email"} onToggle={() => toggleAccordion("email")}>
             <div className="space-y-3">
               {fld("ایمیل صرافی", <input type="email" dir="ltr" value={settings.email} onChange={e => updateSettings({ email: e.target.value })} placeholder="example@gmail.com" className={`${uiInput} text-left`} />)}
               {fld("ایمیل پشتیبانی", <input type="email" dir="ltr" value={settings.supportEmail} onChange={e => updateSettings({ supportEmail: e.target.value })} placeholder="support@gmail.com" className={`${uiInput} text-left`} />)}
-              <button onClick={() => { saveSettings(settings); showToast("ذخیره شد"); }} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white hover:bg-emerald-600 active:scale-95">
+              <button onClick={() => showToast("ذخیره شد")} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white hover:bg-emerald-600 active:scale-95">
                 <Ic n="check" className="h-4 w-4" />ذخیره ایمیل
               </button>
             </div>
           </AccordionItem>
 
-          <AccordionItem id="language" icon="globe" title="زبان سیستم">
+          {/* 🌐 زبان */}
+          <AccordionItem id="language" icon="globe" title="زبان سیستم" isOpen={activeAccordion === "language"} onToggle={() => toggleAccordion("language")}>
             <div className="space-y-2">
               {([
                 { value: "dari", label: "دری (فارسی)", flag: "🇦🇫" },
@@ -219,18 +258,20 @@ function SettingsPanel({ open, onClose }: { open: boolean; onClose: () => void }
             </div>
           </AccordionItem>
 
-          <AccordionItem id="team" icon="users" title="اطلاعات تیم">
+          {/* 👥 تیم */}
+          <AccordionItem id="team" icon="users" title="اطلاعات تیم" isOpen={activeAccordion === "team"} onToggle={() => toggleAccordion("team")}>
             <div className="space-y-3">
               {fld("نام تیم / صرافی", <input value={settings.teamName} onChange={e => updateSettings({ teamName: e.target.value })} placeholder="صرافی برادران نورزاد" className={uiInput} />)}
               {fld("آدرس", <input value={settings.teamAddress} onChange={e => updateSettings({ teamAddress: e.target.value })} placeholder="هرات، افغانستان" className={uiInput} />)}
               {fld("شماره تماس", <input dir="ltr" value={settings.teamPhone} onChange={e => updateSettings({ teamPhone: e.target.value })} placeholder="+93 700 000 000" className={`${uiInput} text-left`} />)}
-              <button onClick={() => { saveSettings(settings); showToast("ذخیره شد"); }} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white hover:bg-emerald-600 active:scale-95">
+              <button onClick={() => showToast("ذخیره شد")} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white hover:bg-emerald-600 active:scale-95">
                 <Ic n="check" className="h-4 w-4" />ذخیره اطلاعات تیم
               </button>
             </div>
           </AccordionItem>
 
-          <AccordionItem id="backup" icon="backup" title="پشتیبان‌گیری">
+          {/* 💾 پشتیبان‌گیری */}
+          <AccordionItem id="backup" icon="backup" title="پشتیبان‌گیری" isOpen={activeAccordion === "backup"} onToggle={() => toggleAccordion("backup")}>
             <div className="space-y-3">
               <button onClick={handleBackup} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white hover:bg-emerald-600 active:scale-95">
                 <Ic n="download" className="h-4 w-4" />دانلود پشتیبان کامل
@@ -243,16 +284,19 @@ function SettingsPanel({ open, onClose }: { open: boolean; onClose: () => void }
             </div>
           </AccordionItem>
 
-          <AccordionItem id="telegram" icon="telegram" title="تنظیمات تلگرام">
+          {/* 📱 تلگرام */}
+          <AccordionItem id="telegram" icon="telegram" title="تنظیمات تلگرام" isOpen={activeAccordion === "telegram"} onToggle={() => toggleAccordion("telegram")}>
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-bold text-white">فعال‌سازی تلگرام</span>
                 <Toggle enabled={settings.telegram.enabled} onChange={v => updateTelegram({ enabled: v })} />
               </div>
+
               {settings.telegram.enabled && (
                 <>
-                  {fld("توکن بات", <input dir="ltr" value={settings.telegram.botToken} onChange={e => updateTelegram({ botToken: e.target.value })} placeholder="123456789:ABCdef..." className={`${uiInput} text-left font-mono text-xs`} />)}
-                  {fld("چت آی‌دی", <input dir="ltr" value={settings.telegram.chatId} onChange={e => updateTelegram({ chatId: e.target.value })} placeholder="-1001234567890" className={`${uiInput} text-left font-mono text-xs`} />)}
+                  {fld("توکن بات (از @BotFather)", <input dir="ltr" value={settings.telegram.botToken} onChange={e => updateTelegram({ botToken: e.target.value })} placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz" className={`${uiInput} text-left font-mono text-xs`} />)}
+                  {fld("چت آی‌دی اصلی", <input dir="ltr" value={settings.telegram.chatId} onChange={e => updateTelegram({ chatId: e.target.value })} placeholder="-1001234567890" className={`${uiInput} text-left font-mono text-xs`} />)}
+
                   <div className="rounded-xl border border-slate-600 p-3 space-y-3">
                     <p className="text-xs font-black text-white">اعلان‌ها:</p>
                     <Toggle enabled={settings.telegram.notifyNewHawala} onChange={v => updateTelegram({ notifyNewHawala: v })} label="حواله جدید" />
@@ -260,7 +304,46 @@ function SettingsPanel({ open, onClose }: { open: boolean; onClose: () => void }
                     <Toggle enabled={settings.telegram.notifyVoid} onChange={v => updateTelegram({ notifyVoid: v })} label="لغو حواله" />
                     <Toggle enabled={settings.telegram.notifyExchange} onChange={v => updateTelegram({ notifyExchange: v })} label="تبادل ارز" />
                   </div>
-                  <button onClick={() => { saveSettings(settings); showToast("ذخیره شد"); }} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white hover:bg-emerald-600 active:scale-95">
+
+                  {/* 👥 کاربران ربات تلگرام */}
+                  <div className="rounded-xl border border-sky-600 p-3 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-black text-sky-300">👥 کاربران ربات ({telegramUsers.length})</p>
+                      <button onClick={handleRefreshUsers} disabled={loadingUsers}
+                        className="flex items-center gap-1.5 rounded-lg bg-sky-500 px-3 py-1.5 text-[11px] font-black text-white hover:bg-sky-600 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <Ic n="refresh" className={`h-3.5 w-3.5 ${loadingUsers ? "animate-spin" : ""}`} />
+                        {loadingUsers ? "در حال بارگذاری..." : "به‌روزرسانی لیست"}
+                      </button>
+                    </div>
+
+                    <div className="rounded-lg p-2.5 text-[10px] font-bold bg-slate-700/50 text-slate-400 leading-5">
+                      📌 راهنما: برای نمایش کاربران، به ربات خود در تلگرام پیام <b className="text-white">/start</b> بفرستید، سپس روی دکمه «به‌روزرسانی لیست» کلیک کنید.
+                    </div>
+
+                    {telegramUsers.length === 0 ? (
+                      <div className="rounded-lg p-3 text-center text-[11px] font-bold text-slate-500">
+                        هنوز کاربری یافت نشده
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-48 overflow-y-auto">
+                        {telegramUsers.map(user => (
+                          <div key={user.id} className="flex items-center justify-between gap-2 rounded-lg border border-slate-600 bg-slate-800 p-2.5">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-black text-white truncate">{user.name}</p>
+                              <p className="text-[10px] font-bold text-slate-400 truncate">{user.username}</p>
+                              <p className="text-[9px] font-mono text-slate-500" dir="ltr">chat_id: {user.chat_id}</p>
+                            </div>
+                            <button onClick={() => { updateTelegram({ chatId: String(user.chat_id) }); showToast(`chat_id انتخاب شد: ${user.chat_id}`); }}
+                              className="flex shrink-0 items-center gap-1 rounded-lg bg-emerald-500 px-2.5 py-1.5 text-[10px] font-black text-white hover:bg-emerald-600 active:scale-95">
+                              <Ic n="star" className="h-3 w-3" />استفاده
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <button onClick={() => showToast("ذخیره شد")} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white hover:bg-emerald-600 active:scale-95">
                     <Ic n="check" className="h-4 w-4" />ذخیره تنظیمات تلگرام
                   </button>
                 </>
@@ -298,7 +381,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen">
-      {/* ===== آیکن تنظیمات شناور - بالا سمت چپ ===== */}
+      {/* آیکن شناور تنظیمات */}
       <button
         data-settings-toggle
         onClick={() => setSettingsOpen(true)}
@@ -308,10 +391,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <Ic n="gear" className={`h-6 w-6 transition-transform duration-500 ${settingsOpen ? "rotate-90" : ""}`} />
       </button>
 
-      {/* ===== پنل تنظیمات ===== */}
+      {/* پنل تنظیمات */}
       <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
-      {/* ===== هدر اصلی ===== */}
+      {/* هدر اصلی */}
       <header className="sticky top-0 z-50 shadow-lg">
         <div className="bg-[#0b1f2e] text-white">
           <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
@@ -325,7 +408,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <button onClick={handleLogout} className="px-4 py-2 rounded-xl hover:bg-red-500/20 text-red-300 text-sm font-bold">خروج</button>
           </div>
         </div>
-
         <div className="bg-[#0f2839]">
           <nav className="max-w-7xl mx-auto px-2 flex items-end overflow-x-auto">
             {menuItems.map((item) => {
