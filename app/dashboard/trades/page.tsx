@@ -137,22 +137,14 @@ function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): C
   });
 }
 
-// ============================================================================
-// ✅ تغییر ۱: حذف اضافه شدن toCurrency به حساب مشتری در exchange
-// ============================================================================
 function getBalanceChangesForTransaction(tx: Transaction, action: "register" | "reverse"): BalanceChange[] {
   const changes: BalanceChange[] = [];
   const sign = action === "register" ? 1 : -1;
-  
   if (tx.type === "exchange" && tx.customerId) {
-    // ✅ فقط fromCurrency کم می‌شود
     changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.fromCurrency, amount: -tx.fromAmount * sign });
-    // ❌ حذف شد: toCurrency به حساب اضافه نمی‌شود (چون نقدی برده)
-    if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
-      changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.commissionCurrency, amount: -tx.commission * sign });
-    }
+    changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.toCurrency, amount: tx.toAmount * sign });
+    if (tx.commission && tx.commission > 0 && tx.commissionCurrency) changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.commissionCurrency, amount: -tx.commission * sign });
   }
-  
   if (tx.type === "transfer") {
     if (tx.senderId) {
       changes.push({ customerId: tx.senderId, customerName: tx.senderName || "", currency: tx.fromCurrency, amount: -tx.fromAmount * sign });
@@ -163,13 +155,11 @@ function getBalanceChangesForTransaction(tx: Transaction, action: "register" | "
       if (tx.commissionPayer === "receiver" && tx.commission && tx.commission > 0 && tx.commissionCurrency) changes.push({ customerId: tx.receiverId, customerName: tx.receiverName || "", currency: tx.commissionCurrency, amount: -tx.commission * sign });
     }
   }
-  
   if (tx.type === "convert" && tx.customerId) {
     changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.fromCurrency, amount: -tx.fromAmount * sign });
     changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.toCurrency, amount: tx.toAmount * sign });
     if (tx.commission && tx.commission > 0 && tx.commissionCurrency) changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.commissionCurrency, amount: -tx.commission * sign });
   }
-  
   return changes;
 }
 
@@ -301,6 +291,7 @@ export default function CurrencyExchangePage() {
   useEffect(() => { try { window.localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(transactions)); } catch {} }, [transactions]);
   useEffect(() => { try { initTrackingSystem(); } catch {} }, []);
 
+  // ===== SYNC بین تب‌ها =====
   useEffect(() => {
     const handleStorage = (e: StorageEvent) => {
       try {
@@ -318,6 +309,7 @@ export default function CurrencyExchangePage() {
     return () => window.removeEventListener("storage", handleStorage);
   }, []);
 
+  // ===== بازخوانی هنگام focus =====
   useEffect(() => {
     const handleFocus = () => {
       try {
@@ -692,9 +684,7 @@ export default function CurrencyExchangePage() {
 
   const customerName = useCallback((id?: string) => customers.find(c => c.id === id)?.name || customers.find(c => c.name === id)?.name || id || "-", [customers]);
   const transactionCustomerLabel = useCallback((tx: Transaction) => tx.type === "transfer" ? `${customerName(tx.senderId || tx.senderName)} - ${customerName(tx.receiverId || tx.receiverName)}` : customerName(tx.customerId || tx.customerName), [customerName]);
-  
-  // ✅ تغییر ۲: نام تب سوم به "تبدیل ارز مشتری"
-  const transactionTypeLabel = useCallback((tx: Transaction) => tx.type === "exchange" ? dealTypeLabel(tx.dealType) : tx.type === "convert" ? "تبدیل ارز مشتری" : "انتقال", []);
+  const transactionTypeLabel = useCallback((tx: Transaction) => tx.type === "exchange" ? dealTypeLabel(tx.dealType) : tx.type === "convert" ? "تبدیل ارز" : "انتقال", []);
   const transactionCommissionLabel = useCallback((tx: Transaction) => tx.commission === undefined ? "-" : `${fmt(tx.commission)} ${tx.commissionCurrency ? labels[tx.commissionCurrency] : ""}`, []);
   const commissionPayerLabel = useCallback((tx: Transaction) => !tx.commissionPayer ? "-" : tx.type === "convert" ? "خود مشتری" : tx.commissionPayer === "sender" ? "فرستنده" : "گیرنده", []);
 
@@ -1081,11 +1071,10 @@ export default function CurrencyExchangePage() {
             <span className={`rounded-full px-3 py-1.5 ring-1 ${dk ? "bg-rose-400/15 text-rose-300 ring-rose-400/25" : "bg-rose-400/15 text-rose-600 ring-rose-400/40"}`}>لغو {voidedCount}</span>
           </div>
 
-          {/* ✅ تغییر ۲: نام تب سوم */}
           <div className={`flex gap-1.5 rounded-xl border p-1.5 ${glassChip}`}>
             <button onClick={() => setTab("exchange")} className={`flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-black ${tab === "exchange" ? dk ? "bg-cyan-400 text-slate-950" : "bg-sky-500 text-white" : dk ? "text-slate-400" : "text-slate-500"}`}><Ic n="swap" className="h-4 w-4" />تبادل ارز</button>
             <button onClick={() => setTab("transfer")} className={`flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-black ${tab === "transfer" ? dk ? "bg-orange-400 text-slate-950" : "bg-orange-500 text-white" : dk ? "text-slate-400" : "text-slate-500"}`}><Ic n="users" className="h-4 w-4" />بین مشتریان</button>
-            <button onClick={() => setTab("convert")} className={`flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-black ${tab === "convert" ? dk ? "bg-violet-400 text-slate-950" : "bg-violet-500 text-white" : dk ? "text-slate-400" : "text-slate-500"}`}><Ic n="user" className="h-4 w-4" />تبدیل ارز مشتری</button>
+            <button onClick={() => setTab("convert")} className={`flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-black ${tab === "convert" ? dk ? "bg-violet-400 text-slate-950" : "bg-violet-500 text-white" : dk ? "text-slate-400" : "text-slate-500"}`}><Ic n="user" className="h-4 w-4" />تبدیل ارز</button>
           </div>
 
           {tab === "exchange" && (
@@ -1368,8 +1357,7 @@ export default function CurrencyExchangePage() {
 
           {tab === "convert" && (
             <section className={`space-y-4 p-4 md:p-7 ${uiCard}`}>
-              {/* ✅ تغییر ۲: نام تب تبدیل ارز مشتری */}
-              {secHead(identCvIcon, "user", "تبدیل ارز مشتری", "تبدیل در حساب مشتری", identCvChip, editingConvertId ? `ویرایش ${shortId(editingConvertId)}` : "جدید")}
+              {secHead(identCvIcon, "user", "تبدیل ارز", "تبدیل در حساب مشتری", identCvChip, editingConvertId ? `ویرایش ${shortId(editingConvertId)}` : "جدید")}
               {editingConvertId && editBanner(<>ویرایش {shortId(editingConvertId)}</>, resetConvertForm)}
               <CustomerBalanceCard customer={selectedConvertCustomer} color="violet" />
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -1630,20 +1618,6 @@ export default function CurrencyExchangePage() {
                   <div><span className={subText}>پرداخت‌کننده: </span><b>{commissionPayerLabel(previewData)}</b></div>
                 </div>
               </div>
-
-              {/* اطلاعیه پرداخت نقدی برای exchange */}
-              {previewData.type === "exchange" && previewData.customerId && (
-                <div className={`rounded-xl border p-3 ${dk ? "border-amber-400/25 bg-amber-400/[0.07]" : "border-amber-200 bg-amber-50"}`}>
-                  <div className="flex items-center gap-2">
-                    <Ic n="wallet" className={`h-4 w-4 ${dk ? "text-amber-300" : "text-amber-600"}`} />
-                    <span className={`text-[11px] font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>💰 نحوه پرداخت به مشتری:</span>
-                  </div>
-                  <p className={`mt-1 text-[10px] font-bold ${subText} pr-6 leading-5`}>
-                    <b>{fmt(previewData.toAmount)} {labels[previewData.toCurrency]}</b> به صورت <b className="text-rose-500">نقدی</b> از صندوق به مشتری پرداخت می‌شود. این مبلغ به حساب مشتری اضافه <b>نمی‌شود</b>.
-                  </p>
-                </div>
-              )}
-
               {previewData.description && (
                 <div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/30" : "border-slate-200 bg-slate-50"}`}>
                   <div className="flex items-center gap-2 mb-2">
@@ -1653,7 +1627,6 @@ export default function CurrencyExchangePage() {
                   <p className={`text-sm ${dk ? "text-slate-300" : "text-slate-600"}`}>{previewData.description}</p>
                 </div>
               )}
-
               {previewData.type === "exchange" && (
                 <div className={`rounded-xl border p-3 ${dk ? "border-emerald-400/25 bg-emerald-400/[0.07]" : "border-emerald-300 bg-emerald-50"}`}>
                   <div className="flex items-center gap-2">
