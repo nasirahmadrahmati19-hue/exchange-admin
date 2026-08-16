@@ -16,6 +16,11 @@ const currencyColors: Record<Currency, { light: string; dark: string; gradient: 
 const txLabels: Record<TxType, string> = { exchange: "تبادل ارز", transfer: "انتقال", convert: "تبدیل ارز", hawala: "حواله", deposit: "واریز", withdraw: "برداشت", fee: "کارمزد", correction: "اصلاح" };
 const txColors: Record<TxType, { light: string; dark: string }> = { exchange: { light: "bg-sky-100 text-sky-700", dark: "bg-sky-400/15 text-sky-300" }, transfer: { light: "bg-violet-100 text-violet-700", dark: "bg-violet-400/15 text-violet-300" }, convert: { light: "bg-purple-100 text-purple-700", dark: "bg-purple-400/15 text-purple-300" }, hawala: { light: "bg-blue-100 text-blue-700", dark: "bg-blue-400/15 text-blue-300" }, deposit: { light: "bg-emerald-100 text-emerald-700", dark: "bg-emerald-400/15 text-emerald-300" }, withdraw: { light: "bg-rose-100 text-rose-700", dark: "bg-rose-400/15 text-rose-300" }, fee: { light: "bg-amber-100 text-amber-700", dark: "bg-amber-400/15 text-amber-300" }, correction: { light: "bg-orange-100 text-orange-700", dark: "bg-orange-400/15 text-orange-300" } };
 
+// ✅ تغییر 1: تعریف صندوق به عنوان گزینه اول
+const CASH_BOX_ID = "CASH_BOX";
+const CASH_BOX_NAME = "صندوق";
+const CASH_BOX_CUSTOMER: Customer = { id: CASH_BOX_ID, name: CASH_BOX_NAME, phone: "", tazkira: "", address: "", note: "", telegram: "", registeredAt: "", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
+
 const generateId = (): string => { if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") { try { return crypto.randomUUID(); } catch {} } return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = (Math.random() * 16) | 0; return (c === "x" ? r : (r & 0x3) | 0x8).toString(16); }); };
 const isCurrency = (v: any): v is Currency => typeof v === "string" && (currencies as string[]).includes(v);
 const normalizeDigits = (v: string) => { const pd = "۰۱۲۳۴۵۶۷۸۹", ad = "٠١٢٣٤٥٦٧٨٩"; return String(v || "").replace(/[۰-۹]/g, d => String(pd.indexOf(d))).replace(/[٠-٩]/g, d => String(ad.indexOf(d))); };
@@ -87,9 +92,8 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
       if (h.feePayer === "receiver" && hFee > 0 && isCurrency(hFeeCur)) entries.push({ id: `${h.id}-hr-fee`, date: h.paidAt || h.date || date, customerId: receiver.id, type: "fee", description: "کارمزد حواله", currency: hFeeCur, amount: hFee, direction: "out", balanceAfter: 0, referenceId: h.id, referenceNumber: refNum });
     }
   }
- for (const ce of cashEntries) {
+  for (const ce of cashEntries) {
     if (!ce || typeof ce !== "object") continue;
-    // ✅ اسناد مرتبط با حواله را نادیده بگیر (چون در بخش حواله‌ها شمرده شده‌اند)
     if (ce.linkedHawalaId || ce.linkedHawalaSettleId) continue;
     if (ce.type !== "customer_deposit" && ce.type !== "customer_withdraw") continue;
     if (!ce.customerId) continue;
@@ -138,8 +142,10 @@ export default function CustomersPage() {
 
   useEffect(() => { try { setCustomers(loadCustomersShared() as Customer[]); setTransactions(loadTransactionsShared()); setHawalas(loadHawalasShared()); setCashEntries(loadCashEntriesShared()); initTrackingSystem(); } catch (err) { console.error(err); } setMounted(true); }, []);
 
+  // ✅ تغییر 5: StorageEvent کامل - تمام 4 کلید (در کد اصلی کامل بود)
   useEffect(() => { const handleStorage = (e: StorageEvent) => { try { if (e.key === CUSTOMERS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setCustomers(p); } if (e.key === TRANSACTIONS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setTransactions(p); } if (e.key === HAWALAS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setHawalas(p); } if (e.key === CASH_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setCashEntries(p); } } catch {} }; window.addEventListener("storage", handleStorage); return () => window.removeEventListener("storage", handleStorage); }, []);
 
+  // ✅ تغییر 6: Focus Listener کامل - تمام 4 کلید (در کد اصلی کامل بود)
   useEffect(() => { const handleFocus = () => { try { setCustomers(loadCustomersShared() as Customer[]); setTransactions(loadTransactionsShared()); setHawalas(loadHawalasShared()); setCashEntries(loadCashEntriesShared()); } catch {} }; window.addEventListener("focus", handleFocus); return () => window.removeEventListener("focus", handleFocus); }, []);
 
   const [now, setNow] = useState<Date | null>(null);
@@ -156,7 +162,19 @@ export default function CustomersPage() {
   }, [openMenuId]);
 
   const ledger = useMemo(() => { try { return buildLedger(customers, transactions, hawalas, cashEntries); } catch { return []; } }, [customers, transactions, hawalas, cashEntries]);
-  const filteredCustomers = useMemo(() => { const q = normalizeDigits(search.trim()).toLowerCase(); return customers.filter(c => { if (!q) return true; return [c.name, c.phone || "", c.tazkira || "", c.telegram || "", c.id].some(f => normalizeDigits(String(f)).toLowerCase().includes(q)); }); }, [customers, search]);
+
+  // ✅ تغییر 1: اضافه کردن صندوق به اول لیست مشتریان
+  const filteredCustomers = useMemo(() => {
+    const cashBoxOption = CASH_BOX_CUSTOMER;
+    const q = normalizeDigits(search.trim()).toLowerCase();
+    const filtered = customers.filter(c => {
+      if (!q) return true;
+      return [c.name, c.phone || "", c.tazkira || "", c.telegram || "", c.id].some(f => normalizeDigits(String(f)).toLowerCase().includes(q));
+    });
+    // اگر "صندوق" در جستجو باشد، آن را هم نمایش بده
+    if (!q || CASH_BOX_NAME.includes(q)) return [cashBoxOption, ...filtered];
+    return filtered;
+  }, [customers, search]);
 
   const selectedCustomer = customers.find(c => c.id === selectedCustomerId) || null;
   const customerLedger = useMemo(() => ledger.filter(e => e.customerId === selectedCustomerId), [ledger, selectedCustomerId]);
@@ -172,7 +190,7 @@ export default function CustomersPage() {
   const openEdit = (id: string) => { setSelectedCustomerId(id); setProfileTab("info"); setActiveTab("profile"); setOpenMenuId(null); };
   const backToList = () => { setActiveTab("list"); setSelectedCustomerId(null); };
 
-  // ===== ✅ تابع اصلاح‌شده: حذف مشتری با علامت‌گذاری داده‌ها =====
+  // ✅ تغییر 8: اصلاح نوشتن مستقیم در localStorage - استفاده از state update
   const deleteCustomer = (id: string) => {
     setOpenMenuId(null);
     const c = customers.find(x => x.id === id);
@@ -184,59 +202,39 @@ export default function CustomersPage() {
     if (hasBal) msg += `\n⚠️ موجودی غیر صفر دارد!`;
     if (!window.confirm(msg)) return;
 
-    // علامت‌گذاری معاملات مرتبط
-    try {
-      const rawTx = localStorage.getItem(TRANSACTIONS_KEY);
-      if (rawTx) {
-        const txs = JSON.parse(rawTx);
-        const updated = txs.map((t: any) => {
-          if (t.customerId === id || t.customerName === c.name ||
-              t.senderId === id || t.senderName === c.name ||
-              t.receiverId === id || t.receiverName === c.name) {
-            return { ...t, customerDeleted: true };
-          }
-          return t;
-        });
-        localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(updated));
+    // ✅ علامت‌گذاری معاملات مرتبط با استفاده از state update
+    setTransactions(prev => prev.map((t: any) => {
+      if (t.customerId === id || t.customerName === c.name ||
+          t.senderId === id || t.senderName === c.name ||
+          t.receiverId === id || t.receiverName === c.name) {
+        return { ...t, customerDeleted: true };
       }
-    } catch {}
+      return t;
+    }));
 
-    // علامت‌گذاری حواله‌های مرتبط
-    try {
-      const rawHw = localStorage.getItem(HAWALAS_KEY);
-      if (rawHw) {
-        const hws = JSON.parse(rawHw);
-        const updated = hws.map((h: any) => {
-          if (h.senderId === id || h.senderName === c.name ||
-              h.receiverId === id || h.receiverName === c.name) {
-            return { ...h, customerDeleted: true };
-          }
-          return h;
-        });
-        localStorage.setItem(HAWALAS_KEY, JSON.stringify(updated));
+    // ✅ علامت‌گذاری حواله‌های مرتبط با استفاده از state update
+    setHawalas(prev => prev.map((h: any) => {
+      if (h.senderId === id || h.senderName === c.name ||
+          h.receiverId === id || h.receiverName === c.name) {
+        return { ...h, customerDeleted: true };
       }
-    } catch {}
+      return h;
+    }));
 
-    // علامت‌گذاری اسناد صندوق مرتبط
-    try {
-      const rawCe = localStorage.getItem(CASH_KEY);
-      if (rawCe) {
-        const ces = JSON.parse(rawCe);
-        const updated = ces.map((ce: any) => {
-          if (ce.customerId === id || ce.customerName === c.name) {
-            return { ...ce, customerDeleted: true };
-          }
-          return ce;
-        });
-        localStorage.setItem(CASH_KEY, JSON.stringify(updated));
+    // ✅ علامت‌گذاری اسناد صندوق مرتبط با استفاده از state update
+    setCashEntries(prev => prev.map((ce: any) => {
+      if (ce.customerId === id || ce.customerName === c.name) {
+        return { ...ce, customerDeleted: true };
       }
-    } catch {}
+      return ce;
+    }));
 
     setCustomers(p => p.filter(x => x.id !== id));
     if (selectedCustomerId === id) { setSelectedCustomerId(null); setActiveTab("list"); }
     showToast(`"${c.name}" حذف شد و داده‌های مرتبط علامت‌گذاری شدند.`);
   };
 
+  // ✅ تغییر 2: Validation با هایلایت قرمز برای فیلدهای اجباری
   const validateForm = () => {
     const errs: FormErrors = {};
     if (!form.name.trim()) errs.name = "نام ضروری است.";
@@ -254,7 +252,7 @@ export default function CustomersPage() {
     showToast(`"${nc.name}" ثبت شد.`);
   };
 
-  // ===== ✅ تابع اصلاح‌شده: آپدیت نام در معاملات و حواله‌ها =====
+  // ✅ تغییر 8: اصلاح نوشتن مستقیم در localStorage - استفاده از state update
   const updateCustomer = () => {
     if (!selectedCustomer) return;
     const oldName = selectedCustomer.name;
@@ -271,49 +269,28 @@ export default function CustomersPage() {
       telegram: form.telegram.trim()
     } : c));
 
-    // آپدیت نام در معاملات، حواله‌ها و اسناد صندوق
+    // ✅ آپدیت نام در معاملات، حواله‌ها و اسناد صندوق با استفاده از state update
     if (oldName !== newName) {
-      try {
-        const rawTx = localStorage.getItem(TRANSACTIONS_KEY);
-        if (rawTx) {
-          const txs = JSON.parse(rawTx);
-          const updated = txs.map((t: any) => {
-            const u = { ...t };
-            if (t.customerName === oldName) u.customerName = newName;
-            if (t.senderName === oldName) u.senderName = newName;
-            if (t.receiverName === oldName) u.receiverName = newName;
-            return u;
-          });
-          localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(updated));
-        }
-      } catch {}
+      setTransactions(prev => prev.map((t: any) => {
+        const u = { ...t };
+        if (t.customerName === oldName) u.customerName = newName;
+        if (t.senderName === oldName) u.senderName = newName;
+        if (t.receiverName === oldName) u.receiverName = newName;
+        return u;
+      }));
 
-      try {
-        const rawHw = localStorage.getItem(HAWALAS_KEY);
-        if (rawHw) {
-          const hws = JSON.parse(rawHw);
-          const updated = hws.map((h: any) => {
-            const u = { ...h };
-            if (h.senderName === oldName) u.senderName = newName;
-            if (h.receiverName === oldName) u.receiverName = newName;
-            return u;
-          });
-          localStorage.setItem(HAWALAS_KEY, JSON.stringify(updated));
-        }
-      } catch {}
+      setHawalas(prev => prev.map((h: any) => {
+        const u = { ...h };
+        if (h.senderName === oldName) u.senderName = newName;
+        if (h.receiverName === oldName) u.receiverName = newName;
+        return u;
+      }));
 
-      try {
-        const rawCe = localStorage.getItem(CASH_KEY);
-        if (rawCe) {
-          const ces = JSON.parse(rawCe);
-          const updated = ces.map((ce: any) => {
-            const u = { ...ce };
-            if (ce.customerName === oldName) u.customerName = newName;
-            return u;
-          });
-          localStorage.setItem(CASH_KEY, JSON.stringify(updated));
-        }
-      } catch {}
+      setCashEntries(prev => prev.map((ce: any) => {
+        const u = { ...ce };
+        if (ce.customerName === oldName) u.customerName = newName;
+        return u;
+      }));
     }
 
     showToast("به‌روز شد.");
@@ -339,11 +316,12 @@ export default function CustomersPage() {
   const glassCard = `rounded-2xl border backdrop-blur transition-all duration-300 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-200 bg-white/80"}`;
   const inputShell = `rounded-xl border text-sm font-medium shadow-sm outline-none transition-all duration-200 focus:ring-4 ${dk ? "border-slate-600 bg-slate-900 text-slate-100 placeholder:text-slate-500 hover:border-slate-500 focus:border-emerald-400 focus:ring-emerald-400/10" : "border-slate-200 bg-white text-slate-800 placeholder:text-slate-400 hover:border-emerald-400 focus:border-emerald-500 focus:ring-emerald-500/10"}`;
   const uiInput = `h-12 w-full px-3.5 ${inputShell}`;
-  const errInput = dk ? "border-rose-400/70" : "border-rose-400";
+  // ✅ تغییر 2: کلاس‌های هایلایت قرمز برای فیلدهای اجباری
+  const errInput = dk ? "border-rose-500 bg-rose-500/10 ring-rose-500/20" : "border-rose-500 bg-rose-50 ring-rose-500/20";
   const uiLabel = `mb-1.5 block text-[11px] font-black tracking-wide ${dk ? "text-slate-400" : "text-slate-500"}`;
   const identIcon = dk ? "from-emerald-400/20 to-teal-400/5 text-emerald-300 ring-emerald-400/25" : "from-emerald-400/20 to-teal-400/10 text-emerald-600 ring-emerald-400/30";
   const fld = (label: string, node: ReactNode) => (<div><label className={uiLabel}>{label}</label>{node}</div>);
-  const errBox = (list: string[]) => list.length === 0 ? null : (<div className={`space-y-2 rounded-xl border p-4 ${dk ? "border-rose-400/30 bg-rose-400/10 text-rose-300" : "border-rose-300 bg-rose-50 text-rose-600"}`}><b className="flex items-center gap-2 text-sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 shrink-0" aria-hidden="true"><path d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>تکمیل کنید:</b><ul className="list-disc pr-5 text-sm space-y-1">{list.map((m, i) => <li key={i}>{m}</li>)}</ul></div>);
+  const errBox = (list: string[]) => list.length === 0 ? null : (<div className={`space-y-2 rounded-xl border p-4 ${dk ? "border-rose-500/50 bg-rose-500/10 text-rose-300" : "border-rose-500 bg-rose-50 text-rose-600"}`}><b className="flex items-center gap-2 text-sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 shrink-0" aria-hidden="true"><path d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>لطفاً فیلدهای اجباری را تکمیل کنید:</b><ul className="list-disc pr-5 text-sm space-y-1">{list.map((m, i) => <li key={i}>{m}</li>)}</ul></div>);
   const errorList = Object.values(errors).filter((m): m is string => Boolean(m));
 
   return (
@@ -431,6 +409,7 @@ export default function CustomersPage() {
                               <div className={`text-[11px] ${subText} mt-1 space-y-0.5`}>
                                 <div>📱 <span dir="ltr">{c.phone || "-"}</span></div>
                                 <div>🆔 <span dir="ltr">{c.tazkira || "-"}</span></div>
+                                {c.address && <div>📍 <span dir="ltr">{c.address}</span></div>}
                               </div>
                             </div>
                           </div>
@@ -445,7 +424,9 @@ export default function CustomersPage() {
                           <div className="flex flex-col gap-1.5 mt-3">
                             <button onClick={() => openProfile(c.id)} className={`flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-bold cursor-pointer ${dk ? "border-emerald-400/30 text-emerald-300" : "border-emerald-300 text-emerald-600"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>مشاهده</button>
                             <button onClick={() => openEdit(c.id)} className={`flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-bold cursor-pointer ${dk ? "border-sky-400/30 text-sky-300" : "border-sky-300 text-sky-600"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true"><path d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" /></svg>ویرایش</button>
-                            <button onClick={() => deleteCustomer(c.id)} className={`flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-bold cursor-pointer ${dk ? "border-rose-400/30 text-rose-300" : "border-rose-300 text-rose-600"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true"><path d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>حذف</button>
+                            {c.id !== CASH_BOX_ID && (
+                              <button onClick={() => deleteCustomer(c.id)} className={`flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-bold cursor-pointer ${dk ? "border-rose-400/30 text-rose-300" : "border-rose-300 text-rose-600"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true"><path d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>حذف</button>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -464,18 +445,20 @@ export default function CustomersPage() {
                           {filteredCustomers.map((c, idx) => {
                             const hasBal = currencies.some(cur => c.balances[cur] !== 0);
                             const isOpen = openMenuId === c.id;
+                            const isCashBox = c.id === CASH_BOX_ID;
                             return (
                               <tr key={c.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/70"}`}>
                                 <td className="px-4 py-3.5 text-center align-middle"><span className={`inline-grid h-8 w-8 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500"}`}>{idx + 1}</span></td>
                                 <td className="px-4 py-3.5 text-center align-middle">
                                   <div className={`text-[13px] font-black ${dk ? "text-slate-100" : "text-slate-800"}`}>{c.name}</div>
+                                  {c.address && <div className={`text-[10px] mt-1 ${subText}`}>📍 {c.address}</div>}
                                 </td>
                                 <td className="px-4 py-3.5 text-center align-middle">
                                   <div className={`text-[12px] font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`} dir="ltr">📱 {c.phone || "-"}</div>
                                   <div className={`text-[10px] tabular-nums mt-1 ${subText}`} dir="ltr">🆔 {c.tazkira || "-"}</div>
                                 </td>
                                 <td className="px-4 py-3.5 text-center align-middle">
-                                  <div className={`text-[11px] tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{shortDateLabel(c.registeredAt)}</div>
+                                  <div className={`text-[11px] tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{c.registeredAt ? shortDateLabel(c.registeredAt) : "-"}</div>
                                   <div className={`text-[10px] mt-1 ${subText}`}>{ledger.filter(e => e.customerId === c.id).length} رویداد</div>
                                 </td>
                                 <td className="px-4 py-3.5 text-center align-middle">
@@ -496,11 +479,15 @@ export default function CustomersPage() {
                                       عملیات<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={`h-3 w-3 transition-transform ${isOpen ? "rotate-180" : ""}`} aria-hidden="true"><path d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
                                     </button>
                                     {isOpen && (
-                                      <ul className={`cu-menu absolute right-1/2 translate-x-1/2 top-full z-20 mt-1.5 w-36 space-y-1 rounded-xl border p-1.5 shadow-xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`}>
+                                      <ul className={`cu-menu absolute left-1/2 -translate-x-1/2 top-full z-20 mt-1.5 w-36 space-y-1 rounded-xl border p-1.5 shadow-xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`}>
                                         <li><button onClick={() => openProfile(c.id)} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold cursor-pointer ${dk ? "text-slate-300 hover:bg-emerald-400/10" : "text-slate-600 hover:bg-emerald-50"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>مشاهده</button></li>
                                         <li><button onClick={() => openEdit(c.id)} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold cursor-pointer ${dk ? "text-sky-300 hover:bg-sky-400/10" : "text-sky-600 hover:bg-sky-50"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true"><path d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" /></svg>ویرایش</button></li>
-                                        <li className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
-                                        <li><button onClick={() => deleteCustomer(c.id)} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold cursor-pointer ${dk ? "text-rose-300 hover:bg-rose-400/10" : "text-rose-500 hover:bg-rose-50"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true"><path d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>حذف</button></li>
+                                        {!isCashBox && (
+                                          <>
+                                            <li className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
+                                            <li><button onClick={() => deleteCustomer(c.id)} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold cursor-pointer ${dk ? "text-rose-300 hover:bg-rose-400/10" : "text-rose-500 hover:bg-rose-50"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true"><path d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>حذف</button></li>
+                                          </>
+                                        )}
                                       </ul>
                                     )}
                                   </div>
@@ -552,11 +539,15 @@ export default function CustomersPage() {
                         <div><b>کد:</b> <span dir="ltr" className="font-black tabular-nums">{selectedCustomer.id.slice(-6)}</span></div>
                         <div><b>تلفن:</b> <span dir="ltr" className="font-black tabular-nums">{selectedCustomer.phone || "-"}</span></div>
                         <div><b>تذکره:</b> <span dir="ltr" className="font-black tabular-nums">{selectedCustomer.tazkira || "-"}</span></div>
-                        <div><b>ثبت:</b> <span dir="ltr" className="font-black tabular-nums">{shortDateLabel(selectedCustomer.registeredAt)}</span></div>
+                        <div><b>ثبت:</b> <span dir="ltr" className="font-black tabular-nums">{selectedCustomer.registeredAt ? shortDateLabel(selectedCustomer.registeredAt) : "-"}</span></div>
                         {selectedCustomer.telegram && <div className="md:col-span-2"><b>تلگرام:</b> <span dir="ltr" className="font-black tabular-nums">{selectedCustomer.telegram}</span></div>}
+                        {selectedCustomer.address && <div className="md:col-span-2"><b>آدرس:</b> <span className="font-black">{selectedCustomer.address}</span></div>}
+                        {selectedCustomer.note && <div className="md:col-span-4"><b>یادداشت:</b> <span className="font-black">{selectedCustomer.note}</span></div>}
                       </div>
                     </div>
-                    <button onClick={() => deleteCustomer(selectedCustomer.id)} className={`cursor-pointer rounded-xl border px-3 py-2 text-xs font-bold ${dk ? "border-rose-400/30 text-rose-300" : "border-rose-300 text-rose-600"}`}><span className="flex items-center gap-1.5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true"><path d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>حذف</span></button>
+                    {selectedCustomer.id !== CASH_BOX_ID && (
+                      <button onClick={() => deleteCustomer(selectedCustomer.id)} className={`cursor-pointer rounded-xl border px-3 py-2 text-xs font-bold ${dk ? "border-rose-400/30 text-rose-300" : "border-rose-300 text-rose-600"}`}><span className="flex items-center gap-1.5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true"><path d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>حذف</span></button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -693,6 +684,8 @@ export default function CustomersPage() {
                         <div><b>تلفن:</b> <span dir="ltr">{selectedCustomer.phone || "-"}</span></div>
                         <div><b>تذکره:</b> <span dir="ltr">{selectedCustomer.tazkira || "-"}</span></div>
                         <div><b>تلگرام:</b> <span dir="ltr">{selectedCustomer.telegram || "-"}</span></div>
+                        {selectedCustomer.address && <div><b>آدرس:</b> {selectedCustomer.address}</div>}
+                        {selectedCustomer.note && <div><b>یادداشت:</b> {selectedCustomer.note}</div>}
                       </div>
                     </div>
                     <div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-200 bg-white"}`}>
