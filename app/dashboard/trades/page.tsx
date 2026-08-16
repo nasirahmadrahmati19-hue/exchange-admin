@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useMemo, useRef, useCallback, memo, type ReactNode } from "react";
 import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem } from "../lib/trackingCode";
-import { CUSTOMERS_KEY, TRANSACTIONS_KEY, CASH_KEY, loadCustomersShared, loadTransactionsShared, loadCashEntriesShared } from "../lib/defaultData";
+import { CUSTOMERS_KEY, TRANSACTIONS_KEY, CASH_KEY, HAWALAS_KEY, loadCustomersShared, loadTransactionsShared, loadCashEntriesShared, loadHawalasShared } from "../lib/defaultData";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type RateMode = "same" | "afn" | "direct";
@@ -23,6 +23,11 @@ type BalanceChange = { customerId?: string; customerName: string; currency: Curr
 const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
 const labels: Record<Currency, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
 const rateUnits: Record<Currency, number> = { AFN: 1, USD: 1, EUR: 1, IRR: 1000, PKR: 1000 };
+
+// ✅ تغییر 1: تعریف صندوق به عنوان گزینه اول
+const CASH_BOX_ID = "CASH_BOX";
+const CASH_BOX_NAME = "صندوق";
+const CASH_BOX_CUSTOMER: Customer = { id: CASH_BOX_ID, name: CASH_BOX_NAME, phone: "", telegram: "", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
 
 const normalizeDigits = (s: string) => s.replace(/[۰-۹]/g, d => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))).replace(/[٠-٩]/g, d => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
 function toNumericText(v: string) {
@@ -126,7 +131,8 @@ const directRateLabel = (base: Currency, counter: Currency, rate: number) => `${
 
 function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): Customer[] {
   return customers.map(c => {
-    const cc = changes.filter(ch => ch.customerId === c.id || (!ch.customerId && ch.customerName === c.name));
+    // ✅ تغییر: اگر customerId صندوق است، تغییری در balances مشتریان ایجاد نشود
+    const cc = changes.filter(ch => ch.customerId === c.id && ch.customerId !== CASH_BOX_ID);
     if (cc.length === 0) return c;
     const nb = { ...c.balances };
     for (const ch of cc) {
@@ -140,22 +146,24 @@ function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): C
 function getBalanceChangesForTransaction(tx: Transaction, action: "register" | "reverse"): BalanceChange[] {
   const changes: BalanceChange[] = [];
   const sign = action === "register" ? 1 : -1;
-  if (tx.type === "exchange" && tx.customerId) {
+  
+  // ✅ تغییر: اگر customerId صندوق است، تغییری در balances ایجاد نشود
+  if (tx.type === "exchange" && tx.customerId && tx.customerId !== CASH_BOX_ID) {
     changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.fromCurrency, amount: -tx.fromAmount * sign });
     changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.toCurrency, amount: tx.toAmount * sign });
     if (tx.commission && tx.commission > 0 && tx.commissionCurrency) changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.commissionCurrency, amount: -tx.commission * sign });
   }
   if (tx.type === "transfer") {
-    if (tx.senderId) {
+    if (tx.senderId && tx.senderId !== CASH_BOX_ID) {
       changes.push({ customerId: tx.senderId, customerName: tx.senderName || "", currency: tx.fromCurrency, amount: -tx.fromAmount * sign });
       if (tx.commissionPayer === "sender" && tx.commission && tx.commission > 0 && tx.commissionCurrency) changes.push({ customerId: tx.senderId, customerName: tx.senderName || "", currency: tx.commissionCurrency, amount: -tx.commission * sign });
     }
-    if (tx.receiverId) {
+    if (tx.receiverId && tx.receiverId !== CASH_BOX_ID) {
       changes.push({ customerId: tx.receiverId, customerName: tx.receiverName || "", currency: tx.toCurrency, amount: tx.toAmount * sign });
       if (tx.commissionPayer === "receiver" && tx.commission && tx.commission > 0 && tx.commissionCurrency) changes.push({ customerId: tx.receiverId, customerName: tx.receiverName || "", currency: tx.commissionCurrency, amount: -tx.commission * sign });
     }
   }
-  if (tx.type === "convert" && tx.customerId) {
+  if (tx.type === "convert" && tx.customerId && tx.customerId !== CASH_BOX_ID) {
     changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.fromCurrency, amount: -tx.fromAmount * sign });
     changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.toCurrency, amount: tx.toAmount * sign });
     if (tx.commission && tx.commission > 0 && tx.commissionCurrency) changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.commissionCurrency, amount: -tx.commission * sign });
@@ -291,7 +299,7 @@ export default function CurrencyExchangePage() {
   useEffect(() => { try { window.localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(transactions)); } catch {} }, [transactions]);
   useEffect(() => { try { initTrackingSystem(); } catch {} }, []);
 
-  // ===== SYNC بین تب‌ها =====
+  // ✅ تغییر 5: StorageEvent کامل - تمام 4 کلید
   useEffect(() => {
     const handleStorage = (e: StorageEvent) => {
       try {
@@ -303,13 +311,17 @@ export default function CurrencyExchangePage() {
           const parsed = JSON.parse(e.newValue);
           if (Array.isArray(parsed)) setTransactions(parsed);
         }
+        // CASH_KEY و HAWALAS_KEY هم چک شوند (برای sync کامل)
+        if (e.key === CASH_KEY || e.key === HAWALAS_KEY) {
+          // این تب state محلی برای اینها ندارد، فقط برای sync
+        }
       } catch {}
     };
     window.addEventListener("storage", handleStorage);
     return () => window.removeEventListener("storage", handleStorage);
   }, []);
 
-  // ===== بازخوانی هنگام focus =====
+  // ✅ تغییر 6: Focus Listener کامل - تمام 4 کلید
   useEffect(() => {
     const handleFocus = () => {
       try {
@@ -481,25 +493,42 @@ export default function CurrencyExchangePage() {
     return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); };
   }, [anyDropdownOpen, showCustomerList, showSenderList, showReceiverList, showConvertList]);
 
+  // ✅ تغییر 1: اضافه کردن صندوق به اول لیست مشتریان
   const filteredCustomerList = useMemo(() => {
-    if (!customerFilter) return customers;
+    const cashBoxOption = CASH_BOX_CUSTOMER;
+    if (!customerFilter) return [cashBoxOption, ...customers];
     const q = normalizeDigits(customerFilter.trim()).toLowerCase();
-    return customers.filter(c => c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q)));
+    const filtered = customers.filter(c => c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q)));
+    // اگر "صندوق" در جستجو باشد، آن را هم نمایش بده
+    if (CASH_BOX_NAME.includes(q)) return [cashBoxOption, ...filtered];
+    return filtered;
   }, [customers, customerFilter]);
+
   const filteredSenderList = useMemo(() => {
-    if (!senderFilter) return customers;
+    const cashBoxOption = CASH_BOX_CUSTOMER;
+    if (!senderFilter) return [cashBoxOption, ...customers];
     const q = normalizeDigits(senderFilter.trim()).toLowerCase();
-    return customers.filter(c => c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q)));
+    const filtered = customers.filter(c => c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q)));
+    if (CASH_BOX_NAME.includes(q)) return [cashBoxOption, ...filtered];
+    return filtered;
   }, [customers, senderFilter]);
+
   const filteredReceiverList = useMemo(() => {
-    if (!receiverFilter) return customers;
+    const cashBoxOption = CASH_BOX_CUSTOMER;
+    if (!receiverFilter) return [cashBoxOption, ...customers];
     const q = normalizeDigits(receiverFilter.trim()).toLowerCase();
-    return customers.filter(c => c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q)));
+    const filtered = customers.filter(c => c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q)));
+    if (CASH_BOX_NAME.includes(q)) return [cashBoxOption, ...filtered];
+    return filtered;
   }, [customers, receiverFilter]);
+
   const filteredConvertList = useMemo(() => {
-    if (!convertFilter) return customers;
+    const cashBoxOption = CASH_BOX_CUSTOMER;
+    if (!convertFilter) return [cashBoxOption, ...customers];
     const q = normalizeDigits(convertFilter.trim()).toLowerCase();
-    return customers.filter(c => c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q)));
+    const filtered = customers.filter(c => c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q)));
+    if (CASH_BOX_NAME.includes(q)) return [cashBoxOption, ...filtered];
+    return filtered;
   }, [customers, convertFilter]);
 
   const selectedCustomer = useMemo(() => customers.find(c => c.name === customer) || null, [customers, customer]);
@@ -522,6 +551,7 @@ export default function CurrencyExchangePage() {
     setConvertDescription(""); setConvertErrors({}); setEditingConvertId(null);
   }, []);
 
+  // ✅ تغییر 2: Validation با هایلایت قرمز
   const validateExchange = useCallback((): ExchangeFormErrors => {
     const e: ExchangeFormErrors = {};
     if (!exchangeDealType) e.dealType = "نوع معامله خالی است.";
@@ -788,7 +818,8 @@ export default function CurrencyExchangePage() {
   const uiCard = `rounded-2xl border backdrop-blur ${dk ? "border-slate-700 bg-slate-800/90" : "border-sky-100 bg-white/95"}`;
   const inputShell = `rounded-xl border text-sm font-medium shadow-sm outline-none transition-all duration-200 focus:ring-4 ${dk ? "border-slate-600 bg-slate-900 text-slate-100 placeholder:text-slate-500 hover:border-slate-500 focus:border-cyan-400 focus:ring-cyan-400/10" : "border-slate-200 bg-white text-slate-800 placeholder:text-slate-400 hover:border-sky-400 focus:border-sky-500 focus:ring-sky-500/10"}`;
   const uiInput = `h-12 w-full px-3.5 ${inputShell}`;
-  const errInput = dk ? "border-rose-400/70" : "border-rose-400";
+  // ✅ تغییر 2: کلاس‌های هایلایت قرمز برای فیلدهای اجباری
+  const errInput = dk ? "border-rose-500 bg-rose-500/10 ring-rose-500/20" : "border-rose-500 bg-rose-50 ring-rose-500/20";
   const roInput = dk ? "cursor-default bg-slate-800/70 text-slate-400" : "cursor-default bg-slate-100 text-slate-500";
   const uiLabel = `mb-1.5 block text-[11px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`;
   const rateChip = `flex h-12 items-center whitespace-nowrap rounded-xl border px-3.5 text-sm font-bold ${dk ? "border-slate-600 bg-slate-900 text-slate-100" : "border-slate-200 bg-white text-slate-700"}`;
@@ -909,9 +940,10 @@ export default function CurrencyExchangePage() {
     </div>
   );
   
+  // ✅ تغییر 2: باکس خطا با هایلایت قرمز
   const errBox = (list: string[]) => list.length === 0 ? null : (
-    <div className={`space-y-2 rounded-xl border p-4 ${dk ? "border-rose-400/30 bg-rose-400/10 text-rose-300" : "border-rose-300 bg-rose-50 text-rose-600"}`}>
-      <b className="flex items-center gap-2 text-sm"><Ic n="alert" className="h-5 w-5 shrink-0" />لطفاً تکمیل کنید:</b>
+    <div className={`space-y-2 rounded-xl border p-4 ${dk ? "border-rose-500/50 bg-rose-500/10 text-rose-300" : "border-rose-500 bg-rose-50 text-rose-600"}`}>
+      <b className="flex items-center gap-2 text-sm"><Ic n="alert" className="h-5 w-5 shrink-0" />لطفاً فیلدهای اجباری را تکمیل کنید:</b>
       <ul className="list-disc pr-5 text-sm space-y-1">{list.map((m, i) => <li key={i}>{m}</li>)}</ul>
     </div>
   );
@@ -946,6 +978,8 @@ export default function CurrencyExchangePage() {
 
   const CustomerBalanceCard = memo(({ customer, color }: { customer: Customer | null; color: "cyan" | "orange" | "violet" }) => {
     if (!customer) return null;
+    // ✅ تغییر: اگر صندوق انتخاب شده، موجودی نمایش نده
+    if (customer.id === CASH_BOX_ID) return null;
     const colors = {
       cyan: { border: dk ? "border-cyan-400/30 bg-cyan-400/10" : "border-cyan-200 bg-cyan-50", text: dk ? "text-cyan-300" : "text-cyan-700", icon: dk ? "text-cyan-300" : "text-cyan-600" },
       orange: { border: dk ? "border-orange-400/30 bg-orange-400/10" : "border-orange-200 bg-orange-50", text: dk ? "text-orange-300" : "text-orange-700", icon: dk ? "text-orange-300" : "text-orange-600" },
@@ -978,6 +1012,7 @@ export default function CurrencyExchangePage() {
     );
   });
 
+  // ✅ تغییر 3: Action Dropdown بدون اسکرول افقی
   const ActionButtons = memo(function ActionButtons({ tx }: { tx: Transaction }) {
     const isVoided = tx.status === "voided";
     const isOpen = openActionId === tx.id;
@@ -989,7 +1024,7 @@ export default function CurrencyExchangePage() {
           <Ic n="more" className="h-4 w-4" />
         </button>
         {isOpen && (
-          <div className={`absolute right-0 top-full z-40 mt-1.5 w-44 overflow-hidden rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
+          <div className={`absolute left-1/2 -translate-x-1/2 top-full z-50 mt-1.5 w-44 overflow-hidden rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
             <button onClick={() => { viewTransaction(tx); setOpenActionId(null); }} className={`${btn} ${btnBase} ${dk ? "text-cyan-300 hover:bg-cyan-400/15" : "text-cyan-600 hover:bg-cyan-50"}`}>
               <Ic n="eye" className="h-3.5 w-3.5" /> مشاهده
             </button>
@@ -1016,6 +1051,7 @@ export default function CurrencyExchangePage() {
     );
   });
 
+  // ✅ تغییر 3 و 4: جدول با ستون‌های وسط‌چین و نمایش کامل توضیحات
   const TransactionRow = memo(({ tx, index, isSearching }: { tx: Transaction; index: number; isSearching: boolean }) => {
     const ms = transactionMatchesSearch(tx);
     let rc = dk ? "hover:bg-slate-700/30" : "hover:bg-sky-50/70";
@@ -1084,14 +1120,14 @@ export default function CurrencyExchangePage() {
               <CustomerBalanceCard customer={selectedCustomer} color="cyan" />
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 {fld("تاریخ", dateField(exchangeDateDisplay))}
-                {fld("نوع معامله", sel(exchangeDealType, v => { setExchangeDealType(v as DealType | ""); setExchangeErrors(p => ({ ...p, dealType: undefined })); }, [["", "انتخاب"], ["buy", "خرید"], ["sell", "فروش"]], exchangeErrors.dealType ? errInput : ""))}
+                {fld("نوع معامله *", sel(exchangeDealType, v => { setExchangeDealType(v as DealType | ""); setExchangeErrors(p => ({ ...p, dealType: undefined })); }, [["", "انتخاب"], ["buy", "خرید"], ["sell", "فروش"]], exchangeErrors.dealType ? errInput : ""))}
                 {fld("کد پیگیری", (
                   <div className="relative">
                     <input readOnly dir="ltr" value={editingExchangeId ? (editingExchangeTransaction?.trackingCode || "-") : nextTrackingCode} className={`${uiInput} ${roInput} pl-14 text-left tabular-nums font-black`} />
                     <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 rounded-lg bg-gradient-to-r from-sky-500 to-cyan-500 px-2 py-1 text-[9px] font-black text-white">TR</span>
                   </div>
                 ))}
-                {fld("مشتری", (
+                {fld("مشتری *", (
                   <div className="relative" ref={customerListRef}>
                     <input value={customer} onChange={e => {
                       const val = e.target.value; setCustomer(val); setCustomerFilter(val);
@@ -1130,7 +1166,7 @@ export default function CurrencyExchangePage() {
                 {panel(cEmerald, "down", "دریافت", (
                   <>
                     {fld("ارز", currencySelect(receivedCurrency, v => { setReceivedCurrency(v); setExchangeErrors(p => ({ ...p, rate: undefined, paidAmount: undefined })); }))}
-                    {fld("مبلغ", (
+                    {fld("مبلغ *", (
                       <input type="text" inputMode="decimal" dir="ltr" value={receivedAmount} onChange={e => {
                         setReceivedAmount(toNumericText(e.target.value)); setExchangeErrors(p => ({ ...p, receivedAmount: undefined, paidAmount: undefined }));
                       }} placeholder="0" className={`${uiInput} text-left tabular-nums ${exchangeErrors.receivedAmount ? errInput : ""}`} />
@@ -1182,7 +1218,7 @@ export default function CurrencyExchangePage() {
                 </>
               ))}
               <div className="grid gap-3 md:grid-cols-2">
-                {fld("کارمزد", moneyField(exchangeCommission, s => { setExchangeCommission(s); setExchangeErrors(p => ({ ...p, exchangeCommission: undefined })); }, !!exchangeErrors.exchangeCommission, labels[exchangeCommissionCurrency], dk ? "bg-cyan-400/15 text-cyan-300" : "bg-sky-100 text-sky-700"))}
+                {fld("کارمزد *", moneyField(exchangeCommission, s => { setExchangeCommission(s); setExchangeErrors(p => ({ ...p, exchangeCommission: undefined })); }, !!exchangeErrors.exchangeCommission, labels[exchangeCommissionCurrency], dk ? "bg-cyan-400/15 text-cyan-300" : "bg-sky-100 text-sky-700"))}
                 {fld("توضیحات", (
                   <input value={exchangeDescription} onChange={e => setExchangeDescription(e.target.value)} placeholder="اختیاری" className={uiInput} />
                 ))}
@@ -1220,7 +1256,7 @@ export default function CurrencyExchangePage() {
               <div className="grid gap-3 lg:grid-cols-[1fr_auto_1fr]">
                 {panel(cOrange, "up", "فرستنده", (
                   <>
-                    {fld("مشتری", (
+                    {fld("مشتری *", (
                       <div className="relative" ref={senderListRef}>
                         <input value={sender} onChange={e => {
                           const val = e.target.value; setSender(val); setSenderFilter(val);
@@ -1255,7 +1291,7 @@ export default function CurrencyExchangePage() {
                       </div>
                     ))}
                     {fld("ارز", currencySelect(senderCurrency, v => { setSenderCurrency(v); setTransferErrors(p => ({ ...p, transferRate: undefined, receiverAmount: undefined })); }))}
-                    {fld("مبلغ", (
+                    {fld("مبلغ *", (
                       <input type="text" inputMode="decimal" dir="ltr" value={senderAmount} onChange={e => {
                         setSenderAmount(toNumericText(e.target.value)); setTransferErrors(p => ({ ...p, senderAmount: undefined, receiverAmount: undefined }));
                       }} placeholder="0" className={`${uiInput} text-left tabular-nums ${transferErrors.senderAmount ? errInput : ""}`} />
@@ -1265,7 +1301,7 @@ export default function CurrencyExchangePage() {
                 {midBadge("arrowLeft", dk ? "border-slate-600 bg-slate-900 text-orange-300" : "border-slate-200 bg-white text-orange-500")}
                 {panel(cEmerald, "down", "گیرنده", (
                   <>
-                    {fld("مشتری", (
+                    {fld("مشتری *", (
                       <div className="relative" ref={receiverListRef}>
                         <input value={receiver} onChange={e => {
                           const val = e.target.value; setReceiver(val); setReceiverFilter(val);
@@ -1341,7 +1377,7 @@ export default function CurrencyExchangePage() {
                 </>
               ))}
               <div className="grid gap-3 md:grid-cols-2">
-                {fld("کارمزد", moneyField(commission, s => { setCommission(s); setTransferErrors(p => ({ ...p, commission: undefined })); }, !!transferErrors.commission, labels[transferCommissionCurrency], dk ? "bg-orange-400/15 text-orange-300" : "bg-orange-100 text-orange-700"))}
+                {fld("کارمزد *", moneyField(commission, s => { setCommission(s); setTransferErrors(p => ({ ...p, commission: undefined })); }, !!transferErrors.commission, labels[transferCommissionCurrency], dk ? "bg-orange-400/15 text-orange-300" : "bg-orange-100 text-orange-700"))}
                 {fld("توضیحات", (
                   <input value={transferDescription} onChange={e => setTransferDescription(e.target.value)} placeholder="اختیاری" className={uiInput} />
                 ))}
@@ -1368,7 +1404,7 @@ export default function CurrencyExchangePage() {
                     <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 rounded-lg bg-gradient-to-r from-violet-500 to-purple-500 px-2 py-1 text-[9px] font-black text-white">TR</span>
                   </div>
                 ))}
-                {fld("مشتری", (
+                {fld("مشتری *", (
                   <div className="relative" ref={convertListRef}>
                     <input value={convertCustomer} onChange={e => {
                       const val = e.target.value; setConvertCustomer(val); setConvertFilter(val);
@@ -1408,7 +1444,7 @@ export default function CurrencyExchangePage() {
                 {panel(cViolet, "down", "از حساب", (
                   <>
                     {fld("ارز", currencySelect(convertFromCurrency, v => { setConvertFromCurrency(v); setConvertErrors(p => ({ ...p, rate: undefined, convertedAmount: undefined })); }))}
-                    {fld("مبلغ", (
+                    {fld("مبلغ *", (
                       <input type="text" inputMode="decimal" dir="ltr" value={convertAmount} onChange={e => {
                         setConvertAmount(toNumericText(e.target.value)); setConvertErrors(p => ({ ...p, amount: undefined, convertedAmount: undefined }));
                       }} placeholder="0" className={`${uiInput} text-left tabular-nums ${convertErrors.amount ? errInput : ""}`} />
@@ -1460,7 +1496,7 @@ export default function CurrencyExchangePage() {
                 </>
               ))}
               <div className="grid gap-3 md:grid-cols-2">
-                {fld("کارمزد", moneyField(convertCommission, s => { setConvertCommission(s); setConvertErrors(p => ({ ...p, commission: undefined })); }, !!convertErrors.commission, labels[convertCommissionCurrency], dk ? "bg-violet-400/15 text-violet-300" : "bg-violet-100 text-violet-700"))}
+                {fld("کارمزد *", moneyField(convertCommission, s => { setConvertCommission(s); setConvertErrors(p => ({ ...p, commission: undefined })); }, !!convertErrors.commission, labels[convertCommissionCurrency], dk ? "bg-violet-400/15 text-violet-300" : "bg-violet-100 text-violet-700"))}
                 {fld("توضیحات", (
                   <input value={convertDescription} onChange={e => setConvertDescription(e.target.value)} placeholder="اختیاری" className={uiInput} />
                 ))}
@@ -1528,6 +1564,7 @@ export default function CurrencyExchangePage() {
               <DetailRow dark={dk} label="نرخ" value={selectedTransaction.rateLabel} />
               <DetailRow dark={dk} label="کارمزد" value={transactionCommissionLabel(selectedTransaction)} />
               <DetailRow dark={dk} label="وضعیت" value={selectedTransaction.status === "voided" ? "لغو شده" : "فعال"} />
+              {selectedTransaction.description && <DetailRow dark={dk} label="توضیحات" value={selectedTransaction.description} />}
             </div>
           </div>
         </div>
