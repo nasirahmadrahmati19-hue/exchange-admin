@@ -5,18 +5,20 @@ import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY, loadCustomersSh
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type Customer = { id: string; name: string; phone?: string; tazkira?: string; address?: string; note?: string; telegram?: string; registeredAt: string; balances: Record<Currency, number>; };
-type CashEntryType = "customer_deposit" | "customer_withdraw" | "owner_deposit" | "owner_withdraw" | "adjustment" | "fee";
+// ✅ تغییر: اضافه کردن commission_withdraw
+type CashEntryType = "customer_deposit" | "customer_withdraw" | "owner_deposit" | "owner_withdraw" | "adjustment" | "fee" | "commission_withdraw";
 type BalanceChange = { customerId?: string; customerName: string; currency: Currency; amount: number; };
 type CashEntry = { id: string; trackingCode: string; date: string; type: CashEntryType; currency: Currency; amount: number; direction: "in" | "out"; reason: string; balanceAfter: number; customerId?: string; customerName?: string; customerPhone?: string; customerTazkira?: string; linkedExchangeId?: string; linkedHawalaId?: string; linkedHawalaSettleId?: string; customerDeleted?: boolean; status: "active" | "voided"; };
 type Transaction = { id: string; trackingCode: string; date: string; type: "exchange" | "transfer" | "convert"; fromCurrency: Currency; fromAmount: number; toCurrency: Currency; toAmount: number; rate: number; rateLabel: string; commission?: number; commissionCurrency?: Currency; commissionPayer?: "sender" | "receiver"; status: "active" | "voided"; customerId?: string; customerName?: string; senderId?: string; senderName?: string; receiverId?: string; receiverName?: string; };
 type Hawala = { id: string; number: string; date: string; currencyFrom: Currency; currencyTo: Currency; amountFrom: number; finalAmount: number; fee: number; feeCurrency: Currency; feePayer: "sender" | "receiver"; status: "pending" | "sent" | "paid" | "cancelled"; senderId?: string; senderName: string; receiverId?: string; receiverName: string; };
-type FormState = { type: CashEntryType; currency: Currency; amount: string; reason: string; customerId: string; customerName: string; };
+// ✅ تغییر: type می‌تواند خالی باشد
+type FormState = { type: CashEntryType | ""; currency: Currency; amount: string; reason: string; customerId: string; customerName: string; };
 type FormErrors = Partial<Record<keyof FormState, string>>;
 
 const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
 const labels: Record<Currency, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
-const entryTypeLabels: Record<CashEntryType, string> = { customer_deposit: "واریز مشتری", customer_withdraw: "برداشت مشتری", owner_deposit: "واریز مالک", owner_withdraw: "برداشت مالک", adjustment: "اصلاح صندوق", fee: "کارمزد" };
-const entryTypeColors: Record<CashEntryType, { light: string; dark: string }> = { customer_deposit: { light: "bg-teal-100 text-teal-700", dark: "bg-teal-400/15 text-teal-300" }, customer_withdraw: { light: "bg-orange-100 text-orange-700", dark: "bg-orange-400/15 text-orange-300" }, owner_deposit: { light: "bg-sky-100 text-sky-700", dark: "bg-sky-400/15 text-sky-300" }, owner_withdraw: { light: "bg-amber-100 text-amber-700", dark: "bg-amber-400/15 text-amber-300" }, adjustment: { light: "bg-violet-100 text-violet-700", dark: "bg-violet-400/15 text-violet-300" }, fee: { light: "bg-emerald-100 text-emerald-700", dark: "bg-emerald-400/15 text-emerald-300" } };
+const entryTypeLabels: Record<CashEntryType, string> = { customer_deposit: "واریز مشتری", customer_withdraw: "برداشت مشتری", owner_deposit: "واریز مالک", owner_withdraw: "برداشت مالک", adjustment: "اصلاح صندوق", fee: "کارمزد", commission_withdraw: "برداشت کارمزد" };
+const entryTypeColors: Record<CashEntryType, { light: string; dark: string }> = { customer_deposit: { light: "bg-teal-100 text-teal-700", dark: "bg-teal-400/15 text-teal-300" }, customer_withdraw: { light: "bg-orange-100 text-orange-700", dark: "bg-orange-400/15 text-orange-300" }, owner_deposit: { light: "bg-sky-100 text-sky-700", dark: "bg-sky-400/15 text-sky-300" }, owner_withdraw: { light: "bg-amber-100 text-amber-700", dark: "bg-amber-400/15 text-amber-300" }, adjustment: { light: "bg-violet-100 text-violet-700", dark: "bg-violet-400/15 text-violet-300" }, fee: { light: "bg-emerald-100 text-emerald-700", dark: "bg-emerald-400/15 text-emerald-300" }, commission_withdraw: { light: "bg-purple-100 text-purple-700", dark: "bg-purple-400/15 text-purple-300" } };
 const currencyColors: Record<Currency, { light: string; dark: string; gradient: string }> = { AFN: { light: "text-emerald-700", dark: "text-emerald-300", gradient: "from-emerald-500 to-teal-400" }, USD: { light: "text-sky-700", dark: "text-sky-300", gradient: "from-sky-500 to-cyan-400" }, EUR: { light: "text-blue-700", dark: "text-blue-300", gradient: "from-blue-600 to-blue-400" }, IRR: { light: "text-amber-700", dark: "text-amber-300", gradient: "from-amber-500 to-orange-400" }, PKR: { light: "text-rose-700", dark: "text-rose-300", gradient: "from-rose-500 to-pink-400" } };
 
 const generateId = (): string => { if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") { try { return crypto.randomUUID(); } catch {} } return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => { const r = (Math.random() * 16) | 0; const v = c === "x" ? r : (r & 0x3) | 0x8; return v.toString(16); }); };
@@ -67,7 +69,8 @@ function getBalanceChangesForCashEntry(entry: CashEntry, action: "register" | "r
   return changes;
 }
 
-const emptyForm: FormState = { type: "customer_deposit", currency: "AFN", amount: "", reason: "", customerId: "", customerName: "" };
+// ✅ تغییر: type پیش‌فرض خالی
+const emptyForm: FormState = { type: "", currency: "AFN", amount: "", reason: "", customerId: "", customerName: "" };
 
 const Ic = ({ n, className = "h-5 w-5" }: { n: string; className?: string }) => {
   const paths: Record<string, string> = {
@@ -92,7 +95,9 @@ const Ic = ({ n, className = "h-5 w-5" }: { n: string; className?: string }) => 
     pencil: "m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10",
     more: "M12 6.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 12.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 18.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Z",
     eye: "M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
-    xCircle: "m9.75 9.75 4.5 4.5m0-4.5-4.5 4.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
+    xCircle: "m9.75 9.75 4.5 4.5m0-4.5-4.5 4.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
+    gem: "M12 2 2 7l10 15L22 7l-10-5Z",
+    crown: "M2 18h20l-2-9-4 4-4-7-4 7-4-4-2 9Z"
   };
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true"><path d={paths[n] || ""} /></svg>;
 };
@@ -141,13 +146,55 @@ export default function CashPage() {
 
   useEffect(() => { if (!openActionId) return; const handler = (e: MouseEvent) => { const target = e.target as HTMLElement; if (!target.closest('.action-dropdown')) setOpenActionId(null); }; document.addEventListener("mousedown", handler); return () => document.removeEventListener("mousedown", handler); }, [openActionId]);
 
-  const cashBalances = useMemo(() => computeCashBalances(entries), [entries]);
-  const nextCode = useMemo(() => { if (editingEntryId) { const entry = entries.find(e => e.id === editingEntryId); return entry?.trackingCode || getNextTrackingCode(); } return getNextTrackingCode(); }, [editingEntryId, entries]);
+  // ============================================================================
+  // ✅ تغییر ۱: محاسبات ۵ کارت مجزا
+  // ============================================================================
 
-  const realCashBalances = useMemo(() => { const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; for (const cur of currencies) { let cash = cashBalances[cur] || 0; for (const c of customers) { const bal = c.balances[cur] || 0; if (bal < 0) cash += bal; } totals[cur] = cash; } return totals; }, [cashBalances, customers]);
-  const customerTotalBalances = useMemo(() => { const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; for (const c of customers) for (const cur of currencies) { const bal = c.balances[cur] || 0; if (bal > 0) totals[cur] += bal; } return totals; }, [customers]);
-  const customerDebts = useMemo(() => { const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; for (const c of customers) for (const cur of currencies) { const bal = c.balances[cur] || 0; if (bal < 0) totals[cur] += Math.abs(bal); } return totals; }, [customers]);
-  const commissionProfit = useMemo(() => { const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; for (const tx of transactions) { if (tx.commission && tx.commission > 0 && tx.commissionCurrency) totals[tx.commissionCurrency] += tx.commission; } for (const h of hawalas) { if (h.fee && h.fee > 0 && h.feeCurrency && h.status !== "cancelled") totals[h.feeCurrency] += h.fee; } return totals; }, [transactions, hawalas]);
+  // کارت ۱: موجودی فیزیکی صندوق (فقط اسناد صندوق)
+  const physicalCashBalances = useMemo(() => computeCashBalances(entries), [entries]);
+
+  // کارت ۲: موجودی مشتریان نزد صرافی (مجموع مثبت)
+  const customerDeposits = useMemo(() => {
+    const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+    for (const c of customers) for (const cur of currencies) { const bal = c.balances[cur] || 0; if (bal > 0) totals[cur] += bal; }
+    return totals;
+  }, [customers]);
+
+  // کارت ۳: بدهی مشتریان به صرافی (مجموع قدر مطلق منفی)
+  const customerDebts = useMemo(() => {
+    const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+    for (const c of customers) for (const cur of currencies) { const bal = c.balances[cur] || 0; if (bal < 0) totals[cur] += Math.abs(bal); }
+    return totals;
+  }, [customers]);
+
+  // کارت ۴: سرمایه خالص مالک
+  const ownerNetCapital = useMemo(() => {
+    const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+    for (const cur of currencies) {
+      totals[cur] = (physicalCashBalances[cur] || 0) - (customerDeposits[cur] || 0) + (customerDebts[cur] || 0);
+    }
+    return totals;
+  }, [physicalCashBalances, customerDeposits, customerDebts]);
+
+  // ✅ تغییر ۳: محاسبه کارمزد قابل برداشت
+  const totalCommissionEarned = useMemo(() => {
+    const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+    for (const tx of transactions) { if (tx.commission && tx.commission > 0 && tx.commissionCurrency) totals[tx.commissionCurrency] += tx.commission; }
+    for (const h of hawalas) { if (h.fee && h.fee > 0 && h.feeCurrency && h.status !== "cancelled") totals[h.feeCurrency] += h.fee; }
+    return totals;
+  }, [transactions, hawalas]);
+
+  const commissionWithdrawn = useMemo(() => {
+    const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+    for (const e of entries) { if (e.type === "commission_withdraw" && e.status === "active" && e.direction === "out") totals[e.currency] += e.amount; }
+    return totals;
+  }, [entries]);
+
+  const availableCommission = useMemo(() => {
+    const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+    for (const cur of currencies) totals[cur] = Math.max(0, (totalCommissionEarned[cur] || 0) - (commissionWithdrawn[cur] || 0));
+    return totals;
+  }, [totalCommissionEarned, commissionWithdrawn]);
 
   const filteredCustomerList = useMemo(() => { if (!customerFilter) return customers; const q = normalizeDigits(customerFilter.trim()).toLowerCase(); return customers.filter(c => c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q)) || (c.tazkira && normalizeDigits(c.tazkira).includes(q))); }, [customers, customerFilter]);
   const filteredEntries = useMemo(() => { let result = [...entries]; if (filterType !== "all") result = result.filter(e => e.type === filterType); if (filterCurrency !== "all") result = result.filter(e => e.currency === filterCurrency); const q = normalizeDigits(search.trim()).toLowerCase(); if (q) result = result.filter(e => { const fields = [e.trackingCode, e.reason, entryTypeLabels[e.type], e.customerName || "", e.customerPhone || "", e.customerTazkira || ""].map(f => normalizeDigits(String(f)).toLowerCase()); return fields.some(f => f.includes(q)); }); return result.sort((a, b) => { try { return new Date(b.date).getTime() - new Date(a.date).getTime(); } catch { return 0; } }); }, [entries, search, filterType, filterCurrency]);
@@ -155,16 +202,21 @@ export default function CashPage() {
   const activeCount = useMemo(() => entries.filter(e => e.status === "active").length, [entries]);
   const voidedCount = entries.length - activeCount;
 
+  // ✅ تغییر: hasType برای بررسی خالی نبودن نوع عملیات
+  const hasType = form.type !== "";
   const isInType = form.type === "customer_deposit" || form.type === "owner_deposit" || form.type === "adjustment" || form.type === "fee";
   const isCustomerType = form.type === "customer_deposit" || form.type === "customer_withdraw";
+  const isCommissionType = form.type === "commission_withdraw";
   const selectedCustomer = useMemo(() => customers.find(c => c.id === form.customerId) || null, [customers, form.customerId]);
   const editingEntry = useMemo(() => entries.find(e => e.id === editingEntryId) || null, [entries, editingEntryId]);
 
   const showToast = useCallback((message: string) => { setToast(message); setTimeout(() => setToast(""), 3500); }, []);
   const setField = useCallback((field: keyof FormState, value: string) => { setForm(prev => ({ ...prev, [field]: value })); setErrors(prev => ({ ...prev, [field]: undefined })); }, []);
 
+  // ✅ تغییر: اعتبارسنجی type خالی + برداشت کارمزد
   const validateForm = useCallback(() => {
     const errs: FormErrors = {};
+    if (!form.type) errs.type = "نوع عملیات را انتخاب کنید.";
     const amount = parseAmount(form.amount);
     if (!amount) errs.amount = "مبلغ خالی یا صفر است.";
     if (!form.reason.trim()) errs.reason = "دلیل / شرح ضروری است.";
@@ -173,8 +225,13 @@ export default function CashPage() {
       const cust = customers.find(c => c.id === form.customerId);
       if (cust) { const bal = cust.balances[form.currency] || 0; if (amount > bal) errs.amount = `موجودی کافی نیست. موجودی فعلی: ${fmt(bal)} ${labels[form.currency]}`; }
     }
+    // ✅ اعتبارسنجی برداشت کارمزد
+    if (form.type === "commission_withdraw") {
+      const avail = availableCommission[form.currency] || 0;
+      if (amount > avail) errs.amount = `کارمزد کافی نیست. قابل برداشت: ${fmt(avail)} ${labels[form.currency]}`;
+    }
     return errs;
-  }, [form, isCustomerType, customers]);
+  }, [form, isCustomerType, customers, availableCommission]);
 
   const cancelEdit = useCallback(() => { setEditingEntryId(null); setForm(emptyForm); setErrors({}); }, []);
 
@@ -211,14 +268,14 @@ export default function CashPage() {
     let entry: CashEntry;
     if (editingEntryId) {
       const old = entries.find(e => e.id === editingEntryId);
-      entry = { id: editingEntryId, trackingCode: old?.trackingCode || getNextTrackingCode(), date: old?.date || new Date().toISOString(), type: form.type, currency: form.currency, amount, direction, reason: form.reason.trim(), balanceAfter: 0, customerId: isCustomerType ? form.customerId : undefined, customerName: isCustomerType ? form.customerName : undefined, status: "active" };
+      entry = { id: editingEntryId, trackingCode: old?.trackingCode || getNextTrackingCode(), date: old?.date || new Date().toISOString(), type: form.type as CashEntryType, currency: form.currency, amount, direction, reason: form.reason.trim(), balanceAfter: 0, customerId: isCustomerType ? form.customerId : undefined, customerName: isCustomerType ? form.customerName : undefined, status: "active" };
     } else {
-      const currentBal = cashBalances[form.currency] || 0;
+      const currentBal = physicalCashBalances[form.currency] || 0;
       const newBal = isInType ? currentBal + amount : currentBal - amount;
-      entry = { id: generateId(), trackingCode: getNextTrackingCode(), date: new Date().toISOString(), type: form.type, currency: form.currency, amount, direction, reason: form.reason.trim(), balanceAfter: newBal, customerId: isCustomerType ? form.customerId : undefined, customerName: isCustomerType ? form.customerName : undefined, status: "active" };
+      entry = { id: generateId(), trackingCode: getNextTrackingCode(), date: new Date().toISOString(), type: form.type as CashEntryType, currency: form.currency, amount, direction, reason: form.reason.trim(), balanceAfter: newBal, customerId: isCustomerType ? form.customerId : undefined, customerName: isCustomerType ? form.customerName : undefined, status: "active" };
     }
     setPreviewData(entry); setPreviewOpen(true);
-  }, [validateForm, form, cashBalances, isInType, isCustomerType, showToast, editingEntryId, entries]);
+  }, [validateForm, form, physicalCashBalances, isInType, isCustomerType, showToast, editingEntryId, entries]);
 
   const confirmRegister = useCallback(() => {
     if (!previewData) return;
@@ -237,8 +294,8 @@ export default function CashPage() {
       setEntries(prev => recomputeCashBalances([...prev, entry]));
     }
     setForm(emptyForm); setErrors({}); setEditingEntryId(null); setPreviewOpen(false); setPreviewData(null);
-    showToast(wasEditing ? "سند با موفقیت ویرایش شد." : "عملیات صندوق با موفقیت ثبت شد.");
-  }, [previewData, editingEntryId, entries, customers, showToast]);
+    showToast(wasEditing ? "سند با موفقیت ویرایش شد." : isCommissionType ? "کارمزد با موفقیت برداشت شد." : "عملیات صندوق با موفقیت ثبت شد.");
+  }, [previewData, editingEntryId, entries, customers, showToast, isCommissionType]);
 
   if (!mounted) return (<div className="min-h-screen flex items-center justify-center"><div className="text-center"><div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-slate-300 border-t-emerald-500" /><p className="mt-4 text-slate-500">در حال بارگذاری...</p></div></div>);
 
@@ -255,22 +312,16 @@ export default function CashPage() {
   const identIcon = dk ? "from-emerald-400/20 to-teal-400/5 text-emerald-300 ring-emerald-400/25" : "from-emerald-400/20 to-teal-400/10 text-emerald-600 ring-emerald-400/30";
   const fld = (label: string, node: ReactNode, cls = "") => (<div className={cls}><label className={uiLabel}>{label}</label>{node}</div>);
   const errorList = Object.values(errors).filter((msg): msg is string => Boolean(msg));
-  const entryTypeOptions: [string, string][] = [["customer_deposit", "واریز مشتری به حساب"], ["customer_withdraw", "برداشت مشتری از حساب"], ["owner_deposit", "واریز مالک به صندوق"], ["owner_withdraw", "برداشت مالک از صندوق"]];
 
-  const TwoColCard = ({ title, subtitle, icon, borderColor, iconBg, data, colorFn }: { title: string; subtitle?: string; icon: string; borderColor: string; iconBg: string; data: Record<Currency, number>; colorFn: (v: number) => string; }) => (
-    <div className={`rounded-2xl border p-3 ${borderColor}`}>
-      <div className="flex items-center gap-2 mb-2">
-        <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg ${iconBg}`}><Ic n={icon} className="h-3.5 w-3.5" /></span>
-        <div className="flex-1 min-w-0">
-          <b className={`block text-[11px] font-black leading-tight ${heading}`}>{title}</b>
-          {subtitle && <div className={`text-[8px] font-bold ${subText}`}>{subtitle}</div>}
-        </div>
-      </div>
-      <div className="space-y-0.5">
-        {currencies.map(cur => { const bal = data[cur]; return (<div key={cur} className={`flex items-center justify-between rounded-md px-1.5 py-0.5 ${dk ? "bg-slate-900/50" : "bg-white"}`}><span className={`text-[10px] font-black ${subText}`}>{labels[cur]}</span><span className={`text-xs font-black tabular-nums ${colorFn(bal)}`}>{fmt(bal)}</span></div>); })}
-      </div>
-    </div>
-  );
+  // ✅ تغییر ۲: گزینه‌ها با فیلد خالی پیش‌فرض
+  const entryTypeOptions: [string, string][] = [
+    ["", "— انتخاب کنید —"],
+    ["customer_deposit", "واریز مشتری به حساب"],
+    ["customer_withdraw", "برداشت مشتری از حساب"],
+    ["owner_deposit", "واریز مالک به صندوق"],
+    ["owner_withdraw", "برداشت مالک از صندوق"],
+    ["commission_withdraw", "💎 برداشت کارمزد صرافی"],
+  ];
 
   return (
     <div dir="rtl" className={dk ? "dark" : ""}>
@@ -289,13 +340,55 @@ export default function CashPage() {
             </div>
           </header>
 
-          <div className="cs-up grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3" style={{ animationDelay: "70ms" }}>
-            <TwoColCard title="موجودی واقعی صندوق" subtitle="نقدی + کسر قرض‌ها" icon="wallet" borderColor={dk ? "border-emerald-400/25 bg-emerald-400/[0.07]" : "border-emerald-300 bg-emerald-50"} iconBg={dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"} data={realCashBalances} colorFn={(v) => v < 0 ? "text-rose-500" : dk ? "text-emerald-300" : "text-emerald-700"} />
-            <TwoColCard title="موجودی مشتریان نزد صرافی" subtitle="پول مشتری نزد صرافی" icon="user" borderColor={dk ? "border-sky-400/25 bg-sky-400/[0.07]" : "border-sky-300 bg-sky-50"} iconBg={dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-600"} data={customerTotalBalances} colorFn={(v) => v > 0 ? dk ? "text-emerald-300" : "text-emerald-700" : subText} />
-            <TwoColCard title="قرض مشتریان از صرافی" subtitle="صرافی به مشتری قرض داده" icon="alert" borderColor={dk ? "border-rose-400/25 bg-rose-400/[0.07]" : "border-rose-300 bg-rose-50"} iconBg={dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600"} data={customerDebts} colorFn={(v) => v > 0 ? "text-rose-500" : subText} />
-            <TwoColCard title="مفاد کارمزد صرافی" subtitle="از معاملات و حواله‌ها" icon="check" borderColor={dk ? "border-emerald-400/25 bg-emerald-400/[0.07]" : "border-emerald-300 bg-emerald-50"} iconBg={dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"} data={commissionProfit} colorFn={(v) => v > 0 ? dk ? "text-emerald-300" : "text-emerald-700" : subText} />
+          {/* ============================================================================
+              ✅ تغییر ۱: ۵ کارت مجزا و واضح
+          ============================================================================ */}
+          <div className="cs-up space-y-3" style={{ animationDelay: "70ms" }}>
+            {/* کارت بزرگ: موجودی فیزیکی صندوق */}
+            <div className={`rounded-2xl border p-4 md:p-5 ${dk ? "border-emerald-400/30 bg-gradient-to-r from-emerald-400/10 to-teal-400/5" : "border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50"}`}>
+              <div className="flex items-center gap-3 mb-3">
+                <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${dk ? "bg-emerald-400/20 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}><Ic n="wallet" className="h-5 w-5" /></span>
+                <div><b className={`block text-sm font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}>💰 موجودی فیزیکی صندوق</b><span className={`text-[10px] font-bold ${subText}`}>فقط اسناد صندوق — بدون موجودی مشتریان</span></div>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
+                {currencies.map(cur => { const bal = physicalCashBalances[cur]; return (<div key={cur} className={`rounded-xl px-3 py-2.5 text-center ${dk ? "bg-slate-900/60" : "bg-white shadow-sm"}`}><div className={`text-[10px] font-bold mb-1 ${subText}`}>{labels[cur]}</div><div className={`text-lg font-black tabular-nums ${bal < 0 ? "text-rose-500" : dk ? "text-emerald-300" : "text-emerald-700"}`}>{fmt(bal)}</div></div>); })}
+              </div>
+            </div>
+            {/* ۴ کارت کوچک */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {/* کارت ۲: موجودی مشتریان */}
+              <div className={`rounded-2xl border p-4 ${dk ? "border-sky-400/25 bg-sky-400/[0.06]" : "border-sky-200 bg-sky-50"}`}>
+                <div className="flex items-center gap-2 mb-3"><span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-600"}`}><Ic n="user" className="h-4 w-4" /></span><div><b className={`block text-[11px] font-black ${dk ? "text-sky-300" : "text-sky-700"}`}>👥 موجودی مشتریان</b><span className={`text-[9px] font-bold ${subText}`}>پول مشتری نزد صرافی</span></div></div>
+                <div className="space-y-1">{currencies.map(cur => { const bal = customerDeposits[cur]; return (<div key={cur} className={`flex items-center justify-between rounded-lg px-2 py-1 ${dk ? "bg-slate-900/40" : "bg-white/70"}`}><span className={`text-[10px] font-bold ${subText}`}>{labels[cur]}</span><span className={`text-[11px] font-black tabular-nums ${bal > 0 ? (dk ? "text-sky-300" : "text-sky-700") : subText}`}>{fmt(bal)}</span></div>); })}</div>
+              </div>
+              {/* کارت ۳: بدهی مشتریان */}
+              <div className={`rounded-2xl border p-4 ${dk ? "border-rose-400/25 bg-rose-400/[0.06]" : "border-rose-200 bg-rose-50"}`}>
+                <div className="flex items-center gap-2 mb-3"><span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600"}`}><Ic n="alert" className="h-4 w-4" /></span><div><b className={`block text-[11px] font-black ${dk ? "text-rose-300" : "text-rose-700"}`}>📉 بدهی مشتریان</b><span className={`text-[9px] font-bold ${subText}`}>صرافی قرض داده</span></div></div>
+                <div className="space-y-1">{currencies.map(cur => { const bal = customerDebts[cur]; return (<div key={cur} className={`flex items-center justify-between rounded-lg px-2 py-1 ${dk ? "bg-slate-900/40" : "bg-white/70"}`}><span className={`text-[10px] font-bold ${subText}`}>{labels[cur]}</span><span className={`text-[11px] font-black tabular-nums ${bal > 0 ? "text-rose-500" : subText}`}>{fmt(bal)}</span></div>); })}</div>
+              </div>
+              {/* کارت ۴: سرمایه خالص مالک */}
+              <div className={`rounded-2xl border p-4 ${dk ? "border-violet-400/25 bg-violet-400/[0.06]" : "border-violet-200 bg-violet-50"}`}>
+                <div className="flex items-center gap-2 mb-3"><span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${dk ? "bg-violet-400/15 text-violet-300" : "bg-violet-100 text-violet-600"}`}><Ic n="crown" className="h-4 w-4" /></span><div><b className={`block text-[11px] font-black ${dk ? "text-violet-300" : "text-violet-700"}`}>👑 سرمایه خالص مالک</b><span className={`text-[9px] font-bold ${subText}`}>صندوق - مشتریان + بدهی</span></div></div>
+                <div className="space-y-1">{currencies.map(cur => { const bal = ownerNetCapital[cur]; return (<div key={cur} className={`flex items-center justify-between rounded-lg px-2 py-1 ${dk ? "bg-slate-900/40" : "bg-white/70"}`}><span className={`text-[10px] font-bold ${subText}`}>{labels[cur]}</span><span className={`text-[11px] font-black tabular-nums ${bal < 0 ? "text-rose-500" : dk ? "text-violet-300" : "text-violet-700"}`}>{fmt(bal)}</span></div>); })}</div>
+              </div>
+              {/* کارت ۵: کارمزد قابل برداشت */}
+              <div className={`rounded-2xl border p-4 ${dk ? "border-amber-400/25 bg-amber-400/[0.06]" : "border-amber-200 bg-amber-50"}`}>
+                <div className="flex items-center gap-2 mb-3"><span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="gem" className="h-4 w-4" /></span><div><b className={`block text-[11px] font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>💎 کارمزد قابل برداشت</b><span className={`text-[9px] font-bold ${subText}`}>درآمد خالص صرافی</span></div></div>
+                <div className="space-y-1">{currencies.map(cur => { const bal = availableCommission[cur]; return (<div key={cur} className={`flex items-center justify-between rounded-lg px-2 py-1 ${dk ? "bg-slate-900/40" : "bg-white/70"}`}><span className={`text-[10px] font-bold ${subText}`}>{labels[cur]}</span><span className={`text-[11px] font-black tabular-nums ${bal > 0 ? (dk ? "text-amber-300" : "text-amber-700") : subText}`}>{fmt(bal)}</span></div>); })}</div>
+              </div>
+            </div>
+            {/* فرمول توضیحی */}
+            <div className={`rounded-xl border px-4 py-3 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-white/70"}`}>
+              <div className={`flex flex-wrap items-center justify-center gap-2 text-[10px] font-bold ${subText}`}>
+                <span className={`px-2 py-1 rounded-lg ${dk ? "bg-emerald-400/10 text-emerald-300" : "bg-emerald-50 text-emerald-700"}`}>💰 صندوق</span><span>=</span>
+                <span className={`px-2 py-1 rounded-lg ${dk ? "bg-violet-400/10 text-violet-300" : "bg-violet-50 text-violet-700"}`}>👑 سرمایه مالک</span><span>+</span>
+                <span className={`px-2 py-1 rounded-lg ${dk ? "bg-sky-400/10 text-sky-300" : "bg-sky-50 text-sky-700"}`}>👥 موجودی مشتریان</span><span>−</span>
+                <span className={`px-2 py-1 rounded-lg ${dk ? "bg-rose-400/10 text-rose-300" : "bg-rose-50 text-rose-700"}`}>📉 بدهی مشتریان</span>
+              </div>
+            </div>
           </div>
 
+          {/* تب‌ها */}
           <div className={`cs-up flex gap-1.5 md:gap-2 rounded-xl md:rounded-2xl border p-1.5 md:p-2 shadow-sm backdrop-blur ${glassChip}`} style={{ animationDelay: "140ms" }}>
             {[{ id: "register" as const, label: "ثبت عملیات", icon: "plus" }, { id: "ledger" as const, label: "روزنامچه صندوق", icon: "history", count: entries.length }].map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 md:gap-2 rounded-lg md:rounded-xl px-3 md:px-5 py-2.5 md:py-3 text-xs md:text-sm font-black transition-all duration-300 active:scale-[0.97] ${activeTab === tab.id ? `bg-gradient-to-l shadow-lg ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 via-teal-500 to-cyan-500 text-white"}` : dk ? "text-slate-400 hover:bg-slate-700/60 hover:text-slate-100" : "text-slate-500 hover:bg-emerald-50 hover:text-slate-800"}`}>
@@ -317,12 +410,14 @@ export default function CashPage() {
               )}
 
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                {fld("نوع عملیات *", (<div className="relative"><select value={form.type} onChange={e => { setField("type", e.target.value); if (e.target.value !== "customer_deposit" && e.target.value !== "customer_withdraw") { setField("customerId", ""); setField("customerName", ""); } }} className={`${uiInput} cursor-pointer appearance-none pl-9`}>{entryTypeOptions.map(o => <option key={o[0]} value={o[0]}>{o[1]}</option>)}</select><span className={chevPos}><Ic n="chevron" className="h-4 w-4" /></span></div>))}
+                {/* ✅ تغییر ۲: فیلد نوع عملیات با option خالی */}
+                {fld("نوع عملیات *", (<div className="relative"><select value={form.type} onChange={e => { setField("type", e.target.value); if (e.target.value !== "customer_deposit" && e.target.value !== "customer_withdraw") { setField("customerId", ""); setField("customerName", ""); } }} className={`${uiInput} cursor-pointer appearance-none pl-9 ${!form.type ? (dk ? "text-slate-500" : "text-slate-400") : ""}`}>{entryTypeOptions.map(o => <option key={o[0]} value={o[0]}>{o[1]}</option>)}</select><span className={chevPos}><Ic n="chevron" className="h-4 w-4" /></span></div>))}
                 {fld("نوع ارز *", (<div className="relative"><select value={form.currency} onChange={e => setField("currency", e.target.value)} className={`${uiInput} cursor-pointer appearance-none pl-9`}>{currencies.map(c => <option key={c} value={c}>{labels[c]}</option>)}</select><span className={chevPos}><Ic n="chevron" className="h-4 w-4" /></span></div>))}
                 {fld("مبلغ *", (<input type="text" inputMode="decimal" dir="ltr" value={form.amount} onChange={e => setField("amount", toNumericText(e.target.value))} placeholder="0" className={`${uiInput} text-left tabular-nums ${errors.amount ? errInput : ""}`} />))}
-                {fld("کد پیگیری", (<div className="relative"><input readOnly dir="ltr" value={nextCode} className={`${uiInput} ${roInput} pl-14 text-left tabular-nums font-black`} /><span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 px-2 py-1 text-[9px] font-black text-white">TR</span></div>))}
+                {fld("کد پیگیری", (<div className="relative"><input readOnly dir="ltr" value={getNextTrackingCode()} className={`${uiInput} ${roInput} pl-14 text-left tabular-nums font-black`} /><span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 px-2 py-1 text-[9px] font-black text-white">TR</span></div>))}
               </div>
 
+              {/* بخش مشتری */}
               {isCustomerType && (
                 <div className={`rounded-xl border p-4 ${dk ? "border-teal-400/25 bg-teal-400/[0.07]" : "border-teal-200 bg-teal-50"}`}>
                   <div className="flex items-center gap-2 mb-3"><span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-teal-400/15 text-teal-300" : "bg-teal-100 text-teal-600"}`}><Ic n="user" className="h-4 w-4" /></span><b className={`text-xs font-black ${dk ? "text-teal-300" : "text-teal-700"}`}>مشتری {form.type === "customer_deposit" ? "واریزکننده" : "برداشت‌کننده"}</b></div>
@@ -344,25 +439,77 @@ export default function CashPage() {
                       )}
                     </div>
                   ))}
+
+                  {/* ✅ تغییر ۴: نمایش تمام موجودی‌های مشتری */}
                   {selectedCustomer && (
-                    <div className={`mt-3 flex items-center gap-2 rounded-lg px-3 py-2 ${dk ? "bg-slate-900/50" : "bg-white"}`}>
-                      <Ic n="wallet" className={`h-4 w-4 ${dk ? "text-teal-300" : "text-teal-600"}`} />
-                      <span className={`text-xs font-bold ${subText}`}>موجودی {selectedCustomer.name} ({labels[form.currency]}):</span>
-                      <b className={`text-sm font-black tabular-nums ${(selectedCustomer.balances[form.currency] || 0) >= 0 ? currencyColors[form.currency][dk ? "dark" : "light"] : "text-rose-500"}`}>{fmt(selectedCustomer.balances[form.currency] || 0)}</b>
+                    <div className={`mt-4 rounded-xl border p-4 ${dk ? "border-slate-600 bg-slate-800/60" : "border-slate-200 bg-white"}`}>
+                      <div className="flex items-center gap-2 mb-3 pb-3 border-b border-dashed ${dk ? 'border-slate-700' : 'border-slate-200'}">
+                        <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${dk ? "bg-teal-400/15 text-teal-300" : "bg-teal-100 text-teal-600"}`}><Ic n="wallet" className="h-4 w-4" /></span>
+                        <div className="flex-1 min-w-0"><b className={`block text-sm font-black ${dk ? "text-teal-300" : "text-teal-700"}`}>💼 موجودی کامل {selectedCustomer.name}</b><span className={`text-[10px] font-bold ${subText}`}>تمام ارزهای نزد صرافی</span></div>
+                        {selectedCustomer.phone && <span className={`text-[10px] font-bold tabular-nums ${subText}`} dir="ltr">📞 {selectedCustomer.phone}</span>}
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
+                        {currencies.map(cur => {
+                          const bal = selectedCustomer.balances[cur] || 0;
+                          const isDebt = bal < 0;
+                          const isCredit = bal > 0;
+                          const isSel = form.currency === cur;
+                          return (
+                            <div key={cur} className={`relative rounded-xl px-3 py-2.5 text-center transition-all ${isSel ? dk ? "bg-teal-400/15 ring-2 ring-teal-400/40" : "bg-teal-50 ring-2 ring-teal-400/40" : dk ? "bg-slate-900/40" : "bg-slate-50"}`}>
+                              {isSel && <span className={`absolute -top-1.5 -left-1.5 grid h-5 w-5 place-items-center rounded-full text-[9px] ${dk ? "bg-teal-400 text-slate-950" : "bg-teal-500 text-white"}`}>✓</span>}
+                              <div className={`text-[10px] font-bold mb-1 ${subText}`}>{labels[cur]}</div>
+                              <div className={`text-sm font-black tabular-nums ${isDebt ? "text-rose-500" : isCredit ? currencyColors[cur][dk ? "dark" : "light"] : subText}`}>{fmt(bal)}</div>
+                              <div className="min-h-[14px] mt-1">
+                                {isDebt && <span className="text-[8px] font-black text-rose-500">🔴 قرض</span>}
+                                {isCredit && <span className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>🟢 طلب</span>}
+                                {bal === 0 && <span className={`text-[8px] font-bold ${subText}`}>⚪ صفر</span>}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
                 </div>
               )}
 
-              {fld("دلیل / شرح عملیات *", (<textarea rows={3} value={form.reason} onChange={e => setField("reason", e.target.value)} placeholder={form.type === "customer_deposit" ? "مثلاً: واریز نقدی مشتری به حساب…" : form.type === "customer_withdraw" ? "مثلاً: برداشت نقدی مشتری از حساب…" : form.type === "owner_deposit" ? "مثلاً: واریز سرمایه مالک به صندوق…" : form.type === "owner_withdraw" ? "مثلاً: برداشت مالک برای مصارف شخصی…" : form.type === "fee" ? "مثلاً: کارمزد حواله…" : "مثلاً: اصلاح موجودی…"} className={`${uiInput} h-auto py-3 resize-none ${errors.reason ? errInput : ""}`} />))}
-
-              <div className={`flex items-center gap-3 rounded-xl border p-4 ${isInType ? dk ? "border-emerald-400/25 bg-emerald-400/[0.07]" : "border-emerald-200 bg-emerald-50" : dk ? "border-rose-400/25 bg-rose-400/[0.07]" : "border-rose-200 bg-rose-50"}`}>
-                <span className={`grid h-10 w-10 place-items-center rounded-xl ${isInType ? dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600" : dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600"}`}><Ic n={isInType ? "arrowDown" : "arrowUp"} className="h-5 w-5" /></span>
-                <div>
-                  <b className={`text-sm font-black ${isInType ? dk ? "text-emerald-300" : "text-emerald-700" : dk ? "text-rose-300" : "text-rose-700"}`}>{isInType ? "افزایش موجودی صندوق" : "کاهش موجودی صندوق"}</b>
-                  <p className={`text-[11px] ${subText}`}>{isInType ? "مبلغ به موجودی" : "مبلغ از موجودی"} {labels[form.currency]} {isInType ? "اضافه" : "کم"} می‌شود.{isCustomerType && form.customerId && (form.type === "customer_deposit" ? " موجودی حساب مشتری هم افزایش می‌یابد." : " موجودی حساب مشتری هم کاهش می‌یابد.")}</p>
+              {/* ✅ تغییر ۳: بخش برداشت کارمزد */}
+              {isCommissionType && (
+                <div className={`rounded-xl border p-4 ${dk ? "border-purple-400/25 bg-purple-400/[0.07]" : "border-purple-200 bg-purple-50"}`}>
+                  <div className="flex items-center gap-2 mb-3"><span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-purple-400/15 text-purple-300" : "bg-purple-100 text-purple-600"}`}><Ic n="gem" className="h-4 w-4" /></span><b className={`text-xs font-black ${dk ? "text-purple-300" : "text-purple-700"}`}>💎 برداشت کارمزد صرافی</b></div>
+                  <p className={`text-[11px] font-bold mb-3 ${subText}`}>با این عملیات، کارمزد جمع‌آوری‌شده از صندوق خارج شده و به مالک پرداخت می‌شود.</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
+                    {currencies.map(cur => {
+                      const avail = availableCommission[cur] || 0;
+                      const isSel = form.currency === cur;
+                      return (
+                        <div key={cur} className={`rounded-xl px-3 py-2.5 text-center ${isSel ? dk ? "bg-purple-400/15 ring-2 ring-purple-400/40" : "bg-purple-100 ring-2 ring-purple-400/40" : dk ? "bg-slate-900/40" : "bg-white/70"}`}>
+                          <div className={`text-[10px] font-bold mb-1 ${subText}`}>{labels[cur]}</div>
+                          <div className={`text-sm font-black tabular-nums ${avail > 0 ? (dk ? "text-purple-300" : "text-purple-700") : subText}`}>{fmt(avail)}</div>
+                          <div className="min-h-[14px] mt-1"><span className={`text-[8px] font-bold ${avail > 0 ? (dk ? "text-emerald-300" : "text-emerald-600") : subText}`}>{avail > 0 ? "✅ قابل برداشت" : "⚪ موجود نیست"}</span></div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className={`mt-3 flex items-center justify-between rounded-lg px-3 py-2 ${dk ? "bg-slate-900/50" : "bg-white"}`}>
+                    <span className={`text-xs font-bold ${subText}`}>🎯 قابل برداشت ({labels[form.currency]}):</span>
+                    <b className={`text-sm font-black tabular-nums ${(availableCommission[form.currency] || 0) > 0 ? (dk ? "text-purple-300" : "text-purple-700") : "text-rose-500"}`}>{fmt(availableCommission[form.currency] || 0)} {labels[form.currency]}</b>
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {fld("دلیل / شرح عملیات *", (<textarea rows={3} value={form.reason} onChange={e => setField("reason", e.target.value)} placeholder={form.type === "customer_deposit" ? "مثلاً: واریز نقدی مشتری به حساب…" : form.type === "customer_withdraw" ? "مثلاً: برداشت نقدی مشتری از حساب…" : form.type === "owner_deposit" ? "مثلاً: واریز سرمایه مالک به صندوق…" : form.type === "owner_withdraw" ? "مثلاً: برداشت مالک برای مصارف شخصی…" : form.type === "commission_withdraw" ? "مثلاً: برداشت کارمزد هفتگی…" : form.type === "fee" ? "مثلاً: کارمزد حواله…" : "مثلاً: اصلاح موجودی…"} className={`${uiInput} h-auto py-3 resize-none ${errors.reason ? errInput : ""}`} />))}
+
+              {/* نشانگر جهت - فقط وقتی نوع انتخاب شده */}
+              {hasType && (
+                <div className={`flex items-center gap-3 rounded-xl border p-4 ${isInType ? dk ? "border-emerald-400/25 bg-emerald-400/[0.07]" : "border-emerald-200 bg-emerald-50" : dk ? "border-rose-400/25 bg-rose-400/[0.07]" : "border-rose-200 bg-rose-50"}`}>
+                  <span className={`grid h-10 w-10 place-items-center rounded-xl ${isInType ? dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600" : dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600"}`}><Ic n={isInType ? "arrowDown" : "arrowUp"} className="h-5 w-5" /></span>
+                  <div>
+                    <b className={`text-sm font-black ${isInType ? dk ? "text-emerald-300" : "text-emerald-700" : dk ? "text-rose-300" : "text-rose-700"}`}>{isInType ? "افزایش موجودی صندوق" : "کاهش موجودی صندوق"}</b>
+                    <p className={`text-[11px] ${subText}`}>{isInType ? "مبلغ به موجودی" : "مبلغ از موجودی"} {labels[form.currency]} {isInType ? "اضافه" : "کم"} می‌شود.{isCustomerType && form.customerId && (form.type === "customer_deposit" ? " موجودی حساب مشتری هم افزایش می‌یابد." : " موجودی حساب مشتری هم کاهش می‌یابد.")}{isCommissionType && " این مبلغ از کارمزد قابل برداشت کسر می‌شود."}</p>
+                  </div>
+                </div>
+              )}
 
               {errorList.length > 0 && (<div className={`space-y-2 rounded-xl border p-4 ${dk ? "border-rose-400/30 bg-rose-400/10 text-rose-300" : "border-rose-300 bg-rose-50 text-rose-600"}`}><b className="flex items-center gap-2 text-sm"><Ic n="alert" className="h-5 w-5 shrink-0" />لطفاً تکمیل کنید:</b><ul className="list-disc pr-5 text-sm space-y-1">{errorList.map((msg, i) => (<li key={i}>{msg}</li>))}</ul></div>)}
 
@@ -391,6 +538,7 @@ export default function CashPage() {
                     <option value="owner_withdraw">برداشت مالک</option>
                     <option value="adjustment">اصلاح صندوق</option>
                     <option value="fee">کارمزد</option>
+                    <option value="commission_withdraw">برداشت کارمزد</option>
                   </select>
                   <select value={filterCurrency} onChange={e => setFilterCurrency(e.target.value as any)} className={`${uiInput} w-auto min-w-[130px] cursor-pointer appearance-none pl-9`}><option value="all">همه ارزها</option>{currencies.map(c => <option key={c} value={c}>{labels[c]}</option>)}</select>
                   {(search || filterType !== "all" || filterCurrency !== "all") && (<button onClick={() => { setSearch(""); setFilterType("all"); setFilterCurrency("all"); }} className={`flex items-center gap-1.5 rounded-xl border px-4 py-2.5 text-xs font-black transition-all active:scale-95 cursor-pointer ${dk ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}><Ic n="x" className="h-3.5 w-3.5" />پاک کردن</button>)}
@@ -407,6 +555,7 @@ export default function CashPage() {
                           const isOwner = e.type === "owner_deposit" || e.type === "owner_withdraw";
                           const isAdjust = e.type === "adjustment";
                           const isFee = e.type === "fee";
+                          const isCommW = e.type === "commission_withdraw";
                           const isVoided = e.status === "voided";
                           const isDeleted = e.customerDeleted === true;
                           const isOpen = openActionId === e.id;
@@ -425,7 +574,7 @@ export default function CashPage() {
                               </td>
                               <td className={`whitespace-nowrap px-3 py-3 text-center text-[11px] tabular-nums ${dk ? "text-slate-400" : "text-slate-500"} ${voidStrike}`}><div dir="ltr">{shortDateLabel(e.date)}</div><div dir="ltr" className={`text-[9px] ${subText}`}>{timeLabel(e.date)}</div></td>
                               <td className="px-3 py-3 text-center"><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black whitespace-nowrap ${entryTypeColors[e.type][dk ? "dark" : "light"]} ${voidStrike}`}>{entryTypeLabels[e.type]}</span></td>
-                              <td className={`px-3 py-3 text-center text-[12px] font-bold whitespace-nowrap ${dk ? "text-slate-200" : "text-slate-700"} ${voidStrike}`}>{isOwner ? <span className={dk ? "text-amber-300" : "text-amber-700"}>👤 مالک</span> : isAdjust ? <span className={subText}>سیستم</span> : isFee ? <span className={subText}>سیستم</span> : (e.customerName || "—")}</td>
+                              <td className={`px-3 py-3 text-center text-[12px] font-bold whitespace-nowrap ${dk ? "text-slate-200" : "text-slate-700"} ${voidStrike}`}>{isOwner ? <span className={dk ? "text-amber-300" : "text-amber-700"}>👤 مالک</span> : isAdjust ? <span className={subText}>سیستم</span> : isFee ? <span className={subText}>سیستم</span> : isCommW ? <span className={dk ? "text-purple-300" : "text-purple-700"}>💎 کارمزد</span> : (e.customerName || "—")}</td>
                               <td className={`px-3 py-3 text-center text-[11px] tabular-nums whitespace-nowrap ${dk ? "text-slate-300" : "text-slate-600"} ${voidStrike}`} dir="ltr">{e.customerPhone || "—"}</td>
                               <td className={`px-3 py-3 text-center text-[11px] tabular-nums whitespace-nowrap ${dk ? "text-slate-300" : "text-slate-600"} ${voidStrike}`} dir="ltr">{e.customerTazkira || "—"}</td>
                               <td className={`px-3 py-3 text-center text-[11px] max-w-[180px] truncate ${dk ? "text-slate-300" : "text-slate-600"} ${voidStrike}`}>{e.reason || "—"}</td>
@@ -462,6 +611,7 @@ export default function CashPage() {
         </div>
       </div>
 
+      {/* مودال جزئیات سند */}
       {selectedEntry && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3" onClick={() => setSelectedEntry(null)}>
           <div className={`w-full max-w-lg rounded-xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={ev => ev.stopPropagation()}>
@@ -470,7 +620,7 @@ export default function CashPage() {
               <button onClick={() => setSelectedEntry(null)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 cursor-pointer"><Ic n="x" className="h-4 w-4" /></button>
             </div>
             <div className="max-h-[70vh] overflow-y-auto px-4 py-2">
-              {[["کد پیگیری", selectedEntry.trackingCode], ["تاریخ", `${shortDateLabel(selectedEntry.date)} - ${timeLabel(selectedEntry.date)}`], ["نوع عملیات", entryTypeLabels[selectedEntry.type]], ["مشتری", selectedEntry.customerName || (selectedEntry.type.includes("owner") ? "مالک" : "سیستم")], ["ارز", labels[selectedEntry.currency]], ["مبلغ", fmt(selectedEntry.amount)], ["جهت", selectedEntry.direction === "in" ? "دریافت ➕" : "پرداخت ➖"], ["شرح", selectedEntry.reason || "-"], ["مانده بعد", fmt(selectedEntry.balanceAfter)], ["وضعیت", selectedEntry.status === "voided" ? "❌ باطل شده" : "✅ فعال"]].map(([l, v], i) => (
+              {[["کد پیگیری", selectedEntry.trackingCode], ["تاریخ", `${shortDateLabel(selectedEntry.date)} - ${timeLabel(selectedEntry.date)}`], ["نوع عملیات", entryTypeLabels[selectedEntry.type]], ["مشتری", selectedEntry.customerName || (selectedEntry.type.includes("owner") ? "مالک" : selectedEntry.type === "commission_withdraw" ? "💎 برداشت کارمزد" : "سیستم")], ["ارز", labels[selectedEntry.currency]], ["مبلغ", fmt(selectedEntry.amount)], ["جهت", selectedEntry.direction === "in" ? "دریافت ➕" : "پرداخت ➖"], ["شرح", selectedEntry.reason || "-"], ["مانده بعد", fmt(selectedEntry.balanceAfter)], ["وضعیت", selectedEntry.status === "voided" ? "❌ باطل شده" : "✅ فعال"]].map(([l, v], i) => (
                 <div key={i} className={`flex items-start justify-between gap-4 border-b border-dashed py-3 last:border-0 ${dk ? "border-slate-700" : "border-slate-200"}`}>
                   <span className={`shrink-0 text-[11px] font-black ${dk ? "text-slate-500" : "text-slate-400"}`}>{l}</span>
                   <span className={`text-left text-[13px] font-bold ${dk ? "text-slate-200" : "text-slate-700"} ${l === "وضعیت" && selectedEntry.status === "voided" ? "text-rose-500" : ""}`}>{v}</span>
@@ -481,11 +631,12 @@ export default function CashPage() {
         </div>
       )}
 
+      {/* مودال پیش‌نمایش */}
       {previewOpen && previewData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => { setPreviewOpen(false); setPreviewData(null); }}>
           <div className={`cs-up w-full max-w-lg overflow-hidden rounded-xl md:rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={(e) => e.stopPropagation()}>
             <div className={`flex items-center justify-between border-b px-4 md:px-5 py-3 md:py-4 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
-              <b className={`flex items-center gap-2 text-sm ${dk ? "text-slate-100" : "text-slate-800"}`}><span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-emerald-400/10 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}><Ic n="doc" className="h-4 w-4" /></span>{editingEntryId ? "تأیید ویرایش سند" : "تأیید عملیات صندوق"}</b>
+              <b className={`flex items-center gap-2 text-sm ${dk ? "text-slate-100" : "text-slate-800"}`}><span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-emerald-400/10 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}><Ic n="doc" className="h-4 w-4" /></span>{editingEntryId ? "تأیید ویرایش سند" : isCommissionType ? "تأیید برداشت کارمزد" : "تأیید عملیات صندوق"}</b>
               <button onClick={() => { setPreviewOpen(false); setPreviewData(null); }} className={`grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-all duration-300 hover:rotate-90 ${dk ? "hover:bg-slate-700 hover:text-white" : "hover:bg-slate-100 hover:text-slate-700"}`}><Ic n="x" className="h-4 w-4" /></button>
             </div>
             <div className="px-4 md:px-5 py-4 space-y-4">
