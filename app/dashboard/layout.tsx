@@ -11,7 +11,6 @@ const menuItems = [
   { title: "صندوق", href: "/dashboard/cash" },
   { title: "مشتریان", href: "/dashboard/users" },
   { title: "تیکت‌ها", href: "/dashboard/tickets" },
-  { title: "تنظیمات", href: "/dashboard/settings" },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
