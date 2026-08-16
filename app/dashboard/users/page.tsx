@@ -18,7 +18,6 @@ const currencyColors: Record<Currency, { light: string; dark: string; gradient: 
 const txLabels: Record<TxType, string> = { exchange: "تبادل ارز", transfer: "انتقال", convert: "تبدیل ارز", hawala: "حواله", deposit: "واریز", withdraw: "برداشت", fee: "کارمزد", correction: "اصلاح" };
 const txColors: Record<TxType, { light: string; dark: string }> = { exchange: { light: "bg-sky-100 text-sky-700", dark: "bg-sky-400/15 text-sky-300" }, transfer: { light: "bg-violet-100 text-violet-700", dark: "bg-violet-400/15 text-violet-300" }, convert: { light: "bg-purple-100 text-purple-700", dark: "bg-purple-400/15 text-purple-300" }, hawala: { light: "bg-blue-100 text-blue-700", dark: "bg-blue-400/15 text-blue-300" }, deposit: { light: "bg-emerald-100 text-emerald-700", dark: "bg-emerald-400/15 text-emerald-300" }, withdraw: { light: "bg-rose-100 text-rose-700", dark: "bg-rose-400/15 text-rose-300" }, fee: { light: "bg-amber-100 text-amber-700", dark: "bg-amber-400/15 text-amber-300" }, correction: { light: "bg-orange-100 text-orange-700", dark: "bg-orange-400/15 text-orange-300" } };
 
-// ✅ تعریف صندوق به عنوان گزینه اول
 const CASH_BOX_ID = "CASH_BOX";
 const CASH_BOX_NAME = "صندوق";
 const CASH_BOX_CUSTOMER: Customer = { id: CASH_BOX_ID, name: CASH_BOX_NAME, phone: "", tazkira: "", address: "", note: "", telegram: "", registeredAt: "", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
@@ -117,13 +116,10 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
   return entries;
 }
 
-// ✅ تابع ساخت روزنامچه صندوق از cashEntries
 function buildCashBoxLedger(cashEntries: any[]): LedgerEntry[] {
   const entries: LedgerEntry[] = [];
   if (!Array.isArray(cashEntries)) return entries;
-  const sorted = [...cashEntries].sort((a, b) => {
-    try { return new Date(a.date).getTime() - new Date(b.date).getTime(); } catch { return 0; }
-  });
+  const sorted = [...cashEntries].sort((a, b) => { try { return new Date(a.date).getTime() - new Date(b.date).getTime(); } catch { return 0; } });
   const bals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
   for (const ce of sorted) {
     if (ce.status === "voided") continue;
@@ -133,32 +129,17 @@ function buildCashBoxLedger(cashEntries: any[]): LedgerEntry[] {
     if (amt <= 0) continue;
     const isIn = ce.direction === "in";
     bals[cur] += isIn ? amt : -amt;
-    
     let txType: TxType = "correction";
     if (ce.type === "customer_deposit") txType = "deposit";
     else if (ce.type === "customer_withdraw") txType = "withdraw";
     else if (ce.type === "fee") txType = "fee";
     else if (ce.type === "owner_deposit" || ce.type === "owner_withdraw") txType = "correction";
     else if (ce.type === "commission_withdraw") txType = "withdraw";
-    
-    entries.push({
-      id: ce.id,
-      date: ce.date || new Date().toISOString(),
-      customerId: CASH_BOX_ID,
-      type: txType,
-      description: ce.reason || entryTypeLabels[ce.type as CashEntryType] || "",
-      currency: cur,
-      amount: amt,
-      direction: isIn ? "in" : "out",
-      balanceAfter: bals[cur],
-      referenceId: ce.id,
-      referenceNumber: ce.trackingCode || ""
-    });
+    entries.push({ id: ce.id, date: ce.date || new Date().toISOString(), customerId: CASH_BOX_ID, type: txType, description: ce.reason || entryTypeLabels[ce.type as CashEntryType] || "", currency: cur, amount: amt, direction: isIn ? "in" : "out", balanceAfter: bals[cur], referenceId: ce.id, referenceNumber: ce.trackingCode || "" });
   }
   return entries;
 }
 
-// ✅ تابع محاسبه موجودی فیزیکی صندوق
 function computeCashBoxBalances(cashEntries: any[]): Record<Currency, number> {
   const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
   if (!Array.isArray(cashEntries)) return balances;
@@ -216,14 +197,9 @@ export default function CustomersPage() {
   }, [openMenuId]);
 
   const ledger = useMemo(() => { try { return buildLedger(customers, transactions, hawalas, cashEntries); } catch { return []; } }, [customers, transactions, hawalas, cashEntries]);
-
-  // ✅ روزنامچه صندوق
   const cashBoxLedger = useMemo(() => { try { return buildCashBoxLedger(cashEntries); } catch { return []; } }, [cashEntries]);
-
-  // ✅ موجودی فیزیکی صندوق
   const cashBoxBalances = useMemo(() => { try { return computeCashBoxBalances(cashEntries); } catch { return { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; } }, [cashEntries]);
 
-  // ✅ اضافه کردن صندوق به اول لیست مشتریان
   const filteredCustomers = useMemo(() => {
     const cashBoxOption = CASH_BOX_CUSTOMER;
     const q = normalizeDigits(search.trim()).toLowerCase();
@@ -235,20 +211,19 @@ export default function CustomersPage() {
     return filtered;
   }, [customers, search]);
 
-  // ✅ selectedCustomer برای صندوق هم کار می‌کند
   const selectedCustomer = useMemo(() => {
     if (selectedCustomerId === CASH_BOX_ID) return CASH_BOX_CUSTOMER;
     return customers.find(c => c.id === selectedCustomerId) || null;
   }, [customers, selectedCustomerId]);
 
-  // ✅ customerBalances برای صندوق موجودی فیزیکی را نشان می‌دهد
+  const isCashBox = selectedCustomer?.id === CASH_BOX_ID;
+
   const customerBalances = useMemo(() => {
     if (!selectedCustomer) return null;
     if (selectedCustomer.id === CASH_BOX_ID) return cashBoxBalances;
     return selectedCustomer.balances;
   }, [selectedCustomer, cashBoxBalances]);
 
-  // ✅ customerLedger برای صندوق روزنامچه صندوق را نشان می‌دهد
   const customerLedger = useMemo(() => {
     if (selectedCustomerId === CASH_BOX_ID) return cashBoxLedger;
     return ledger.filter(e => e.customerId === selectedCustomerId);
@@ -265,7 +240,6 @@ export default function CustomersPage() {
   const openEdit = (id: string) => { setSelectedCustomerId(id); setProfileTab("info"); setActiveTab("profile"); setOpenMenuId(null); };
   const backToList = () => { setActiveTab("list"); setSelectedCustomerId(null); };
 
-  // ✅ اصلاح نوشتن مستقیم در localStorage
   const deleteCustomer = (id: string) => {
     setOpenMenuId(null);
     const c = customers.find(x => x.id === id);
@@ -276,34 +250,23 @@ export default function CustomersPage() {
     if (cnt > 0) msg += `\n⚠️ ${cnt} رویداد مالی دارد.`;
     if (hasBal) msg += `\n⚠️ موجودی غیر صفر دارد!`;
     if (!window.confirm(msg)) return;
-
     setTransactions(prev => prev.map((t: any) => {
-      if (t.customerId === id || t.customerName === c.name || t.senderId === id || t.senderName === c.name || t.receiverId === id || t.receiverName === c.name) {
-        return { ...t, customerDeleted: true };
-      }
+      if (t.customerId === id || t.customerName === c.name || t.senderId === id || t.senderName === c.name || t.receiverId === id || t.receiverName === c.name) return { ...t, customerDeleted: true };
       return t;
     }));
-
     setHawalas(prev => prev.map((h: any) => {
-      if (h.senderId === id || h.senderName === c.name || h.receiverId === id || h.receiverName === c.name) {
-        return { ...h, customerDeleted: true };
-      }
+      if (h.senderId === id || h.senderName === c.name || h.receiverId === id || h.receiverName === c.name) return { ...h, customerDeleted: true };
       return h;
     }));
-
     setCashEntries(prev => prev.map((ce: any) => {
-      if (ce.customerId === id || ce.customerName === c.name) {
-        return { ...ce, customerDeleted: true };
-      }
+      if (ce.customerId === id || ce.customerName === c.name) return { ...ce, customerDeleted: true };
       return ce;
     }));
-
     setCustomers(p => p.filter(x => x.id !== id));
     if (selectedCustomerId === id) { setSelectedCustomerId(null); setActiveTab("list"); }
     showToast(`"${c.name}" حذف شد و داده‌های مرتبط علامت‌گذاری شدند.`);
   };
 
-  // ✅ Validation با هایلایت قرمز
   const validateForm = () => {
     const errs: FormErrors = {};
     if (!form.name.trim()) errs.name = "نام ضروری است.";
@@ -321,71 +284,27 @@ export default function CustomersPage() {
     showToast(`"${nc.name}" ثبت شد.`);
   };
 
-  // ✅ اصلاح نوشتن مستقیم در localStorage
   const updateCustomer = () => {
-    if (!selectedCustomer) return;
+    if (!selectedCustomer || isCashBox) return;
     const oldName = selectedCustomer.name;
     const newName = form.name.trim();
-
-    setCustomers(p => p.map(c => c.id === selectedCustomer.id ? {
-      ...c,
-      name: newName,
-      phone: form.phone.trim(),
-      tazkira: form.tazkira.trim(),
-      address: form.address.trim(),
-      note: form.note.trim(),
-      telegram: form.telegram.trim()
-    } : c));
-
+    setCustomers(p => p.map(c => c.id === selectedCustomer.id ? { ...c, name: newName, phone: form.phone.trim(), tazkira: form.tazkira.trim(), address: form.address.trim(), note: form.note.trim(), telegram: form.telegram.trim() } : c));
     if (oldName !== newName) {
-      setTransactions(prev => prev.map((t: any) => {
-        const u = { ...t };
-        if (t.customerName === oldName) u.customerName = newName;
-        if (t.senderName === oldName) u.senderName = newName;
-        if (t.receiverName === oldName) u.receiverName = newName;
-        return u;
-      }));
-
-      setHawalas(prev => prev.map((h: any) => {
-        const u = { ...h };
-        if (h.senderName === oldName) u.senderName = newName;
-        if (h.receiverName === oldName) u.receiverName = newName;
-        return u;
-      }));
-
-      setCashEntries(prev => prev.map((ce: any) => {
-        const u = { ...ce };
-        if (ce.customerName === oldName) u.customerName = newName;
-        return u;
-      }));
+      setTransactions(prev => prev.map((t: any) => { const u = { ...t }; if (t.customerName === oldName) u.customerName = newName; if (t.senderName === oldName) u.senderName = newName; if (t.receiverName === oldName) u.receiverName = newName; return u; }));
+      setHawalas(prev => prev.map((h: any) => { const u = { ...h }; if (h.senderName === oldName) u.senderName = newName; if (h.receiverName === oldName) u.receiverName = newName; return u; }));
+      setCashEntries(prev => prev.map((ce: any) => { const u = { ...ce }; if (ce.customerName === oldName) u.customerName = newName; return u; }));
     }
-
     showToast("به‌روز شد.");
   };
 
-  // ✅ جلوگیری از بارگذاری فرم ویرایش برای صندوق
-  useEffect(() => { 
-    if (profileTab === "info" && selectedCustomer && selectedCustomer.id !== CASH_BOX_ID) { 
-      setForm({ 
-        name: selectedCustomer.name, 
-        phone: selectedCustomer.phone || "", 
-        tazkira: selectedCustomer.tazkira || "", 
-        address: selectedCustomer.address || "", 
-        note: selectedCustomer.note || "", 
-        telegram: selectedCustomer.telegram || "" 
-      }); 
-    } 
-  }, [profileTab, selectedCustomer]);
+  useEffect(() => { if (profileTab === "info" && selectedCustomer && selectedCustomer.id !== CASH_BOX_ID) { setForm({ name: selectedCustomer.name, phone: selectedCustomer.phone || "", tazkira: selectedCustomer.tazkira || "", address: selectedCustomer.address || "", note: selectedCustomer.note || "", telegram: selectedCustomer.telegram || "" }); } }, [profileTab, selectedCustomer]);
 
-  // ✅ printStatement برای صندوق
   const printStatement = () => {
     if (!selectedCustomer || !customerBalances) return;
     try {
       const win = window.open("", "_blank", "width=1000,height=700"); if (!win) return;
-      const title = selectedCustomer.id === CASH_BOX_ID ? "صورت‌حساب صندوق فیزیکی صرافی" : `صورت‌حساب ${selectedCustomer.name}`;
-      const customerInfo = selectedCustomer.id === CASH_BOX_ID 
-        ? "موجودی فیزیکی کشوی صرافی" 
-        : `تلفن: ${selectedCustomer.phone || "-"} | تذکره: ${selectedCustomer.tazkira || "-"} | تلگرام: ${selectedCustomer.telegram || "-"}`;
+      const title = isCashBox ? "صورت‌حساب صندوق فیزیکی صرافی" : `صورت‌حساب ${selectedCustomer.name}`;
+      const customerInfo = isCashBox ? "موجودی فیزیکی کشوی صرافی" : `تلفن: ${selectedCustomer.phone || "-"} | تذکره: ${selectedCustomer.tazkira || "-"} | تلگرام: ${selectedCustomer.telegram || "-"}`;
       win.document.write(`<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8"><title>${title}</title><style>body{font-family:Tahoma;padding:24px;direction:rtl}h1{color:#0369a1}table{width:100%;border-collapse:collapse;font-size:12px;margin:12px 0}th,td{border:1px solid #cbd5e1;padding:6px 8px;text-align:right}th{background:#f0f9ff}.in{color:#059669;font-weight:bold}.out{color:#dc2626;font-weight:bold}.box{display:inline-block;padding:8px 14px;border:2px solid #0ea5e9;border-radius:8px;margin:4px;font-weight:bold}</style></head><body><h1>${title}</h1><p>${customerInfo}</p><h3>مانده</h3><div>${currencies.map(c => `<span class="box">${labels[c]}: ${fmt(customerBalances[c])}</span>`).join("")}</div><h3>گردش (${customerLedger.length})</h3><table><tr><th>شماره</th><th>تاریخ</th><th>ساعت</th><th>سند</th><th>نوع</th><th>شرح</th><th>ارز</th><th>دریافت</th><th>پرداخت</th><th>مانده</th></tr>${customerLedger.map((e, i) => `<tr><td>${i + 1}</td><td>${shortDateLabel(e.date)}</td><td>${timeLabel(e.date)}</td><td>${e.referenceNumber || "-"}</td><td>${txLabels[e.type]}</td><td>${e.description}</td><td>${labels[e.currency]}</td><td class="in">${e.direction === "in" ? fmt(e.amount) : ""}</td><td class="out">${e.direction === "out" ? fmt(e.amount) : ""}</td><td>${fmt(e.balanceAfter)}</td></tr>`).join("")}</table><script>window.print()</script></body></html>`);
       win.document.close(); win.focus();
     } catch { showToast("خطا در چاپ"); }
@@ -407,8 +326,6 @@ export default function CustomersPage() {
   const errBox = (list: string[]) => list.length === 0 ? null : (<div className={`space-y-2 rounded-xl border p-4 ${dk ? "border-rose-500/50 bg-rose-500/10 text-rose-300" : "border-rose-500 bg-rose-50 text-rose-600"}`}><b className="flex items-center gap-2 text-sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 shrink-0" aria-hidden="true"><path d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>لطفاً فیلدهای اجباری را تکمیل کنید:</b><ul className="list-disc pr-5 text-sm space-y-1">{list.map((m, i) => <li key={i}>{m}</li>)}</ul></div>);
   const errorList = Object.values(errors).filter((m): m is string => Boolean(m));
 
-  const isCashBox = selectedCustomer?.id === CASH_BOX_ID;
-
   return (
     <div dir="rtl" className={dk ? "dark" : ""}>
       <style>{`@import url("https://fonts.googleapis.com/css2?family=Lalezar&family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap");.cu-font{font-family:"Vazirmatn","Segoe UI",Tahoma,sans-serif}.cu-display{font-family:"Lalezar","Vazirmatn",Tahoma,sans-serif}.dark{color-scheme:dark}@keyframes cuUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}.cu-up{animation:cuUp .5s cubic-bezier(.22,.8,.35,1) both}.cu-scroll::-webkit-scrollbar{height:6px;width:6px}.cu-scroll::-webkit-scrollbar-thumb{background:rgba(16,185,129,.3);border-radius:3px}.cu-scroll{scrollbar-width:thin}@keyframes menuIn{from{opacity:0;transform:scale(.95) translateY(-4px)}to{opacity:1;transform:scale(1) translateY(0)}}.cu-menu{animation:menuIn .15s ease-out}`}</style>
@@ -421,10 +338,7 @@ export default function CustomersPage() {
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 md:h-6 md:w-6" aria-hidden="true"><path d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" /></svg>
                 <span className={`absolute -bottom-1 -left-1 grid h-4 min-w-4 md:h-5 md:min-w-5 place-items-center rounded-full bg-gradient-to-br from-amber-400 to-orange-400 px-1 text-[7px] md:text-[8px] font-black text-white ring-2 ${dk ? "ring-[#0f172a]" : "ring-[#ecfdf5]"}`}>CU</span>
               </div>
-              <div className="min-w-0">
-                <h1 className={`cu-display text-2xl md:text-4xl leading-none ${heading}`}>مدیریت مشتریان</h1>
-                <p className={`mt-1 text-[10px] md:text-xs font-bold ${subText}`}>پروندهٔ کامل، گردش حساب و سوابق مالی</p>
-              </div>
+              <div className="min-w-0"><h1 className={`cu-display text-2xl md:text-4xl leading-none ${heading}`}>مدیریت مشتریان</h1><p className={`mt-1 text-[10px] md:text-xs font-bold ${subText}`}>پروندهٔ کامل، گردش حساب و سوابق مالی</p></div>
             </div>
             <div className="flex items-center gap-1.5 md:gap-2.5">
               <div className={`hidden sm:flex items-center gap-2 rounded-xl border px-3 py-2 shadow-sm backdrop-blur ${glassChip}`}><span className="relative flex h-2.5 w-2.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-70" /><span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" /></span><span dir="ltr" className={`text-xs font-bold tabular-nums ${dk ? "text-slate-100" : "text-slate-700"}`}>{currentDateTime || "--:--"}</span></div>
@@ -491,130 +405,79 @@ export default function CustomersPage() {
                 ) : (
                   <>
                     <div className="md:hidden space-y-2">
-                      {filteredCustomers.map(c => (
-                        <div key={c.id} className={`rounded-2xl border p-4 ${glassCard}`}>
-                          <div className="flex items-start gap-3">
-                            <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-xl ${c.id === CASH_BOX_ID ? "bg-gradient-to-br from-emerald-500 to-teal-500" : "bg-gradient-to-br from-emerald-500 to-teal-500"} text-white font-black text-lg shadow-lg`}>
-                              {c.id === CASH_BOX_ID ? "💰" : c.name.charAt(0)}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <b className={`text-sm font-black ${dk ? "text-slate-100" : "text-slate-800"}`}>{c.name}</b>
-                              {c.id === CASH_BOX_ID && <span className={`mr-2 text-[9px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>موجودی فیزیکی صرافی</span>}
-                              <div className={`text-[11px] ${subText} mt-1 space-y-0.5`}>
-                                {c.id !== CASH_BOX_ID && (
-                                  <>
-                                    <div>📱 <span dir="ltr">{c.phone || "-"}</span></div>
-                                    <div>🆔 <span dir="ltr">{c.tazkira || "-"}</span></div>
-                                    {c.address && <div>📍 {c.address}</div>}
-                                  </>
-                                )}
-                                {c.id === CASH_BOX_ID && <div>💰 موجودی فیزیکی کشوی صرافی</div>}
+                      {filteredCustomers.map(c => {
+                        const isCashBoxRow = c.id === CASH_BOX_ID;
+                        const balSource = isCashBoxRow ? cashBoxBalances : c.balances;
+                        return (
+                          <div key={c.id} className={`rounded-2xl border p-4 ${glassCard} ${isCashBoxRow ? (dk ? "border-emerald-400/30" : "border-emerald-200") : ""}`}>
+                            <div className="flex items-start gap-3">
+                              <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white font-black text-lg shadow-lg`}>{isCashBoxRow ? "💰" : c.name.charAt(0)}</div>
+                              <div className="flex-1 min-w-0">
+                                <b className={`text-sm font-black ${dk ? "text-slate-100" : "text-slate-800"}`}>{c.name}</b>
+                                {isCashBoxRow && <span className={`mr-2 text-[9px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>موجودی فیزیکی صرافی</span>}
+                                <div className={`text-[11px] ${subText} mt-1 space-y-0.5`}>
+                                  {!isCashBoxRow && (<><div>📱 <span dir="ltr">{c.phone || "-"}</span></div><div>🆔 <span dir="ltr">{c.tazkira || "-"}</span></div>{c.address && <div>📍 {c.address}</div>}</>)}
+                                  {isCashBoxRow && <div>💰 موجودی فیزیکی کشوی صرافی</div>}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                          <div className="grid grid-cols-5 gap-1 mt-3">
-                            {currencies.map(cur => {
-                              const bal = c.id === CASH_BOX_ID ? cashBoxBalances[cur] : c.balances[cur];
-                              return (
+                            <div className="grid grid-cols-5 gap-1 mt-3">
+                              {currencies.map(cur => (
                                 <div key={cur} className={`rounded-lg px-1.5 py-1.5 text-center ${dk ? "bg-slate-900/50" : "bg-slate-50"}`}>
                                   <div className={`text-[8px] font-black ${subText}`}>{cur}</div>
-                                  <div className={`text-[10px] font-black tabular-nums ${bal >= 0 ? currencyColors[cur][dk ? "dark" : "light"] : "text-rose-500"}`}>{fmt(bal)}</div>
+                                  <div className={`text-[10px] font-black tabular-nums ${balSource[cur] >= 0 ? currencyColors[cur][dk ? "dark" : "light"] : "text-rose-500"}`}>{fmt(balSource[cur])}</div>
                                 </div>
-                              );
-                            })}
-                          </div>
-                          <div className="flex flex-col gap-1.5 mt-3">
-                            <button onClick={() => openProfile(c.id)} className={`flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-bold cursor-pointer ${dk ? "border-emerald-400/30 text-emerald-300" : "border-emerald-300 text-emerald-600"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>مشاهده</button>
-                            {c.id !== CASH_BOX_ID && (
-                              <>
+                              ))}
+                            </div>
+                            <div className="flex flex-col gap-1.5 mt-3">
+                              <button onClick={() => openProfile(c.id)} className={`flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-bold cursor-pointer ${dk ? "border-emerald-400/30 text-emerald-300" : "border-emerald-300 text-emerald-600"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>مشاهده</button>
+                              {!isCashBoxRow && (<>
                                 <button onClick={() => openEdit(c.id)} className={`flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-bold cursor-pointer ${dk ? "border-sky-400/30 text-sky-300" : "border-sky-300 text-sky-600"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true"><path d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" /></svg>ویرایش</button>
                                 <button onClick={() => deleteCustomer(c.id)} className={`flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-bold cursor-pointer ${dk ? "border-rose-400/30 text-rose-300" : "border-rose-300 text-rose-600"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true"><path d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>حذف</button>
-                              </>
-                            )}
+                              </>)}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
 
                     <div className="hidden md:block overflow-x-auto cu-scroll">
                       <table className="w-full min-w-[900px] text-sm">
-                        <thead>
-                          <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
-                            {["شماره", "مشتری", "تماس", "هویت", "موجودی", "عملیات"].map(h => (
-                              <th key={h} className="px-4 py-3 text-center text-[11px] font-black text-slate-400">{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
+                        <thead><tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>{["شماره", "مشتری", "تماس", "هویت", "موجودی", "عملیات"].map(h => (<th key={h} className="px-4 py-3 text-center text-[11px] font-black text-slate-400">{h}</th>))}</tr></thead>
                         <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
                           {filteredCustomers.map((c, idx) => {
-                            const hasBal = c.id === CASH_BOX_ID 
-                              ? currencies.some(cur => cashBoxBalances[cur] !== 0)
-                              : currencies.some(cur => c.balances[cur] !== 0);
-                            const isOpen = openMenuId === c.id;
                             const isCashBoxRow = c.id === CASH_BOX_ID;
+                            const hasBal = isCashBoxRow ? currencies.some(cur => cashBoxBalances[cur] !== 0) : currencies.some(cur => c.balances[cur] !== 0);
                             const balSource = isCashBoxRow ? cashBoxBalances : c.balances;
+                            const isOpen = openMenuId === c.id;
                             return (
                               <tr key={c.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/70"} ${isCashBoxRow ? (dk ? "bg-emerald-400/[0.03]" : "bg-emerald-50/30") : ""}`}>
                                 <td className="px-4 py-3.5 text-center align-middle"><span className={`inline-grid h-8 w-8 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500"}`}>{idx + 1}</span></td>
                                 <td className="px-4 py-3.5 text-center align-middle">
-                                  <div className={`text-[13px] font-black ${dk ? "text-slate-100" : "text-slate-800"}`}>
-                                    {isCashBoxRow && <span className="ml-1">💰</span>}
-                                    {c.name}
-                                    {isCashBoxRow && <span className={`mr-2 text-[9px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>فیزیکی</span>}
-                                  </div>
-                                  {c.address && !isCashBoxRow && <div className={`text-[10px] mt-1 ${subText}`}>📍 {c.address}</div>}
+                                  <div className={`text-[13px] font-black ${dk ? "text-slate-100" : "text-slate-800"}`}>{isCashBoxRow && <span className="ml-1">💰</span>}{c.name}{isCashBoxRow && <span className={`mr-2 text-[9px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>فیزیکی</span>}</div>
+                                  {!isCashBoxRow && c.address && <div className={`text-[10px] mt-1 ${subText}`}>📍 {c.address}</div>}
                                   {isCashBoxRow && <div className={`text-[10px] mt-1 ${subText}`}>موجودی فیزیکی کشوی صرافی</div>}
                                 </td>
                                 <td className="px-4 py-3.5 text-center align-middle">
-                                  {!isCashBoxRow ? (
-                                    <>
-                                      <div className={`text-[12px] font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`} dir="ltr">📱 {c.phone || "-"}</div>
-                                      <div className={`text-[10px] tabular-nums mt-1 ${subText}`} dir="ltr">🆔 {c.tazkira || "-"}</div>
-                                    </>
-                                  ) : (
-                                    <div className={`text-[10px] ${subText}`}>—</div>
-                                  )}
+                                  {!isCashBoxRow ? (<><div className={`text-[12px] font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`} dir="ltr">📱 {c.phone || "-"}</div><div className={`text-[10px] tabular-nums mt-1 ${subText}`} dir="ltr">🆔 {c.tazkira || "-"}</div></>) : (<div className={`text-[10px] ${subText}`}>—</div>)}
                                 </td>
                                 <td className="px-4 py-3.5 text-center align-middle">
-                                  {!isCashBoxRow ? (
-                                    <>
-                                      <div className={`text-[11px] tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{c.registeredAt ? shortDateLabel(c.registeredAt) : "-"}</div>
-                                      <div className={`text-[10px] mt-1 ${subText}`}>{ledger.filter(e => e.customerId === c.id).length} رویداد</div>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <div className={`text-[11px] tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`}>—</div>
-                                      <div className={`text-[10px] mt-1 ${subText}`}>{cashBoxLedger.length} رویداد</div>
-                                    </>
-                                  )}
+                                  {!isCashBoxRow ? (<><div className={`text-[11px] tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{c.registeredAt ? shortDateLabel(c.registeredAt) : "-"}</div><div className={`text-[10px] mt-1 ${subText}`}>{ledger.filter(e => e.customerId === c.id).length} رویداد</div></>) : (<><div className={`text-[11px] tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`}>—</div><div className={`text-[10px] mt-1 ${subText}`}>{cashBoxLedger.length} رویداد</div></>)}
                                 </td>
                                 <td className="px-4 py-3.5 text-center align-middle">
-                                  {hasBal ? (
-                                    <div className="flex flex-col items-center gap-0.5">
-                                      {currencies.map(cur => balSource[cur] !== 0 && (
-                                        <div key={cur} className="flex items-center gap-1">
-                                          <span className={`text-[11px] font-black tabular-nums ${balSource[cur] < 0 ? "text-rose-500" : currencyColors[cur][dk ? "dark" : "light"]}`}>{fmt(balSource[cur])}</span>
-                                          <span className={`text-[9px] ${subText}`}>{labels[cur]}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  ) : <span className={`text-[10px] ${subText}`}>بدون موجودی</span>}
+                                  {hasBal ? (<div className="flex flex-col items-center gap-0.5">{currencies.map(cur => balSource[cur] !== 0 && (<div key={cur} className="flex items-center gap-1"><span className={`text-[11px] font-black tabular-nums ${balSource[cur] < 0 ? "text-rose-500" : currencyColors[cur][dk ? "dark" : "light"]}`}>{fmt(balSource[cur])}</span><span className={`text-[9px] ${subText}`}>{labels[cur]}</span></div>))}</div>) : <span className={`text-[10px] ${subText}`}>بدون موجودی</span>}
                                 </td>
                                 <td className="px-4 py-3.5 text-center align-middle">
                                   <div className="relative inline-block" ref={isOpen ? menuRef : null}>
-                                    <button data-menu-toggle onClick={(e) => { e.stopPropagation(); setOpenMenuId(isOpen ? null : c.id); }} className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-black transition-all ${isOpen ? dk ? "border-emerald-400/50 bg-emerald-400/20 text-emerald-300" : "border-emerald-400 bg-emerald-50 text-emerald-600" : dk ? "border-slate-600 bg-slate-900 text-emerald-300 hover:border-emerald-400/50" : "border-slate-200 bg-white text-emerald-600 hover:border-emerald-300"}`}>
-                                      عملیات<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={`h-3 w-3 transition-transform ${isOpen ? "rotate-180" : ""}`} aria-hidden="true"><path d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
-                                    </button>
+                                    <button data-menu-toggle onClick={(e) => { e.stopPropagation(); setOpenMenuId(isOpen ? null : c.id); }} className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-black transition-all ${isOpen ? dk ? "border-emerald-400/50 bg-emerald-400/20 text-emerald-300" : "border-emerald-400 bg-emerald-50 text-emerald-600" : dk ? "border-slate-600 bg-slate-900 text-emerald-300 hover:border-emerald-400/50" : "border-slate-200 bg-white text-emerald-600 hover:border-emerald-300"}`}>عملیات<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={`h-3 w-3 transition-transform ${isOpen ? "rotate-180" : ""}`} aria-hidden="true"><path d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg></button>
                                     {isOpen && (
                                       <ul className={`cu-menu absolute left-1/2 -translate-x-1/2 top-full z-20 mt-1.5 w-36 space-y-1 rounded-xl border p-1.5 shadow-xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`}>
                                         <li><button onClick={() => openProfile(c.id)} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold cursor-pointer ${dk ? "text-slate-300 hover:bg-emerald-400/10" : "text-slate-600 hover:bg-emerald-50"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>مشاهده</button></li>
-                                        {!isCashBoxRow && (
-                                          <>
-                                            <li><button onClick={() => openEdit(c.id)} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold cursor-pointer ${dk ? "text-sky-300 hover:bg-sky-400/10" : "text-sky-600 hover:bg-sky-50"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true"><path d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" /></svg>ویرایش</button></li>
-                                            <li className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
-                                            <li><button onClick={() => deleteCustomer(c.id)} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold cursor-pointer ${dk ? "text-rose-300 hover:bg-rose-400/10" : "text-rose-500 hover:bg-rose-50"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true"><path d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>حذف</button></li>
-                                          </>
-                                        )}
+                                        {!isCashBoxRow && (<>
+                                          <li><button onClick={() => openEdit(c.id)} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold cursor-pointer ${dk ? "text-sky-300 hover:bg-sky-400/10" : "text-sky-600 hover:bg-sky-50"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true"><path d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" /></svg>ویرایش</button></li>
+                                          <li className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
+                                          <li><button onClick={() => deleteCustomer(c.id)} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold cursor-pointer ${dk ? "text-rose-300 hover:bg-rose-400/10" : "text-rose-500 hover:bg-rose-50"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true"><path d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>حذف</button></li>
+                                        </>)}
                                       </ul>
                                     )}
                                   </div>
@@ -633,10 +496,7 @@ export default function CustomersPage() {
 
           {activeTab === "new" && (
             <section className={`cu-up space-y-4 md:space-y-5 p-4 md:p-7 ${uiCard}`}>
-              <div className="flex flex-wrap items-center gap-3">
-                <span className={`grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identIcon}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5" aria-hidden="true"><path d="M12 4.5v15m7.5-7.5h-15" /></svg></span>
-                <div className="flex-1 min-w-0"><h2 className={`cu-display text-xl md:text-2xl leading-none ${heading}`}>ثبت مشتری جدید</h2><p className={`mt-1 text-[11px] font-bold ${subText}`}>ایجاد پروندهٔ جدید</p></div>
-              </div>
+              <div className="flex flex-wrap items-center gap-3"><span className={`grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identIcon}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5" aria-hidden="true"><path d="M12 4.5v15m7.5-7.5h-15" /></svg></span><div className="flex-1 min-w-0"><h2 className={`cu-display text-xl md:text-2xl leading-none ${heading}`}>ثبت مشتری جدید</h2><p className={`mt-1 text-[11px] font-bold ${subText}`}>ایجاد پروندهٔ جدید</p></div></div>
               <div className="grid gap-4 md:grid-cols-2">
                 {fld("نام و نام خانوادگی *", (<input className={`${uiInput} ${errors.name ? errInput : ""}`} value={form.name} onChange={e => setField("name", e.target.value)} placeholder="مثلاً علی احمدی" />))}
                 {fld("شماره تماس *", (<input className={`${uiInput} ${errors.phone ? errInput : ""}`} value={form.phone} onChange={e => setField("phone", e.target.value)} placeholder="07xxxxxxxx" />))}
@@ -659,34 +519,16 @@ export default function CustomersPage() {
                 <div className="relative">
                   <button onClick={backToList} className={`mb-4 flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-bold ${dk ? "border-slate-600 text-slate-300" : "border-slate-200 text-slate-600"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 rotate-90" aria-hidden="true"><path d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>بازگشت</button>
                   <div className="flex flex-wrap items-start gap-4 md:gap-6">
-                    <div className={`grid h-20 w-20 md:h-24 md:w-24 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-500 text-white font-black text-3xl md:text-4xl shadow-2xl ring-4 ${dk ? "ring-slate-800" : "ring-white"}`}>
-                      {isCashBox ? "💰" : selectedCustomer.name.charAt(0)}
-                    </div>
+                    <div className={`grid h-20 w-20 md:h-24 md:w-24 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-500 text-white font-black text-3xl md:text-4xl shadow-2xl ring-4 ${dk ? "ring-slate-800" : "ring-white"}`}>{isCashBox ? "💰" : selectedCustomer.name.charAt(0)}</div>
                     <div className="flex-1 min-w-0">
-                      <h2 className={`cu-display text-2xl md:text-3xl leading-none ${heading}`}>
-                        {selectedCustomer.name}
-                        {isCashBox && <span className={`mr-2 text-sm font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>(موجودی فیزیکی صرافی)</span>}
-                      </h2>
+                      <h2 className={`cu-display text-2xl md:text-3xl leading-none ${heading}`}>{selectedCustomer.name}{isCashBox && <span className={`mr-2 text-sm font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>(موجودی فیزیکی صرافی)</span>}</h2>
                       <div className={`grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1 text-xs mt-2 ${subText}`}>
                         <div><b>کد:</b> <span dir="ltr" className="font-black tabular-nums">{isCashBox ? "CASH_BOX" : selectedCustomer.id.slice(-6)}</span></div>
-                        {!isCashBox && (
-                          <>
-                            <div><b>تلفن:</b> <span dir="ltr" className="font-black tabular-nums">{selectedCustomer.phone || "-"}</span></div>
-                            <div><b>تذکره:</b> <span dir="ltr" className="font-black tabular-nums">{selectedCustomer.tazkira || "-"}</span></div>
-                            <div><b>ثبت:</b> <span dir="ltr" className="font-black tabular-nums">{selectedCustomer.registeredAt ? shortDateLabel(selectedCustomer.registeredAt) : "-"}</span></div>
-                            {selectedCustomer.telegram && <div className="md:col-span-2"><b>تلگرام:</b> <span dir="ltr" className="font-black tabular-nums">{selectedCustomer.telegram}</span></div>}
-                            {selectedCustomer.address && <div className="md:col-span-2"><b>آدرس:</b> <span className="font-black">{selectedCustomer.address}</span></div>}
-                            {selectedCustomer.note && <div className="md:col-span-4"><b>یادداشت:</b> <span className="font-black">{selectedCustomer.note}</span></div>}
-                          </>
-                        )}
-                        {isCashBox && (
-                          <div className="md:col-span-3"><b>توضیحات:</b> <span className="font-black">موجودی فیزیکی کشوی صرافی - شامل تمام دریافتی‌ها و پرداختی‌های نقدی</span></div>
-                        )}
+                        {!isCashBox && (<><div><b>تلفن:</b> <span dir="ltr" className="font-black tabular-nums">{selectedCustomer.phone || "-"}</span></div><div><b>تذکره:</b> <span dir="ltr" className="font-black tabular-nums">{selectedCustomer.tazkira || "-"}</span></div><div><b>ثبت:</b> <span dir="ltr" className="font-black tabular-nums">{selectedCustomer.registeredAt ? shortDateLabel(selectedCustomer.registeredAt) : "-"}</span></div>{selectedCustomer.telegram && <div className="md:col-span-2"><b>تلگرام:</b> <span dir="ltr" className="font-black tabular-nums">{selectedCustomer.telegram}</span></div>}{selectedCustomer.address && <div className="md:col-span-2"><b>آدرس:</b> <span className="font-black">{selectedCustomer.address}</span></div>}{selectedCustomer.note && <div className="md:col-span-4"><b>یادداشت:</b> <span className="font-black">{selectedCustomer.note}</span></div>}</>)}
+                        {isCashBox && <div className="md:col-span-3"><b>توضیحات:</b> <span className="font-black">موجودی فیزیکی کشوی صرافی - شامل تمام دریافتی‌ها و پرداختی‌های نقدی</span></div>}
                       </div>
                     </div>
-                    {!isCashBox && (
-                      <button onClick={() => deleteCustomer(selectedCustomer.id)} className={`cursor-pointer rounded-xl border px-3 py-2 text-xs font-bold ${dk ? "border-rose-400/30 text-rose-300" : "border-rose-300 text-rose-600"}`}><span className="flex items-center gap-1.5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true"><path d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>حذف</span></button>
-                    )}
+                    {!isCashBox && (<button onClick={() => deleteCustomer(selectedCustomer.id)} className={`cursor-pointer rounded-xl border px-3 py-2 text-xs font-bold ${dk ? "border-rose-400/30 text-rose-300" : "border-rose-300 text-rose-600"}`}><span className="flex items-center gap-1.5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true"><path d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>حذف</span></button>)}
                   </div>
                 </div>
               </div>
@@ -704,8 +546,13 @@ export default function CustomersPage() {
                       <div key={cur} className={`rounded-xl border p-3 text-center ${dk ? "border-slate-700 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                         <div className={`text-[10px] font-black ${subText} mb-1`}>{labels[cur]}</div>
                         <div className={`text-lg font-black tabular-nums ${bal < 0 ? "text-rose-500" : colors[dk ? "dark" : "light"]}`}>{fmt(bal)}</div>
-                        {bal < 0 && <div className="text-[9px] font-bold text-rose-500 mt-1">قرض</div>}
-                        {bal > 0 && <div className={`text-[9px] font-bold mt-1 ${subText}`}>طلب</div>}
+                        <div className="min-h-[14px] mt-1">
+                          {isCashBox ? (
+                            <>{bal < 0 && <span className="text-[8px] font-black text-rose-500">⚠️ کسری صندوق</span>}{bal > 0 && <span className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>✅ موجودی نقدی</span>}{bal === 0 && <span className={`text-[8px] font-bold ${subText}`}>⚪ خالی</span>}</>
+                          ) : (
+                            <>{bal < 0 && <span className="text-[8px] font-black text-rose-500">🔴 قرض</span>}{bal > 0 && <span className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>🟢 طلب</span>}{bal === 0 && <span className={`text-[8px] font-bold ${subText}`}>⚪ صفر</span>}</>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
@@ -726,27 +573,14 @@ export default function CustomersPage() {
 
               {profileTab === "info" && (
                 <div className={`rounded-2xl border p-4 md:p-6 ${uiCard}`}>
-                  <div className="flex items-center gap-2 mb-4">
-                    <span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}>
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true"><path d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" /></svg>
-                    </span>
-                    <b className={`text-sm font-black ${heading}`}>{isCashBox ? "اطلاعات صندوق" : "ویرایش اطلاعات"}</b>
-                  </div>
+                  <div className="flex items-center gap-2 mb-4"><span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true"><path d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" /></svg></span><b className={`text-sm font-black ${heading}`}>{isCashBox ? "اطلاعات صندوق" : "ویرایش اطلاعات"}</b></div>
                   {isCashBox ? (
                     <div className={`rounded-xl border p-4 ${dk ? "border-emerald-400/25 bg-emerald-400/[0.07]" : "border-emerald-200 bg-emerald-50"}`}>
                       <div className="flex items-center gap-3 mb-3">
-                        <span className={`grid h-10 w-10 place-items-center rounded-xl ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}>
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5" aria-hidden="true"><path d="M21 12a2.25 2.25 0 0 0-2.25-2.25H15a3 3 0 1 1-6 0H5.25A2.25 2.25 0 0 0 3 12m18 0v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 9m18 0V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v3" /></svg>
-                        </span>
-                        <div>
-                          <b className={`block text-sm font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}>💰 صندوق فیزیکی صرافی</b>
-                          <span className={`text-[10px] font-bold ${subText}`}>این بخش قابل ویرایش نیست</span>
-                        </div>
+                        <span className={`grid h-10 w-10 place-items-center rounded-xl ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5" aria-hidden="true"><path d="M21 12a2.25 2.25 0 0 0-2.25-2.25H15a3 3 0 1 1-6 0H5.25A2.25 2.25 0 0 0 3 12m18 0v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 9m18 0V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v3" /></svg></span>
+                        <div><b className={`block text-sm font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}>💰 صندوق فیزیکی صرافی</b><span className={`text-[10px] font-bold ${subText}`}>این بخش قابل ویرایش نیست</span></div>
                       </div>
-                      <p className={`text-sm leading-6 ${dk ? "text-slate-300" : "text-slate-600"}`}>
-                        صندوق نشان‌دهنده موجودی فیزیکی نقدی صرافی است. تمام دریافتی‌ها و پرداختی‌های نقدی در این بخش ثبت می‌شوند.
-                        برای مشاهده جزئیات، به تب‌های <b>موجودی</b>، <b>روزنامچه</b> و <b>صورت‌حساب</b> مراجعه کنید.
-                      </p>
+                      <p className={`text-sm leading-6 ${dk ? "text-slate-300" : "text-slate-600"}`}>صندوق نشان‌دهنده موجودی فیزیکی نقدی صرافی است. تمام دریافتی‌ها و پرداختی‌های نقدی در این بخش ثبت می‌شوند. برای مشاهده جزئیات، به تب‌های <b>موجودی</b>، <b>روزنامچه</b> و <b>صورت‌حساب</b> مراجعه کنید.</p>
                     </div>
                   ) : (
                     <>
@@ -783,6 +617,9 @@ export default function CustomersPage() {
                             <div className={`flex items-center gap-2 rounded-lg px-3 py-2 ${dk ? "bg-emerald-400/10" : "bg-emerald-50"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={`h-4 w-4 ${dk ? "text-emerald-300" : "text-emerald-600"}`} aria-hidden="true"><path d="M19.5 13.5 12 21m0 0-7.5-7.5M12 21V3" /></svg><div><div className={`text-[10px] ${subText}`}>دریافت</div><div className={`text-sm font-black tabular-nums ${dk ? "text-emerald-300" : "text-emerald-700"}`}>{fmt(tIn)}</div></div></div>
                             <div className={`flex items-center gap-2 rounded-lg px-3 py-2 ${dk ? "bg-rose-400/10" : "bg-rose-50"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={`h-4 w-4 ${dk ? "text-rose-300" : "text-rose-600"}`} aria-hidden="true"><path d="M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18" /></svg><div><div className={`text-[10px] ${subText}`}>پرداخت</div><div className={`text-sm font-black tabular-nums ${dk ? "text-rose-300" : "text-rose-700"}`}>{fmt(tOut)}</div></div></div>
                           </div>
+                          <div className={`mt-2 text-center text-[10px] font-black ${bal < 0 ? "text-rose-500" : bal > 0 ? (dk ? "text-emerald-300" : "text-emerald-600") : subText}`}>
+                            {isCashBox ? (bal < 0 ? "⚠️ کسری صندوق" : bal > 0 ? "✅ موجودی نقدی در صندوق" : "⚪ صندوق خالی") : (bal < 0 ? "🔴 قرض از صرافی" : bal > 0 ? "🟢 طلب از صرافی" : "⚪ بدون بدهی")}
+                          </div>
                         </div>
                       );
                     })}
@@ -792,11 +629,7 @@ export default function CustomersPage() {
 
               {profileTab === "ledger" && (
                 <div className={`rounded-2xl border p-4 md:p-6 ${uiCard}`}>
-                  <div className="flex items-center gap-2 mb-4">
-                    <span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true"><path d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg></span>
-                    <b className={`text-sm font-black ${heading}`}>{isCashBox ? "روزنامچه صندوق" : "روزنامچه"}</b>
-                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${dk ? "bg-slate-700 text-slate-300" : "bg-slate-200 text-slate-600"}`}>{filteredLedger.length}</span>
-                  </div>
+                  <div className="flex items-center gap-2 mb-4"><span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true"><path d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg></span><b className={`text-sm font-black ${heading}`}>{isCashBox ? "روزنامچه صندوق" : "روزنامچه"}</b><span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${dk ? "bg-slate-700 text-slate-300" : "bg-slate-200 text-slate-600"}`}>{filteredLedger.length}</span></div>
                   <div className="grid gap-2 mb-4 md:grid-cols-[1fr_auto_auto_auto]">
                     <div className="relative"><input value={ledgerSearch} onChange={e => setLedgerSearch(e.target.value)} placeholder="جستجو…" className={`${uiInput} pr-10`} /><span className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 ${dk ? "text-slate-500" : "text-slate-400"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true"><path d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 1 10.607 10.607Z" /></svg></span></div>
                     <select value={ledgerTypeFilter} onChange={e => setLedgerTypeFilter(e.target.value as any)} className={`${uiInput} cursor-pointer appearance-none pl-9 w-auto min-w-[130px]`}><option value="all">همه</option>{(Object.keys(txLabels) as TxType[]).map(t => <option key={t} value={t}>{txLabels[t]}</option>)}</select>
@@ -808,9 +641,7 @@ export default function CustomersPage() {
                   ) : (
                     <div className="overflow-x-auto cu-scroll">
                       <table className="w-full min-w-[950px] text-sm">
-                        <thead><tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
-                          {["شماره", "تاریخ", "ساعت", "سند", "نوع", "شرح", "ارز", "دریافت", "پرداخت", "مانده"].map(h => <th key={h} className="px-3 py-2.5 text-center text-[10px] font-black text-slate-400">{h}</th>)}
-                        </tr></thead>
+                        <thead><tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>{["شماره", "تاریخ", "ساعت", "سند", "نوع", "شرح", "ارز", "دریافت", "پرداخت", "مانده"].map(h => <th key={h} className="px-3 py-2.5 text-center text-[10px] font-black text-slate-400">{h}</th>)}</tr></thead>
                         <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
                           {filteredLedger.map((e, i) => (
                             <tr key={e.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/50"}`}>
@@ -845,15 +676,7 @@ export default function CustomersPage() {
                       <div className={`space-y-1 text-xs mt-2 ${dk ? "text-slate-300" : "text-slate-600"}`}>
                         <div><b>نام:</b> {selectedCustomer.name}</div>
                         <div><b>کد:</b> <span dir="ltr">{isCashBox ? "CASH_BOX" : selectedCustomer.id.slice(-6)}</span></div>
-                        {!isCashBox && (
-                          <>
-                            <div><b>تلفن:</b> <span dir="ltr">{selectedCustomer.phone || "-"}</span></div>
-                            <div><b>تذکره:</b> <span dir="ltr">{selectedCustomer.tazkira || "-"}</span></div>
-                            <div><b>تلگرام:</b> <span dir="ltr">{selectedCustomer.telegram || "-"}</span></div>
-                            {selectedCustomer.address && <div><b>آدرس:</b> {selectedCustomer.address}</div>}
-                            {selectedCustomer.note && <div><b>یادداشت:</b> {selectedCustomer.note}</div>}
-                          </>
-                        )}
+                        {!isCashBox && (<><div><b>تلفن:</b> <span dir="ltr">{selectedCustomer.phone || "-"}</span></div><div><b>تذکره:</b> <span dir="ltr">{selectedCustomer.tazkira || "-"}</span></div><div><b>تلگرام:</b> <span dir="ltr">{selectedCustomer.telegram || "-"}</span></div>{selectedCustomer.address && <div><b>آدرس:</b> {selectedCustomer.address}</div>}{selectedCustomer.note && <div><b>یادداشت:</b> {selectedCustomer.note}</div>}</>)}
                         {isCashBox && <div><b>توضیحات:</b> موجودی فیزیکی کشوی صرافی</div>}
                       </div>
                     </div>
@@ -871,25 +694,21 @@ export default function CustomersPage() {
                       <b className={`text-xs font-black ${heading}`}>گردش کامل حساب</b>
                       <div className="overflow-x-auto cu-scroll mt-3">
                         <table className="w-full min-w-[1000px] text-xs">
-                          <thead><tr className={`border-b ${dk ? "border-slate-700" : "border-slate-200"}`}>
-                            {["شماره", "تاریخ", "ساعت", "سند", "نوع", "شرح", "ارز", "دریافت", "پرداخت", "مانده"].map(h => <th key={h} className="px-3 py-2 text-center font-black text-slate-400 whitespace-nowrap">{h}</th>)}
-                          </tr></thead>
-                          <tbody>
-                            {customerLedger.map((e, i) => (
-                              <tr key={e.id} className={`border-b ${dk ? "border-slate-700/50" : "border-slate-100"} ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/50"}`}>
-                                <td className="px-3 py-2 text-center font-black tabular-nums">{i + 1}</td>
-                                <td className={`px-3 py-2 text-center tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{shortDateLabel(e.date)}</td>
-                                <td className={`px-3 py-2 text-center tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{timeLabel(e.date)}</td>
-                                <td className="px-3 py-2 text-center"><span className={`inline-flex rounded-md border px-1.5 py-0.5 text-[10px] font-black tabular-nums ${dk ? "border-slate-600 text-slate-300" : "border-slate-200 text-slate-600"}`} dir="ltr">{e.referenceNumber || "-"}</span></td>
-                                <td className="px-3 py-2 text-center"><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${txColors[e.type][dk ? "dark" : "light"]}`}>{txLabels[e.type]}</span></td>
-                                <td className={`px-3 py-2 text-center max-w-[200px] truncate ${dk ? "text-slate-200" : "text-slate-700"}`}>{e.description}</td>
-                                <td className={`px-3 py-2 text-center font-black ${currencyColors[e.currency][dk ? "dark" : "light"]}`}>{labels[e.currency]}</td>
-                                <td className={`px-3 py-2 text-center font-black tabular-nums ${e.direction === "in" ? "text-emerald-500" : ""}`}>{e.direction === "in" ? fmt(e.amount) : ""}</td>
-                                <td className={`px-3 py-2 text-center font-black tabular-nums ${e.direction === "out" ? "text-rose-500" : ""}`}>{e.direction === "out" ? fmt(e.amount) : ""}</td>
-                                <td className={`px-3 py-2 text-center font-black tabular-nums ${currencyColors[e.currency][dk ? "dark" : "light"]}`}>{fmt(e.balanceAfter)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
+                          <thead><tr className={`border-b ${dk ? "border-slate-700" : "border-slate-200"}`}>{["شماره", "تاریخ", "ساعت", "سند", "نوع", "شرح", "ارز", "دریافت", "پرداخت", "مانده"].map(h => <th key={h} className="px-3 py-2 text-center font-black text-slate-400 whitespace-nowrap">{h}</th>)}</tr></thead>
+                          <tbody>{customerLedger.map((e, i) => (
+                            <tr key={e.id} className={`border-b ${dk ? "border-slate-700/50" : "border-slate-100"} ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/50"}`}>
+                              <td className="px-3 py-2 text-center font-black tabular-nums">{i + 1}</td>
+                              <td className={`px-3 py-2 text-center tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{shortDateLabel(e.date)}</td>
+                              <td className={`px-3 py-2 text-center tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{timeLabel(e.date)}</td>
+                              <td className="px-3 py-2 text-center"><span className={`inline-flex rounded-md border px-1.5 py-0.5 text-[10px] font-black tabular-nums ${dk ? "border-slate-600 text-slate-300" : "border-slate-200 text-slate-600"}`} dir="ltr">{e.referenceNumber || "-"}</span></td>
+                              <td className="px-3 py-2 text-center"><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${txColors[e.type][dk ? "dark" : "light"]}`}>{txLabels[e.type]}</span></td>
+                              <td className={`px-3 py-2 text-center max-w-[200px] truncate ${dk ? "text-slate-200" : "text-slate-700"}`}>{e.description}</td>
+                              <td className={`px-3 py-2 text-center font-black ${currencyColors[e.currency][dk ? "dark" : "light"]}`}>{labels[e.currency]}</td>
+                              <td className={`px-3 py-2 text-center font-black tabular-nums ${e.direction === "in" ? "text-emerald-500" : ""}`}>{e.direction === "in" ? fmt(e.amount) : ""}</td>
+                              <td className={`px-3 py-2 text-center font-black tabular-nums ${e.direction === "out" ? "text-rose-500" : ""}`}>{e.direction === "out" ? fmt(e.amount) : ""}</td>
+                              <td className={`px-3 py-2 text-center font-black tabular-nums ${currencyColors[e.currency][dk ? "dark" : "light"]}`}>{fmt(e.balanceAfter)}</td>
+                            </tr>
+                          ))}</tbody>
                         </table>
                       </div>
                     </div>
@@ -898,30 +717,22 @@ export default function CustomersPage() {
                     <b className={`text-xs font-black ${heading}`}>خلاصه نهایی</b>
                     <div className="overflow-x-auto cu-scroll mt-2">
                       <table className="w-full text-xs">
-                        <thead><tr className={`border-b ${dk ? "border-slate-700" : "border-slate-200"}`}>
-                          <th className="px-3 py-2 text-center font-black text-slate-400">ارز</th>
-                          <th className="px-3 py-2 text-center font-black text-emerald-500">دریافت</th>
-                          <th className="px-3 py-2 text-center font-black text-rose-500">پرداخت</th>
-                          <th className="px-3 py-2 text-center font-black text-slate-400">خالص</th>
-                          <th className="px-3 py-2 text-center font-black text-slate-400">مانده</th>
-                        </tr></thead>
-                        <tbody>
-                          {currencies.map(cur => {
-                            const tIn = customerLedger.filter(e => e.currency === cur && e.direction === "in").reduce((s, e) => s + e.amount, 0);
-                            const tOut = customerLedger.filter(e => e.currency === cur && e.direction === "out").reduce((s, e) => s + e.amount, 0);
-                            const net = tIn - tOut;
-                            if (tIn === 0 && tOut === 0) return null;
-                            return (
-                              <tr key={cur} className={`border-b ${dk ? "border-slate-700/50" : "border-slate-100"}`}>
-                                <td className={`px-3 py-2 text-center font-black ${currencyColors[cur][dk ? "dark" : "light"]}`}>{labels[cur]}</td>
-                                <td className="px-3 py-2 text-center font-black tabular-nums text-emerald-500">{fmt(tIn)}</td>
-                                <td className="px-3 py-2 text-center font-black tabular-nums text-rose-500">{fmt(tOut)}</td>
-                                <td className={`px-3 py-2 text-center font-black tabular-nums ${net >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{net >= 0 ? "+" : ""}{fmt(net)}</td>
-                                <td className={`px-3 py-2 text-center font-black tabular-nums ${currencyColors[cur][dk ? "dark" : "light"]}`}>{fmt(customerBalances[cur])}</td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
+                        <thead><tr className={`border-b ${dk ? "border-slate-700" : "border-slate-200"}`}><th className="px-3 py-2 text-center font-black text-slate-400">ارز</th><th className="px-3 py-2 text-center font-black text-emerald-500">دریافت</th><th className="px-3 py-2 text-center font-black text-rose-500">پرداخت</th><th className="px-3 py-2 text-center font-black text-slate-400">خالص</th><th className="px-3 py-2 text-center font-black text-slate-400">مانده</th></tr></thead>
+                        <tbody>{currencies.map(cur => {
+                          const tIn = customerLedger.filter(e => e.currency === cur && e.direction === "in").reduce((s, e) => s + e.amount, 0);
+                          const tOut = customerLedger.filter(e => e.currency === cur && e.direction === "out").reduce((s, e) => s + e.amount, 0);
+                          const net = tIn - tOut;
+                          if (tIn === 0 && tOut === 0) return null;
+                          return (
+                            <tr key={cur} className={`border-b ${dk ? "border-slate-700/50" : "border-slate-100"}`}>
+                              <td className={`px-3 py-2 text-center font-black ${currencyColors[cur][dk ? "dark" : "light"]}`}>{labels[cur]}</td>
+                              <td className="px-3 py-2 text-center font-black tabular-nums text-emerald-500">{fmt(tIn)}</td>
+                              <td className="px-3 py-2 text-center font-black tabular-nums text-rose-500">{fmt(tOut)}</td>
+                              <td className={`px-3 py-2 text-center font-black tabular-nums ${net >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{net >= 0 ? "+" : ""}{fmt(net)}</td>
+                              <td className={`px-3 py-2 text-center font-black tabular-nums ${currencyColors[cur][dk ? "dark" : "light"]}`}>{fmt(customerBalances[cur])}</td>
+                            </tr>
+                          );
+                        })}</tbody>
                       </table>
                     </div>
                   </div>
