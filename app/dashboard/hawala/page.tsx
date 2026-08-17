@@ -106,7 +106,7 @@ function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): C
 }
 
 function loadCashEntriesLocal(): any[] { if (typeof window === "undefined") return []; try { const raw = localStorage.getItem(CASH_KEY); if (!raw) return []; const parsed = JSON.parse(raw); return Array.isArray(parsed) ? parsed : []; } catch { return []; } }
-function saveCashEntriesLocal(entries: any[]) { if (typeof window === "undefined") return; try { localStorage.setItem(CASH_KEY, JSON.stringify(entries)); } catch {} }
+function saveCashEntriesLocal(entries: any[]) { if (typeof window === "undefined") return; try { localStorage.setItem(CASH_KEY, JSON.stringify(entries)); window.dispatchEvent(new Event("db:updated")); } catch {} }
 
 function recomputeCashBalancesLocal(entries: any[]): any[] {
   const sorted = [...entries].sort((a, b) => { const t1 = new Date(a.date).getTime(); const t2 = new Date(b.date).getTime(); if (t1 !== t2) return t1 - t2; const aIsHawala = a.linkedHawalaId || a.linkedHawalaSettleId; const bIsHawala = b.linkedHawalaId || b.linkedHawalaSettleId; if (aIsHawala && bIsHawala) { if (a.direction === "out" && b.direction === "in") return -1; if (a.direction === "in" && b.direction === "out") return 1; } if (a.direction === "in" && b.direction === "out") return -1; if (a.direction === "out" && b.direction === "in") return 1; return 0; });
@@ -489,8 +489,10 @@ export default function HawalaPage() {
   const currentDateTime = now ? formatDateTime(now) : "";
 
   useEffect(() => { try { localStorage.setItem("hawalaLastNames", JSON.stringify(lastNames)); } catch {} }, [lastNames]);
-  useEffect(() => { try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); } catch {} }, [customers]);
-  useEffect(() => { try { localStorage.setItem(HAWALAS_KEY, JSON.stringify(hawalas)); } catch {} }, [hawalas]);
+  // ✅ تغییر ۱: اضافه شدن dispatch برای sync با داشبورد
+  useEffect(() => { try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); window.dispatchEvent(new Event("db:updated")); } catch {} }, [customers]);
+  // ✅ تغییر ۲: اضافه شدن dispatch برای sync با داشبورد
+  useEffect(() => { try { localStorage.setItem(HAWALAS_KEY, JSON.stringify(hawalas)); window.dispatchEvent(new Event("db:updated")); } catch {} }, [hawalas]);
 
   const anyDropdownOpen = showSenderList || showReceiverList;
   useEffect(() => { if (!anyDropdownOpen) return; const handler = (e: MouseEvent) => { const t = e.target as Node; if (showSenderList && senderListRef.current && !senderListRef.current.contains(t)) setShowSenderList(false); if (showReceiverList && receiverListRef.current && !receiverListRef.current.contains(t)) setShowReceiverList(false); }; const timer = setTimeout(() => document.addEventListener("mousedown", handler), 0); return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); }; }, [anyDropdownOpen, showSenderList, showReceiverList]);
@@ -796,7 +798,7 @@ export default function HawalaPage() {
           )}
 
           {activeTab === "current" && (
-            <section className={`hw-up overflow-hidden ${uiCard}`}>
+            <section className={`hw-up Overflow-hidden ${uiCard}`}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6"><span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identHwIcon}`}><Ic n="clock" className="h-5 w-5" /></span><div className="flex-1 min-w-0"><h2 className={`hw-display text-xl md:text-2xl leading-none ${heading}`}>حواله‌های جاری</h2><p className={`mt-1 text-[11px] font-bold ${subText}`}>حواله‌های در انتظار و ارسال‌شده</p></div></div>
               <div className="px-4 md:px-7 pb-4 space-y-4">
                 <div className="flex flex-wrap gap-3"><input value={nameSearch} onChange={e => setNameSearch(e.target.value)} placeholder="نام، کد پیگیری، تلفن یا تذکره…" className={`${uiInput} flex-1 min-w-[200px]`} /><input value={amountSearch} onChange={e => setAmountSearch(e.target.value)} placeholder="جستجو بر اساس مبلغ…" inputMode="numeric" className={`${uiInput} flex-1 min-w-[150px]`} /><select value={sortOrder} onChange={e => setSortOrder(e.target.value as "asc" | "desc")} className={`${uiInput} w-auto min-w-[180px] cursor-pointer appearance-none pl-9`}><option value="asc">قدیمی‌ترین در اول</option><option value="desc">جدیدترین در اول</option></select></div>
