@@ -733,9 +733,7 @@ try { return loadTransactionsShared(); } catch { return []; }
 const [cashEntries, setCashEntries] = useState<any[]>(() => {
 try { return loadCashEntriesShared(); } catch { return []; }
 });
-useEffect(() => { try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); } catch {} }, [customers]);
-useEffect(() => { try { window.localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(transactions)); } catch {} }, [transactions]);
-useEffect(() => { try { initTrackingSystem(); } catch {} }, []);
+useEffect(() => { try { window.localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(transactions)); window.dispatchEvent(new Event("db:updated")); } catch {} }, [transactions]);useEffect(() => { try { initTrackingSystem(); } catch {} }, []);
 useEffect(() => {
 const handleStorage = (e: StorageEvent) => {
 try {
