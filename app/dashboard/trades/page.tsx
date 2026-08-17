@@ -733,7 +733,12 @@ try { return loadTransactionsShared(); } catch { return []; }
 const [cashEntries, setCashEntries] = useState<any[]>(() => {
 try { return loadCashEntriesShared(); } catch { return []; }
 });
-useEffect(() => { try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); window.dispatchEvent(new Event("db:updated")); } catch {} }, [customers]);useEffect(() => {
+// ✅ تغییر ۱: اضافه شدن dispatch برای sync با داشبورد
+useEffect(() => { try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); window.dispatchEvent(new Event("db:updated")); } catch {} }, [customers]);
+// ✅ تغییر ۲: اضافه شدن dispatch برای sync با داشبورد
+useEffect(() => { try { window.localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(transactions)); window.dispatchEvent(new Event("db:updated")); } catch {} }, [transactions]);
+useEffect(() => { try { initTrackingSystem(); } catch {} }, []);
+useEffect(() => {
 const handleStorage = (e: StorageEvent) => {
 try {
 if (e.key === CUSTOMERS_KEY && e.newValue) {
