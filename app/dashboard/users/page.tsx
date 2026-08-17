@@ -482,7 +482,8 @@ export default function CustomersPage() {
   useEffect(() => { setNow(new Date()); const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t); }, []);
   const currentDateTime = now ? formatDateTime(now) : "";
 
-  useEffect(() => { if (!mounted) return; try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); } catch {} }, [customers, mounted]);
+  // ✅ تغییر ۱: اضافه شدن dispatch event برای sync با تب داشبورد
+  useEffect(() => { if (!mounted) return; try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); window.dispatchEvent(new Event("db:updated")); } catch {} }, [customers, mounted]);
 
   useEffect(() => {
     if (!openMenuId) return;
@@ -536,6 +537,7 @@ export default function CustomersPage() {
   const openEdit = (id: string) => { setSelectedCustomerId(id); setProfileTab("info"); setActiveTab("profile"); setOpenMenuId(null); };
   const backToList = () => { setActiveTab("list"); setSelectedCustomerId(null); };
 
+  // ✅ تغییر ۴: اضافه شدن dispatch event برای sync با تب داشبورد
   const deleteCustomer = (id: string) => {
     if (id === CASH_BOX_ID) return;
     setOpenMenuId(null);
@@ -552,6 +554,7 @@ export default function CustomersPage() {
     setCashEntries(prev => prev.map((ce: any) => { if (ce.customerId === id || ce.customerName === c.name) return { ...ce, customerDeleted: true }; return ce; }));
     setCustomers(p => p.filter(x => x.id !== id));
     if (selectedCustomerId === id) { setSelectedCustomerId(null); setActiveTab("list"); }
+    window.dispatchEvent(new Event("db:updated")); // ✅ dispatch event
     showToast(`"${c.name}" حذف شد و داده‌های مرتبط علامت‌گذاری شدند.`);
   };
 
@@ -564,14 +567,17 @@ export default function CustomersPage() {
     return errs;
   };
 
+  // ✅ تغییر ۲: اضافه شدن dispatch event برای sync با تب داشبورد
   const submitNew = () => {
     const errs = validateForm(); setErrors(errs);
     if (Object.keys(errs).length > 0) { showToast("فیلدها را تکمیل کنید."); return; }
     const nc: Customer = { id: generateId(), name: form.name.trim(), phone: form.phone.trim(), tazkira: form.tazkira.trim(), address: form.address.trim(), note: form.note.trim(), telegram: form.telegram.trim(), registeredAt: new Date().toISOString(), balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
     setCustomers(p => [...p, nc]); setForm(emptyForm); setErrors({}); setActiveTab("list");
+    window.dispatchEvent(new Event("db:updated")); // ✅ dispatch event
     showToast(`"${nc.name}" ثبت شد.`);
   };
 
+  // ✅ تغییر ۳: اضافه شدن dispatch event برای sync با تب داشبورد
   const updateCustomer = () => {
     if (!selectedCustomer || isCashBox) return;
     const oldName = selectedCustomer.name;
@@ -582,6 +588,7 @@ export default function CustomersPage() {
       setHawalas(prev => prev.map((h: any) => { const u = { ...h }; if (h.senderName === oldName) u.senderName = newName; if (h.receiverName === oldName) u.receiverName = newName; return u; }));
       setCashEntries(prev => prev.map((ce: any) => { const u = { ...ce }; if (ce.customerName === oldName) u.customerName = newName; return u; }));
     }
+    window.dispatchEvent(new Event("db:updated")); // ✅ dispatch event
     showToast("به‌روز شد.");
   };
 
