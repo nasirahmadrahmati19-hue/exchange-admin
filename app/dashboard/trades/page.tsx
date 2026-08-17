@@ -24,10 +24,7 @@ const rateUnits: Record<Currency, number> = { AFN: 1, USD: 1, EUR: 1, IRR: 1000,
 const CASH_BOX_ID = "CASH_BOX";
 const CASH_BOX_NAME = "صندوق";
 const CASH_BOX_CUSTOMER: Customer = { id: CASH_BOX_ID, name: CASH_BOX_NAME, phone: "", telegram: "", telegramChatId: "", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
-
-// ✅ تشخیص مشتری دارای چت آیدی تلگرام
 const hasTelegram = (c: Customer): boolean => Boolean(c.telegramChatId || c.telegram);
-
 const normalizeDigits = (s: string) => s.replace(/[۰-۹]/g, d => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))).replace(/[٠-٩]/g, d => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
 function toNumericText(v: string) {
 let s = normalizeDigits(String(v || "")).replace(/[^0-9.]/g, "");
@@ -339,8 +336,6 @@ entries = [...entries, ...newEntries];
 entries = recomputeCashBalances(entries);
 saveCashEntries(entries);
 }
-
-// ===== سیستم رسید تلگرامی =====
 function formatShamsiDateTime(date: Date): string {
 try {
 const parts = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", { year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
@@ -351,8 +346,6 @@ const ampm = h >= 12 ? "PM" : "AM"; const h12 = h % 12 || 12;
 return `${y}/${m}/${d} ${h12}:${min} ${ampm}`;
 } catch { return "-"; }
 }
-
-// ✅ تبدیل عدد به حروف با اصطلاحات فارسی افغانستان (دوصد، پنجصد)
 function numberToPersianWords(num: number): string {
 if (!Number.isFinite(num) || num === 0) return "صفر";
 const ones = ["", "یک", "دو", "سه", "چهار", "پنج", "شش", "هفت", "هشت", "نه"];
@@ -377,7 +370,6 @@ n = Math.floor(n / 1000); si++;
 }
 return parts.join(" و ");
 }
-
 async function sendTelegramMessage(botToken: string, chatId: string, text: string): Promise<boolean> {
 if (!botToken || !chatId) return false;
 try {
@@ -388,7 +380,6 @@ body: JSON.stringify({ chat_id: chatId, text: text }),
 const data = await res.json(); return data.ok === true;
 } catch { return false; }
 }
-
 function getTelegramSettings() {
 try { const r = localStorage.getItem("fx-settings"); if (!r) return { enabled: false, botToken: "", notifyExchange: true };
 const s = JSON.parse(r); return {
@@ -398,7 +389,6 @@ notifyExchange: s.telegram?.notifyExchange !== false,
 };
 } catch { return { enabled: false, botToken: "", notifyExchange: true }; }
 }
-
 function getCustomerChatId(customerId: string | undefined, customers: Customer[]): string {
 if (!customerId || customerId === CASH_BOX_ID) return "";
 try {
@@ -407,8 +397,6 @@ if (!c) return "";
 return c.telegramChatId || c.telegram || "";
 } catch { return ""; }
 }
-
-// ✅ ساخت متن سند تبادل ارز
 function buildTransactionReceiptText(params: {
 tx: Transaction;
 customerName: string;
@@ -418,53 +406,100 @@ date: Date;
 }): string {
 const { tx, customerName, role, balances, date } = params;
 const dateStr = formatShamsiDateTime(date);
-let text = `📑 سند تبادل ارز\n\n`;
-text += `🗓 تاریخ: ${dateStr}\n\n`;
-text += `🛅 پیگیری: ${tx.trackingCode}\n\n`;
-text += `👤 مشتری: ${customerName}\n\n`;
-
+let text = `📑 سند تبادل ارز
+`;
+text += `🗓 تاریخ: ${dateStr}
+`;
+text += `🛅 پیگیری: ${tx.trackingCode}
+`;
+text += `👤 مشتری: ${customerName}
+`;
 if (tx.type === "exchange") {
-text += `📑 شرح: ${tx.dealType === "buy" ? "خرید" : "فروش"} ارز\n\n`;
-text += `💵 دریافت: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]}\n`;
-text += `💰 پرداخت: ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}\n`;
-text += `📊 نرخ: ${tx.rateLabel}\n`;
-if (tx.commission && tx.commission > 0 && tx.commissionCurrency) text += `💼 کارمزد: ${fmt(tx.commission)} ${labels[tx.commissionCurrency]}\n`;
+text += `📑 شرح: ${tx.dealType === "buy" ? "خرید" : "فروش"} ارز
+`;
+text += `💵 دریافت: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]}
+`;
+text += `📝 به حروف: ${numberToPersianWords(tx.fromAmount)}
+`;
+text += `💰 پرداخت: ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}
+`;
+text += `📝 به حروف: ${numberToPersianWords(tx.toAmount)}
+`;
+text += `📊 نرخ: ${tx.rateLabel}
+`;
+if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
+text += `💼 کارمزد: ${fmt(tx.commission)} ${labels[tx.commissionCurrency]}
+`;
+text += `📝 به حروف: ${numberToPersianWords(tx.commission)}
+`;
 }
-
+}
 if (tx.type === "transfer") {
 if (role === "sender") {
-text += `📑 شرح: انتقال به ${tx.receiverName}\n\n`;
-text += `💰 پرداخت: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]}\n`;
-if (tx.commission && tx.commission > 0 && tx.commissionPayer === "sender" && tx.commissionCurrency) text += `💼 کارمزد: ${fmt(tx.commission)} ${labels[tx.commissionCurrency]}\n`;
+text += `📑 شرح: انتقال به ${tx.receiverName}
+`;
+text += `💰 پرداخت: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]}
+`;
+text += `📝 به حروف: ${numberToPersianWords(tx.fromAmount)}
+`;
+if (tx.commission && tx.commission > 0 && tx.commissionPayer === "sender" && tx.commissionCurrency) {
+text += `💼 کارمزد: ${fmt(tx.commission)} ${labels[tx.commissionCurrency]}
+`;
+text += `📝 به حروف: ${numberToPersianWords(tx.commission)}
+`;
+}
 } else {
-text += `📑 شرح: دریافت از ${tx.senderName}\n\n`;
-text += `💵 دریافت: ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}\n`;
-if (tx.commission && tx.commission > 0 && tx.commissionPayer === "receiver" && tx.commissionCurrency) text += `💼 کارمزد: ${fmt(tx.commission)} ${labels[tx.commissionCurrency]}\n`;
+text += `📑 شرح: دریافت از ${tx.senderName}
+`;
+text += `💵 دریافت: ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}
+`;
+text += `📝 به حروف: ${numberToPersianWords(tx.toAmount)}
+`;
+if (tx.commission && tx.commission > 0 && tx.commissionPayer === "receiver" && tx.commissionCurrency) {
+text += `💼 کارمزد: ${fmt(tx.commission)} ${labels[tx.commissionCurrency]}
+`;
+text += `📝 به حروف: ${numberToPersianWords(tx.commission)}
+`;
 }
-text += `📊 نرخ: ${tx.rateLabel}\n`;
 }
-
+text += `📊 نرخ: ${tx.rateLabel}
+`;
+}
 if (tx.type === "convert") {
-text += `📑 شرح: تبدیل ارز در حساب شما\n\n`;
-text += `💰 کسرشده: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]}\n`;
-text += `💵 اضافه‌شده: ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}\n`;
-text += `📊 نرخ: ${tx.rateLabel}\n`;
-if (tx.commission && tx.commission > 0 && tx.commissionCurrency) text += `💼 کارمزد: ${fmt(tx.commission)} ${labels[tx.commissionCurrency]}\n`;
+text += `📑 شرح: تبدیل ارز در حساب شما
+`;
+text += `💰 کسرشده: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]}
+`;
+text += `📝 به حروف: ${numberToPersianWords(tx.fromAmount)}
+`;
+text += `💵 اضافه‌شده: ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}
+`;
+text += `📝 به حروف: ${numberToPersianWords(tx.toAmount)}
+`;
+text += `📊 نرخ: ${tx.rateLabel}
+`;
+if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
+text += `💼 کارمزد: ${fmt(tx.commission)} ${labels[tx.commissionCurrency]}
+`;
+text += `📝 به حروف: ${numberToPersianWords(tx.commission)}
+`;
 }
-
-text += `\n-------------بیلانس فعلی شما--------------\n`;
+}
+text += `
+-------------بیلانس فعلی شما--------------
+`;
 const curLabels: Record<string, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
 for (const [cur, bal] of Object.entries(balances)) {
 const label = curLabels[cur] || cur;
 const status = bal > 0 ? "طلب" : bal < 0 ? "قرض" : "";
 const fb = Math.abs(bal).toLocaleString("en-US");
-text += `${label}: ${fb} ${status}\n`;
+text += `${label}: ${fb} ${status}
+`;
 }
-text += `\n🏦 صرافی برادران نورزاد — هرات`;
+text += `
+🏦 صرافی برادران نورزاد — هرات`;
 return text;
 }
-
-// ✅ ساخت متن اطلاعیه لغو معامله
 function buildVoidNoticeText(params: {
 tx: Transaction;
 customerName: string;
@@ -474,44 +509,62 @@ date: Date;
 }): string {
 const { tx, customerName, role, balances, date } = params;
 const dateStr = formatShamsiDateTime(date);
-let text = `📬 اطلاعیه لغو معامله\n\n`;
-text += `🗓 تاریخ: ${dateStr}\n\n`;
-text += `🛅 پیگیری: ${tx.trackingCode}\n\n`;
-text += `👤 مشتری: ${customerName}\n\n`;
-
+let text = `📬 اطلاعیه لغو معامله
+`;
+text += `🗓 تاریخ: ${dateStr}
+`;
+text += `🛅 پیگیری: ${tx.trackingCode}
+`;
+text += `👤 مشتری: ${customerName}
+`;
 if (tx.type === "exchange") {
-text += `📑 شرح: معامله لغو شد — موجودی حساب شما برگشت داده شد\n\n`;
-text += `💰 مبلغ برگشتی: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]} و ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}\n`;
+text += `📑 شرح: معامله لغو شد — موجودی حساب شما برگشت داده شد
+`;
+text += `💰 مبلغ برگشتی: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]} و ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}
+`;
+text += `📝 به حروف: ${numberToPersianWords(tx.fromAmount)} و ${numberToPersianWords(tx.toAmount)}
+`;
 }
-
 if (tx.type === "transfer") {
 if (role === "sender") {
-text += `📑 شرح: انتقال لغو شد — مبلغ به حساب شما برگشت داده شد\n\n`;
-text += `💰 مبلغ برگشتی: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]}\n`;
+text += `📑 شرح: انتقال لغو شد — مبلغ به حساب شما برگشت داده شد
+`;
+text += `💰 مبلغ برگشتی: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]}
+`;
+text += `📝 به حروف: ${numberToPersianWords(tx.fromAmount)}
+`;
 } else {
-text += `📑 شرح: انتقال لغو شد — مبلغ از حساب شما کسر گردید\n\n`;
-text += `💰 مبلغ کسرشده: ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}\n`;
+text += `📑 شرح: انتقال لغو شد — مبلغ از حساب شما کسر گردید
+`;
+text += `💰 مبلغ کسرشده: ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}
+`;
+text += `📝 به حروف: ${numberToPersianWords(tx.toAmount)}
+`;
 }
 }
-
 if (tx.type === "convert") {
-text += `📑 شرح: تبدیل ارز لغو شد — موجودی حساب شما برگشت داده شد\n\n`;
-text += `💰 مبلغ برگشتی: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]} و ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}\n`;
+text += `📑 شرح: تبدیل ارز لغو شد — موجودی حساب شما برگشت داده شد
+`;
+text += `💰 مبلغ برگشتی: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]} و ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}
+`;
+text += `📝 به حروف: ${numberToPersianWords(tx.fromAmount)} و ${numberToPersianWords(tx.toAmount)}
+`;
 }
-
-text += `\n-------------بیلانس فعلی شما--------------\n`;
+text += `
+-------------بیلانس فعلی شما--------------
+`;
 const curLabels: Record<string, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
 for (const [cur, bal] of Object.entries(balances)) {
 const label = curLabels[cur] || cur;
 const status = bal > 0 ? "طلب" : bal < 0 ? "قرض" : "";
 const fb = Math.abs(bal).toLocaleString("en-US");
-text += `${label}: ${fb} ${status}\n`;
+text += `${label}: ${fb} ${status}
+`;
 }
-text += `\n🏦 صرافی برادران نورزاد — هرات`;
+text += `
+🏦 صرافی برادران نورزاد — هرات`;
 return text;
 }
-
-// ✅ تابع اصلی ارسال سند معاملات
 async function sendTransactionReceipts(params: {
 tx: Transaction;
 action: "register" | "void";
@@ -520,11 +573,9 @@ customers: Customer[];
 const settings = getTelegramSettings();
 if (!settings.enabled || !settings.botToken) return;
 if (!settings.notifyExchange) return;
-
 const { tx, action, customers } = params;
 const receipts: { chatId: string; text: string }[] = [];
 const now = new Date();
-
 const getBalances = (customerId: string | undefined): Record<string, number> => {
 const balances: Record<string, number> = {};
 for (const cur of currencies) balances[cur] = 0;
@@ -535,8 +586,6 @@ for (const cur of currencies) balances[cur] = c.balances[cur] || 0;
 return balances;
 };
 const isRealCustomer = (id: string | undefined): boolean => Boolean(id && id !== CASH_BOX_ID);
-
-// ===== ثبت معامله =====
 if (action === "register") {
 if (tx.type === "exchange" && isRealCustomer(tx.customerId)) {
 const chatId = getCustomerChatId(tx.customerId, customers);
@@ -548,7 +597,6 @@ balances: getBalances(tx.customerId), date: now,
 receipts.push({ chatId, text });
 }
 }
-
 if (tx.type === "transfer") {
 if (isRealCustomer(tx.senderId)) {
 const chatId = getCustomerChatId(tx.senderId, customers);
@@ -571,7 +619,6 @@ receipts.push({ chatId, text });
 }
 }
 }
-
 if (tx.type === "convert" && isRealCustomer(tx.customerId)) {
 const chatId = getCustomerChatId(tx.customerId, customers);
 if (chatId) {
@@ -583,8 +630,6 @@ receipts.push({ chatId, text });
 }
 }
 }
-
-// ===== لغو معامله =====
 if (action === "void") {
 if (tx.type === "exchange" && isRealCustomer(tx.customerId)) {
 const chatId = getCustomerChatId(tx.customerId, customers);
@@ -596,7 +641,6 @@ balances: getBalances(tx.customerId), date: now,
 receipts.push({ chatId, text });
 }
 }
-
 if (tx.type === "transfer") {
 if (isRealCustomer(tx.senderId)) {
 const chatId = getCustomerChatId(tx.senderId, customers);
@@ -619,7 +663,6 @@ receipts.push({ chatId, text });
 }
 }
 }
-
 if (tx.type === "convert" && isRealCustomer(tx.customerId)) {
 const chatId = getCustomerChatId(tx.customerId, customers);
 if (chatId) {
@@ -631,8 +674,6 @@ receipts.push({ chatId, text });
 }
 }
 }
-
-// ارسال به مشتریان (chatId های یکتا)
 const sentToChatIds = new Set<string>();
 for (const r of receipts) {
 if (sentToChatIds.has(r.chatId)) continue;
@@ -640,7 +681,6 @@ await sendTelegramMessage(settings.botToken, r.chatId, r.text);
 sentToChatIds.add(r.chatId);
 }
 }
-
 const iconPaths = {
 swap: "M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5",
 users: "M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z",
@@ -1078,13 +1118,10 @@ profit: convertCommissionValue, profitCurrency: convertCommissionCurrency
 setPreviewData(tx);
 setPreviewOpen(true);
 }, [validateConvert, convertFromAmount, convertToAmount, convertMode, convertRateValue, convertForeign, convertDirectCounter, convertDirectBaseValue, convertDescription, convertCommissionValue, convertCommissionCurrency, editingConvertId, transactions, convertCustomer, convertFromCurrency, convertToCurrency, customers]);
-
-// ✅ confirmRegister با ارسال سند تلگرامی (async)
 const confirmRegister = useCallback(async () => {
 if (!previewData) return;
 const tx = { ...previewData, trackingCode: consumeTrackingCode() };
 let updatedCustomers = customers;
-
 if (editingExchangeId) {
 const oldTx = transactions.find(t => t.id === editingExchangeId);
 if (oldTx && oldTx.status !== "voided") {
@@ -1112,17 +1149,13 @@ if (tx.type === "exchange") syncCashEntriesForExchange("add", tx);
 else if (tx.type === "transfer") syncCashEntriesForTransfer("add", tx);
 else if (tx.type === "convert") syncCashEntriesForConvert("add", tx);
 }
-
 updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForTransaction(tx, "register"));
 setCustomers(updatedCustomers);
 resetExchangeForm(); resetTransferForm(); resetConvertForm();
 setPreviewOpen(false); setPreviewData(null);
 setCashEntries(loadCashEntriesShared());
-
-// ✅ ارسال سند تلگرامی (برای ثبت جدید و ویرایش)
 await sendTransactionReceipts({ tx, action: "register", customers: updatedCustomers });
 }, [previewData, editingExchangeId, editingTransferId, editingConvertId, transactions, customers, resetExchangeForm, resetTransferForm, resetConvertForm]);
-
 const customerName = useCallback((id?: string) => {
 if (id === CASH_BOX_ID) return CASH_BOX_NAME;
 return customers.find(c => c.id === id)?.name || customers.find(c => c.name === id)?.name || id || "-";
@@ -1190,8 +1223,6 @@ setConvertErrors({});
 }
 }, []);
 const viewTransaction = useCallback((tx: Transaction) => setSelectedTransaction(tx), []);
-
-// ✅ voidTransaction با ارسال اطلاعیه لغو (async)
 const voidTransaction = useCallback(async (tx: Transaction) => {
 if (tx.status === "voided") return;
 if (!window.confirm("لغو شود؟")) return;
@@ -1203,11 +1234,8 @@ else if (tx.type === "transfer") syncCashEntriesForTransfer("remove", null, tx.i
 else if (tx.type === "convert") syncCashEntriesForConvert("remove", null, tx.id);
 setEditingExchangeId(null); setEditingTransferId(null); setEditingConvertId(null);
 setCashEntries(loadCashEntriesShared());
-
-// ✅ ارسال اطلاعیه لغو تلگرامی
 await sendTransactionReceipts({ tx, action: "void", customers: updatedCustomers });
 }, [customers]);
-
 const deleteTransaction = useCallback((tx: Transaction) => {
 if (!window.confirm(`حذف ${tx.trackingCode}؟`)) return;
 if (tx.status !== "voided") {
