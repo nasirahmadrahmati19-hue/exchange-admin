@@ -13,7 +13,7 @@ import {
 } from "./lib/defaultData";
 
 // ============================================================
-// تایپ‌ها و ثابت‌ها (هماهنگ با تب Cash)
+// تایپ‌ها و ثابت‌ها
 // ============================================================
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 
@@ -60,22 +60,15 @@ function formatShamsiDate(d: Date) {
   return `${s.year}/${s.month}/${s.day}`;
 }
 
-// تشخیص اینکه آیا تاریخ مربوط به امروز است (هم ISO و هم شمسی و هم timestamp)
 function isToday(dateStr: string | number | undefined | null): boolean {
   if (!dateStr) return false;
   try {
     const str = String(dateStr);
     const now = new Date();
-
-    // چک ISO date
     const todayISO = now.toISOString().split("T")[0];
     if (str.startsWith(todayISO)) return true;
-
-    // چک شمسی
     const todayFa = formatShamsiDate(now);
     if (str.includes(todayFa)) return true;
-
-    // چک timestamp
     const num = Number(dateStr);
     if (!isNaN(num) && num > 1000000000000) {
       const d = new Date(num);
@@ -86,7 +79,7 @@ function isToday(dateStr: string | number | undefined | null): boolean {
 }
 
 // ============================================================
-// تایپ‌های داده (هماهنگ با tab Cash)
+// تایپ‌های داده
 // ============================================================
 interface CashEntry {
   id: string;
@@ -138,7 +131,6 @@ export default function DashboardPage() {
   const [hawalas, setHawalas] = useState<Hawala[]>([]);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  // ── بارگذاری اولیه ──
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem("fx-theme");
@@ -157,7 +149,6 @@ export default function DashboardPage() {
     setMounted(true);
   }, []);
 
-  // ── Sync با تب‌های دیگر ──
   useEffect(() => {
     const handleStorage = (e: StorageEvent) => {
       try {
@@ -190,9 +181,7 @@ export default function DashboardPage() {
     };
   }, []);
 
-  // ── محاسبات (دقیقاً هم‌راستا با tab Cash) ──
-
-  // موجودی فیزیکی صندوق
+  // ── محاسبات ──
   const physicalCashBalances = useMemo(() => {
     const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     const sorted = [...entries].sort((a, b) => {
@@ -207,7 +196,6 @@ export default function DashboardPage() {
     return balances;
   }, [entries]);
 
-  // موجودی طلبکاران (مشتریانی که نزد صرافی پول دارند)
   const customerDeposits = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
@@ -219,7 +207,6 @@ export default function DashboardPage() {
     return totals;
   }, [customers]);
 
-  // بدهی مشتریان (صرافی از آنها طلب دارد)
   const customerDebts = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
@@ -231,7 +218,6 @@ export default function DashboardPage() {
     return totals;
   }, [customers]);
 
-  // سرمایه خالص مالک (دقیقاً همان فرمول تب Cash)
   const ownerNetCapital = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const cur of currencies) {
@@ -240,7 +226,6 @@ export default function DashboardPage() {
     return totals;
   }, [physicalCashBalances, customerDeposits, customerDebts]);
 
-  // کارمزد کل کسب‌شده (از معاملات + حواله‌ها)
   const totalCommissionEarned = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const tx of transactions) {
@@ -258,7 +243,6 @@ export default function DashboardPage() {
     return totals;
   }, [transactions, hawalas]);
 
-  // کارمزد برداشت‌شده
   const commissionWithdrawn = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const e of entries) {
@@ -269,7 +253,6 @@ export default function DashboardPage() {
     return totals;
   }, [entries]);
 
-  // کارمزد قابل برداشت
   const availableCommission = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const cur of currencies) {
@@ -278,7 +261,6 @@ export default function DashboardPage() {
     return totals;
   }, [totalCommissionEarned, commissionWithdrawn]);
 
-  // آمار امروز
   const todayStats = useMemo(() => {
     let tradeCount = 0, hawalaCount = 0, cashCount = 0;
     const tradeCommission: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
@@ -337,7 +319,6 @@ export default function DashboardPage() {
 
       <div className={`cs-font relative min-h-screen overflow-x-hidden antialiased transition-colors duration-500 ${dk ? "bg-[#0f172a] text-slate-100" : "bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 text-slate-800"}`}>
 
-        {/* نوار بالا */}
         <div className={`fixed inset-x-0 top-0 z-30 h-1 bg-gradient-to-l ${dk ? "from-emerald-400 via-teal-400 to-cyan-400" : "from-emerald-500 via-teal-500 to-cyan-500"}`} />
 
         <div className="relative z-10 mx-auto w-full max-w-7xl space-y-4 md:space-y-6 px-3 pb-16 pt-5 md:px-8 md:pt-9">
@@ -382,14 +363,19 @@ export default function DashboardPage() {
             </div>
           </header>
 
-          {/* ═══════════ آمار امروز ═══════════ */}
-          <section className="cs-up space-y-3" style={{ animationDelay: "70ms" }}>
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-xl">📅</span>
-              <h2 className={`cs-display text-xl ${heading}`}>آمار امروز</h2>
+          {/* ═══════════ آمار امروز - استایل مدرن ═══════════ */}
+          <section className="cs-up space-y-4 md:space-y-5" style={{ animationDelay: "70ms" }}>
+            <div className="flex items-center gap-3 mb-1">
+              <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl shadow-md ${dk ? "bg-gradient-to-br from-blue-500 to-sky-500 text-white" : "bg-gradient-to-br from-blue-500 to-cyan-500 text-white"}`}>
+                <span className="text-xl">🗓️</span>
+              </div>
+              <div>
+                <h2 className={`cs-display text-xl md:text-2xl leading-none ${heading}`}>آمار امروز</h2>
+                <p className={`mt-1 text-[10px] md:text-xs font-bold ${subText}`}>خلاصه فعالیت‌های روزانه صرافی</p>
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 md:gap-4">
               <TodayStat dk={dk} icon="💱" label="معاملات" value={fa(todayStats.tradeCount)} color="blue" />
               <TodayStat dk={dk} icon="💸" label="حواله‌ها" value={fa(todayStats.hawalaCount)} color="purple" />
               <TodayStat dk={dk} icon="🏦" label="عملیات صندوق" value={fa(todayStats.cashCount)} color="emerald" />
@@ -417,32 +403,34 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          {/* ═══════════ موجودی فیزیکی صندوق ═══════════ */}
-          <section className="cs-up space-y-3" style={{ animationDelay: "140ms" }}>
-            <div className={`rounded-2xl border p-4 md:p-5 ${dk ? "border-emerald-400/30 bg-gradient-to-r from-emerald-400/10 to-teal-400/5" : "border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50"}`}>
-              <div className="flex items-center gap-3 mb-3">
-                <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${dk ? "bg-emerald-400/20 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}>
-                  <span className="text-xl">🏦</span>
-                </span>
-                <div>
-                  <b className={`block text-sm font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}>
-                    💰 موجودی فیزیکی صندوق
-                  </b>
-                  <span className={`text-[10px] font-bold ${subText}`}>
-                    فقط اسناد صندوق — بدون موجودی مشتریان
-                  </span>
+          {/* ═══════════ موجودی فیزیکی صندوق - استایل مدرن و کلان ═══════════ */}
+          <section className="cs-up space-y-4 md:space-y-5" style={{ animationDelay: "140ms" }}>
+            <div className={`relative overflow-hidden rounded-2xl md:rounded-3xl border-2 p-5 md:p-7 transition-all duration-300 hover:shadow-2xl ${dk ? "border-emerald-400/40 bg-gradient-to-br from-emerald-900/40 via-slate-900/60 to-teal-900/40 shadow-[0_20px_60px_-15px_rgba(16,185,129,0.3)]" : "border-emerald-300 bg-gradient-to-br from-emerald-50 via-white to-teal-50 shadow-[0_20px_60px_-15px_rgba(16,185,129,0.25)]"}`}>
+              {/* جلوه‌های بصری پس‌زمینه */}
+              <div className={`absolute -top-24 -left-24 h-48 w-48 rounded-full blur-3xl opacity-20 ${dk ? "bg-emerald-400" : "bg-emerald-300"}`} />
+              <div className={`absolute -bottom-24 -right-24 h-48 w-48 rounded-full blur-3xl opacity-20 ${dk ? "bg-teal-400" : "bg-teal-300"}`} />
+              
+              <div className="relative flex items-center gap-4 mb-5 md:mb-6">
+                <div className={`relative grid h-14 w-14 md:h-16 md:w-16 shrink-0 place-items-center rounded-2xl shadow-lg ${dk ? "bg-gradient-to-br from-emerald-400 to-teal-400 text-slate-950" : "bg-gradient-to-br from-emerald-500 to-teal-500 text-white"}`}>
+                  <span className="text-3xl md:text-4xl">🏦</span>
+                  <span className="absolute -top-1 -right-1 flex h-4 w-4"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" /><span className="relative inline-flex h-4 w-4 rounded-full bg-emerald-500 ring-2 ring-white" /></span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <b className={`block text-base md:text-lg font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}>💰 موجودی فیزیکی صندوق</b>
+                  <span className={`block text-[11px] md:text-xs font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>فقط اسناد صندوق — بدون موجودی مشتریان</span>
                 </div>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
+              
+              <div className="relative grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 md:gap-4">
                 {currencies.map(cur => {
                   const bal = physicalCashBalances[cur];
+                  const isNeg = bal < 0;
                   return (
-                    <div key={cur} className={`rounded-xl px-3 py-2.5 text-center ${dk ? "bg-slate-900/60" : "bg-white shadow-sm"}`}>
-                      <div className="text-xl mb-1">{flags[cur]}</div>
-                      <div className={`text-[10px] font-bold mb-1 ${subText}`}>{labels[cur]}</div>
-                      <div className={`text-lg font-black tabular-nums ${bal < 0 ? "text-rose-500" : dk ? "text-emerald-300" : "text-emerald-700"}`}>
-                        {fmt(bal)}
-                      </div>
+                    <div key={cur} className={`group relative overflow-hidden rounded-2xl p-4 text-center transition-all duration-300 hover:scale-[1.02] ${dk ? "bg-slate-950/60 ring-1 ring-slate-700/50" : "bg-white/90 ring-1 ring-emerald-100 shadow-sm"}`}>
+                      <div className="text-2xl mb-1.5">{flags[cur]}</div>
+                      <div className={`text-[12px] md:text-[13px] font-black mb-2 ${dk ? "text-slate-400" : "text-slate-500"}`}>{labels[cur]}</div>
+                      <div className={`text-xl md:text-2xl font-black tabular-nums leading-tight ${isNeg ? "text-rose-500" : dk ? "text-emerald-300" : "text-emerald-700"}`}>{fmt(bal)}</div>
+                      <div className={`mt-1.5 text-[9px] md:text-[10px] font-black ${isNeg ? "text-rose-500" : dk ? "text-emerald-400/70" : "text-emerald-600/70"}`}>{isNeg ? "⚠️ کسری" : "✅ نقدی"}</div>
                     </div>
                   );
                 })}
@@ -450,31 +438,30 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          {/* ═══════════ چهار کارت حساب‌ها ═══════════ */}
-          <section className="cs-up grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3" style={{ animationDelay: "210ms" }}>
+          {/* ═══════════ چهار کارت حساب‌ها - استایل مدرن و کلان ═══════════ */}
+          <section className="cs-up grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4" style={{ animationDelay: "210ms" }}>
 
             {/* موجودی مشتریان (طلبکار) */}
-            <div className={`rounded-2xl border p-4 ${dk ? "border-sky-400/25 bg-sky-400/[0.06]" : "border-sky-200 bg-sky-50"}`}>
-              <div className="flex items-center gap-2 mb-3">
-                <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-600"}`}>
-                  👥
+            <div className={`group relative overflow-hidden rounded-2xl border p-4 md:p-5 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-sky-400/25 bg-gradient-to-br from-sky-900/30 to-slate-900/50" : "border-sky-200 bg-gradient-to-br from-sky-50 to-white"}`}>
+              <div className={`absolute top-0 right-0 h-24 w-24 rounded-full blur-2xl opacity-10 ${dk ? "bg-sky-400" : "bg-sky-300"}`} />
+              <div className="relative flex items-center gap-3 mb-4">
+                <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-600"}`}>
+                  <span className="text-xl">💳</span>
                 </span>
-                <div>
-                  <b className={`block text-[11px] font-black ${dk ? "text-sky-300" : "text-sky-700"}`}>
-                    💳 موجودی مشتریان (طلب)
-                  </b>
-                  <span className={`text-[9px] font-bold ${subText}`}>پول مشتری نزد صرافی</span>
+                <div className="min-w-0">
+                  <b className={`block text-[13px] md:text-[14px] font-black leading-tight ${dk ? "text-sky-300" : "text-sky-700"}`}>💳 موجودی مشتریان (طلب)</b>
+                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${subText}`}>پول مشتری نزد صرافی</span>
                 </div>
               </div>
-              <div className="space-y-1">
+              <div className="relative space-y-1.5">
                 {currencies.map(cur => {
                   const bal = customerDeposits[cur];
                   return (
-                    <div key={cur} className={`flex items-center justify-between rounded-lg px-2 py-1 ${dk ? "bg-slate-900/40" : "bg-white/70"}`}>
-                      <span className={`text-[10px] font-bold flex items-center gap-1 ${subText}`}>
-                        {flags[cur]} {labels[cur]}
+                    <div key={cur} className={`flex items-center justify-between rounded-xl px-3 py-2 transition-colors ${dk ? "bg-slate-900/50" : "bg-white/80"}`}>
+                      <span className={`text-[12px] font-black flex items-center gap-1.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>
+                        <span className="text-base">{flags[cur]}</span> {labels[cur]}
                       </span>
-                      <span className={`text-[11px] font-black tabular-nums ${bal > 0 ? (dk ? "text-sky-300" : "text-sky-700") : subText}`}>
+                      <span className={`text-[15px] md:text-base font-black tabular-nums ${bal > 0 ? (dk ? "text-sky-300" : "text-sky-700") : subText}`}>
                         {fmt(bal)}
                       </span>
                     </div>
@@ -484,27 +471,26 @@ export default function DashboardPage() {
             </div>
 
             {/* بدهی مشتریان */}
-            <div className={`rounded-2xl border p-4 ${dk ? "border-rose-400/25 bg-rose-400/[0.06]" : "border-rose-200 bg-rose-50"}`}>
-              <div className="flex items-center gap-2 mb-3">
-                <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600"}`}>
-                  📉
+            <div className={`group relative overflow-hidden rounded-2xl border p-4 md:p-5 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-rose-400/25 bg-gradient-to-br from-rose-900/30 to-slate-900/50" : "border-rose-200 bg-gradient-to-br from-rose-50 to-white"}`}>
+              <div className={`absolute top-0 right-0 h-24 w-24 rounded-full blur-2xl opacity-10 ${dk ? "bg-rose-400" : "bg-rose-300"}`} />
+              <div className="relative flex items-center gap-3 mb-4">
+                <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600"}`}>
+                  <span className="text-xl">📉</span>
                 </span>
-                <div>
-                  <b className={`block text-[11px] font-black ${dk ? "text-rose-300" : "text-rose-700"}`}>
-                    🔻 بدهی مشتریان
-                  </b>
-                  <span className={`text-[9px] font-bold ${subText}`}>صرافی قرض داده</span>
+                <div className="min-w-0">
+                  <b className={`block text-[13px] md:text-[14px] font-black leading-tight ${dk ? "text-rose-300" : "text-rose-700"}`}>🔻 بدهی مشتریان</b>
+                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${subText}`}>صرافی قرض داده</span>
                 </div>
               </div>
-              <div className="space-y-1">
+              <div className="relative space-y-1.5">
                 {currencies.map(cur => {
                   const bal = customerDebts[cur];
                   return (
-                    <div key={cur} className={`flex items-center justify-between rounded-lg px-2 py-1 ${dk ? "bg-slate-900/40" : "bg-white/70"}`}>
-                      <span className={`text-[10px] font-bold flex items-center gap-1 ${subText}`}>
-                        {flags[cur]} {labels[cur]}
+                    <div key={cur} className={`flex items-center justify-between rounded-xl px-3 py-2 transition-colors ${dk ? "bg-slate-900/50" : "bg-white/80"}`}>
+                      <span className={`text-[12px] font-black flex items-center gap-1.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>
+                        <span className="text-base">{flags[cur]}</span> {labels[cur]}
                       </span>
-                      <span className={`text-[11px] font-black tabular-nums ${bal > 0 ? "text-rose-500" : subText}`}>
+                      <span className={`text-[15px] md:text-base font-black tabular-nums ${bal > 0 ? "text-rose-500" : subText}`}>
                         {fmt(bal)}
                       </span>
                     </div>
@@ -514,27 +500,26 @@ export default function DashboardPage() {
             </div>
 
             {/* سرمایه خالص مالک */}
-            <div className={`rounded-2xl border p-4 ${dk ? "border-violet-400/25 bg-violet-400/[0.06]" : "border-violet-200 bg-violet-50"}`}>
-              <div className="flex items-center gap-2 mb-3">
-                <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${dk ? "bg-violet-400/15 text-violet-300" : "bg-violet-100 text-violet-600"}`}>
-                  👑
+            <div className={`group relative overflow-hidden rounded-2xl border p-4 md:p-5 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-violet-400/25 bg-gradient-to-br from-violet-900/30 to-slate-900/50" : "border-violet-200 bg-gradient-to-br from-violet-50 to-white"}`}>
+              <div className={`absolute top-0 right-0 h-24 w-24 rounded-full blur-2xl opacity-10 ${dk ? "bg-violet-400" : "bg-violet-300"}`} />
+              <div className="relative flex items-center gap-3 mb-4">
+                <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${dk ? "bg-violet-400/15 text-violet-300" : "bg-violet-100 text-violet-600"}`}>
+                  <span className="text-xl">👑</span>
                 </span>
-                <div>
-                  <b className={`block text-[11px] font-black ${dk ? "text-violet-300" : "text-violet-700"}`}>
-                    💼 سرمایه خالص مالک
-                  </b>
-                  <span className={`text-[9px] font-bold ${subText}`}>صندوق - طلب + بدهی</span>
+                <div className="min-w-0">
+                  <b className={`block text-[13px] md:text-[14px] font-black leading-tight ${dk ? "text-violet-300" : "text-violet-700"}`}>💼 سرمایه خالص مالک</b>
+                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${subText}`}>صندوق - طلب + بدهی</span>
                 </div>
               </div>
-              <div className="space-y-1">
+              <div className="relative space-y-1.5">
                 {currencies.map(cur => {
                   const bal = ownerNetCapital[cur];
                   return (
-                    <div key={cur} className={`flex items-center justify-between rounded-lg px-2 py-1 ${dk ? "bg-slate-900/40" : "bg-white/70"}`}>
-                      <span className={`text-[10px] font-bold flex items-center gap-1 ${subText}`}>
-                        {flags[cur]} {labels[cur]}
+                    <div key={cur} className={`flex items-center justify-between rounded-xl px-3 py-2 transition-colors ${dk ? "bg-slate-900/50" : "bg-white/80"}`}>
+                      <span className={`text-[12px] font-black flex items-center gap-1.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>
+                        <span className="text-base">{flags[cur]}</span> {labels[cur]}
                       </span>
-                      <span className={`text-[11px] font-black tabular-nums ${bal < 0 ? "text-rose-500" : dk ? "text-violet-300" : "text-violet-700"}`}>
+                      <span className={`text-[15px] md:text-base font-black tabular-nums ${bal < 0 ? "text-rose-500" : dk ? "text-violet-300" : "text-violet-700"}`}>
                         {fmt(bal)}
                       </span>
                     </div>
@@ -544,27 +529,26 @@ export default function DashboardPage() {
             </div>
 
             {/* کارمزد قابل برداشت */}
-            <div className={`rounded-2xl border p-4 ${dk ? "border-amber-400/25 bg-amber-400/[0.06]" : "border-amber-200 bg-amber-50"}`}>
-              <div className="flex items-center gap-2 mb-3">
-                <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}>
-                  💎
+            <div className={`group relative overflow-hidden rounded-2xl border p-4 md:p-5 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-amber-400/25 bg-gradient-to-br from-amber-900/30 to-slate-900/50" : "border-amber-200 bg-gradient-to-br from-amber-50 to-white"}`}>
+              <div className={`absolute top-0 right-0 h-24 w-24 rounded-full blur-2xl opacity-10 ${dk ? "bg-amber-400" : "bg-amber-300"}`} />
+              <div className="relative flex items-center gap-3 mb-4">
+                <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}>
+                  <span className="text-xl">💎</span>
                 </span>
-                <div>
-                  <b className={`block text-[11px] font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>
-                    💎 کارمزد قابل برداشت
-                  </b>
-                  <span className={`text-[9px] font-bold ${subText}`}>درآمد خالص صرافی</span>
+                <div className="min-w-0">
+                  <b className={`block text-[13px] md:text-[14px] font-black leading-tight ${dk ? "text-amber-300" : "text-amber-700"}`}>💎 کارمزد قابل برداشت</b>
+                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${subText}`}>درآمد خالص صرافی</span>
                 </div>
               </div>
-              <div className="space-y-1">
+              <div className="relative space-y-1.5">
                 {currencies.map(cur => {
                   const bal = availableCommission[cur];
                   return (
-                    <div key={cur} className={`flex items-center justify-between rounded-lg px-2 py-1 ${dk ? "bg-slate-900/40" : "bg-white/70"}`}>
-                      <span className={`text-[10px] font-bold flex items-center gap-1 ${subText}`}>
-                        {flags[cur]} {labels[cur]}
+                    <div key={cur} className={`flex items-center justify-between rounded-xl px-3 py-2 transition-colors ${dk ? "bg-slate-900/50" : "bg-white/80"}`}>
+                      <span className={`text-[12px] font-black flex items-center gap-1.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>
+                        <span className="text-base">{flags[cur]}</span> {labels[cur]}
                       </span>
-                      <span className={`text-[11px] font-black tabular-nums ${bal > 0 ? (dk ? "text-amber-300" : "text-amber-700") : subText}`}>
+                      <span className={`text-[15px] md:text-base font-black tabular-nums ${bal > 0 ? (dk ? "text-amber-300" : "text-amber-700") : subText}`}>
                         {fmt(bal)}
                       </span>
                     </div>
@@ -574,33 +558,33 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          {/* ═══════════ فرمول حسابداری ═══════════ */}
-          <div className={`cs-up rounded-xl border px-4 py-3 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-white/70"}`} style={{ animationDelay: "280ms" }}>
-            <div className={`flex flex-wrap items-center justify-center gap-2 text-[10px] font-bold ${subText}`}>
-              <span className={`px-2 py-1 rounded-lg ${dk ? "bg-emerald-400/10 text-emerald-300" : "bg-emerald-50 text-emerald-700"}`}>
+          {/* ═══════════ فرمول حسابداری - استایل مدرن ═══════════ */}
+          <div className={`cs-up rounded-2xl border-2 px-5 py-4 md:py-5 ${dk ? "border-slate-700/70 bg-gradient-to-r from-slate-800/60 to-slate-900/60" : "border-slate-200 bg-gradient-to-r from-white to-slate-50"}`} style={{ animationDelay: "280ms" }}>
+            <div className={`flex flex-wrap items-center justify-center gap-3 md:gap-4 text-[12px] md:text-[13px] font-black ${dk ? "text-slate-300" : "text-slate-600"}`}>
+              <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${dk ? "bg-emerald-400/10 text-emerald-300 ring-1 ring-emerald-400/30" : "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"}`}>
                 💰 صندوق
               </span>
-              <span>=</span>
-              <span className={`px-2 py-1 rounded-lg ${dk ? "bg-violet-400/10 text-violet-300" : "bg-violet-50 text-violet-700"}`}>
+              <span className="text-slate-400">=</span>
+              <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${dk ? "bg-violet-400/10 text-violet-300 ring-1 ring-violet-400/30" : "bg-violet-50 text-violet-700 ring-1 ring-violet-200"}`}>
                 👑 سرمایه مالک
               </span>
-              <span>+</span>
-              <span className={`px-2 py-1 rounded-lg ${dk ? "bg-sky-400/10 text-sky-300" : "bg-sky-50 text-sky-700"}`}>
-                👥 موجودی مشتریان
+              <span className="text-slate-400">+</span>
+              <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${dk ? "bg-sky-400/10 text-sky-300 ring-1 ring-sky-400/30" : "bg-sky-50 text-sky-700 ring-1 ring-sky-200"}`}>
+                💳 موجودی مشتریان
               </span>
-              <span>−</span>
-              <span className={`px-2 py-1 rounded-lg ${dk ? "bg-rose-400/10 text-rose-300" : "bg-rose-50 text-rose-700"}`}>
+              <span className="text-rose-500 font-black">−</span>
+              <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${dk ? "bg-rose-400/10 text-rose-300 ring-1 ring-rose-400/30" : "bg-rose-50 text-rose-700 ring-1 ring-rose-200"}`}>
                 📉 بدهی مشتریان
               </span>
             </div>
           </div>
 
           {/* ═══════════ جدول وضعیت کلی سیستم ═══════════ */}
-          <section className={`cs-up rounded-2xl border overflow-hidden ${uiCard}`} style={{ animationDelay: "350ms" }}>
+          <section className={`cs-up rounded-2xl md:rounded-3xl border-2 overflow-hidden ${uiCard}`} style={{ animationDelay: "350ms" }}>
             <div className="flex items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
-              <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl ${dk ? "bg-cyan-400/15 text-cyan-300" : "bg-cyan-100 text-cyan-600"}`}>
-                📋
-              </span>
+              <div className={`grid h-11 w-11 md:h-12 md:w-12 place-items-center rounded-xl shadow-md ${dk ? "bg-gradient-to-br from-cyan-400 to-sky-500 text-slate-950" : "bg-gradient-to-br from-cyan-500 to-sky-500 text-white"}`}>
+                <span className="text-xl">📋</span>
+              </div>
               <div className="flex-1 min-w-0">
                 <h2 className={`cs-display text-xl md:text-2xl leading-none ${heading}`}>
                   وضعیت کلی سیستم
@@ -615,12 +599,12 @@ export default function DashboardPage() {
               <table className="w-full min-w-[800px] text-sm">
                 <thead>
                   <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
-                    <th className="px-3 py-3 text-right text-[10px] font-black text-slate-400 whitespace-nowrap">ارز</th>
-                    <th className="px-3 py-3 text-center text-[10px] font-black text-slate-400 whitespace-nowrap">💰 صندوق</th>
-                    <th className="px-3 py-3 text-center text-[10px] font-black text-slate-400 whitespace-nowrap">👥 طلب مشتریان</th>
-                    <th className="px-3 py-3 text-center text-[10px] font-black text-slate-400 whitespace-nowrap">📉 بدهی مشتریان</th>
-                    <th className="px-3 py-3 text-center text-[10px] font-black text-slate-400 whitespace-nowrap">👑 سرمایه مالک</th>
-                    <th className="px-3 py-3 text-center text-[10px] font-black text-slate-400 whitespace-nowrap">💎 کارمزد</th>
+                    <th className="px-3 py-3 text-right text-[11px] font-black text-slate-400 whitespace-nowrap">ارز</th>
+                    <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">💰 صندوق</th>
+                    <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">💳 طلب مشتریان</th>
+                    <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">📉 بدهی مشتریان</th>
+                    <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">👑 سرمایه مالک</th>
+                    <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">💎 کارمزد</th>
                   </tr>
                 </thead>
                 <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
@@ -641,19 +625,19 @@ export default function DashboardPage() {
                             </span>
                           </div>
                         </td>
-                        <td className={`px-3 py-3 text-center text-[12px] font-black tabular-nums ${cash < 0 ? "text-rose-500" : dk ? "text-emerald-300" : "text-emerald-700"}`}>
+                        <td className={`px-3 py-3 text-center text-[13px] font-black tabular-nums ${cash < 0 ? "text-rose-500" : dk ? "text-emerald-300" : "text-emerald-700"}`}>
                           {fmt(cash)}
                         </td>
-                        <td className={`px-3 py-3 text-center text-[12px] font-black tabular-nums ${deps > 0 ? (dk ? "text-sky-300" : "text-sky-700") : subText}`}>
+                        <td className={`px-3 py-3 text-center text-[13px] font-black tabular-nums ${deps > 0 ? (dk ? "text-sky-300" : "text-sky-700") : subText}`}>
                           {fmt(deps)}
                         </td>
-                        <td className={`px-3 py-3 text-center text-[12px] font-black tabular-nums ${debts > 0 ? "text-rose-500" : subText}`}>
+                        <td className={`px-3 py-3 text-center text-[13px] font-black tabular-nums ${debts > 0 ? "text-rose-500" : subText}`}>
                           {fmt(debts)}
                         </td>
-                        <td className={`px-3 py-3 text-center text-[12px] font-black tabular-nums ${equity < 0 ? "text-rose-500" : dk ? "text-violet-300" : "text-violet-700"}`}>
+                        <td className={`px-3 py-3 text-center text-[13px] font-black tabular-nums ${equity < 0 ? "text-rose-500" : dk ? "text-violet-300" : "text-violet-700"}`}>
                           {fmt(equity)}
                         </td>
-                        <td className={`px-3 py-3 text-center text-[12px] font-black tabular-nums ${comm > 0 ? (dk ? "text-amber-300" : "text-amber-700") : subText}`}>
+                        <td className={`px-3 py-3 text-center text-[13px] font-black tabular-nums ${comm > 0 ? (dk ? "text-amber-300" : "text-amber-700") : subText}`}>
                           {fmt(comm)}
                         </td>
                       </tr>
@@ -663,23 +647,23 @@ export default function DashboardPage() {
                 <tfoot>
                   <tr className={`border-t-2 ${dk ? "border-slate-600 bg-slate-800/80" : "border-slate-200 bg-slate-50"}`}>
                     <td className="px-3 py-3 text-right">
-                      <span className={`text-[11px] font-black ${dk ? "text-slate-300" : "text-slate-700"}`}>
+                      <span className={`text-[12px] font-black ${dk ? "text-slate-300" : "text-slate-700"}`}>
                         📊 مجموع (AFN)
                       </span>
                     </td>
-                    <td className={`px-3 py-3 text-center text-[12px] font-black tabular-nums ${dk ? "text-emerald-300" : "text-emerald-700"}`}>
+                    <td className={`px-3 py-3 text-center text-[13px] font-black tabular-nums ${dk ? "text-emerald-300" : "text-emerald-700"}`}>
                       {fmt(physicalCashBalances.AFN)}
                     </td>
-                    <td className={`px-3 py-3 text-center text-[12px] font-black tabular-nums ${dk ? "text-sky-300" : "text-sky-700"}`}>
+                    <td className={`px-3 py-3 text-center text-[13px] font-black tabular-nums ${dk ? "text-sky-300" : "text-sky-700"}`}>
                       {fmt(customerDeposits.AFN)}
                     </td>
-                    <td className={`px-3 py-3 text-center text-[12px] font-black tabular-nums text-rose-500`}>
+                    <td className={`px-3 py-3 text-center text-[13px] font-black tabular-nums text-rose-500`}>
                       {fmt(customerDebts.AFN)}
                     </td>
-                    <td className={`px-3 py-3 text-center text-[12px] font-black tabular-nums ${dk ? "text-violet-300" : "text-violet-700"}`}>
+                    <td className={`px-3 py-3 text-center text-[13px] font-black tabular-nums ${dk ? "text-violet-300" : "text-violet-700"}`}>
                       {fmt(ownerNetCapital.AFN)}
                     </td>
-                    <td className={`px-3 py-3 text-center text-[12px] font-black tabular-nums ${dk ? "text-amber-300" : "text-amber-700"}`}>
+                    <td className={`px-3 py-3 text-center text-[13px] font-black tabular-nums ${dk ? "text-amber-300" : "text-amber-700"}`}>
                       {fmt(availableCommission.AFN)}
                     </td>
                   </tr>
@@ -699,7 +683,7 @@ export default function DashboardPage() {
 }
 
 // ============================================================
-// کامپوننت کمکی: کارت آمار امروز
+// کامپوننت کمکی: کارت آمار امروز (استایل مدرن)
 // ============================================================
 function TodayStat({ dk, icon, label, value, color }: {
   dk: boolean;
@@ -709,12 +693,12 @@ function TodayStat({ dk, icon, label, value, color }: {
   color: "blue" | "emerald" | "amber" | "purple" | "rose" | "sky";
 }) {
   const colorMap = {
-    blue: dk ? "border-blue-400/25 bg-blue-400/[0.06]" : "border-blue-200 bg-blue-50",
-    emerald: dk ? "border-emerald-400/25 bg-emerald-400/[0.06]" : "border-emerald-200 bg-emerald-50",
-    amber: dk ? "border-amber-400/25 bg-amber-400/[0.06]" : "border-amber-200 bg-amber-50",
-    purple: dk ? "border-purple-400/25 bg-purple-400/[0.06]" : "border-purple-200 bg-purple-50",
-    rose: dk ? "border-rose-400/25 bg-rose-400/[0.06]" : "border-rose-200 bg-rose-50",
-    sky: dk ? "border-sky-400/25 bg-sky-400/[0.06]" : "border-sky-200 bg-sky-50",
+    blue: dk ? "border-blue-400/25 bg-gradient-to-br from-blue-900/30 to-slate-900/50" : "border-blue-200 bg-gradient-to-br from-blue-50 to-white",
+    emerald: dk ? "border-emerald-400/25 bg-gradient-to-br from-emerald-900/30 to-slate-900/50" : "border-emerald-200 bg-gradient-to-br from-emerald-50 to-white",
+    amber: dk ? "border-amber-400/25 bg-gradient-to-br from-amber-900/30 to-slate-900/50" : "border-amber-200 bg-gradient-to-br from-amber-50 to-white",
+    purple: dk ? "border-purple-400/25 bg-gradient-to-br from-purple-900/30 to-slate-900/50" : "border-purple-200 bg-gradient-to-br from-purple-50 to-white",
+    rose: dk ? "border-rose-400/25 bg-gradient-to-br from-rose-900/30 to-slate-900/50" : "border-rose-200 bg-gradient-to-br from-rose-50 to-white",
+    sky: dk ? "border-sky-400/25 bg-gradient-to-br from-sky-900/30 to-slate-900/50" : "border-sky-200 bg-gradient-to-br from-sky-50 to-white",
   };
   const iconMap = {
     blue: dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-600",
@@ -734,14 +718,15 @@ function TodayStat({ dk, icon, label, value, color }: {
   };
 
   return (
-    <div className={`rounded-2xl border p-4 ${colorMap[color]}`}>
-      <div className="flex items-center gap-2 mb-2">
-        <span className={`grid h-8 w-8 place-items-center rounded-lg ${iconMap[color]}`}>
-          {icon}
+    <div className={`group relative overflow-hidden rounded-2xl border p-4 transition-all duration-300 hover:shadow-lg hover:scale-[1.02] ${colorMap[color]}`}>
+      <div className={`absolute top-0 right-0 h-20 w-20 rounded-full blur-2xl opacity-10 ${dk ? "bg-current" : "bg-current"}`} />
+      <div className="relative flex items-center gap-2.5 mb-2">
+        <span className={`grid h-10 w-10 place-items-center rounded-xl shadow-sm ${iconMap[color]}`}>
+          <span className="text-xl">{icon}</span>
         </span>
-        <span className={`text-[10px] font-black ${textMap[color]}`}>{label}</span>
+        <span className={`text-[11px] md:text-[12px] font-black ${textMap[color]}`}>{label}</span>
       </div>
-      <p className={`text-2xl font-black tabular-nums ${textMap[color]}`}>{value}</p>
+      <p className={`relative text-3xl md:text-4xl font-black tabular-nums leading-none ${textMap[color]}`}>{value}</p>
     </div>
   );
 }
