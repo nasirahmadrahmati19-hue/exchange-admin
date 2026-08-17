@@ -24,6 +24,9 @@ const CASH_BOX_ID = "CASH_BOX";
 const CASH_BOX_NAME = "صندوق";
 const CASH_BOX_CUSTOMER: Customer = { id: CASH_BOX_ID, name: CASH_BOX_NAME, phone: "", tazkira: "", address: "", note: "", telegram: "", telegramChatId: "", registeredAt: "", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
 
+// ✅ تابع کمکی: تشخیص مشتری دارای چت آیدی تلگرام
+const hasTelegram = (c: Customer): boolean => Boolean(c.telegramChatId || c.telegram);
+
 const generateId = (): string => { if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") { try { return crypto.randomUUID(); } catch {} } return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => { const r = (Math.random() * 16) | 0; return (c === "x" ? r : (r & 0x3) | 0x8).toString(16); }); };
 const isCurrency = (v: any): v is Currency => typeof v === "string" && (currencies as string[]).includes(v);
 const normalizeDigits = (value: string) => { const pd = "۰۱۲۳۴۵۶۷۸۹", ad = "٠١٢٣٤٥٦٧٨٩"; return String(value || "").replace(/[۰-۹]/g, d => String(pd.indexOf(d))).replace(/[٠-٩]/g, d => String(ad.indexOf(d))); };
@@ -290,7 +293,6 @@ async function sendHawalaReceipts(params: {
   const settings = getTelegramSettings();
   if (!settings.enabled || !settings.botToken) return;
 
-  // بررسی toggle مربوط به نوع عملیات
   const { action, hawala, customers } = params;
   if (action === "register" && !settings.notifyNewHawala) return;
   if (action === "settle" && !settings.notifySettlement) return;
@@ -299,7 +301,6 @@ async function sendHawalaReceipts(params: {
   const receipts: { chatId: string; text: string; target: string }[] = [];
   const now = new Date();
 
-  // ===== 1) ثبت حواله → فقط Sender: سند برد =====
   if (action === "register") {
     if (hawala.senderId && hawala.senderId !== CASH_BOX_ID) {
       const chatId = getCustomerChatId(hawala.senderId, customers);
@@ -322,7 +323,6 @@ async function sendHawalaReceipts(params: {
     }
   }
 
-  // ===== 2) تسویه حواله → فقط Receiver: سند رسید =====
   if (action === "settle") {
     if (hawala.receiverId && hawala.receiverId !== CASH_BOX_ID) {
       const chatId = getCustomerChatId(hawala.receiverId, customers);
@@ -345,9 +345,7 @@ async function sendHawalaReceipts(params: {
     }
   }
 
-  // ===== 3) ابطال حواله =====
   if (action === "cancel") {
-    // Sender همیشه: سند رسید (پول برمی‌گردد)
     if (hawala.senderId && hawala.senderId !== CASH_BOX_ID) {
       const chatId = getCustomerChatId(hawala.senderId, customers);
       if (chatId) {
@@ -368,7 +366,6 @@ async function sendHawalaReceipts(params: {
       }
     }
 
-    // Receiver فقط اگر حواله قبلاً paid بوده: سند برد
     if (hawala.status === "paid" && hawala.receiverId && hawala.receiverId !== CASH_BOX_ID) {
       const chatId = getCustomerChatId(hawala.receiverId, customers);
       if (chatId) {
@@ -390,7 +387,6 @@ async function sendHawalaReceipts(params: {
     }
   }
 
-  // ===== ارسال به مشتریان (chatId های یکتا) =====
   const sentToChatIds = new Set<string>();
   for (const r of receipts) {
     if (sentToChatIds.has(r.chatId)) continue;
@@ -398,9 +394,7 @@ async function sendHawalaReceipts(params: {
     sentToChatIds.add(r.chatId);
   }
 
-  // ===== ارسال کپی به chatId اصلی صرافی (همیشه) =====
   if (settings.chatId && !sentToChatIds.has(settings.chatId)) {
-    // کپی خلاصه شده از همه رسیدها
     let summary = `📬 اطلاعیه حواله ${hawala.number}\n`;
     summary += `🏷 ${action === "register" ? "ثبت حواله جدید" : action === "settle" ? "تسویه حواله" : "ابطال حواله"}\n`;
     summary += `👤 فرستنده: ${hawala.senderName}\n`;
@@ -535,7 +529,6 @@ export default function HawalaPage() {
       setLastNames({ senderName, receiverName });
       setForm(emptyForm); setErrors({}); setPreviewOpen(false); setActiveTab("current");
       
-      // ✅ ارسال رسید تلگرام (فقط برای sender: سند برد)
       await sendHawalaReceipts({
         hawala: newHawala,
         action: "register",
@@ -565,7 +558,6 @@ export default function HawalaPage() {
       setHawalas(prev => prev.map(item => item.id === settleTarget.id ? { ...item, status: "paid" as HawalaStatus, paidAt: new Date().toISOString(), paidBy, paidAmount: amountPaid } : item));
       syncCashEntriesForHawalaSettlement("add", paidHawala);
       
-      // ✅ ارسال رسید تلگرام (فقط برای receiver: سند رسید)
       await sendHawalaReceipts({
         hawala: paidHawala,
         action: "settle",
@@ -591,7 +583,6 @@ export default function HawalaPage() {
       syncCashEntriesForHawalaSettlement("remove", cancelTarget);
       setHawalas(prev => prev.map(item => item.id === cancelTarget.id ? { ...item, status: "cancelled" as HawalaStatus, cancelReason } : item));
       
-      // ✅ ارسال رسید تلگرام (sender: سند رسید / اگر paid بوده receiver: سند برد)
       await sendHawalaReceipts({
         hawala: cancelTarget,
         action: "cancel",
@@ -708,7 +699,7 @@ export default function HawalaPage() {
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-600"}`}><Ic n="send" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-blue-300" : "text-blue-700"}`}>معلومات حواله‌دهنده و حواله</b></div>
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-3 mb-4">
-                  {fld("نام حواله‌دهنده *", (<div className="relative" ref={senderListRef}><input value={form.senderName} onChange={e => { const val = e.target.value; setField("senderName", val); setSenderFilter(val); if (!showSenderList) setShowSenderList(true); if (val.trim() === CASH_BOX_NAME) { setField("senderId", CASH_BOX_ID); setField("senderPhone", ""); setField("senderTelegram", ""); } else { const customer = customers.find(c => c.name === val); if (customer) { setField("senderId", customer.id); setField("senderPhone", customer.phone || ""); setField("senderTelegram", customer.telegram || ""); } else { setField("senderId", ""); setField("senderPhone", ""); setField("senderTelegram", ""); } } }} placeholder="انتخاب از لیست یا نوشتن نام جدید…" className={`${uiInput} pl-12 ${errors.senderName ? errInput : ""}`} autoComplete="off" /><button type="button" onClick={(e) => { e.stopPropagation(); setShowSenderList(!showSenderList); }} className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition ${dk ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}><Ic n="chevron" className={`h-4 w-4 transition-transform ${showSenderList ? "rotate-180" : ""}`} /></button>{showSenderList && (<div className={`hw-menu absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>{filteredSenderList.length === 0 ? (<div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>) : (filteredSenderList.map((c, idx) => (<button key={c.id} type="button" onClick={() => { setField("senderId", c.id); setField("senderName", c.name); setField("senderPhone", c.phone || ""); setField("senderTelegram", c.telegram || ""); setSenderFilter(""); setShowSenderList(false); setErrors(p => ({ ...p, senderName: undefined })); }} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-blue-400/15 hover:text-blue-300" : "text-slate-700 hover:bg-blue-50 hover:text-blue-600"}`}><span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-blue-500 to-cyan-500`}>{idx + 1}</span><span className="flex-1 truncate">{c.name}</span>{c.phone && <span className={`text-[10px] ${subText}`} dir="ltr">{c.phone}</span>}</button>)))}<div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} /><div className={`px-3 py-2 text-[10px] text-center ${subText}`}>نام جدید در لیست ذخیره نمی‌شود</div></div>)}</div>))}
+                  {fld("نام حواله‌دهنده *", (<div className="relative" ref={senderListRef}><input value={form.senderName} onChange={e => { const val = e.target.value; setField("senderName", val); setSenderFilter(val); if (!showSenderList) setShowSenderList(true); if (val.trim() === CASH_BOX_NAME) { setField("senderId", CASH_BOX_ID); setField("senderPhone", ""); setField("senderTelegram", ""); } else { const customer = customers.find(c => c.name === val); if (customer) { setField("senderId", customer.id); setField("senderPhone", customer.phone || ""); setField("senderTelegram", customer.telegram || ""); } else { setField("senderId", ""); setField("senderPhone", ""); setField("senderTelegram", ""); } } }} placeholder="انتخاب از لیست یا نوشتن نام جدید…" className={`${uiInput} pl-12 ${errors.senderName ? errInput : ""}`} autoComplete="off" /><button type="button" onClick={(e) => { e.stopPropagation(); setShowSenderList(!showSenderList); }} className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition ${dk ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}><Ic n="chevron" className={`h-4 w-4 transition-transform ${showSenderList ? "rotate-180" : ""}`} /></button>{showSenderList && (<div className={`hw-menu absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>{filteredSenderList.length === 0 ? (<div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>) : (filteredSenderList.map((c, idx) => (<button key={c.id} type="button" onClick={() => { setField("senderId", c.id); setField("senderName", c.name); setField("senderPhone", c.phone || ""); setField("senderTelegram", c.telegram || ""); setSenderFilter(""); setShowSenderList(false); setErrors(p => ({ ...p, senderName: undefined })); }} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-blue-400/15 hover:text-blue-300" : "text-slate-700 hover:bg-blue-50 hover:text-blue-600"}`}><span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-blue-500 to-cyan-500`}>{idx + 1}</span><span className="flex-1 truncate flex items-center gap-1.5">{c.name}{hasTelegram(c) && <span title="دارای چت آیدی تلگرام">📱</span>}</span>{c.phone && <span className={`text-[10px] ${subText}`} dir="ltr">{c.phone}</span>}</button>)))}<div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} /><div className={`px-3 py-2 text-[10px] text-center ${subText}`}>نام جدید در لیست ذخیره نمی‌شود</div></div>)}</div>))}
                   {fld("کد پیگیری", (<div className="relative"><input readOnly dir="ltr" value={nextHawalaNumber} className={`${uiInput} ${roInput} pl-16 text-left tabular-nums font-black text-[14px]`} /><span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 px-2 py-1 text-[9px] font-black text-white">TR</span></div>))}
                   {fld("تاریخ (شمسی)", (<input readOnly value={currentDateTime} className={`${uiInput} ${roInput}`} />))}
                 </div>
@@ -749,7 +740,7 @@ export default function HawalaPage() {
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="receive" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>معلومات حواله‌گیرنده</b></div>
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {fld("نام حواله‌گیرنده *", (<div className="relative" ref={receiverListRef}><input value={form.receiverName} onChange={e => { const val = e.target.value; setField("receiverName", val); setReceiverFilter(val); if (!showReceiverList) setShowReceiverList(true); if (val.trim() === CASH_BOX_NAME) { setField("receiverId", CASH_BOX_ID); setField("receiverTazkira", ""); setField("receiverPhone", ""); setField("receiverAddress", ""); } else { const customer = customers.find(c => c.name === val); if (customer) { setField("receiverId", customer.id); setField("receiverTazkira", customer.tazkira || ""); setField("receiverPhone", customer.phone || ""); setField("receiverAddress", customer.address || ""); } else { setField("receiverId", ""); setField("receiverTazkira", ""); setField("receiverPhone", ""); setField("receiverAddress", ""); } } }} placeholder="انتخاب از لیست یا نوشتن نام جدید…" className={`${uiInput} pl-12 ${errors.receiverName ? errInput : ""}`} autoComplete="off" /><button type="button" onClick={(e) => { e.stopPropagation(); setShowReceiverList(!showReceiverList); }} className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition ${dk ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}><Ic n="chevron" className={`h-4 w-4 transition-transform ${showReceiverList ? "rotate-180" : ""}`} /></button>{showReceiverList && (<div className={`hw-menu absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>{filteredReceiverList.length === 0 ? (<div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>) : (filteredReceiverList.map((c, idx) => (<button key={c.id} type="button" onClick={() => { setField("receiverId", c.id); setField("receiverName", c.name); setField("receiverTazkira", c.tazkira || ""); setField("receiverPhone", c.phone || ""); setField("receiverAddress", c.address || ""); setReceiverFilter(""); setShowReceiverList(false); setErrors(p => ({ ...p, receiverName: undefined })); }} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-amber-400/15 hover:text-amber-300" : "text-slate-700 hover:bg-amber-50 hover:text-amber-600"}`}><span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-amber-500 to-orange-500`}>{idx + 1}</span><span className="flex-1 truncate">{c.name}</span>{c.phone && <span className={`text-[10px] ${subText}`} dir="ltr">{c.phone}</span>}</button>)))}<div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} /><div className={`px-3 py-2 text-[10px] text-center ${subText}`}>نام جدید در لیست ذخیره نمی‌شود</div></div>)}</div>))}
+                  {fld("نام حواله‌گیرنده *", (<div className="relative" ref={receiverListRef}><input value={form.receiverName} onChange={e => { const val = e.target.value; setField("receiverName", val); setReceiverFilter(val); if (!showReceiverList) setShowReceiverList(true); if (val.trim() === CASH_BOX_NAME) { setField("receiverId", CASH_BOX_ID); setField("receiverTazkira", ""); setField("receiverPhone", ""); setField("receiverAddress", ""); } else { const customer = customers.find(c => c.name === val); if (customer) { setField("receiverId", customer.id); setField("receiverTazkira", customer.tazkira || ""); setField("receiverPhone", customer.phone || ""); setField("receiverAddress", customer.address || ""); } else { setField("receiverId", ""); setField("receiverTazkira", ""); setField("receiverPhone", ""); setField("receiverAddress", ""); } } }} placeholder="انتخاب از لیست یا نوشتن نام جدید…" className={`${uiInput} pl-12 ${errors.receiverName ? errInput : ""}`} autoComplete="off" /><button type="button" onClick={(e) => { e.stopPropagation(); setShowReceiverList(!showReceiverList); }} className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition ${dk ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}><Ic n="chevron" className={`h-4 w-4 transition-transform ${showReceiverList ? "rotate-180" : ""}`} /></button>{showReceiverList && (<div className={`hw-menu absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>{filteredReceiverList.length === 0 ? (<div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>) : (filteredReceiverList.map((c, idx) => (<button key={c.id} type="button" onClick={() => { setField("receiverId", c.id); setField("receiverName", c.name); setField("receiverTazkira", c.tazkira || ""); setField("receiverPhone", c.phone || ""); setField("receiverAddress", c.address || ""); setReceiverFilter(""); setShowReceiverList(false); setErrors(p => ({ ...p, receiverName: undefined })); }} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-amber-400/15 hover:text-amber-300" : "text-slate-700 hover:bg-amber-50 hover:text-amber-600"}`}><span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-amber-500 to-orange-500`}>{idx + 1}</span><span className="flex-1 truncate flex items-center gap-1.5">{c.name}{hasTelegram(c) && <span title="دارای چت آیدی تلگرام">📱</span>}</span>{c.phone && <span className={`text-[10px] ${subText}`} dir="ltr">{c.phone}</span>}</button>)))}<div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} /><div className={`px-3 py-2 text-[10px] text-center ${subText}`}>نام جدید در لیست ذخیره نمی‌شود</div></div>)}</div>))}
                   {fld("شماره تذکره *", (<input className={`${uiInput} ${errors.receiverTazkira ? errInput : ""}`} value={form.receiverTazkira} onChange={e => setField("receiverTazkira", e.target.value)} placeholder="شماره تذکره" />))}
                   {fld("شماره تماس *", (<input className={`${uiInput} ${errors.receiverPhone ? errInput : ""}`} value={form.receiverPhone} onChange={e => setField("receiverPhone", e.target.value)} placeholder="07xxxxxxxx" />))}
                   {fld("آدرس", (<input className={`${uiInput} sm:col-span-2 lg:col-span-3`} value={form.receiverAddress} onChange={e => setField("receiverAddress", e.target.value)} placeholder="اختیاری" />))}
