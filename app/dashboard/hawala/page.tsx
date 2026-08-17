@@ -249,7 +249,7 @@ function getCustomerChatId(customerId: string | undefined, customers: Customer[]
   } catch { return ""; }
 }
 
-// ✅ ساخت متن رسید (فقط بیلانس خود مشتری - بدون بیلانس طرف مقابل)
+// ✅ ساخت متن سند رسید/برد (فقط بیلانس خود مشتری)
 function buildHawalaReceiptText(params: {
   docType: "receipt" | "withdraw";
   date: Date;
@@ -284,8 +284,8 @@ function buildHawalaReceiptText(params: {
   return text;
 }
 
-// ✅ ساخت متن اطلاعیه برای حواله‌گیرنده (با بیلانس حواله‌گیرنده)
-function buildReceiverNoticeText(params: {
+// ✅ ساخت متن اطلاعیه ثبت حواله برای حواله‌گیرنده (با بیلانس حواله‌گیرنده)
+function buildReceiverRegisterNoticeText(params: {
   hawala: Hawala;
   receiverBalances: Record<string, number>;
 }): string {
@@ -304,6 +304,23 @@ function buildReceiverNoticeText(params: {
     text += `${label}: ${fb} ${status}\n`;
   }
   text += `\n🏦 صرافی برادران نورزاد — هرات`;
+  return text;
+}
+
+// ✅ ساخت متن اطلاعیه ابطال برای حواله‌گیرنده (وقتی حواله هنوز تسویه نشده)
+function buildReceiverCancelNoticeText(params: {
+  hawala: Hawala;
+  cancelReason: string;
+}): string {
+  const { hawala, cancelReason } = params;
+  let text = `📬 اطلاعیه ابطال حواله ${hawala.number}\n\n`;
+  text += `🏷 حواله ابطال شد\n\n`;
+  text += `👤 فرستنده: ${hawala.senderName}\n`;
+  text += `💰 مبلغ: ${fmt(hawala.amountFrom)} ${labels[hawala.currencyFrom]} → ${fmt(hawala.finalAmount)} ${labels[hawala.currencyTo]}\n`;
+  text += `📍 مقصد: ${hawala.destinationText}\n`;
+  if (cancelReason) text += `📝 دلیل ابطال: ${cancelReason}\n`;
+  text += `\nاین حواله ابطال شده است و هیچ مبلغی به حساب شما واریز نخواهد شد.\n\n`;
+  text += `🏦 صرافی برادران نورزاد — هرات`;
   return text;
 }
 
@@ -338,7 +355,7 @@ async function sendHawalaReceipts(params: {
 
   // ===== 1) ثبت حواله =====
   if (action === "register") {
-    // سند برد به حواله‌دهنده (فقط بیلانس خودش)
+    // 🔴 سند برد به حواله‌دهنده (فقط بیلانس خودش)
     if (isRealCustomer(hawala.senderId)) {
       const chatId = getCustomerChatId(hawala.senderId, customers);
       if (chatId) {
@@ -355,11 +372,11 @@ async function sendHawalaReceipts(params: {
         receipts.push({ chatId, text, target: "sender" });
       }
     }
-    // اطلاعیه به حواله‌گیرنده (با بیلانس حواله‌گیرنده)
+    // 📬 اطلاعیه به حواله‌گیرنده (با بیلانس حواله‌گیرنده)
     if (isRealCustomer(hawala.receiverId)) {
       const chatId = getCustomerChatId(hawala.receiverId, customers);
       if (chatId) {
-        const text = buildReceiverNoticeText({
+        const text = buildReceiverRegisterNoticeText({
           hawala,
           receiverBalances: getBalances(hawala.receiverId),
         });
@@ -368,12 +385,30 @@ async function sendHawalaReceipts(params: {
     }
   }
 
-  // ===== 2) تسویه =====
-  // ✅ سند به هیچ مشتری ارسال نمی‌شود (فقط اطلاعیه خلاصه به صرافی)
+  // ===== 2) تسویه حواله =====
+  if (action === "settle") {
+    // 🟢 سند رسید به حواله‌گیرنده (فقط بیلانس خودش)
+    if (isRealCustomer(hawala.receiverId)) {
+      const chatId = getCustomerChatId(hawala.receiverId, customers);
+      if (chatId) {
+        const text = buildHawalaReceiptText({
+          docType: "receipt",
+          date: now,
+          trackingCode: hawala.number,
+          description: `تسویه حواله از ${hawala.senderName} — ${hawala.destinationText}`,
+          amount: hawala.finalAmount,
+          currency: labels[hawala.currencyTo],
+          customerName: hawala.receiverName,
+          balances: getBalances(hawala.receiverId),
+        });
+        receipts.push({ chatId, text, target: "receiver" });
+      }
+    }
+  }
 
-  // ===== 3) ابطال =====
+  // ===== 3) ابطال حواله =====
   if (action === "cancel") {
-    // سند رسید به حواله‌دهنده (فقط بیلانس خودش)
+    // 🟢 سند رسید به حواله‌دهنده (پول برمی‌گردد)
     if (isRealCustomer(hawala.senderId)) {
       const chatId = getCustomerChatId(hawala.senderId, customers);
       if (chatId) {
@@ -390,21 +425,32 @@ async function sendHawalaReceipts(params: {
         receipts.push({ chatId, text, target: "sender" });
       }
     }
-    // سند برد به حواله‌گیرنده (فقط بیلانس خودش) - فقط اگر حواله قبلاً پرداخت شده باشد
-    if (hawala.status === "paid" && isRealCustomer(hawala.receiverId)) {
+
+    // حواله‌گیرنده: بستگی به وضعیت حواله دارد
+    if (isRealCustomer(hawala.receiverId)) {
       const chatId = getCustomerChatId(hawala.receiverId, customers);
       if (chatId) {
-        const text = buildHawalaReceiptText({
-          docType: "withdraw",
-          date: now,
-          trackingCode: hawala.number,
-          description: `ابطال حواله - برگشت از حساب شما (حواله ارسالی از ${hawala.senderName})`,
-          amount: hawala.finalAmount,
-          currency: labels[hawala.currencyTo],
-          customerName: hawala.receiverName,
-          balances: getBalances(hawala.receiverId),
-        });
-        receipts.push({ chatId, text, target: "receiver" });
+        if (hawala.status === "paid") {
+          // 🔴 سند برد به حواله‌گیرنده (پول از حسابش کم می‌شود)
+          const text = buildHawalaReceiptText({
+            docType: "withdraw",
+            date: now,
+            trackingCode: hawala.number,
+            description: `ابطال حواله - برگشت از حساب شما (حواله ارسالی از ${hawala.senderName})`,
+            amount: hawala.finalAmount,
+            currency: labels[hawala.currencyTo],
+            customerName: hawala.receiverName,
+            balances: getBalances(hawala.receiverId),
+          });
+          receipts.push({ chatId, text, target: "receiver" });
+        } else {
+          // 📬 اطلاعیه ابطال به حواله‌گیرنده (بدون تغییر بیلانس)
+          const text = buildReceiverCancelNoticeText({
+            hawala,
+            cancelReason: hawala.cancelReason || "",
+          });
+          receipts.push({ chatId, text, target: "receiver-cancel-info" });
+        }
       }
     }
   }
@@ -425,6 +471,7 @@ async function sendHawalaReceipts(params: {
     summary += `👤 گیرنده: ${hawala.receiverName}\n`;
     summary += `💰 مبلغ: ${fmt(hawala.amountFrom)} ${labels[hawala.currencyFrom]} → ${fmt(hawala.finalAmount)} ${labels[hawala.currencyTo]}\n`;
     summary += `📍 مقصد: ${hawala.destinationText}\n`;
+    if (action === "cancel" && hawala.cancelReason) summary += `📝 دلیل: ${hawala.cancelReason}\n`;
     summary += `\n📤 رسیدها به ${sentToChatIds.size} مشتری ارسال شد.`;
     await sendTelegramMessage(settings.botToken, settings.chatId, summary);
   }
@@ -589,7 +636,7 @@ export default function HawalaPage() {
       });
       
       setSettleTarget(null);
-      showToast("✅ حواله تسویه شد");
+      showToast("✅ حواله تسویه شد و رسید ارسال شد");
     } catch (err) { console.error("Settle error:", err); showToast("خطا در تسویه حواله"); }
   }, [settleTarget, paidBy, paidAmount, customers, showToast]);
 
