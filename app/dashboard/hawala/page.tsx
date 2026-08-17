@@ -240,7 +240,6 @@ function getTelegramSettings() {
   } catch { return { enabled: false, botToken: "", chatId: "", notifyNewHawala: true, notifySettlement: true, notifyVoid: true }; }
 }
 
-// ===== 🔹 دریافت chatId مشتری (با fallback به فیلد telegram) =====
 function getCustomerChatId(customerId: string | undefined, customers: Customer[]): string {
   if (!customerId || customerId === CASH_BOX_ID) return "";
   try {
@@ -250,7 +249,7 @@ function getCustomerChatId(customerId: string | undefined, customers: Customer[]
   } catch { return ""; }
 }
 
-// ===== 🔹 ساخت متن رسید برای یک مشتری خاص =====
+// ✅ ساخت متن رسید (فقط بیلانس خود مشتری - بدون بیلانس طرف مقابل)
 function buildHawalaReceiptText(params: {
   docType: "receipt" | "withdraw";
   date: Date;
@@ -260,8 +259,6 @@ function buildHawalaReceiptText(params: {
   currency: string;
   customerName: string;
   balances: Record<string, number>;
-  counterpartyName?: string;
-  counterpartyBalances?: Record<string, number>;
 }): string {
   const isWithdraw = params.docType === "withdraw";
   const title = isWithdraw ? "🔴 سند برد" : "🟢 سند رسید";
@@ -275,35 +272,42 @@ function buildHawalaReceiptText(params: {
   text += `📑 شرح: ${params.description}\n\n`;
   text += `💰 مبلغ: ${fmtAmount} ${params.currency}\n`;
   text += `📝 به حروف: ${amountWords}\n\n`;
-
+  text += `-------------بیلانس فعلی شما--------------\n`;
   const curLabels: Record<string, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
-
-  // ✅ بیلانس خود مشتری
-  const balanceTitle = params.counterpartyName ? "بیلانس فعلی شما" : "بیلانس فعلی";
-  text += `-------------${balanceTitle}--------------\n`;
   for (const [cur, bal] of Object.entries(params.balances)) {
     const label = curLabels[cur] || cur;
     const status = bal > 0 ? "طلب" : bal < 0 ? "قرض" : "";
     const fb = Math.abs(bal).toLocaleString("en-US");
     text += `${label}: ${fb} ${status}\n`;
   }
-
-  // ✅ بیلانس طرف مقابل (فقط وقتی هر دو مشتری سیستم باشند)
-  if (params.counterpartyName && params.counterpartyBalances) {
-    text += `\n-------------بیلانس ${params.counterpartyName}--------------\n`;
-    for (const [cur, bal] of Object.entries(params.counterpartyBalances)) {
-      const label = curLabels[cur] || cur;
-      const status = bal > 0 ? "طلب" : bal < 0 ? "قرض" : "";
-      const fb = Math.abs(bal).toLocaleString("en-US");
-      text += `${label}: ${fb} ${status}\n`;
-    }
-  }
-
   text += `\n🏦 صرافی برادران نورزاد — هرات`;
   return text;
 }
 
-// ===== 🔹 تابع اصلی ارسال رسید حواله (برای هر دو طرف) =====
+// ✅ ساخت متن اطلاعیه برای حواله‌گیرنده (با بیلانس حواله‌گیرنده)
+function buildReceiverNoticeText(params: {
+  hawala: Hawala;
+  receiverBalances: Record<string, number>;
+}): string {
+  const { hawala, receiverBalances } = params;
+  let text = `📬 اطلاعیه حواله ${hawala.number}\n\n`;
+  text += `🏷 ثبت حواله جدید\n\n`;
+  text += `👤 فرستنده: ${hawala.senderName}\n`;
+  text += `💰 مبلغ: ${fmt(hawala.amountFrom)} ${labels[hawala.currencyFrom]} → ${fmt(hawala.finalAmount)} ${labels[hawala.currencyTo]}\n`;
+  text += `📍 مقصد: ${hawala.destinationText}\n\n`;
+  text += `-------------بیلانس فعلی شما--------------\n`;
+  const curLabels: Record<string, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
+  for (const [cur, bal] of Object.entries(receiverBalances)) {
+    const label = curLabels[cur] || cur;
+    const status = bal > 0 ? "طلب" : bal < 0 ? "قرض" : "";
+    const fb = Math.abs(bal).toLocaleString("en-US");
+    text += `${label}: ${fb} ${status}\n`;
+  }
+  text += `\n🏦 صرافی برادران نورزاد — هرات`;
+  return text;
+}
+
+// ✅ تابع اصلی ارسال رسید حواله
 async function sendHawalaReceipts(params: {
   hawala: Hawala;
   action: "register" | "settle" | "cancel";
@@ -332,12 +336,12 @@ async function sendHawalaReceipts(params: {
   };
   const isRealCustomer = (id: string | undefined): boolean => Boolean(id && id !== CASH_BOX_ID);
 
-  // ===== 1) ثبت حواله → Sender: سند برد =====
+  // ===== 1) ثبت حواله =====
   if (action === "register") {
+    // سند برد به حواله‌دهنده (فقط بیلانس خودش)
     if (isRealCustomer(hawala.senderId)) {
       const chatId = getCustomerChatId(hawala.senderId, customers);
       if (chatId) {
-        const showReceiverBalance = isRealCustomer(hawala.receiverId);
         const text = buildHawalaReceiptText({
           docType: "withdraw",
           date: now,
@@ -347,44 +351,32 @@ async function sendHawalaReceipts(params: {
           currency: labels[hawala.currencyFrom],
           customerName: hawala.senderName,
           balances: getBalances(hawala.senderId),
-          counterpartyName: showReceiverBalance ? hawala.receiverName : undefined,
-          counterpartyBalances: showReceiverBalance ? getBalances(hawala.receiverId) : undefined,
         });
         receipts.push({ chatId, text, target: "sender" });
       }
     }
-  }
-
-  // ===== 2) تسویه حواله → Receiver: سند رسید =====
-  if (action === "settle") {
+    // اطلاعیه به حواله‌گیرنده (با بیلانس حواله‌گیرنده)
     if (isRealCustomer(hawala.receiverId)) {
       const chatId = getCustomerChatId(hawala.receiverId, customers);
       if (chatId) {
-        const showSenderBalance = isRealCustomer(hawala.senderId);
-        const text = buildHawalaReceiptText({
-          docType: "receipt",
-          date: now,
-          trackingCode: hawala.number,
-          description: `تسویه حواله از ${hawala.senderName}`,
-          amount: hawala.finalAmount,
-          currency: labels[hawala.currencyTo],
-          customerName: hawala.receiverName,
-          balances: getBalances(hawala.receiverId),
-          counterpartyName: showSenderBalance ? hawala.senderName : undefined,
-          counterpartyBalances: showSenderBalance ? getBalances(hawala.senderId) : undefined,
+        const text = buildReceiverNoticeText({
+          hawala,
+          receiverBalances: getBalances(hawala.receiverId),
         });
-        receipts.push({ chatId, text, target: "receiver" });
+        receipts.push({ chatId, text, target: "receiver-info" });
       }
     }
   }
 
-  // ===== 3) ابطال حواله =====
+  // ===== 2) تسویه =====
+  // ✅ سند به هیچ مشتری ارسال نمی‌شود (فقط اطلاعیه خلاصه به صرافی)
+
+  // ===== 3) ابطال =====
   if (action === "cancel") {
-    // Sender: سند رسید (پول برمی‌گردد)
+    // سند رسید به حواله‌دهنده (فقط بیلانس خودش)
     if (isRealCustomer(hawala.senderId)) {
       const chatId = getCustomerChatId(hawala.senderId, customers);
       if (chatId) {
-        const showReceiverBalance = isRealCustomer(hawala.receiverId) && hawala.status === "paid";
         const text = buildHawalaReceiptText({
           docType: "receipt",
           date: now,
@@ -394,17 +386,14 @@ async function sendHawalaReceipts(params: {
           currency: labels[hawala.currencyFrom],
           customerName: hawala.senderName,
           balances: getBalances(hawala.senderId),
-          counterpartyName: showReceiverBalance ? hawala.receiverName : undefined,
-          counterpartyBalances: showReceiverBalance ? getBalances(hawala.receiverId) : undefined,
         });
         receipts.push({ chatId, text, target: "sender" });
       }
     }
-    // Receiver: سند برد (فقط اگر حواله قبلاً پرداخت شده باشد)
+    // سند برد به حواله‌گیرنده (فقط بیلانس خودش) - فقط اگر حواله قبلاً پرداخت شده باشد
     if (hawala.status === "paid" && isRealCustomer(hawala.receiverId)) {
       const chatId = getCustomerChatId(hawala.receiverId, customers);
       if (chatId) {
-        const showSenderBalance = isRealCustomer(hawala.senderId);
         const text = buildHawalaReceiptText({
           docType: "withdraw",
           date: now,
@@ -414,8 +403,6 @@ async function sendHawalaReceipts(params: {
           currency: labels[hawala.currencyTo],
           customerName: hawala.receiverName,
           balances: getBalances(hawala.receiverId),
-          counterpartyName: showSenderBalance ? hawala.senderName : undefined,
-          counterpartyBalances: showSenderBalance ? getBalances(hawala.senderId) : undefined,
         });
         receipts.push({ chatId, text, target: "receiver" });
       }
@@ -430,8 +417,8 @@ async function sendHawalaReceipts(params: {
     sentToChatIds.add(r.chatId);
   }
 
-  // ارسال کپی خلاصه به chatId اصلی صرافی
-  if (settings.chatId && !sentToChatIds.has(settings.chatId)) {
+  // ارسال اطلاعیه خلاصه به chatId اصلی صرافی
+  if (settings.chatId) {
     let summary = `📬 اطلاعیه حواله ${hawala.number}\n`;
     summary += `🏷 ${action === "register" ? "ثبت حواله جدید" : action === "settle" ? "تسویه حواله" : "ابطال حواله"}\n`;
     summary += `👤 فرستنده: ${hawala.senderName}\n`;
@@ -602,7 +589,7 @@ export default function HawalaPage() {
       });
       
       setSettleTarget(null);
-      showToast("✅ حواله تسویه شد و رسید ارسال شد");
+      showToast("✅ حواله تسویه شد");
     } catch (err) { console.error("Settle error:", err); showToast("خطا در تسویه حواله"); }
   }, [settleTarget, paidBy, paidAmount, customers, showToast]);
 
