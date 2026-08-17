@@ -331,7 +331,7 @@ function buildCancelNoticeText(params: {
   return text;
 }
 
-// ✅ تابع اصلی ارسال رسید حواله
+// ✅ تابع اصلی ارسال رسید حواله (بدون اطلاعیه خلاصه به chatId صرافی)
 async function sendHawalaReceipts(params: {
   hawala: Hawala;
   action: "register" | "settle" | "cancel";
@@ -440,19 +440,6 @@ async function sendHawalaReceipts(params: {
     if (sentToChatIds.has(r.chatId)) continue;
     await sendTelegramMessage(settings.botToken, r.chatId, r.text);
     sentToChatIds.add(r.chatId);
-  }
-
-  // ارسال اطلاعیه خلاصه به chatId اصلی صرافی
-  if (settings.chatId) {
-    let summary = `📬 اطلاعیه حواله ${hawala.number}\n`;
-    summary += `🏷 ${action === "register" ? "ثبت حواله جدید" : action === "settle" ? "تسویه حواله" : "ابطال حواله"}\n`;
-    summary += `👤 فرستنده: ${hawala.senderName}\n`;
-    summary += `👤 گیرنده: ${hawala.receiverName}\n`;
-    summary += `💰 مبلغ: ${fmt(hawala.amountFrom)} ${labels[hawala.currencyFrom]} → ${fmt(hawala.finalAmount)} ${labels[hawala.currencyTo]}\n`;
-    summary += `📍 مقصد: ${hawala.destinationText}\n`;
-    if (action === "cancel" && hawala.cancelReason) summary += `📝 دلیل: ${hawala.cancelReason}\n`;
-    summary += `\n📤 رسیدها به ${sentToChatIds.size} مشتری ارسال شد.`;
-    await sendTelegramMessage(settings.botToken, settings.chatId, summary);
   }
 }
 
