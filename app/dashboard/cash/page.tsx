@@ -4,7 +4,8 @@ import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem } from "..
 import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY, loadCustomersShared, loadTransactionsShared, loadHawalasShared, loadCashEntriesShared } from "../lib/defaultData";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
-type Customer = { id: string; name: string; phone?: string; tazkira?: string; address?: string; note?: string; telegram?: string; registeredAt: string; balances: Record<Currency, number>; };
+// ✅ فیلد telegramChatId اضافه شد
+type Customer = { id: string; name: string; phone?: string; tazkira?: string; address?: string; note?: string; telegram?: string; telegramChatId?: string; registeredAt: string; balances: Record<Currency, number>; };
 type CashEntryType = "customer_deposit" | "customer_withdraw" | "owner_deposit" | "owner_withdraw" | "adjustment" | "fee" | "commission_withdraw";
 type BalanceChange = { customerId?: string; customerName: string; currency: Currency; amount: number; };
 type CashEntry = { id: string; trackingCode: string; date: string; type: CashEntryType; currency: Currency; amount: number; direction: "in" | "out"; reason: string; balanceAfter: number; customerId?: string; customerName?: string; customerPhone?: string; customerTazkira?: string; linkedExchangeId?: string; linkedHawalaId?: string; linkedHawalaSettleId?: string; customerDeleted?: boolean; status: "active" | "voided"; };
@@ -19,10 +20,12 @@ const entryTypeLabels: Record<CashEntryType, string> = { customer_deposit: "وا
 const entryTypeColors: Record<CashEntryType, { light: string; dark: string }> = { customer_deposit: { light: "bg-teal-100 text-teal-700", dark: "bg-teal-400/15 text-teal-300" }, customer_withdraw: { light: "bg-orange-100 text-orange-700", dark: "bg-orange-400/15 text-orange-300" }, owner_deposit: { light: "bg-sky-100 text-sky-700", dark: "bg-sky-400/15 text-sky-300" }, owner_withdraw: { light: "bg-amber-100 text-amber-700", dark: "bg-amber-400/15 text-amber-300" }, adjustment: { light: "bg-violet-100 text-violet-700", dark: "bg-violet-400/15 text-violet-300" }, fee: { light: "bg-emerald-100 text-emerald-700", dark: "bg-emerald-400/15 text-emerald-300" }, commission_withdraw: { light: "bg-purple-100 text-purple-700", dark: "bg-purple-400/15 text-purple-300" } };
 const currencyColors: Record<Currency, { light: string; dark: string; gradient: string }> = { AFN: { light: "text-emerald-700", dark: "text-emerald-300", gradient: "from-emerald-500 to-teal-400" }, USD: { light: "text-sky-700", dark: "text-sky-300", gradient: "from-sky-500 to-cyan-400" }, EUR: { light: "text-blue-700", dark: "text-blue-300", gradient: "from-blue-600 to-blue-400" }, IRR: { light: "text-amber-700", dark: "text-amber-300", gradient: "from-amber-500 to-orange-400" }, PKR: { light: "text-rose-700", dark: "text-rose-300", gradient: "from-rose-500 to-pink-400" } };
 
-// ✅ تغییر 1: تعریف صندوق به عنوان گزینه اول
 const CASH_BOX_ID = "CASH_BOX";
 const CASH_BOX_NAME = "صندوق";
-const CASH_BOX_CUSTOMER: Customer = { id: CASH_BOX_ID, name: CASH_BOX_NAME, phone: "", tazkira: "", address: "", note: "", telegram: "", registeredAt: "", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
+const CASH_BOX_CUSTOMER: Customer = { id: CASH_BOX_ID, name: CASH_BOX_NAME, phone: "", tazkira: "", address: "", note: "", telegram: "", telegramChatId: "", registeredAt: "", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
+
+// ✅ تشخیص مشتری دارای چت آیدی تلگرام
+const hasTelegram = (c: Customer): boolean => Boolean(c.telegramChatId || c.telegram);
 
 const generateId = (): string => { if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") { try { return crypto.randomUUID(); } catch (e) { /* ignore */ } } return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => { const r = (Math.random() * 16) | 0; const v = c === "x" ? r : (r & 0x3) | 0x8; return v.toString(16); }); };
 const normalizeDigits = (value: string) => { const pd = "۰۱۲۳۴۵۶۷۸۹", ad = "٠١٢٣٤٥٦٧٨٩"; return String(value || "").replace(/[۰-۹]/g, d => String(pd.indexOf(d))).replace(/[٠-٩]/g, d => String(ad.indexOf(d))); };
@@ -55,7 +58,6 @@ function recomputeCashBalances(entries: CashEntry[]): CashEntry[] {
   });
 }
 
-// ✅ تغییر: اگر customerId صندوق است، تغییری در balances ایجاد نشود
 function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): Customer[] {
   return customers.map(c => {
     const cc = changes.filter(ch => ch.customerId === c.id && ch.customerId !== CASH_BOX_ID);
@@ -66,7 +68,6 @@ function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): C
   });
 }
 
-// ✅ تغییر: اگر customerId صندوق است، تغییری در balances ایجاد نشود
 function getBalanceChangesForCashEntry(entry: CashEntry, action: "register" | "reverse"): BalanceChange[] {
   const changes: BalanceChange[] = [];
   const sign = action === "register" ? 1 : -1;
@@ -82,6 +83,196 @@ function migrateEntries(entries: any[]): CashEntry[] {
 }
 
 const emptyForm: FormState = { type: "", currency: "AFN", amount: "", reason: "", customerId: "", customerName: "" };
+
+// ===== سیستم رسید تلگرامی =====
+function formatShamsiDateTime(date: Date): string {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", { year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
+    const g = (t: string) => parts.find(p => p.type === t)?.value || "0";
+    const y = g("year"), m = g("month"), d = g("day");
+    const h = date.getHours(), min = String(date.getMinutes()).padStart(2, "0");
+    const ampm = h >= 12 ? "PM" : "AM"; const h12 = h % 12 || 12;
+    return `${y}/${m}/${d} ${h12}:${min} ${ampm}`;
+  } catch { return "-"; }
+}
+
+function numberToPersianWords(num: number): string {
+  if (!Number.isFinite(num) || num === 0) return "صفر";
+  const ones = ["", "یک", "دو", "سه", "چهار", "پنج", "شش", "هفت", "هشت", "نه"];
+  const teens = ["ده", "یازده", "دوازده", "سیزده", "چهارده", "پانزده", "شانزده", "هفده", "هجده", "نوزده"];
+  const tens = ["", "", "بیست", "سی", "چهل", "پنجاه", "شصت", "هفتاد", "هشتاد", "نود"];
+  const hundreds = ["", "یکصد", "دوصد", "سیصد", "چهارصد", "پنجصد", "ششصد", "هفتصد", "هشتصد", "نهصد"];
+  const scales = ["", "هزار", "میلیون", "میلیارد", "تریلیون"];
+  function threeDigits(n: number): string {
+    if (n === 0) return "";
+    const h = Math.floor(n / 100); const rem = n % 100;
+    const t = Math.floor(rem / 10); const o = rem % 10;
+    let r = hundreds[h];
+    if (rem >= 10 && rem <= 19) { if (r) r += " و "; r += teens[rem - 10]; }
+    else { if (t > 0) { if (r) r += " و "; r += tens[t]; } if (o > 0) { if (r) r += " و "; r += ones[o]; } }
+    return r;
+  }
+  const parts: string[] = []; let si = 0; let n = Math.floor(Math.abs(num));
+  while (n > 0 && si < scales.length) {
+    const chunk = n % 1000;
+    if (chunk > 0) { const cw = threeDigits(chunk); if (si > 0) parts.unshift(`${cw} ${scales[si]}`); else parts.unshift(cw); }
+    n = Math.floor(n / 1000); si++;
+  }
+  return parts.join(" و ");
+}
+
+async function sendTelegramMessage(botToken: string, chatId: string, text: string): Promise<boolean> {
+  if (!botToken || !chatId) return false;
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text: text }),
+    });
+    const data = await res.json(); return data.ok === true;
+  } catch { return false; }
+}
+
+function getTelegramSettings() {
+  try { const r = localStorage.getItem("fx-settings"); if (!r) return { enabled: false, botToken: "", notifyCash: true };
+    const s = JSON.parse(r); return {
+      enabled: s.telegram?.enabled || false,
+      botToken: s.telegram?.botToken || "",
+      notifyCash: s.telegram?.notifyCash !== false,
+    };
+  } catch { return { enabled: false, botToken: "", notifyCash: true }; }
+}
+
+function getCustomerChatId(customerId: string | undefined, customers: Customer[]): string {
+  if (!customerId || customerId === CASH_BOX_ID) return "";
+  try {
+    const c = customers.find(x => x.id === customerId);
+    if (!c) return "";
+    return c.telegramChatId || c.telegram || "";
+  } catch { return ""; }
+}
+
+// ✅ ساخت متن سند صندوق
+function buildCashReceiptText(params: {
+  entry: CashEntry;
+  customerName: string;
+  balances: Record<string, number>;
+  date: Date;
+}): string {
+  const { entry, customerName, balances, date } = params;
+  const dateStr = formatShamsiDateTime(date);
+  const isDeposit = entry.direction === "in";
+  const title = isDeposit ? "🟢 سند رسید" : "🔴 سند برد";
+  
+  let text = `${title}\n\n`;
+  text += `🗓 تاریخ: ${dateStr}\n\n`;
+  text += `🛅 پیگیری: ${entry.trackingCode}\n\n`;
+  text += `👤 مشتری: ${customerName}\n\n`;
+  text += `📑 شرح: ${entry.reason}\n\n`;
+  
+  if (isDeposit) {
+    text += `💵 دریافت: ${fmt(entry.amount)} ${labels[entry.currency]}\n`;
+  } else {
+    text += `💰 پرداخت: ${fmt(entry.amount)} ${labels[entry.currency]}\n`;
+  }
+  text += `📝 به حروف: ${numberToPersianWords(entry.amount)}\n`;
+  
+  text += `\n-------------بیلانس فعلی شما--------------\n`;
+  const curLabels: Record<string, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
+  for (const [cur, bal] of Object.entries(balances)) {
+    const label = curLabels[cur] || cur;
+    const status = bal > 0 ? "طلب" : bal < 0 ? "قرض" : "";
+    const fb = Math.abs(bal).toLocaleString("en-US");
+    text += `${label}: ${fb} ${status}\n`;
+  }
+  text += `\n🏦 صرافی برادران نورزاد — هرات`;
+  return text;
+}
+
+// ✅ ساخت متن اطلاعیه لغو سند صندوق
+function buildCashVoidNoticeText(params: {
+  entry: CashEntry;
+  customerName: string;
+  balances: Record<string, number>;
+  date: Date;
+}): string {
+  const { entry, customerName, balances, date } = params;
+  const dateStr = formatShamsiDateTime(date);
+  
+  let text = `📬 اطلاعیه لغو سند صندوق\n\n`;
+  text += `🗓 تاریخ: ${dateStr}\n\n`;
+  text += `🛅 پیگیری: ${entry.trackingCode}\n\n`;
+  text += `👤 مشتری: ${customerName}\n\n`;
+  
+  if (entry.type === "customer_deposit") {
+    text += `📑 شرح: سند لغو شد — مبلغ از حساب شما کسر گردید\n\n`;
+    text += `💰 مبلغ کسرشده: ${fmt(entry.amount)} ${labels[entry.currency]}\n`;
+  } else {
+    text += `📑 شرح: سند لغو شد — مبلغ به حساب شما برگشت داده شد\n\n`;
+    text += `💰 مبلغ برگشتی: ${fmt(entry.amount)} ${labels[entry.currency]}\n`;
+  }
+  text += `📝 به حروف: ${numberToPersianWords(entry.amount)}\n`;
+  
+  text += `\n-------------بیلانس فعلی شما--------------\n`;
+  const curLabels: Record<string, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
+  for (const [cur, bal] of Object.entries(balances)) {
+    const label = curLabels[cur] || cur;
+    const status = bal > 0 ? "طلب" : bal < 0 ? "قرض" : "";
+    const fb = Math.abs(bal).toLocaleString("en-US");
+    text += `${label}: ${fb} ${status}\n`;
+  }
+  text += `\n🏦 صرافی برادران نورزاد — هرات`;
+  return text;
+}
+
+// ✅ تابع اصلی ارسال سند صندوق
+async function sendCashReceipts(params: {
+  entry: CashEntry;
+  action: "register" | "void";
+  customers: Customer[];
+}) {
+  const settings = getTelegramSettings();
+  if (!settings.enabled || !settings.botToken) return;
+  if (!settings.notifyCash) return;
+
+  const { entry, action, customers } = params;
+  // فقط اسناد مشتری (واریز/برداشت مشتری) سند دریافت می‌کنند
+  if (!entry.customerId || entry.customerId === CASH_BOX_ID) return;
+  if (entry.type !== "customer_deposit" && entry.type !== "customer_withdraw") return;
+
+  const chatId = getCustomerChatId(entry.customerId, customers);
+  if (!chatId) return;
+
+  const getBalances = (customerId: string | undefined): Record<string, number> => {
+    const balances: Record<string, number> = {};
+    for (const cur of currencies) balances[cur] = 0;
+    if (!customerId || customerId === CASH_BOX_ID) return balances;
+    const c = customers.find(x => x.id === customerId);
+    if (!c) return balances;
+    for (const cur of currencies) balances[cur] = c.balances[cur] || 0;
+    return balances;
+  };
+
+  const now = new Date();
+  let text = "";
+  
+  if (action === "register") {
+    text = buildCashReceiptText({
+      entry,
+      customerName: entry.customerName || "",
+      balances: getBalances(entry.customerId),
+      date: now,
+    });
+  } else {
+    text = buildCashVoidNoticeText({
+      entry,
+      customerName: entry.customerName || "",
+      balances: getBalances(entry.customerId),
+      date: now,
+    });
+  }
+
+  await sendTelegramMessage(settings.botToken, chatId, text);
+}
 
 const Ic = ({ n, className = "h-5 w-5" }: { n: string; className?: string }) => {
   const paths: Record<string, string> = {
@@ -154,7 +345,6 @@ export default function CashPage() {
     setMounted(true);
   }, []);
 
-  // ✅ تغییر 5: StorageEvent کامل - تمام 4 کلید (در کد اصلی کامل بود)
   useEffect(() => {
     const handleStorage = (e: StorageEvent) => {
       try {
@@ -180,7 +370,6 @@ export default function CashPage() {
     return () => window.removeEventListener("storage", handleStorage);
   }, []);
 
-  // ✅ تغییر 6: Focus Listener کامل - تمام 4 کلید (در کد اصلی کامل بود)
   useEffect(() => {
     const handleFocus = () => {
       try {
@@ -262,7 +451,6 @@ export default function CashPage() {
     return totals;
   }, [totalCommissionEarned, commissionWithdrawn]);
 
-  // ✅ تغییر 1: اضافه کردن صندوق به اول لیست مشتریان
   const filteredCustomerList = useMemo(() => {
     const cashBoxOption = CASH_BOX_CUSTOMER;
     if (!customerFilter) return [cashBoxOption, ...customers];
@@ -297,7 +485,6 @@ export default function CashPage() {
   const showToast = useCallback((message: string) => { setToast(message); setTimeout(() => setToast(""), 3500); }, []);
   const setField = useCallback((field: keyof FormState, value: string) => { setForm(prev => ({ ...prev, [field]: value })); setErrors(prev => ({ ...prev, [field]: undefined })); }, []);
 
-  // ✅ تغییر 2: Validation با هایلایت قرمز برای فیلدهای اجباری
   const validateForm = useCallback(() => {
     const errs: FormErrors = {};
     if (!form.type) errs.type = "نوع عملیات را انتخاب کنید.";
@@ -325,13 +512,19 @@ export default function CashPage() {
     setActiveTab("register");
   }, []);
 
-  const voidEntry = useCallback((entry: CashEntry) => {
+  // ✅ voidEntry با ارسال اطلاعیه لغو تلگرامی (async)
+  const voidEntry = useCallback(async (entry: CashEntry) => {
     if (entry.status === "voided") return;
     if (!window.confirm(`آیا از ابطال سند ${entry.trackingCode} مطمئن هستید؟`)) return;
-    setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForCashEntry(entry, "reverse")));
+    const updatedCustomers = applyBalanceChanges(customers, getBalanceChangesForCashEntry(entry, "reverse"));
+    setCustomers(updatedCustomers);
     setEntries(prev => recomputeCashBalances(prev.map(e => e.id === entry.id ? { ...e, status: "voided" as const } : e)));
+    
+    // ✅ ارسال اطلاعیه لغو تلگرامی
+    await sendCashReceipts({ entry, action: "void", customers: updatedCustomers });
+    
     showToast(`سند ${entry.trackingCode} ابطال شد.`);
-  }, [showToast]);
+  }, [showToast, customers]);
 
   const deleteEntry = useCallback((entry: CashEntry) => {
     if (!window.confirm(`آیا از حذف سند ${entry.trackingCode} مطمئن هستید؟`)) return;
@@ -359,23 +552,35 @@ export default function CashPage() {
     setPreviewData(entry); setPreviewOpen(true);
   }, [validateForm, form, physicalCashBalances, isInType, isCustomerType, showToast, editingEntryId, entries]);
 
-  const confirmRegister = useCallback(() => {
+  // ✅ confirmRegister با ارسال سند تلگرامی (async)
+  const confirmRegister = useCallback(async () => {
     if (!previewData) return;
     const wasEditing = !!editingEntryId;
+    let updatedCustomers = customers;
+    let finalEntry = previewData;
+    
     if (wasEditing) {
       const oldEntry = entries.find(e => e.id === editingEntryId);
-      if (oldEntry) setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForCashEntry(oldEntry, "reverse")));
+      if (oldEntry) updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForCashEntry(oldEntry, "reverse"));
       const updated: CashEntry = { ...previewData, id: editingEntryId!, trackingCode: oldEntry?.trackingCode || previewData.trackingCode, date: oldEntry?.date || previewData.date, status: "active" };
       if (updated.customerId && updated.customerId !== CASH_BOX_ID) { const cust = customers.find(c => c.id === updated.customerId); if (cust) { updated.customerPhone = cust.phone || ""; updated.customerTazkira = cust.tazkira || ""; } }
-      setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForCashEntry(updated, "register")));
+      updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForCashEntry(updated, "register"));
       setEntries(prev => recomputeCashBalances(prev.map(e => e.id === editingEntryId ? updated : e)));
+      finalEntry = updated;
     } else {
       const entry = { ...previewData, trackingCode: consumeTrackingCode(), status: "active" as const };
       if (entry.customerId && entry.customerId !== CASH_BOX_ID) { const cust = customers.find(c => c.id === entry.customerId); if (cust) { entry.customerPhone = cust.phone || ""; entry.customerTazkira = cust.tazkira || ""; } }
-      setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForCashEntry(entry, "register")));
+      updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForCashEntry(entry, "register"));
       setEntries(prev => recomputeCashBalances([...prev, entry]));
+      finalEntry = entry;
     }
+    
+    setCustomers(updatedCustomers);
     setForm(emptyForm); setErrors({}); setEditingEntryId(null); setPreviewOpen(false); setPreviewData(null);
+    
+    // ✅ ارسال سند تلگرامی (فقط برای اسناد مشتری)
+    await sendCashReceipts({ entry: finalEntry, action: "register", customers: updatedCustomers });
+    
     showToast(wasEditing ? "سند با موفقیت ویرایش شد." : isCommissionType ? "کارمزد با موفقیت برداشت شد." : "عملیات صندوق با موفقیت ثبت شد.");
   }, [previewData, editingEntryId, entries, customers, showToast, isCommissionType]);
 
@@ -387,7 +592,6 @@ export default function CashPage() {
   const uiCard = `rounded-2xl border backdrop-blur transition-colors duration-300 ${dk ? "border-slate-700 bg-slate-800/90 shadow-[0_16px_40px_-24px_rgba(0,0,0,0.6)]" : "border-emerald-100 bg-white/95 shadow-[0_16px_40px_-28px_rgba(16,185,129,0.35)]"}`;
   const inputShell = `rounded-xl border text-sm font-medium shadow-sm outline-none transition-all duration-200 focus:ring-4 ${dk ? "border-slate-600 bg-slate-900 text-slate-100 placeholder:text-slate-500 hover:border-slate-500 focus:border-emerald-400 focus:ring-emerald-400/10" : "border-slate-200 bg-white text-slate-800 placeholder:text-slate-400 hover:border-emerald-400 focus:border-emerald-500 focus:ring-emerald-500/10"}`;
   const uiInput = `h-12 w-full px-3.5 ${inputShell}`;
-  // ✅ تغییر 2: کلاس‌های هایلایت قرمز برای فیلدهای اجباری
   const errInput = dk ? "border-rose-500 bg-rose-500/10 ring-rose-500/20" : "border-rose-500 bg-rose-50 ring-rose-500/20";
   const roInput = dk ? "cursor-default bg-slate-800/70 text-slate-400" : "cursor-default bg-slate-100 text-slate-500";
   const uiLabel = `mb-1.5 block text-[11px] font-black tracking-wide ${dk ? "text-slate-400" : "text-slate-500"}`;
@@ -499,7 +703,7 @@ export default function CashPage() {
                           {filteredCustomerList.length === 0 ? (<div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>) : (
                             filteredCustomerList.map((c) => (
                               <button key={c.id} type="button" onClick={() => { setField("customerId", c.id); setField("customerName", c.name); setCustomerFilter(""); setShowCustomerList(false); }} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-teal-400/15 hover:text-teal-300" : "text-slate-700 hover:bg-teal-50 hover:text-teal-600"}`}>
-                                <span className="flex-1 truncate">{c.name}</span>
+                                <span className="flex-1 truncate flex items-center gap-1.5">{c.name}{c.id === CASH_BOX_ID && " 💰"}{hasTelegram(c) && c.id !== CASH_BOX_ID && <span title="دارای چت آیدی تلگرام">📱</span>}</span>
                                 <span className={`text-[10px] tabular-nums font-bold ${currencyColors[form.currency][dk ? "dark" : "light"]}`}>{fmt(c.balances[form.currency] || 0)} {labels[form.currency]}</span>
                               </button>
                             ))
