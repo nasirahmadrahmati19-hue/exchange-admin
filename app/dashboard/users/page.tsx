@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useState, useRef, useCallback, type ReactNode } from "react";
 import { initTrackingSystem } from "../lib/trackingCode";
 import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY, loadCustomersShared, loadTransactionsShared, loadHawalasShared, loadCashEntriesShared } from "../lib/defaultData";
 
@@ -10,6 +10,284 @@ type CashEntryType = "customer_deposit" | "customer_withdraw" | "owner_deposit" 
 type LedgerEntry = { id: string; date: string; customerId: string; type: TxType; description: string; currency: Currency; amount: number; direction: "in" | "out"; balanceAfter: number; referenceId?: string; referenceNumber?: string; };
 type FormState = { name: string; tazkira: string; phone: string; address: string; note: string; telegram: string; };
 type FormErrors = Partial<Record<keyof FormState, string>>;
+
+// ===== 🔹 Types برای تلگرام =====
+type TelegramUser = { id: number; name: string; username: string; chat_id: number };
+type TelegramSettings = {
+  enabled: boolean;
+  botToken: string;
+  chatId: string;
+  notifyNewHawala: boolean;
+  notifySettlement: boolean;
+  notifyVoid: boolean;
+  notifyExchange: boolean;
+};
+type Settings = {
+  email: string;
+  supportEmail: string;
+  language: "dari" | "pashto" | "english";
+  teamName: string;
+  teamAddress: string;
+  teamPhone: string;
+  telegram: TelegramSettings;
+};
+
+const defaultSettings: Settings = {
+  email: "", supportEmail: "", language: "dari",
+  teamName: "صرافی برادران نورزاد", teamAddress: "هرات، افغانستان", teamPhone: "",
+  telegram: { enabled: false, botToken: "", chatId: "", notifyNewHawala: true, notifySettlement: true, notifyVoid: true, notifyExchange: true },
+};
+
+// ===== 🔹 دریافت تنظیمات تلگرام از localStorage =====
+const getTelegramSettings = (): TelegramSettings => {
+  if (typeof window === "undefined") return defaultSettings.telegram;
+  try {
+    const raw = localStorage.getItem("fx-settings");
+    if (!raw) return defaultSettings.telegram;
+    const parsed = JSON.parse(raw);
+    return { ...defaultSettings.telegram, ...(parsed.telegram || {}) };
+  } catch {
+    return defaultSettings.telegram;
+  }
+};
+
+// ===== 🔹 دریافت لیست کاربران ربات تلگرام از getUpdates =====
+async function fetchTelegramUsers(botToken: string): Promise<TelegramUser[]> {
+  if (!botToken.trim()) return [];
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${botToken.trim()}/getUpdates`);
+    const data = await res.json();
+    if (!data.ok || !data.result) return [];
+    const usersMap = new Map<number, TelegramUser>();
+    data.result.forEach((update: any) => {
+      const from = update.message?.from || update.callback_query?.message?.from;
+      const chat = update.message?.chat || update.callback_query?.message?.chat;
+      if (from && chat) {
+        usersMap.set(from.id, {
+          id: from.id,
+          name: `${from.first_name || ""} ${from.last_name || ""}`.trim() || "بدون نام",
+          username: from.username ? `@${from.username}` : "—",
+          chat_id: chat.id,
+        });
+      }
+    });
+    return Array.from(usersMap.values());
+  } catch (err) {
+    console.error("خطا در دریافت کاربران تلگرام:", err);
+    return [];
+  }
+}
+
+// ===== 🔹 کامپوننت انتخاب chatId از لیست کاربران ربات =====
+function TelegramChatIdSelector({
+  value,
+  onChange,
+  uiInput,
+  dk,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  uiInput: string;
+  dk: boolean;
+}) {
+  const [users, setUsers] = useState<TelegramUser[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [lastError, setLastError] = useState("");
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const settings = getTelegramSettings();
+  const hasBotToken = settings.enabled && settings.botToken.trim().length > 0;
+
+  const loadUsers = useCallback(async () => {
+    if (!hasBotToken) return;
+    setLoading(true);
+    setLastError("");
+    const list = await fetchTelegramUsers(settings.botToken);
+    setUsers(list);
+    setLoading(false);
+    if (list.length === 0) setLastError("هیچ کاربری یافت نشد. ابتدا به ربات /start بفرستید.");
+  }, [hasBotToken, settings.botToken]);
+
+  // بستن dropdown با کلیک بیرون
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  // بارگذاری خودکار وقتی dropdown باز می‌شود
+  useEffect(() => {
+    if (open && users.length === 0 && hasBotToken && !loading) {
+      loadUsers();
+    }
+  }, [open, users.length, hasBotToken, loading, loadUsers]);
+
+  const filteredUsers = useMemo(() => {
+    const q = normalizeDigits(search.trim()).toLowerCase();
+    if (!q) return users;
+    return users.filter(u =>
+      [u.name, u.username, String(u.chat_id)].some(f =>
+        normalizeDigits(String(f)).toLowerCase().includes(q)
+      )
+    );
+  }, [users, search]);
+
+  const selectUser = (user: TelegramUser) => {
+    onChange(String(user.chat_id));
+    setOpen(false);
+    setSearch("");
+  };
+
+  const subText = dk ? "text-slate-500" : "text-slate-400";
+  const heading = dk ? "text-white" : "text-slate-900";
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      {/* Input اصلی با دکمه dropdown */}
+      <div className="flex gap-2">
+        <input
+          dir="ltr"
+          className={`${uiInput} flex-1 text-left font-mono text-xs`}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder="chat_id را وارد کنید یا از لیست انتخاب کنید"
+        />
+        <button
+          type="button"
+          onClick={() => {
+            if (!hasBotToken) {
+              alert("ابتدا در تنظیمات، تلگرام را فعال کنید و توکن ربات را وارد کنید.");
+              return;
+            }
+            setOpen(!open);
+          }}
+          className={`flex h-12 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-xs font-black transition-all ${
+            hasBotToken
+              ? dk
+                ? "border-sky-600 bg-sky-500/15 text-sky-300 hover:bg-sky-500/25"
+                : "border-sky-400 bg-sky-50 text-sky-700 hover:bg-sky-100"
+              : dk
+              ? "border-slate-600 bg-slate-700/50 text-slate-500 cursor-not-allowed"
+              : "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+          }`}
+          disabled={!hasBotToken}
+          title={hasBotToken ? "انتخاب از لیست کاربران ربات" : "ابتدا توکن ربات را در تنظیمات وارد کنید"}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
+            <path d="M6 12 3.269 3.126A59.768 59.768 0 0 1 21.485 12 59.77 59.77 0 0 1 3.27 20.876L5.999 12Zm0 0h7.5" />
+          </svg>
+          لیست
+        </button>
+      </div>
+
+      {/* Dropdown */}
+      {open && (
+        <div className={`absolute right-0 left-0 top-full z-50 mt-2 max-h-80 overflow-hidden rounded-xl border shadow-2xl ${
+          dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"
+        }`}>
+          {/* هدر dropdown */}
+          <div className={`flex items-center justify-between border-b px-3 py-2.5 ${dk ? "border-slate-700" : "border-slate-100"}`}>
+            <div className="flex items-center gap-2">
+              <span className={`grid h-6 w-6 place-items-center rounded-lg ${dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-600"}`}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true">
+                  <path d="M6 12 3.269 3.126A59.768 59.768 0 0 1 21.485 12 59.77 59.77 0 0 1 3.27 20.876L5.999 12Zm0 0h7.5" />
+                </svg>
+              </span>
+              <span className={`text-xs font-black ${heading}`}>
+                کاربران ربات ({users.length})
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={loadUsers}
+              disabled={loading}
+              className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-black transition-all ${
+                dk ? "bg-sky-500/15 text-sky-300 hover:bg-sky-500/25" : "bg-sky-50 text-sky-700 hover:bg-sky-100"
+              } disabled:opacity-50`}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} aria-hidden="true">
+                <path d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+              </svg>
+              {loading ? "..." : "بروز"}
+            </button>
+          </div>
+
+          {/* جستجو */}
+          <div className={`border-b px-3 py-2 ${dk ? "border-slate-700" : "border-slate-100"}`}>
+            <input
+              dir="ltr"
+              className={`h-9 w-full rounded-lg border px-3 text-[11px] font-bold outline-none ${
+                dk
+                  ? "border-slate-600 bg-slate-900 text-slate-200 placeholder:text-slate-500"
+                  : "border-slate-200 bg-slate-50 text-slate-700 placeholder:text-slate-400"
+              }`}
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="جستجو بر اساس نام یا username..."
+            />
+          </div>
+
+          {/* لیست کاربران */}
+          <div className="max-h-56 overflow-y-auto cu-scroll">
+            {!hasBotToken ? (
+              <div className="px-4 py-6 text-center">
+                <div className={`text-[11px] font-bold ${subText}`}>⚠️ تلگرام فعال نیست</div>
+              </div>
+            ) : loading && users.length === 0 ? (
+              <div className="px-4 py-6 text-center">
+                <div className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-sky-500" />
+                <div className={`mt-2 text-[11px] font-bold ${subText}`}>در حال بارگذاری...</div>
+              </div>
+            ) : lastError ? (
+              <div className="px-4 py-6 text-center">
+                <div className={`text-[11px] font-bold ${dk ? "text-amber-300" : "text-amber-600"}`}>⚠️ {lastError}</div>
+              </div>
+            ) : filteredUsers.length === 0 ? (
+              <div className="px-4 py-6 text-center">
+                <div className={`text-[11px] font-bold ${subText}`}>
+                  {search ? "کاربری با این مشخصات یافت نشد" : "هنوز کاربری ربات را start نکرده"}
+                </div>
+              </div>
+            ) : (
+              filteredUsers.map(user => (
+                <button
+                  key={user.id}
+                  type="button"
+                  onClick={() => selectUser(user)}
+                  className={`flex w-full items-center justify-between gap-2 border-b px-3 py-2.5 text-right transition-all ${
+                    dk
+                      ? "border-slate-700/50 hover:bg-sky-500/10"
+                      : "border-slate-50 hover:bg-sky-50"
+                  }`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className={`truncate text-xs font-black ${heading}`}>{user.name}</div>
+                    <div className={`mt-0.5 flex items-center gap-2 text-[10px] ${subText}`}>
+                      <span className="font-bold">{user.username}</span>
+                      <span className="font-mono" dir="ltr">ID: {user.chat_id}</span>
+                    </div>
+                  </div>
+                  <span className={`shrink-0 rounded-lg px-2 py-1 text-[9px] font-black ${
+                    dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-700"
+                  }`}>
+                    انتخاب
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
 const labels: Record<Currency, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
@@ -511,7 +789,7 @@ export default function CustomersPage() {
                 {fld("نام و نام خانوادگی *", (<input className={`${uiInput} ${errors.name ? errInput : ""}`} value={form.name} onChange={e => setField("name", e.target.value)} placeholder="مثلاً علی احمدی" />))}
                 {fld("شماره تماس *", (<input className={`${uiInput} ${errors.phone ? errInput : ""}`} value={form.phone} onChange={e => setField("phone", e.target.value)} placeholder="07xxxxxxxx" />))}
                 {fld("شماره تذکره", (<input className={`${uiInput} ${errors.tazkira ? errInput : ""}`} value={form.tazkira} onChange={e => setField("tazkira", e.target.value)} placeholder="1400-001-001" />))}
-                {fld("چت آی‌دی تلگرام", (<input className={uiInput} value={form.telegram} onChange={e => setField("telegram", e.target.value)} placeholder="@example" />))}
+                {fld("چت آی‌دی تلگرام", (<TelegramChatIdSelector value={form.telegram} onChange={v => setField("telegram", v)} uiInput={uiInput} dk={dk} />))}
                 <div className="md:col-span-2">{fld("آدرس", (<input className={uiInput} value={form.address} onChange={e => setField("address", e.target.value)} placeholder="ولایت، ولسوالی" />))}</div>
                 <div className="md:col-span-2">{fld("توضیحات", (<textarea rows={3} className={`${uiInput} h-auto py-3 resize-none`} value={form.note} onChange={e => setField("note", e.target.value)} />))}</div>
               </div>
@@ -594,7 +872,7 @@ export default function CustomersPage() {
                         {fld("نام", (<input className={uiInput} value={form.name} onChange={e => setField("name", e.target.value)} />))}
                         {fld("تلفن", (<input className={uiInput} value={form.phone} onChange={e => setField("phone", e.target.value)} />))}
                         {fld("تذکره", (<input className={uiInput} value={form.tazkira} onChange={e => setField("tazkira", e.target.value)} />))}
-                        {fld("تلگرام", (<input className={uiInput} value={form.telegram} onChange={e => setField("telegram", e.target.value)} />))}
+                        {fld("تلگرام", (<TelegramChatIdSelector value={form.telegram} onChange={v => setField("telegram", v)} uiInput={uiInput} dk={dk} />))}
                         <div className="md:col-span-2">{fld("آدرس", (<input className={uiInput} value={form.address} onChange={e => setField("address", e.target.value)} />))}</div>
                         <div className="md:col-span-2">{fld("توضیحات", (<textarea rows={3} className={`${uiInput} h-auto py-3 resize-none`} value={form.note} onChange={e => setField("note", e.target.value)} />))}</div>
                       </div>
