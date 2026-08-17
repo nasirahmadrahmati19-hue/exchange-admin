@@ -2,28 +2,19 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  loadCustomers,
-  loadTransactions,
-  loadCashEntries,
-  loadHawalas,
-  loadRates,
-  loadCommission,
-  defaultRates,
-  type Customer,
-  type Transaction,
-  type CashEntry,
-  type Hawala,
-  type Rates,
+  loadCustomersShared,
+  loadTransactionsShared,
+  loadCashEntriesShared,
+  loadHawalasShared,
+  type CustomerBase,
   type Currency,
-} from "@/lib/defaultData";
-
-type CurCode = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
+} from "../lib/defaultData";
 
 interface DashboardData {
   // معاملات
   tradeCount: number;
   tradeVolume: number;
-  tradeTotals: Record<CurCode, number>;
+  tradeTotals: Record<Currency, number>;
   tradeProfit: number;
   todayTradeCount: number;
   todayTradeProfit: number;
@@ -31,16 +22,15 @@ interface DashboardData {
   // حواله‌ها
   hawalaCount: number;
   hawalaVolume: number;
-  hawalaTotals: Record<CurCode, number>;
+  hawalaTotals: Record<Currency, number>;
   hawalaFee: number;
   todayHawalaCount: number;
   todayHawalaFee: number;
   pendingHawala: number;
   
   // صندوق و مشتریان
-  accounts: Record<CurCode, number>;
-  cashBoxBalance: Record<CurCode, number>;
-  totalCustomerBalance: Record<CurCode, number>;
+  cashBoxBalance: Record<Currency, number>;
+  totalCustomerBalance: Record<Currency, number>;
   totalDebt: number;
   totalReceivable: number;
   ownerEquity: number;
@@ -48,15 +38,15 @@ interface DashboardData {
   
   // سیستم
   customerCount: number;
-  rates: Rates;
-  commission: string;
+  rates: Record<string, string>;
+  commission: number;
   lastUpdated: Date | null;
   
   // آخرین معاملات
-  recentTransactions: Transaction[];
+  recentTransactions: any[];
 }
 
-const EMPTY_TOTALS: Record<CurCode, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+const EMPTY_TOTALS: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
 
 const EMPTY_DATA: DashboardData = {
   tradeCount: 0,
@@ -72,7 +62,6 @@ const EMPTY_DATA: DashboardData = {
   todayHawalaCount: 0,
   todayHawalaFee: 0,
   pendingHawala: 0,
-  accounts: { ...EMPTY_TOTALS },
   cashBoxBalance: { ...EMPTY_TOTALS },
   totalCustomerBalance: { ...EMPTY_TOTALS },
   totalDebt: 0,
@@ -80,15 +69,15 @@ const EMPTY_DATA: DashboardData = {
   ownerEquity: 0,
   withdrawableCommission: 0,
   customerCount: 0,
-  rates: defaultRates,
-  commission: "0.5",
+  rates: { USD: "0", EUR: "0", IRR: "0", PKR: "0" },
+  commission: 0.5,
   lastUpdated: null,
   recentTransactions: [],
 };
 
 const PENDING_STATUSES = ["pending", "در انتظار", "در حال انتظار", "در حال ارسال", "معلق"];
 
-const CURRENCY_LABELS: Record<CurCode, string> = {
+const CURRENCY_LABELS: Record<Currency, string> = {
   AFN: "افغانی",
   USD: "دالر",
   EUR: "یورو",
@@ -96,7 +85,7 @@ const CURRENCY_LABELS: Record<CurCode, string> = {
   PKR: "کلدار",
 };
 
-const CURRENCY_FLAGS: Record<CurCode, string> = {
+const CURRENCY_FLAGS: Record<Currency, string> = {
   AFN: "🇦🇫",
   USD: "🇺🇸",
   EUR: "🇪🇺",
@@ -104,8 +93,24 @@ const CURRENCY_FLAGS: Record<CurCode, string> = {
   PKR: "🇵🇰",
 };
 
-function toAFN(amount: number, curCode: CurCode | null, rates: Rates): number {
-  if (!curCode || !Number.isFinite(amount)) return 0;
+function loadRates(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem("fx-rates");
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return { USD: "68", EUR: "75", IRR: "0.0005", PKR: "0.25" };
+}
+
+function loadCommission(): number {
+  try {
+    const raw = localStorage.getItem("fx-commission");
+    if (raw) return Number(JSON.parse(raw));
+  } catch {}
+  return 0.5;
+}
+
+function toAFN(amount: number, curCode: Currency, rates: Record<string, string>): number {
+  if (!Number.isFinite(amount)) return 0;
   switch (curCode) {
     case "IRR":
       return (amount / 1000) * Number(rates.IRR || 0);
@@ -134,15 +139,15 @@ export default function DashboardPage() {
     const collectedErrors: string[] = [];
 
     try {
-      const customers = loadCustomers();
-      const transactions = loadTransactions();
-      const cashEntries = loadCashEntries();
-      const hawalas = loadHawalas();
+      const customers = loadCustomersShared();
+      const transactions = loadTransactionsShared();
+      const cashEntries = loadCashEntriesShared();
+      const hawalas = loadHawalasShared();
       const rates = loadRates();
       const commissionRate = loadCommission() / 100;
 
       // محاسبات معاملات
-      const tradeTotals: Record<CurCode, number> = { ...EMPTY_TOTALS };
+      const tradeTotals: Record<Currency, number> = { ...EMPTY_TOTALS };
       let tradeVolume = 0;
       let tradeProfit = 0;
       let todayTradeCount = 0;
@@ -150,7 +155,7 @@ export default function DashboardPage() {
 
       for (const tx of transactions) {
         const amount = Number(tx.amount || 0);
-        const cur = tx.currency as CurCode;
+        const cur = tx.currency as Currency;
         
         if (cur in tradeTotals) {
           tradeTotals[cur] += amount;
@@ -167,7 +172,7 @@ export default function DashboardPage() {
       }
 
       // محاسبات حواله‌ها
-      const hawalaTotals: Record<CurCode, number> = { ...EMPTY_TOTALS };
+      const hawalaTotals: Record<Currency, number> = { ...EMPTY_TOTALS };
       let hawalaVolume = 0;
       let hawalaFee = 0;
       let todayHawalaCount = 0;
@@ -176,7 +181,7 @@ export default function DashboardPage() {
 
       for (const h of hawalas) {
         const amount = Number(h.amount || 0);
-        const payCur = h.payCur as CurCode;
+        const payCur = h.payCur as Currency;
         const fee = Number(h.fee || 0);
 
         if (payCur in hawalaTotals) {
@@ -197,14 +202,14 @@ export default function DashboardPage() {
       }
 
       // محاسبات صندوق و مشتریان
-      const cashBoxBalance: Record<CurCode, number> = { ...EMPTY_TOTALS };
-      const totalCustomerBalance: Record<CurCode, number> = { ...EMPTY_TOTALS };
+      const cashBoxBalance: Record<Currency, number> = { ...EMPTY_TOTALS };
+      const totalCustomerBalance: Record<Currency, number> = { ...EMPTY_TOTALS };
       let totalDebt = 0;
       let totalReceivable = 0;
 
       // محاسبه موجودی صندوق
       for (const entry of cashEntries) {
-        const cur = entry.currency as CurCode;
+        const cur = entry.currency as Currency;
         const amount = Number(entry.amount || 0);
         const type = entry.type;
 
@@ -220,7 +225,7 @@ export default function DashboardPage() {
       // محاسبه موجودی مشتریان
       for (const customer of customers) {
         const balances = customer.balances || {};
-        for (const cur of Object.keys(balances) as CurCode[]) {
+        for (const cur of Object.keys(balances) as Currency[]) {
           const balance = Number(balances[cur] || 0);
           if (cur in totalCustomerBalance) {
             totalCustomerBalance[cur] += balance;
@@ -246,7 +251,7 @@ export default function DashboardPage() {
       let ownerEquity = 0;
       let withdrawableCommission = 0;
 
-      for (const cur of Object.keys(cashBoxBalance) as CurCode[]) {
+      for (const cur of Object.keys(cashBoxBalance) as Currency[]) {
         const cashAmount = cashBoxBalance[cur];
         const customerAmount = totalCustomerBalance[cur];
         const difference = cashAmount - customerAmount;
@@ -276,7 +281,6 @@ export default function DashboardPage() {
         todayHawalaCount,
         todayHawalaFee,
         pendingHawala,
-        accounts: cashBoxBalance,
         cashBoxBalance,
         totalCustomerBalance,
         totalDebt,
@@ -285,7 +289,7 @@ export default function DashboardPage() {
         withdrawableCommission,
         customerCount: customers.length,
         rates,
-        commission: String(loadCommission()),
+        commission: loadCommission(),
         lastUpdated: new Date(),
         recentTransactions: transactions.slice(-5).reverse(),
       });
@@ -356,12 +360,12 @@ export default function DashboardPage() {
 
           {/* نرخ ارزها */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            {(Object.keys(CURRENCY_LABELS) as CurCode[]).map((cur) => (
+            {(Object.keys(CURRENCY_LABELS) as Currency[]).map((cur) => (
               <CurrencyCard 
                 key={cur}
                 flag={CURRENCY_FLAGS[cur]}
                 name={CURRENCY_LABELS[cur]}
-                rate={faNumWithDecimals(Number(d.rates[cur] || 0))}
+                rate={cur === "AFN" ? "۱.۰۰" : faNumWithDecimals(Number(d.rates[cur] || 0))}
                 color="from-blue-500/20 to-blue-600/20"
                 borderColor="border-blue-400/30"
               />
@@ -570,12 +574,12 @@ function KpiCard({ title, value, sub, totals, fa, icon, gradient }: {
   title: string;
   value: string | null;
   sub: string;
-  totals: Record<CurCode, number>;
+  totals: Record<Currency, number>;
   fa: (n: number) => string;
   icon: string;
   gradient: string;
 }) {
-  const rows: { code: CurCode; label: string; flag: string }[] = [
+  const rows: { code: Currency; label: string; flag: string }[] = [
     { code: "AFN", label: "افغانی", flag: "🇦🇫" },
     { code: "USD", label: "دالر", flag: "🇺🇸" },
     { code: "IRR", label: "تومان", flag: "🇮🇷" },
@@ -682,8 +686,8 @@ function QuickAction({ icon, label, href, color }: {
   );
 }
 
-function TransactionRow({ tx, fa }: { tx: Transaction; fa: (n: number) => string }) {
-  const cur = tx.currency as CurCode;
+function TransactionRow({ tx, fa }: { tx: any; fa: (n: number) => string }) {
+  const cur = tx.currency as Currency;
   const flag = CURRENCY_FLAGS[cur] || "💱";
   const curLabel = CURRENCY_LABELS[cur] || tx.currency;
 
