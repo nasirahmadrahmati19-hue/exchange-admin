@@ -140,6 +140,9 @@ const iconPaths = {
   inbox: "M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h3.218a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H6.911a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661Z",
   check: "M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
   copy: "M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125h3.375m7.5 10.5V8.39a1.125 1.125 0 0 1 .33-.795l2.355-2.355a1.125 1.125 0 0 1 .795-.33v12.34a1.125 1.125 0 0 1-1.125 1.125h-9.75m7.5-10.5V7.875c0-.621-.504-1.125-1.125-1.125H8.39a1.125 1.125 0 0 1 .795-.33L11.54 4.07a1.125 1.125 0 0 1 .795-.33h4.905a1.125 1.125 0 0 1 1.125 1.125V9.75",
+  info: "m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z",
+  swap: "M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5",
+  clock: "M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
 };
 
 type IconName = keyof typeof iconPaths;
@@ -187,6 +190,18 @@ function shortDateLabel(s: string) {
   }
 }
 
+function splitDateTime(s: string): { datePart: string; timePart: string } {
+  try {
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return { datePart: "-", timePart: "" };
+    const full = formatDateTime(d);
+    const parts = full.split(" ");
+    return { datePart: parts[0] || "-", timePart: parts[1] || "" };
+  } catch {
+    return { datePart: "-", timePart: "" };
+  }
+}
+
 // ============================================================
 // Ledger Builder
 // ============================================================
@@ -196,8 +211,7 @@ function buildLedger(customers: Customer[], transactions: Transaction[], hawalas
 
   for (const tx of transactions) {
     if (!tx || typeof tx !== "object") continue;
-    // ✅ اصلاح خطا: حذف "cancelled" زیرا Transaction فقط active یا voided است
-    if (tx.status === "voided") continue; 
+    if (tx.status === "voided") continue;
     
     const date = tx.date || new Date().toISOString();
     const refNum = tx.trackingCode || (tx.id ? String(tx.id).slice(-6) : "");
@@ -751,19 +765,28 @@ export default function ReportsPage() {
         </div>
       </div>
 
+      {/* ═══════════ Customer Details Modal - Full Details ═══════════ */}
       {selectedCustomer && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm" onClick={() => setSelectedCustomer(null)}>
-          <div className={`w-full max-w-lg rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={e => e.stopPropagation()}>
+          <div className={`w-full max-w-3xl rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={e => e.stopPropagation()}>
             <div className={`flex items-center justify-between border-b px-4 py-3 ${dk ? "border-slate-700" : "border-slate-100"}`}>
-              <b className={`text-sm font-black flex items-center gap-2 ${dk ? "text-slate-100" : "text-slate-800"}`}><Ic n="user" className="h-4 w-4" />جزئیات مشتری</b>
-              <button onClick={() => setSelectedCustomer(null)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"><Ic n="x" className="h-4 w-4" /></button>
+              <b className={`text-sm font-black flex items-center gap-2 ${dk ? "text-slate-100" : "text-slate-800"}`}>
+                <Ic n="user" className="h-4 w-4" />
+                جزئیات کامل مشتری
+              </b>
+              <button onClick={() => setSelectedCustomer(null)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700">
+                <Ic n="x" className="h-4 w-4" />
+              </button>
             </div>
-            <div className="max-h-[75vh] overflow-y-auto p-4 space-y-4">
+            <div className="max-h-[80vh] overflow-y-auto p-4 space-y-4">
+              {/* Customer Info Section */}
               <div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"}`}>
-                <div className="flex items-center gap-3 mb-3">
-                  <div className={`grid h-12 w-12 place-items-center rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 text-white font-black text-lg shadow-lg`}>{selectedCustomer.name.charAt(0)}</div>
-                  <div>
-                    <b className={`block text-base font-black ${dk ? "text-white" : "text-slate-900"}`}>{selectedCustomer.name}</b>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className={`grid h-14 w-14 place-items-center rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 text-white font-black text-2xl shadow-lg`}>
+                    {selectedCustomer.name.charAt(0)}
+                  </div>
+                  <div className="flex-1">
+                    <b className={`block text-lg font-black ${dk ? "text-white" : "text-slate-900"}`}>{selectedCustomer.name}</b>
                     <div className={`flex flex-wrap gap-3 mt-1 text-[11px] ${subText}`}>
                       {selectedCustomer.phone && <span>📱 <span dir="ltr">{selectedCustomer.phone}</span></span>}
                       {selectedCustomer.tazkira && <span>🆔 <span dir="ltr">{selectedCustomer.tazkira}</span></span>}
@@ -771,58 +794,206 @@ export default function ReportsPage() {
                   </div>
                 </div>
               </div>
+
+              {/* Balances Section */}
               <div>
                 <b className={`block text-xs font-black mb-2 ${dk ? "text-emerald-300" : "text-emerald-600"}`}>💼 موجودی حساب:</b>
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                   {currencies.map(cur => {
                     const bal = selectedCustomer.balances?.[cur] || 0;
                     return (
-                      <div key={cur} className={`rounded-lg p-2 text-center ${dk ? "bg-slate-800/50" : "bg-slate-100"}`}>
+                      <div key={cur} className={`rounded-lg p-3 text-center ${dk ? "bg-slate-800/50" : "bg-slate-100"}`}>
                         <div className={`text-[9px] font-black ${subText}`}>{labels[cur]}</div>
-                        <div className={`text-sm font-black tabular-nums ${bal < 0 ? "text-rose-500" : bal > 0 ? (dk ? "text-emerald-300" : "text-emerald-700") : subText}`}>{fmt(bal)}</div>
+                        <div className={`text-lg font-black tabular-nums mt-1 ${bal < 0 ? "text-rose-500" : bal > 0 ? (dk ? "text-emerald-300" : "text-emerald-700") : subText}`}>
+                          {fmt(bal)}
+                        </div>
                       </div>
                     );
                   })}
                 </div>
               </div>
+
+              {/* Transaction History Section */}
               <div>
-                <b className={`block text-xs font-black mb-2 ${dk ? "text-blue-300" : "text-blue-600"}`}>📋 تاریخچه معاملات:</b>
-                <div className="space-y-2 max-h-48 overflow-y-auto rp-scroll">
+                <b className={`block text-xs font-black mb-3 ${dk ? "text-blue-300" : "text-blue-600"}`}>📋 تاریخچه معاملات:</b>
+                <div className="space-y-3 max-h-96 overflow-y-auto rp-scroll">
                   {getCustomerTransactions(selectedCustomer.id).length === 0 ? (
-                    <div className={`text-center py-6 ${subText}`}><p className="text-xs">هیچ معامله‌ای ثبت نشده</p></div>
+                    <div className={`text-center py-8 ${subText}`}>
+                      <p className="text-xs">هیچ معامله‌ای ثبت نشده</p>
+                    </div>
                   ) : (
-                    getCustomerTransactions(selectedCustomer.id).slice(0, 10).map(tx => (
-                      <div key={tx.id} className={`p-2.5 rounded-lg text-xs ${dk ? "bg-slate-800/50" : "bg-slate-100"}`}>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${txColors[tx.type][dk ? "dark" : "light"]}`}>{txLabels[tx.type]}</span>
-                          <span className={`text-[10px] ${subText}`}>{shortDateLabel(tx.date)}</span>
+                    getCustomerTransactions(selectedCustomer.id).map(tx => {
+                      const dt = splitDateTime(tx.date);
+                      return (
+                        <div key={tx.id} className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-white"}`}>
+                          {/* Header Row */}
+                          <div className="flex items-center justify-between mb-3 pb-3 border-b border-dashed border-slate-300/30">
+                            <div className="flex items-center gap-2">
+                              <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${txColors[tx.type][dk ? "dark" : "light"]}`}>
+                                {txLabels[tx.type]}
+                              </span>
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded ${dk ? "bg-slate-700 text-slate-300" : "bg-slate-200 text-slate-700"}`}>
+                                {tx.type === "exchange" ? (tx.dealType === "buy" ? "خرید" : "فروش") : tx.type === "transfer" ? "انتقال" : "تبدیل"}
+                              </span>
+                            </div>
+                            <span className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-1 rounded ${dk ? "bg-cyan-400/15 text-cyan-300" : "bg-cyan-100 text-cyan-700"}`}>
+                              <Ic n="tag" className="h-3 w-3" />
+                              {tx.referenceNumber || "-"}
+                            </span>
+                          </div>
+
+                          {/* Date and Status */}
+                          <div className="grid grid-cols-2 gap-3 mb-3">
+                            <div>
+                              <div className={`text-[9px] font-black ${subText}`}>📅 تاریخ</div>
+                              <div className={`text-xs font-black ${dk ? "text-slate-200" : "text-slate-700"}`} dir="ltr">{dt.datePart}</div>
+                            </div>
+                            <div>
+                              <div className={`text-[9px] font-black ${subText}`}>⏰ ساعت</div>
+                              <div className={`text-xs font-black ${dk ? "text-slate-200" : "text-slate-700"}`} dir="ltr">{dt.timePart}</div>
+                            </div>
+                          </div>
+
+                          {/* Exchange Type */}
+                          {tx.type === "exchange" && (
+                            <>
+                              <div className="grid grid-cols-2 gap-3 mb-3">
+                                <div>
+                                  <div className={`text-[9px] font-black ${subText}`}>👤 مشتری</div>
+                                  <div className={`text-xs font-black ${dk ? "text-slate-200" : "text-slate-700"}`}>{tx.customerName || "—"}</div>
+                                </div>
+                                <div>
+                                  <div className={`text-[9px] font-black ${subText}`}>📊 وضعیت</div>
+                                  <div className={`text-xs font-black ${tx.direction === "in" ? "text-emerald-500" : "text-rose-500"}`}>
+                                    {tx.direction === "in" ? "دریافت" : "پرداخت"}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Amounts */}
+                              <div className="grid grid-cols-2 gap-3 mb-3">
+                                <div className={`rounded-lg p-2.5 ${dk ? "bg-rose-400/10" : "bg-rose-50"}`}>
+                                  <div className={`text-[9px] font-black ${subText}`}>💰 پرداخت</div>
+                                  <div className={`text-sm font-black tabular-nums text-rose-500`}>{fmt(tx.amount)}</div>
+                                  <div className={`text-[10px] font-black ${currencyColors[tx.currency][dk ? "dark" : "light"]}`}>{labels[tx.currency]}</div>
+                                </div>
+                                <div className={`rounded-lg p-2.5 ${dk ? "bg-emerald-400/10" : "bg-emerald-50"}`}>
+                                  <div className={`text-[9px] font-black ${subText}`}>💵 دریافت</div>
+                                  <div className={`text-sm font-black tabular-nums text-emerald-500`}>{fmt(tx.balanceAfter)}</div>
+                                  <div className={`text-[10px] font-black ${currencyColors[tx.currency][dk ? "dark" : "light"]}`}>{labels[tx.currency]}</div>
+                                </div>
+                              </div>
+
+                              {/* Rate */}
+                              <div className={`rounded-lg p-2.5 mb-3 ${dk ? "bg-sky-400/10" : "bg-sky-50"}`}>
+                                <div className={`text-[9px] font-black ${subText} mb-1`}>📈 نرخ</div>
+                                <div className={`text-xs font-black ${dk ? "text-sky-300" : "text-sky-700"}`}>{tx.description}</div>
+                              </div>
+                            </>
+                          )}
+
+                          {/* Transfer Type */}
+                          {tx.type === "transfer" && (
+                            <>
+                              <div className="grid grid-cols-2 gap-3 mb-3">
+                                <div>
+                                  <div className={`text-[9px] font-black ${subText}`}>📤 از</div>
+                                  <div className={`text-xs font-black ${dk ? "text-slate-200" : "text-slate-700"}`}>{tx.description.split(" به ")[0]?.replace("انتقال به ", "") || "—"}</div>
+                                </div>
+                                <div>
+                                  <div className={`text-[9px] font-black ${subText}`}>📥 به</div>
+                                  <div className={`text-xs font-black ${dk ? "text-slate-200" : "text-slate-700"}`}>{tx.customerName || "—"}</div>
+                                </div>
+                              </div>
+
+                              <div className={`rounded-lg p-2.5 mb-3 ${tx.direction === "in" ? (dk ? "bg-emerald-400/10" : "bg-emerald-50") : (dk ? "bg-rose-400/10" : "bg-rose-50")}`}>
+                                <div className={`text-[9px] font-black ${subText}`}>💱 مبلغ</div>
+                                <div className={`text-sm font-black tabular-nums ${tx.direction === "in" ? "text-emerald-500" : "text-rose-500"}`}>
+                                  {tx.direction === "in" ? "+" : "-"} {fmt(tx.amount)}
+                                </div>
+                                <div className={`text-[10px] font-black ${currencyColors[tx.currency][dk ? "dark" : "light"]}`}>{labels[tx.currency]}</div>
+                              </div>
+                            </>
+                          )}
+
+                          {/* Convert Type */}
+                          {tx.type === "convert" && (
+                            <>
+                              <div className="grid grid-cols-2 gap-3 mb-3">
+                                <div>
+                                  <div className={`text-[9px] font-black ${subText}`}>👤 مشتری</div>
+                                  <div className={`text-xs font-black ${dk ? "text-slate-200" : "text-slate-700"}`}>{tx.customerName || "—"}</div>
+                                </div>
+                                <div>
+                                  <div className={`text-[9px] font-black ${subText}`}>📊 نوع</div>
+                                  <div className={`text-xs font-black ${dk ? "text-slate-200" : "text-slate-700"}`}>تبدیل ارز</div>
+                                </div>
+                              </div>
+
+                              <div className={`rounded-lg p-2.5 mb-3 ${tx.direction === "in" ? (dk ? "bg-emerald-400/10" : "bg-emerald-50") : (dk ? "bg-rose-400/10" : "bg-rose-50")}`}>
+                                <div className={`text-[9px] font-black ${subText}`}>💱 {tx.direction === "in" ? "اضافه شده" : "کسر شده"}</div>
+                                <div className={`text-sm font-black tabular-nums ${tx.direction === "in" ? "text-emerald-500" : "text-rose-500"}`}>
+                                  {tx.direction === "in" ? "+" : "-"} {fmt(tx.amount)}
+                                </div>
+                                <div className={`text-[10px] font-black ${currencyColors[tx.currency][dk ? "dark" : "light"]}`}>{labels[tx.currency]}</div>
+                              </div>
+                            </>
+                          )}
+
+                          {/* Fee Type */}
+                          {tx.type === "fee" && (
+                            <div className={`rounded-lg p-2.5 mb-3 ${dk ? "bg-amber-400/10" : "bg-amber-50"}`}>
+                              <div className={`text-[9px] font-black ${subText}`}>💼 کارمزد</div>
+                              <div className={`text-sm font-black tabular-nums text-amber-500`}>{fmt(tx.amount)}</div>
+                              <div className={`text-[10px] font-black ${currencyColors[tx.currency][dk ? "dark" : "light"]}`}>{labels[tx.currency]}</div>
+                            </div>
+                          )}
+
+                          {/* Balance After */}
+                          <div className={`rounded-lg p-2.5 ${dk ? "bg-slate-700/50" : "bg-slate-100"}`}>
+                            <div className={`text-[9px] font-black ${subText}`}>💰 مانده پس از معامله</div>
+                            <div className={`text-sm font-black tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`}>{fmt(tx.balanceAfter)}</div>
+                            <div className={`text-[10px] font-black ${currencyColors[tx.currency][dk ? "dark" : "light"]}`}>{labels[tx.currency]}</div>
+                          </div>
                         </div>
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span>{fmt(tx.amount)} {labels[tx.currency]}</span>
-                          <span className={`font-black ${tx.direction === "in" ? "text-emerald-500" : "text-rose-500"}`}>{tx.direction === "in" ? "دریافت" : "پرداخت"}</span>
-                        </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>
-              <button onClick={() => { setShareCustomer(selectedCustomer); setSelectedCustomer(null); }} className={`w-full py-3 rounded-xl text-sm font-black flex items-center justify-center gap-2 ${dk ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400" : "bg-emerald-600 text-white hover:bg-emerald-700"}`}><Ic n="share" className="h-4 w-4" />اشتراک‌گذاری گزارش</button>
+
+              {/* Share Button */}
+              <button
+                onClick={() => { setShareCustomer(selectedCustomer); setSelectedCustomer(null); }}
+                className={`w-full py-3 rounded-xl text-sm font-black flex items-center justify-center gap-2 ${dk ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400" : "bg-emerald-600 text-white hover:bg-emerald-700"}`}
+              >
+                <Ic n="share" className="h-4 w-4" />
+                اشتراک‌گذاری گزارش
+              </button>
             </div>
           </div>
         </div>
       )}
 
+      {/* ═══════════ Share Modal ═══════════ */}
       {shareCustomer && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm" onClick={() => setShareCustomer(null)}>
           <div className={`w-full max-w-md rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={e => e.stopPropagation()}>
             <div className={`flex items-center justify-between border-b px-4 py-3 ${dk ? "border-slate-700" : "border-slate-100"}`}>
-              <b className={`text-sm font-black flex items-center gap-2 ${dk ? "text-slate-100" : "text-slate-800"}`}><Ic n="share" className="h-4 w-4" />اشتراک‌گذاری گزارش</b>
-              <button onClick={() => setShareCustomer(null)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"><Ic n="x" className="h-4 w-4" /></button>
+              <b className={`text-sm font-black flex items-center gap-2 ${dk ? "text-slate-100" : "text-slate-800"}`}>
+                <Ic n="share" className="h-4 w-4" />
+                اشتراک‌گذاری گزارش
+              </b>
+              <button onClick={() => setShareCustomer(null)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700">
+                <Ic n="x" className="h-4 w-4" />
+              </button>
             </div>
             <div className="p-4 space-y-3">
               <div className={`rounded-xl border p-3 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2">
-                  <div className={`grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 text-white font-black text-xs`}>{shareCustomer.name.charAt(0)}</div>
+                  <div className={`grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 text-white font-black text-xs`}>
+                    {shareCustomer.name.charAt(0)}
+                  </div>
                   <div>
                     <p className={`text-xs font-black ${dk ? "text-white" : "text-slate-800"}`}>{shareCustomer.name}</p>
                     <p className={`text-[10px] ${subText}`}>گزارش معاملات این مشتری را ارسال کنید</p>
