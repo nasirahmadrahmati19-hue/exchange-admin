@@ -11,7 +11,7 @@ const menuItems = [
   { title: "تبادل ارز", href: "/dashboard/trades" },
   { title: "صندوق", href: "/dashboard/cash" },
   { title: "مشتریان", href: "/dashboard/users" },
-  { title: "گزارش", href: "/dashboard/reports" },
+  { title: "گزارشات", href: "/dashboard/reports" },
 ];
 
 const CUSTOMERS_KEY = "fx-customers";
