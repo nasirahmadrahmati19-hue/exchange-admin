@@ -244,17 +244,15 @@ export default function ReportsPage() {
   useEffect(() => { setNow(new Date()); const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t); }, []);
   const currentDateTime = now ? formatDateTime(now) : "";
 
-  // ── Daily Journal with all details ──
+  // ── Daily Journal ──
   const dailyJournal = useMemo(() => {
     const days: Record<string, { transactions: Transaction[]; cashEntries: CashEntry[]; date: Date }> = {};
-
     for (const tx of transactions) {
       if (tx.status === "voided") continue;
       const key = shortDateLabel(tx.date);
       if (!days[key]) days[key] = { transactions: [], cashEntries: [], date: new Date(tx.date) };
       days[key].transactions.push(tx);
     }
-
     for (const ce of cashEntries) {
       if (ce.status === "voided") continue;
       if (ce.linkedExchangeId || ce.linkedTransferId || ce.linkedConvertId || ce.linkedHawalaId || ce.linkedHawalaSettleId) continue;
@@ -262,35 +260,30 @@ export default function ReportsPage() {
       if (!days[key]) days[key] = { transactions: [], cashEntries: [], date: new Date(ce.date) };
       days[key].cashEntries.push(ce);
     }
-
     return Object.entries(days).sort(([, a], [, b]) => b.date.getTime() - a.date.getTime());
   }, [transactions, cashEntries]);
 
-  // ── Day summary calculations ──
+  // ── Day summary ──
   const computeDaySummary = useCallback((txs: Transaction[], ces: CashEntry[]) => {
     const received: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     const paid: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     const commission: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     const cashIn: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     const cashOut: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-
     for (const tx of txs) {
       if (tx.fromCurrency && currencies.includes(tx.fromCurrency)) paid[tx.fromCurrency] += Number(tx.fromAmount || 0) || 0;
       if (tx.toCurrency && currencies.includes(tx.toCurrency)) received[tx.toCurrency] += Number(tx.toAmount || 0) || 0;
       if (tx.commission && tx.commission > 0 && tx.commissionCurrency && currencies.includes(tx.commissionCurrency)) commission[tx.commissionCurrency] += tx.commission;
     }
-
     for (const ce of ces) {
       const cur = ce.currency as Currency;
       if (!currencies.includes(cur)) continue;
       if (ce.direction === "in") cashIn[cur] += Number(ce.amount || 0) || 0;
       else cashOut[cur] += Number(ce.amount || 0) || 0;
     }
-
     return { received, paid, commission, cashIn, cashOut };
   }, []);
 
-  // ── Customer transactions (direct from transactions) ──
   const getCustomerTransactions = useCallback((customerId: string): Transaction[] => {
     return transactions
       .filter(tx => tx.status !== "voided" && (tx.customerId === customerId || tx.senderId === customerId || tx.receiverId === customerId))
@@ -401,7 +394,7 @@ export default function ReportsPage() {
         <div className={`fixed inset-x-0 top-0 z-30 h-1 bg-gradient-to-l ${dk ? "from-emerald-400 via-teal-400 to-cyan-400" : "from-emerald-500 via-teal-500 to-cyan-500"}`} />
         <div className="relative z-10 mx-auto w-full max-w-7xl space-y-4 md:space-y-6 px-3 pb-16 pt-5 md:px-8 md:pt-9">
 
-          {/* ═══════════ Header ═══════════ */}
+          {/* Header */}
           <header className="rp-up flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 md:gap-3.5 min-w-0">
               <div className="relative grid h-11 w-11 md:h-14 md:w-14 shrink-0 place-items-center rounded-xl md:rounded-2xl bg-gradient-to-br from-blue-500 via-sky-500 to-cyan-400 text-white shadow-lg shadow-blue-500/30 ring-1 ring-white/30">
@@ -427,7 +420,7 @@ export default function ReportsPage() {
             </div>
           </header>
 
-          {/* ═══════════ Stats ═══════════ */}
+          {/* Stats */}
           <div className="rp-up grid grid-cols-2 md:grid-cols-4 gap-3" style={{ animationDelay: "70ms" }}>
             {[
               { label: "کل مشتریان", value: customers.length, icon: "users", color: "from-emerald-500 to-teal-500", text: dk ? "text-emerald-300" : "text-emerald-600" },
@@ -450,7 +443,7 @@ export default function ReportsPage() {
             ))}
           </div>
 
-          {/* ═══════════ Tab Navigation ═══════════ */}
+          {/* Tab Navigation */}
           <div className={`rp-up flex gap-1.5 md:gap-2 rounded-xl md:rounded-2xl border p-1.5 md:p-2 shadow-sm backdrop-blur ${glassChip}`} style={{ animationDelay: "140ms" }}>
             {[
               { id: "search" as const, label: "جستجوی مشتری", icon: "search" },
@@ -474,7 +467,6 @@ export default function ReportsPage() {
                 <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${dk ? "from-blue-400/20 to-sky-400/5 text-blue-300 ring-blue-400/25" : "from-blue-400/20 to-sky-400/10 text-blue-600 ring-blue-400/30"}`}><Ic n="search" className="h-5 w-5" /></span>
                 <div className="flex-1 min-w-0">
                   <h2 className={`rp-display text-xl md:text-2xl leading-none ${heading}`}>جستجوی مشتری</h2>
-                  {/* توضیح حذف شد */}
                 </div>
               </div>
               <div className="px-4 md:px-7 pb-4 space-y-3">
@@ -482,17 +474,14 @@ export default function ReportsPage() {
                   <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="نام، تلفن یا شماره تذکره را وارد کنید..." className={`${uiInput} pr-10`} />
                   <span className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 ${subText}`}><Ic n="search" className="h-4 w-4" /></span>
                 </div>
-
                 {search && searchResults.length === 0 && (
                   <div className={`text-center py-12 ${subText}`}>
                     <div className={`grid h-16 w-16 place-items-center rounded-2xl border border-dashed mx-auto mb-3 ${dk ? "border-slate-600 bg-slate-800/40" : "border-slate-300 bg-slate-50"}`}><Ic n="inbox" className="h-7 w-7 opacity-70" /></div>
                     <p className="text-sm font-black">مشتری‌ای یافت نشد</p>
                   </div>
                 )}
-
                 {search && searchResults.length > 0 && (
                   <>
-                    {/* Desktop horizontal table */}
                     <div className="hidden md:block overflow-x-auto rp-scroll">
                       <div className="max-h-[500px] overflow-y-auto rp-scroll">
                         <table className="w-full min-w-[1100px] text-sm">
@@ -509,9 +498,7 @@ export default function ReportsPage() {
                               const hasCredit = currencies.some(cur => (c.balances?.[cur] || 0) > 0);
                               return (
                                 <tr key={c.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/50"}`}>
-                                  <td className={cellClass}>
-                                    <span className={`inline-grid h-7 w-7 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>{idx + 1}</span>
-                                  </td>
+                                  <td className={cellClass}><span className={`inline-grid h-7 w-7 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>{idx + 1}</span></td>
                                   <td className={cellClass}>
                                     <div className="flex items-center gap-2 justify-center">
                                       <div className={`grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 text-white font-black text-xs shadow`}>{c.name.charAt(0)}</div>
@@ -524,9 +511,7 @@ export default function ReportsPage() {
                                   {currencies.map(cur => {
                                     const bal = c.balances?.[cur] || 0;
                                     return (
-                                      <td key={cur} className={`${cellClass} text-[13px] font-black tabular-nums ${bal < 0 ? "text-rose-500" : bal > 0 ? (dk ? "text-emerald-300" : "text-emerald-700") : subText}`}>
-                                        {fmt(bal)}
-                                      </td>
+                                      <td key={cur} className={`${cellClass} text-[13px] font-black tabular-nums ${bal < 0 ? "text-rose-500" : bal > 0 ? (dk ? "text-emerald-300" : "text-emerald-700") : subText}`}>{fmt(bal)}</td>
                                     );
                                   })}
                                   <td className={cellClass}>
@@ -551,8 +536,6 @@ export default function ReportsPage() {
                         </table>
                       </div>
                     </div>
-
-                    {/* Mobile cards */}
                     <div className="md:hidden space-y-2">
                       {searchResults.map(c => {
                         const hasDebt = currencies.some(cur => (c.balances?.[cur] || 0) < 0);
@@ -597,7 +580,6 @@ export default function ReportsPage() {
                 <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${dk ? "from-rose-400/20 to-pink-400/5 text-rose-300 ring-rose-400/25" : "from-rose-400/20 to-pink-400/10 text-rose-600 ring-rose-400/30"}`}><Ic n="alert" className="h-5 w-5" /></span>
                 <div className="flex-1 min-w-0">
                   <h2 className={`rp-display text-xl md:text-2xl leading-none ${heading}`}>مشتریان بدهکار</h2>
-                  {/* توضیح حذف شد */}
                 </div>
                 <span className={`rounded-full px-3 py-1.5 text-[10px] font-black ring-1 ${dk ? "bg-rose-400/15 text-rose-300 ring-rose-400/25" : "bg-rose-100 text-rose-700 ring-rose-300/60"}`}>⚠️ توجه ویژه</span>
               </div>
@@ -609,7 +591,6 @@ export default function ReportsPage() {
                   </div>
                 ) : (
                   <>
-                    {/* Desktop horizontal table */}
                     <div className="hidden md:block overflow-x-auto rp-scroll">
                       <div className="max-h-[500px] overflow-y-auto rp-scroll">
                         <table className="w-full min-w-[1100px] text-sm">
@@ -623,9 +604,7 @@ export default function ReportsPage() {
                           <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
                             {debtorCustomers.map((c, idx) => (
                               <tr key={c.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-rose-50/30"}`}>
-                                <td className={cellClass}>
-                                  <span className={`inline-grid h-7 w-7 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>{idx + 1}</span>
-                                </td>
+                                <td className={cellClass}><span className={`inline-grid h-7 w-7 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>{idx + 1}</span></td>
                                 <td className={cellClass}>
                                   <div className="flex items-center gap-2 justify-center">
                                     <div className={`grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-rose-500 to-pink-500 text-white font-black text-xs shadow`}>{c.name.charAt(0)}</div>
@@ -638,9 +617,7 @@ export default function ReportsPage() {
                                   const bal = c.balances?.[cur] || 0;
                                   const debt = bal < 0 ? Math.abs(bal) : 0;
                                   return (
-                                    <td key={cur} className={`${cellClass} text-[13px] font-black tabular-nums ${debt > 0 ? "text-rose-500" : subText}`}>
-                                      {debt > 0 ? fmt(debt) : "—"}
-                                    </td>
+                                    <td key={cur} className={`${cellClass} text-[13px] font-black tabular-nums ${debt > 0 ? "text-rose-500" : subText}`}>{debt > 0 ? fmt(debt) : "—"}</td>
                                   );
                                 })}
                                 <td className={cellClass}>
@@ -652,7 +629,6 @@ export default function ReportsPage() {
                               </tr>
                             ))}
                           </tbody>
-                          {/* Totals row */}
                           <tfoot>
                             <tr className={`border-t-2 ${dk ? "border-rose-400/50 bg-rose-400/10" : "border-rose-300 bg-rose-50"}`}>
                               <td colSpan={4} className="px-4 py-3.5 text-right">
@@ -664,9 +640,7 @@ export default function ReportsPage() {
                                   return sum + (bal < 0 ? Math.abs(bal) : 0);
                                 }, 0);
                                 return (
-                                  <td key={cur} className={`${cellClass} text-[13px] font-black tabular-nums text-rose-500`}>
-                                    {totalDebt > 0 ? fmt(totalDebt) : "—"}
-                                  </td>
+                                  <td key={cur} className={`${cellClass} text-[13px] font-black tabular-nums text-rose-500`}>{totalDebt > 0 ? fmt(totalDebt) : "—"}</td>
                                 );
                               })}
                               <td className={cellClass} />
@@ -675,8 +649,6 @@ export default function ReportsPage() {
                         </table>
                       </div>
                     </div>
-
-                    {/* Mobile cards */}
                     <div className="md:hidden space-y-2">
                       {debtorCustomers.map(c => {
                         const debts = currencies.filter(cur => (c.balances?.[cur] || 0) < 0);
@@ -711,14 +683,13 @@ export default function ReportsPage() {
             </section>
           )}
 
-          {/* ═══════════ DAILY JOURNAL ═══════════ */}
+          {/* ═══════════ DAILY JOURNAL — با ستون مشتری در هر دو جدول ═══════════ */}
           {activeSection === "journal" && (
             <section className={`rp-up space-y-4 ${uiCard}`} style={{ animationDelay: "160ms" }}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
                 <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${dk ? "from-amber-400/20 to-orange-400/5 text-amber-300 ring-amber-400/25" : "from-amber-400/20 to-orange-400/10 text-amber-600 ring-amber-400/30"}`}><Ic n="calendar" className="h-5 w-5" /></span>
                 <div className="flex-1 min-w-0">
                   <h2 className={`rp-display text-xl md:text-2xl leading-none ${heading}`}>روزنامچه عمومی</h2>
-                  {/* توضیح حذف شد */}
                 </div>
               </div>
               <div className="px-4 md:px-7 pb-4 space-y-3 max-h-[750px] overflow-y-auto rp-scroll">
@@ -734,10 +705,8 @@ export default function ReportsPage() {
                     const cashCount = data.cashEntries.length;
                     const summary = computeDaySummary(data.transactions, data.cashEntries);
                     const totalCommission = currencies.reduce((sum, cur) => sum + summary.commission[cur], 0);
-
                     return (
                       <div key={day} className={`rounded-xl border overflow-hidden ${dk ? "border-slate-700" : "border-slate-200"}`}>
-                        {/* Day header */}
                         <button onClick={() => toggleDay(day)} className={`w-full flex items-center justify-between p-4 transition-colors ${dk ? "bg-slate-800/50 hover:bg-slate-800" : "bg-white hover:bg-slate-50"}`}>
                           <div className="flex items-center gap-3">
                             <div className={`grid h-10 w-10 place-items-center rounded-lg bg-gradient-to-br from-amber-500 to-orange-500 text-white shadow-md`}><Ic n="calendar" className="h-4 w-4" /></div>
@@ -756,7 +725,7 @@ export default function ReportsPage() {
                         {isExpanded && (
                           <div className={`p-4 space-y-4 border-t ${dk ? "border-slate-700 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
 
-                            {/* ── Transactions table ── */}
+                            {/* ── Transactions table — ستون مشتری دارد ── */}
                             {data.transactions.length > 0 && (
                               <div>
                                 <b className={`block text-xs font-black mb-2 ${dk ? "text-blue-300" : "text-blue-600"}`}>📋 معاملات ({fa(data.transactions.length)}):</b>
@@ -808,7 +777,6 @@ export default function ReportsPage() {
                                         );
                                       })}
                                     </tbody>
-                                    {/* Day totals for transactions */}
                                     <tfoot>
                                       <tr className={`border-t-2 ${dk ? "border-emerald-400/50 bg-emerald-400/10" : "border-emerald-300 bg-emerald-50"}`}>
                                         <td colSpan={5} className="px-3 py-3 text-right">
@@ -847,15 +815,15 @@ export default function ReportsPage() {
                               </div>
                             )}
 
-                            {/* ── Cash entries table ── */}
+                            {/* ── Cash entries table — ✅ ستون مشتری اضافه شد ── */}
                             {data.cashEntries.length > 0 && (
                               <div>
                                 <b className={`block text-xs font-black mb-2 ${dk ? "text-emerald-300" : "text-emerald-600"}`}>🏦 اسناد صندوق ({fa(data.cashEntries.length)}):</b>
                                 <div className="overflow-x-auto rp-scroll">
-                                  <table className="w-full min-w-[800px] text-sm">
+                                  <table className="w-full min-w-[900px] text-sm">
                                     <thead>
                                       <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
-                                        {["شماره", "کد پیگیری", "تاریخ", "نوع", "شرح", "دریافت", "پرداخت", "ارز"].map(h => (
+                                        {["شماره", "کد پیگیری", "مشتری", "تاریخ", "نوع", "شرح", "دریافت", "پرداخت", "ارز"].map(h => (
                                           <th key={h} className="px-3 py-2.5 text-center text-[10px] font-black text-slate-400 whitespace-nowrap">{h}</th>
                                         ))}
                                       </tr>
@@ -874,6 +842,10 @@ export default function ReportsPage() {
                                                 <Ic n="tag" className="h-3 w-3" />
                                                 {ce.trackingCode || "-"}
                                               </span>
+                                            </td>
+                                            {/* ✅ ستون مشتری */}
+                                            <td className={`${cellClass} text-[12px] font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>
+                                              {ce.customerName || "💰 صندوق"}
                                             </td>
                                             <td className={cellClass}>
                                               <div className="flex flex-col items-center gap-0.5">
@@ -894,10 +866,9 @@ export default function ReportsPage() {
                                         );
                                       })}
                                     </tbody>
-                                    {/* Day totals for cash entries */}
                                     <tfoot>
                                       <tr className={`border-t-2 ${dk ? "border-emerald-400/50 bg-emerald-400/10" : "border-emerald-300 bg-emerald-50"}`}>
-                                        <td colSpan={5} className="px-3 py-3 text-right">
+                                        <td colSpan={6} className="px-3 py-3 text-right">
                                           <span className={`text-[11px] font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}>📊 جمع کل صندوق روز</span>
                                         </td>
                                         <td className={cellClass}>
@@ -978,7 +949,7 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* ═══════════ Customer Details Modal ═══════════ */}
+      {/* Customer Details Modal */}
       {selectedCustomer && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm" onClick={() => setSelectedCustomer(null)}>
           <div className={`w-full max-w-4xl rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={e => e.stopPropagation()}>
@@ -987,7 +958,6 @@ export default function ReportsPage() {
               <button onClick={() => setSelectedCustomer(null)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"><Ic n="x" className="h-4 w-4" /></button>
             </div>
             <div className="max-h-[80vh] overflow-y-auto p-4 space-y-4">
-              {/* Info */}
               <div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
                   <div><span className={`block text-[9px] font-black ${subText}`}>👤 نام</span><b className={dk ? "text-slate-200" : "text-slate-700"}>{selectedCustomer.name}</b></div>
@@ -996,8 +966,6 @@ export default function ReportsPage() {
                   <div><span className={`block text-[9px] font-black ${subText}`}>📅 ثبت</span><b className={dk ? "text-slate-200" : "text-slate-700"} dir="ltr">{selectedCustomer.registeredAt ? shortDateLabel(selectedCustomer.registeredAt) : "—"}</b></div>
                 </div>
               </div>
-
-              {/* Balances */}
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                 {currencies.map(cur => {
                   const bal = selectedCustomer.balances?.[cur] || 0;
@@ -1009,8 +977,6 @@ export default function ReportsPage() {
                   );
                 })}
               </div>
-
-              {/* Transactions — horizontal table */}
               <div>
                 <b className={`block text-xs font-black mb-2 ${dk ? "text-blue-300" : "text-blue-600"}`}>📋 تاریخچه معاملات ({fa(getCustomerTransactions(selectedCustomer.id).length)}):</b>
                 {getCustomerTransactions(selectedCustomer.id).length === 0 ? (
@@ -1063,14 +1029,13 @@ export default function ReportsPage() {
                   </div>
                 )}
               </div>
-
               <button onClick={() => { setShareCustomer(selectedCustomer); setSelectedCustomer(null); }} className={`w-full py-3 rounded-xl text-sm font-black flex items-center justify-center gap-2 ${dk ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400" : "bg-emerald-600 text-white hover:bg-emerald-700"}`}><Ic n="share" className="h-4 w-4" />اشتراک‌گذاری گزارش</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ═══════════ Share Modal ═══════════ */}
+      {/* Share Modal */}
       {shareCustomer && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm" onClick={() => setShareCustomer(null)}>
           <div className={`w-full max-w-md rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={e => e.stopPropagation()}>
