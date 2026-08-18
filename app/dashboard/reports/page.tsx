@@ -132,7 +132,6 @@ const iconPaths = {
   alert: "M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z",
   doc: "M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z",
   calendar: "M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5",
-  history: "M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
   x: "M6 18 18 6M6 6l12 12",
   tag: "M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z",
   share: "M7.21 14 2.1 9l2.24-2.24a12 12 0 0 0 15.09 0L21.67 9l-5.11 5a9.5 9.5 0 0 1-9.35 0ZM4.03 19.5h15.94",
@@ -140,9 +139,6 @@ const iconPaths = {
   inbox: "M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h3.218a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H6.911a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661Z",
   check: "M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
   copy: "M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125h3.375m7.5 10.5V8.39a1.125 1.125 0 0 1 .33-.795l2.355-2.355a1.125 1.125 0 0 1 .795-.33v12.34a1.125 1.125 0 0 1-1.125 1.125h-9.75m7.5-10.5V7.875c0-.621-.504-1.125-1.125-1.125H8.39a1.125 1.125 0 0 1 .795-.33L11.54 4.07a1.125 1.125 0 0 1 .795-.33h4.905a1.125 1.125 0 0 1 1.125 1.125V9.75",
-  info: "m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z",
-  swap: "M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5",
-  clock: "M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
 };
 
 type IconName = keyof typeof iconPaths;
@@ -400,14 +396,14 @@ export default function ReportsPage() {
       }
     }
     report += `\n━━━━━━━━━━━━━━━━━━━━\n`;
-    report += `📋 تاریخچه معاملات (${txs.length} معامله):\n\n`;
+    report += `📋 تاریخچه معاملات (${txs.length} رویداد):\n\n`;
     txs.slice(0, 20).forEach((tx, i) => {
       report += `${i + 1}. ${txLabels[tx.type]}\n`;
       report += `   📅 ${shortDateLabel(tx.date)}\n`;
       report += `   💱 ${fmt(tx.amount)} ${labels[tx.currency]} (${tx.direction === "in" ? "دریافت" : "پرداخت"})\n`;
       report += `\n`;
     });
-    if (txs.length > 20) report += `... و ${txs.length - 20} معامله دیگر\n`;
+    if (txs.length > 20) report += `... و ${txs.length - 20} رویداد دیگر\n`;
     report += `\n━━━━━━━━━━━━━━━━━━━━\n`;
     report += `🏦 صرافی برادران نورزاد — هرات`;
     return report;
@@ -813,13 +809,13 @@ export default function ReportsPage() {
                 </div>
               </div>
 
-              {/* Transaction History Section */}
+              {/* Transaction History Section - Corrected Logic */}
               <div>
-                <b className={`block text-xs font-black mb-3 ${dk ? "text-blue-300" : "text-blue-600"}`}>📋 تاریخچه معاملات:</b>
+                <b className={`block text-xs font-black mb-3 ${dk ? "text-blue-300" : "text-blue-600"}`}>📋 تاریخچه رویدادهای مالی:</b>
                 <div className="space-y-3 max-h-96 overflow-y-auto rp-scroll">
                   {getCustomerTransactions(selectedCustomer.id).length === 0 ? (
                     <div className={`text-center py-8 ${subText}`}>
-                      <p className="text-xs">هیچ معامله‌ای ثبت نشده</p>
+                      <p className="text-xs">هیچ رویداد مالی ثبت نشده</p>
                     </div>
                   ) : (
                     getCustomerTransactions(selectedCustomer.id).map(tx => {
@@ -833,7 +829,7 @@ export default function ReportsPage() {
                                 {txLabels[tx.type]}
                               </span>
                               <span className={`text-[10px] font-black px-2 py-0.5 rounded ${dk ? "bg-slate-700 text-slate-300" : "bg-slate-200 text-slate-700"}`}>
-                                {tx.type === "exchange" ? (tx.dealType === "buy" ? "خرید" : "فروش") : tx.type === "transfer" ? "انتقال" : "تبدیل"}
+                                {tx.description}
                               </span>
                             </div>
                             <span className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-1 rounded ${dk ? "bg-cyan-400/15 text-cyan-300" : "bg-cyan-100 text-cyan-700"}`}>
@@ -842,7 +838,7 @@ export default function ReportsPage() {
                             </span>
                           </div>
 
-                          {/* Date and Status */}
+                          {/* Date and Time */}
                           <div className="grid grid-cols-2 gap-3 mb-3">
                             <div>
                               <div className={`text-[9px] font-black ${subText}`}>📅 تاریخ</div>
@@ -854,104 +850,20 @@ export default function ReportsPage() {
                             </div>
                           </div>
 
-                          {/* Exchange Type */}
-                          {tx.type === "exchange" && (
-                            <>
-                              <div className="grid grid-cols-2 gap-3 mb-3">
-                                <div>
-                                  <div className={`text-[9px] font-black ${subText}`}>👤 مشتری</div>
-                                  <div className={`text-xs font-black ${dk ? "text-slate-200" : "text-slate-700"}`}>{tx.customerName || "—"}</div>
-                                </div>
-                                <div>
-                                  <div className={`text-[9px] font-black ${subText}`}>📊 وضعیت</div>
-                                  <div className={`text-xs font-black ${tx.direction === "in" ? "text-emerald-500" : "text-rose-500"}`}>
-                                    {tx.direction === "in" ? "دریافت" : "پرداخت"}
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Amounts */}
-                              <div className="grid grid-cols-2 gap-3 mb-3">
-                                <div className={`rounded-lg p-2.5 ${dk ? "bg-rose-400/10" : "bg-rose-50"}`}>
-                                  <div className={`text-[9px] font-black ${subText}`}>💰 پرداخت</div>
-                                  <div className={`text-sm font-black tabular-nums text-rose-500`}>{fmt(tx.amount)}</div>
-                                  <div className={`text-[10px] font-black ${currencyColors[tx.currency][dk ? "dark" : "light"]}`}>{labels[tx.currency]}</div>
-                                </div>
-                                <div className={`rounded-lg p-2.5 ${dk ? "bg-emerald-400/10" : "bg-emerald-50"}`}>
-                                  <div className={`text-[9px] font-black ${subText}`}>💵 دریافت</div>
-                                  <div className={`text-sm font-black tabular-nums text-emerald-500`}>{fmt(tx.balanceAfter)}</div>
-                                  <div className={`text-[10px] font-black ${currencyColors[tx.currency][dk ? "dark" : "light"]}`}>{labels[tx.currency]}</div>
-                                </div>
-                              </div>
-
-                              {/* Rate */}
-                              <div className={`rounded-lg p-2.5 mb-3 ${dk ? "bg-sky-400/10" : "bg-sky-50"}`}>
-                                <div className={`text-[9px] font-black ${subText} mb-1`}>📈 نرخ</div>
-                                <div className={`text-xs font-black ${dk ? "text-sky-300" : "text-sky-700"}`}>{tx.description}</div>
-                              </div>
-                            </>
-                          )}
-
-                          {/* Transfer Type */}
-                          {tx.type === "transfer" && (
-                            <>
-                              <div className="grid grid-cols-2 gap-3 mb-3">
-                                <div>
-                                  <div className={`text-[9px] font-black ${subText}`}>📤 از</div>
-                                  <div className={`text-xs font-black ${dk ? "text-slate-200" : "text-slate-700"}`}>{tx.description.split(" به ")[0]?.replace("انتقال به ", "") || "—"}</div>
-                                </div>
-                                <div>
-                                  <div className={`text-[9px] font-black ${subText}`}>📥 به</div>
-                                  <div className={`text-xs font-black ${dk ? "text-slate-200" : "text-slate-700"}`}>{tx.customerName || "—"}</div>
-                                </div>
-                              </div>
-
-                              <div className={`rounded-lg p-2.5 mb-3 ${tx.direction === "in" ? (dk ? "bg-emerald-400/10" : "bg-emerald-50") : (dk ? "bg-rose-400/10" : "bg-rose-50")}`}>
-                                <div className={`text-[9px] font-black ${subText}`}>💱 مبلغ</div>
-                                <div className={`text-sm font-black tabular-nums ${tx.direction === "in" ? "text-emerald-500" : "text-rose-500"}`}>
-                                  {tx.direction === "in" ? "+" : "-"} {fmt(tx.amount)}
-                                </div>
-                                <div className={`text-[10px] font-black ${currencyColors[tx.currency][dk ? "dark" : "light"]}`}>{labels[tx.currency]}</div>
-                              </div>
-                            </>
-                          )}
-
-                          {/* Convert Type */}
-                          {tx.type === "convert" && (
-                            <>
-                              <div className="grid grid-cols-2 gap-3 mb-3">
-                                <div>
-                                  <div className={`text-[9px] font-black ${subText}`}>👤 مشتری</div>
-                                  <div className={`text-xs font-black ${dk ? "text-slate-200" : "text-slate-700"}`}>{tx.customerName || "—"}</div>
-                                </div>
-                                <div>
-                                  <div className={`text-[9px] font-black ${subText}`}>📊 نوع</div>
-                                  <div className={`text-xs font-black ${dk ? "text-slate-200" : "text-slate-700"}`}>تبدیل ارز</div>
-                                </div>
-                              </div>
-
-                              <div className={`rounded-lg p-2.5 mb-3 ${tx.direction === "in" ? (dk ? "bg-emerald-400/10" : "bg-emerald-50") : (dk ? "bg-rose-400/10" : "bg-rose-50")}`}>
-                                <div className={`text-[9px] font-black ${subText}`}>💱 {tx.direction === "in" ? "اضافه شده" : "کسر شده"}</div>
-                                <div className={`text-sm font-black tabular-nums ${tx.direction === "in" ? "text-emerald-500" : "text-rose-500"}`}>
-                                  {tx.direction === "in" ? "+" : "-"} {fmt(tx.amount)}
-                                </div>
-                                <div className={`text-[10px] font-black ${currencyColors[tx.currency][dk ? "dark" : "light"]}`}>{labels[tx.currency]}</div>
-                              </div>
-                            </>
-                          )}
-
-                          {/* Fee Type */}
-                          {tx.type === "fee" && (
-                            <div className={`rounded-lg p-2.5 mb-3 ${dk ? "bg-amber-400/10" : "bg-amber-50"}`}>
-                              <div className={`text-[9px] font-black ${subText}`}>💼 کارمزد</div>
-                              <div className={`text-sm font-black tabular-nums text-amber-500`}>{fmt(tx.amount)}</div>
-                              <div className={`text-[10px] font-black ${currencyColors[tx.currency][dk ? "dark" : "light"]}`}>{labels[tx.currency]}</div>
+                          {/* Amount and Direction */}
+                          <div className={`rounded-lg p-3 mb-3 ${tx.direction === "in" ? (dk ? "bg-emerald-400/10" : "bg-emerald-50") : (dk ? "bg-rose-400/10" : "bg-rose-50")}`}>
+                            <div className={`text-[9px] font-black ${subText}`}>
+                              {tx.direction === "in" ? "💵 مبلغ دریافتی / اضافه شده" : "💰 مبلغ پرداختی / کسر شده"}
                             </div>
-                          )}
+                            <div className={`text-lg font-black tabular-nums ${tx.direction === "in" ? "text-emerald-500" : "text-rose-500"}`}>
+                              {tx.direction === "in" ? "+" : "-"} {fmt(tx.amount)}
+                            </div>
+                            <div className={`text-[11px] font-black ${currencyColors[tx.currency][dk ? "dark" : "light"]}`}>{labels[tx.currency]}</div>
+                          </div>
 
                           {/* Balance After */}
                           <div className={`rounded-lg p-2.5 ${dk ? "bg-slate-700/50" : "bg-slate-100"}`}>
-                            <div className={`text-[9px] font-black ${subText}`}>💰 مانده پس از معامله</div>
+                            <div className={`text-[9px] font-black ${subText}`}>💰 مانده حساب پس از این رویداد</div>
                             <div className={`text-sm font-black tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`}>{fmt(tx.balanceAfter)}</div>
                             <div className={`text-[10px] font-black ${currencyColors[tx.currency][dk ? "dark" : "light"]}`}>{labels[tx.currency]}</div>
                           </div>
