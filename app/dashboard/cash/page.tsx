@@ -220,17 +220,23 @@ const Ic = ({ n, className = "h-5 w-5" }: { n: string; className?: string }) => 
     plus: "M12 4.5v15m7.5-7.5h-15", arrowDown: "M19.5 13.5 12 21m0 0-7.5-7.5M12 21V3", arrowUp: "M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18",
     user: "M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z",
     doc: "M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z",
-    search: "m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 1 10.607 10.607Z", chevron: "m19.5 8.25-7.5 7.5-7.5-7.5", x: "M6 18 18 6M6 6l12 12",
-    check: "M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z", alert: "M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z",
+    search: "m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 1 10.607 10.607Z",
+    chevron: "m19.5 8.25-7.5 7.5-7.5-7.5",
+    x: "M6 18 18 6M6 6l12 12",
+    check: "M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
+    alert: "M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z",
     inbox: "M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h3.218a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H6.911a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661Z",
     sun: "M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.375 3.375 0 1 1-7.5 0 3.375 3.375 0 0 1 7.5 0Z",
     moon: "M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z",
-    clock: "M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z", tag: "M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z",
+    clock: "M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
     trash: "M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0",
-    history: "M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z", pencil: "m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10",
+    history: "M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
+    pencil: "m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10",
     more: "M12 6.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 12.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 18.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Z",
     eye: "M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
-    xCircle: "m9.75 9.75 4.5 4.5m0-4.5-4.5 4.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z", gem: "M12 2 2 7l10 15L22 7l-10-5Z", crown: "M2 18h20l-2-9-4 4-4-7-4 7-4-4-2 9Z"
+    xCircle: "m9.75 9.75 4.5 4.5m0-4.5-4.5 4.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
+    gem: "M12 2 2 7l10 15L22 7l-10-5Z",
+    crown: "M2 18h20l-2-9-4 4-4-7-4 7-4-4-2 9Z"
   };
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true"><path d={paths[n] || ""} /></svg>;
 };
@@ -324,6 +330,17 @@ export default function CashPage() {
 
   const physicalCashBalances = useMemo(() => computeCashBalances(entries), [entries]);
 
+  // ✅ موجودی صرافی — مستقل و مستقیم از اسناد مالک (owner_deposit / owner_withdraw)
+  const exchangeBalance = useMemo(() => {
+    const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+    for (const e of entries) {
+      if (e.status === "voided") continue;
+      if (e.type === "owner_deposit") totals[e.currency] += e.amount;
+      else if (e.type === "owner_withdraw") totals[e.currency] -= e.amount;
+    }
+    return totals;
+  }, [entries]);
+
   const customerDeposits = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
@@ -341,12 +358,6 @@ export default function CashPage() {
     }
     return totals;
   }, [customers]);
-
-  const ownerNetCapital = useMemo(() => {
-    const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-    for (const cur of currencies) totals[cur] = (physicalCashBalances[cur] || 0) - (customerDeposits[cur] || 0) + (customerDebts[cur] || 0);
-    return totals;
-  }, [physicalCashBalances, customerDeposits, customerDebts]);
 
   const totalCommissionEarned = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
@@ -514,7 +525,7 @@ export default function CashPage() {
       <style>{`@import url("https://fonts.googleapis.com/css2?family=Lalezar&family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap");.cs-font{font-family:"Vazirmatn","Segoe UI",Tahoma,sans-serif}.cs-display{font-family:"Lalezar","Vazirmatn",Tahoma,sans-serif;letter-spacing:.01em}.dark{color-scheme:dark}@keyframes csUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}.cs-up{animation:csUp .5s cubic-bezier(.22,.8,.35,1) both}.cs-scroll::-webkit-scrollbar{height:6px;width:6px}.cs-scroll::-webkit-scrollbar-thumb{background:rgba(16,185,129,.3);border-radius:3px}.cs-scroll{scrollbar-width:thin}::selection{background:rgba(16,185,129,.25)}`}</style>
       <div className={`cs-font relative min-h-screen overflow-x-hidden antialiased transition-colors duration-500 ${dk ? "bg-[#0f172a] text-slate-100" : "bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 text-slate-800"}`}>
         <div className={`fixed inset-x-0 top-0 z-30 h-1 bg-gradient-to-l ${dk ? "from-emerald-400 via-teal-400 to-cyan-400" : "from-emerald-500 via-teal-500 to-cyan-500"}`} />
-        <div className="relative z-10 mx-auto w-full max-w-7xl space-y-4 md:space-y-5 px-3 pb-16 pt-5 md:px-8 md:pt-9">
+        <div className="relative z-10 mx-auto w-full max-w-7xl space-y-4 md:space-y-6 px-3 pb-16 pt-5 md:px-8 md:pt-9">
           <header className="cs-up flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 md:gap-3.5 min-w-0">
               <div className="relative grid h-11 w-11 md:h-14 md:w-14 shrink-0 place-items-center rounded-xl md:rounded-2xl bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-400 text-white shadow-lg shadow-emerald-500/30 ring-1 ring-white/30"><Ic n="wallet" className="h-5 w-5 md:h-6 md:w-6" /><span className={`absolute -bottom-1 -left-1 md:-bottom-1.5 md:-left-1.5 grid h-4 min-w-4 md:h-5 md:min-w-5 place-items-center rounded-full bg-gradient-to-br from-amber-400 to-orange-400 px-1 text-[7px] md:text-[8px] font-black text-white ring-2 ${dk ? "ring-[#0f172a]" : "ring-[#ecfdf5]"}`}>CS</span></div>
@@ -526,79 +537,83 @@ export default function CashPage() {
             </div>
           </header>
 
-          {/* ✨ بخش کارت‌های فشرده و مدرن */}
-          <div className="cs-up space-y-3 md:space-y-4" style={{ animationDelay: "70ms" }}>
+          <div className="cs-up space-y-4 md:space-y-5" style={{ animationDelay: "70ms" }}>
             
-            {/* کارت اصلی موجودی فیزیکی صندوق */}
-            <div className={`relative overflow-hidden rounded-xl md:rounded-2xl border-2 p-4 md:p-5 transition-all duration-300 hover:shadow-xl ${dk ? "border-emerald-400/40 bg-gradient-to-br from-emerald-900/40 via-slate-900/60 to-teal-900/40 shadow-[0_10px_30px_-10px_rgba(16,185,129,0.3)]" : "border-emerald-300 bg-gradient-to-br from-emerald-50 via-white to-teal-50 shadow-[0_10px_30px_-10px_rgba(16,185,129,0.25)]"}`}>
-              <div className="relative flex items-center gap-3 mb-3 md:mb-4">
-                <div className={`relative grid h-10 w-10 md:h-12 md:w-12 shrink-0 place-items-center rounded-xl shadow-md ${dk ? "bg-gradient-to-br from-emerald-400 to-teal-400 text-slate-950" : "bg-gradient-to-br from-emerald-500 to-teal-500 text-white"}`}>
-                  <Ic n="wallet" className="h-5 w-5 md:h-6 md:w-6" />
+            {/* ✅ کارت موجودی فیزیکی صرافی */}
+            <div className={`relative overflow-hidden rounded-2xl md:rounded-3xl border-2 p-5 md:p-7 transition-all duration-300 hover:shadow-2xl ${dk ? "border-emerald-400/40 bg-gradient-to-br from-emerald-900/40 via-slate-900/60 to-teal-900/40 shadow-[0_20px_60px_-15px_rgba(16,185,129,0.3)]" : "border-emerald-300 bg-gradient-to-br from-emerald-50 via-white to-teal-50 shadow-[0_20px_60px_-15px_rgba(16,185,129,0.25)]"}`}>
+              <div className={`absolute -top-24 -left-24 h-48 w-48 rounded-full blur-3xl opacity-20 ${dk ? "bg-emerald-400" : "bg-emerald-300"}`} />
+              <div className={`absolute -bottom-24 -right-24 h-48 w-48 rounded-full blur-3xl opacity-20 ${dk ? "bg-teal-400" : "bg-teal-300"}`} />
+              <div className="relative flex items-center gap-4 mb-5 md:mb-6">
+                <div className={`relative grid h-14 w-14 md:h-16 md:w-16 shrink-0 place-items-center rounded-2xl shadow-lg ${dk ? "bg-gradient-to-br from-emerald-400 to-teal-400 text-slate-950" : "bg-gradient-to-br from-emerald-500 to-teal-500 text-white"}`}>
+                  <Ic n="wallet" className="h-7 w-7 md:h-8 md:w-8" />
+                  <span className="absolute -top-1 -right-1 flex h-4 w-4"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" /><span className="relative inline-flex h-4 w-4 rounded-full bg-emerald-500 ring-2 ring-white" /></span>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <b className={`block text-sm md:text-base font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}>💰 موجودی فیزیکی صندوق</b>
-                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>فقط اسناد صندوق — بدون موجودی مشتریان</span>
+                  <b className={`block text-base md:text-lg font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}>💰 موجودی فیزیکی صرافی</b>
+                  <span className={`block text-[11px] md:text-xs font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>کل پول نقد داخل گاوصندوق</span>
                 </div>
               </div>
-              <div className="relative grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-3">
+              <div className="relative grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 md:gap-4">
                 {currencies.map(cur => {
                   const bal = physicalCashBalances[cur];
                   const isNeg = bal < 0;
                   return (
-                    <div key={cur} className={`group relative overflow-hidden rounded-xl p-2.5 md:p-3 text-center transition-all duration-300 ${dk ? "bg-slate-950/60 ring-1 ring-slate-700/50" : "bg-white/90 ring-1 ring-emerald-100 shadow-sm"}`}>
-                      <div className={`text-[10px] md:text-[11px] font-black mb-1 ${dk ? "text-slate-400" : "text-slate-500"}`}>{labels[cur]}</div>
-                      <div className={`text-base md:text-lg font-black tabular-nums leading-tight ${isNeg ? "text-rose-500" : dk ? "text-emerald-300" : "text-emerald-700"}`}>{fmt(bal)}</div>
-                      <div className={`mt-1 text-[8px] md:text-[9px] font-black ${isNeg ? "text-rose-500" : dk ? "text-emerald-400/70" : "text-emerald-600/70"}`}>{isNeg ? "⚠️ کسری" : "✅ نقدی"}</div>
+                    <div key={cur} className={`group relative overflow-hidden rounded-2xl p-4 text-center transition-all duration-300 hover:scale-[1.02] ${dk ? "bg-slate-950/60 ring-1 ring-slate-700/50" : "bg-white/90 ring-1 ring-emerald-100 shadow-sm"}`}>
+                      <div className={`text-[12px] md:text-[13px] font-black mb-2 ${dk ? "text-slate-400" : "text-slate-500"}`}>{labels[cur]}</div>
+                      <div className={`text-xl md:text-2xl font-black tabular-nums leading-tight ${isNeg ? "text-rose-500" : dk ? "text-emerald-300" : "text-emerald-700"}`}>{fmt(bal)}</div>
+                      <div className={`mt-1.5 text-[9px] md:text-[10px] font-black ${isNeg ? "text-rose-500" : dk ? "text-emerald-400/70" : "text-emerald-600/70"}`}>{isNeg ? "⚠️ کسری" : "✅ نقدی"}</div>
                     </div>
                   );
                 })}
               </div>
             </div>
 
-            {/* کارت مستقل موجودی صرافی */}
-            <div className={`relative overflow-hidden rounded-xl md:rounded-2xl border-2 p-4 md:p-5 transition-all duration-300 hover:shadow-xl ${dk ? "border-violet-400/40 bg-gradient-to-br from-violet-900/40 via-slate-900/60 to-indigo-900/40" : "border-violet-300 bg-gradient-to-br from-violet-50 via-white to-indigo-50"}`}>
-              <div className="relative flex items-center gap-3 mb-3 md:mb-4">
-                <div className={`relative grid h-10 w-10 md:h-12 md:w-12 shrink-0 place-items-center rounded-xl shadow-md ${dk ? "bg-gradient-to-br from-violet-400 to-indigo-400 text-slate-950" : "bg-gradient-to-br from-violet-500 to-indigo-500 text-white"}`}>
-                  <Ic n="crown" className="h-5 w-5 md:h-6 md:w-6" />
+            {/* ✅ کارت موجودی صرافی — مستقل از اسناد مالک */}
+            <div className={`relative overflow-hidden rounded-2xl md:rounded-3xl border-2 p-5 md:p-7 transition-all duration-300 hover:shadow-2xl ${dk ? "border-violet-400/40 bg-gradient-to-br from-violet-900/40 via-slate-900/60 to-indigo-900/40" : "border-violet-300 bg-gradient-to-br from-violet-50 via-white to-indigo-50"}`}>
+              <div className="relative flex items-center gap-4 mb-5 md:mb-6">
+                <div className={`relative grid h-14 w-14 md:h-16 md:w-16 shrink-0 place-items-center rounded-2xl shadow-lg ${dk ? "bg-gradient-to-br from-violet-400 to-indigo-400 text-slate-950" : "bg-gradient-to-br from-violet-500 to-indigo-500 text-white"}`}>
+                  <Ic n="crown" className="h-7 w-7 md:h-8 md:w-8" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <b className={`block text-sm md:text-base font-black ${dk ? "text-violet-300" : "text-violet-700"}`}>💼 موجودی صرافی (سرمایه خالص)</b>
-                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>مستقل — ارزش خالص صرافی (صندوق - بدهی + طلب)</span>
+                  <b className={`block text-base md:text-lg font-black ${dk ? "text-violet-300" : "text-violet-700"}`}>💼 موجودی صرافی</b>
+                  <span className={`block text-[11px] md:text-xs font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>مستقل — فقط واریز و برداشت مالک</span>
                 </div>
               </div>
-              <div className="relative grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-3">
+              <div className="relative grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 md:gap-4">
                 {currencies.map(cur => {
-                  const bal = ownerNetCapital[cur];
+                  const bal = exchangeBalance[cur];
                   const isNeg = bal < 0;
                   return (
-                    <div key={cur} className={`group relative overflow-hidden rounded-xl p-2.5 md:p-3 text-center transition-all duration-300 ${dk ? "bg-slate-950/60 ring-1 ring-slate-700/50" : "bg-white/90 ring-1 ring-violet-100 shadow-sm"}`}>
-                      <div className={`text-[10px] md:text-[11px] font-black mb-1 ${dk ? "text-slate-400" : "text-slate-500"}`}>{labels[cur]}</div>
-                      <div className={`text-base md:text-lg font-black tabular-nums leading-tight ${isNeg ? "text-rose-500" : dk ? "text-violet-300" : "text-violet-700"}`}>{fmt(bal)}</div>
-                      <div className={`mt-1 text-[8px] md:text-[9px] font-black ${isNeg ? "text-rose-500" : dk ? "text-violet-400/70" : "text-violet-600/70"}`}>{isNeg ? "⚠️ منفی" : "✅ مثبت"}</div>
+                    <div key={cur} className={`group relative overflow-hidden rounded-2xl p-4 text-center transition-all duration-300 hover:scale-[1.02] ${dk ? "bg-slate-950/60 ring-1 ring-slate-700/50" : "bg-white/90 ring-1 ring-violet-100 shadow-sm"}`}>
+                      <div className={`text-[12px] md:text-[13px] font-black mb-2 ${dk ? "text-slate-400" : "text-slate-500"}`}>{labels[cur]}</div>
+                      <div className={`text-xl md:text-2xl font-black tabular-nums leading-tight ${isNeg ? "text-rose-500" : dk ? "text-violet-300" : "text-violet-700"}`}>{fmt(bal)}</div>
+                      <div className={`mt-1.5 text-[9px] md:text-[10px] font-black ${isNeg ? "text-rose-500" : dk ? "text-violet-400/70" : "text-violet-600/70"}`}>{isNeg ? "⚠️ منفی" : "✅ مثبت"}</div>
                     </div>
                   );
                 })}
               </div>
             </div>
 
-            {/* سه کارت اطلاعاتی دیگر */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3">
+            {/* سه کارت اطلاعاتی */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
+              
               {/* کارت موجودی مشتریان */}
-              <div className={`group relative overflow-hidden rounded-xl border p-3 transition-all duration-300 hover:shadow-lg ${dk ? "border-sky-400/25 bg-gradient-to-br from-sky-900/30 to-slate-900/50" : "border-sky-200 bg-gradient-to-br from-sky-50 to-white"}`}>
-                <div className="relative flex items-center gap-2 mb-2">
-                  <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-600"}`}><Ic n="user" className="h-4 w-4" /></span>
+              <div className={`group relative overflow-hidden rounded-2xl border p-4 md:p-5 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-sky-400/25 bg-gradient-to-br from-sky-900/30 to-slate-900/50" : "border-sky-200 bg-gradient-to-br from-sky-50 to-white"}`}>
+                <div className={`absolute top-0 right-0 h-24 w-24 rounded-full blur-2xl opacity-10 ${dk ? "bg-sky-400" : "bg-sky-300"}`} />
+                <div className="relative flex items-center gap-3 mb-4">
+                  <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-600"}`}><Ic n="user" className="h-5 w-5" /></span>
                   <div className="min-w-0">
-                    <b className={`block text-[11px] md:text-xs font-black leading-tight ${dk ? "text-sky-300" : "text-sky-700"}`}>👥 موجودی مشتریان</b>
-                    <span className={`block text-[9px] font-bold ${subText}`}>پول مشتری نزد صرافی</span>
+                    <b className={`block text-[13px] md:text-[14px] font-black leading-tight ${dk ? "text-sky-300" : "text-sky-700"}`}>👥 موجودی مشتریان</b>
+                    <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${subText}`}>پول مشتری نزد صرافی</span>
                   </div>
                 </div>
-                <div className="relative space-y-1">
+                <div className="relative space-y-1.5">
                   {currencies.map(cur => {
                     const bal = customerDeposits[cur];
                     return (
-                      <div key={cur} className={`flex items-center justify-between rounded-lg px-2 py-1.5 ${dk ? "bg-slate-900/50" : "bg-white/80"}`}>
-                        <span className={`text-[10px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>{labels[cur]}</span>
-                        <span className={`text-[12px] font-black tabular-nums ${bal > 0 ? (dk ? "text-sky-300" : "text-sky-700") : subText}`}>{fmt(bal)}</span>
+                      <div key={cur} className={`flex items-center justify-between rounded-xl px-3 py-2 transition-colors ${dk ? "bg-slate-900/50" : "bg-white/80"}`}>
+                        <span className={`text-[12px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>{labels[cur]}</span>
+                        <span className={`text-[15px] md:text-base font-black tabular-nums ${bal > 0 ? (dk ? "text-sky-300" : "text-sky-700") : subText}`}>{fmt(bal)}</span>
                       </div>
                     );
                   })}
@@ -606,21 +621,22 @@ export default function CashPage() {
               </div>
 
               {/* کارت بدهی مشتریان */}
-              <div className={`group relative overflow-hidden rounded-xl border p-3 transition-all duration-300 hover:shadow-lg ${dk ? "border-rose-400/25 bg-gradient-to-br from-rose-900/30 to-slate-900/50" : "border-rose-200 bg-gradient-to-br from-rose-50 to-white"}`}>
-                <div className="relative flex items-center gap-2 mb-2">
-                  <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600"}`}><Ic n="alert" className="h-4 w-4" /></span>
+              <div className={`group relative overflow-hidden rounded-2xl border p-4 md:p-5 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-rose-400/25 bg-gradient-to-br from-rose-900/30 to-slate-900/50" : "border-rose-200 bg-gradient-to-br from-rose-50 to-white"}`}>
+                <div className={`absolute top-0 right-0 h-24 w-24 rounded-full blur-2xl opacity-10 ${dk ? "bg-rose-400" : "bg-rose-300"}`} />
+                <div className="relative flex items-center gap-3 mb-4">
+                  <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600"}`}><Ic n="alert" className="h-5 w-5" /></span>
                   <div className="min-w-0">
-                    <b className={`block text-[11px] md:text-xs font-black leading-tight ${dk ? "text-rose-300" : "text-rose-700"}`}>📉 بدهی مشتریان</b>
-                    <span className={`block text-[9px] font-bold ${subText}`}>صرافی قرض داده</span>
+                    <b className={`block text-[13px] md:text-[14px] font-black leading-tight ${dk ? "text-rose-300" : "text-rose-700"}`}>📉 بدهی مشتریان</b>
+                    <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${subText}`}>صرافی قرض داده</span>
                   </div>
                 </div>
-                <div className="relative space-y-1">
+                <div className="relative space-y-1.5">
                   {currencies.map(cur => {
                     const bal = customerDebts[cur];
                     return (
-                      <div key={cur} className={`flex items-center justify-between rounded-lg px-2 py-1.5 ${dk ? "bg-slate-900/50" : "bg-white/80"}`}>
-                        <span className={`text-[10px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>{labels[cur]}</span>
-                        <span className={`text-[12px] font-black tabular-nums ${bal > 0 ? "text-rose-500" : subText}`}>{fmt(bal)}</span>
+                      <div key={cur} className={`flex items-center justify-between rounded-xl px-3 py-2 transition-colors ${dk ? "bg-slate-900/50" : "bg-white/80"}`}>
+                        <span className={`text-[12px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>{labels[cur]}</span>
+                        <span className={`text-[15px] md:text-base font-black tabular-nums ${bal > 0 ? "text-rose-500" : subText}`}>{fmt(bal)}</span>
                       </div>
                     );
                   })}
@@ -628,21 +644,22 @@ export default function CashPage() {
               </div>
 
               {/* کارت کارمزد قابل برداشت */}
-              <div className={`group relative overflow-hidden rounded-xl border p-3 transition-all duration-300 hover:shadow-lg ${dk ? "border-amber-400/25 bg-gradient-to-br from-amber-900/30 to-slate-900/50" : "border-amber-200 bg-gradient-to-br from-amber-50 to-white"}`}>
-                <div className="relative flex items-center gap-2 mb-2">
-                  <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="gem" className="h-4 w-4" /></span>
+              <div className={`group relative overflow-hidden rounded-2xl border p-4 md:p-5 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-amber-400/25 bg-gradient-to-br from-amber-900/30 to-slate-900/50" : "border-amber-200 bg-gradient-to-br from-amber-50 to-white"}`}>
+                <div className={`absolute top-0 right-0 h-24 w-24 rounded-full blur-2xl opacity-10 ${dk ? "bg-amber-400" : "bg-amber-300"}`} />
+                <div className="relative flex items-center gap-3 mb-4">
+                  <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="gem" className="h-5 w-5" /></span>
                   <div className="min-w-0">
-                    <b className={`block text-[11px] md:text-xs font-black leading-tight ${dk ? "text-amber-300" : "text-amber-700"}`}>💎 کارمزد قابل برداشت</b>
-                    <span className={`block text-[9px] font-bold ${subText}`}>درآمد خالص صرافی</span>
+                    <b className={`block text-[13px] md:text-[14px] font-black leading-tight ${dk ? "text-amber-300" : "text-amber-700"}`}>💎 کارمزد قابل برداشت</b>
+                    <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${subText}`}>درآمد خالص صرافی</span>
                   </div>
                 </div>
-                <div className="relative space-y-1">
+                <div className="relative space-y-1.5">
                   {currencies.map(cur => {
                     const bal = availableCommission[cur];
                     return (
-                      <div key={cur} className={`flex items-center justify-between rounded-lg px-2 py-1.5 ${dk ? "bg-slate-900/50" : "bg-white/80"}`}>
-                        <span className={`text-[10px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>{labels[cur]}</span>
-                        <span className={`text-[12px] font-black tabular-nums ${bal > 0 ? (dk ? "text-amber-300" : "text-amber-700") : subText}`}>{fmt(bal)}</span>
+                      <div key={cur} className={`flex items-center justify-between rounded-xl px-3 py-2 transition-colors ${dk ? "bg-slate-900/50" : "bg-white/80"}`}>
+                        <span className={`text-[12px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>{labels[cur]}</span>
+                        <span className={`text-[15px] md:text-base font-black tabular-nums ${bal > 0 ? (dk ? "text-amber-300" : "text-amber-700") : subText}`}>{fmt(bal)}</span>
                       </div>
                     );
                   })}
@@ -654,7 +671,9 @@ export default function CashPage() {
           <div className={`cs-up flex gap-1.5 md:gap-2 rounded-xl md:rounded-2xl border p-1.5 md:p-2 shadow-sm backdrop-blur ${glassChip}`} style={{ animationDelay: "140ms" }}>
             {[{ id: "register" as const, label: "ثبت عملیات", icon: "plus" }, { id: "ledger" as const, label: "روزنامچه صندوق", icon: "history", count: entries.length }].map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 md:gap-2 rounded-lg md:rounded-xl px-3 md:px-5 py-2.5 md:py-3 text-xs md:text-sm font-black transition-all duration-300 active:scale-[0.97] ${activeTab === tab.id ? `bg-gradient-to-l shadow-lg ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 via-teal-500 to-cyan-500 text-white"}` : dk ? "text-slate-400 hover:bg-slate-700/60 hover:text-slate-100" : "text-slate-500 hover:bg-emerald-50 hover:text-slate-800"}`}>
-                <Ic n={tab.icon} className="h-4 w-4" /><span>{tab.label}</span>
+                {tab.icon === "plus" && <Ic n="plus" className="h-4 w-4" />}
+                {tab.icon === "history" && <Ic n="history" className="h-4 w-4" />}
+                <span>{tab.label}</span>
                 {tab.count !== undefined && tab.count > 0 && <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-black ${activeTab === tab.id ? dk ? "bg-slate-950/20 text-slate-950" : "bg-white/30 text-white" : dk ? "bg-slate-700 text-slate-300" : "bg-emerald-100 text-emerald-700"}`}>{tab.count}</span>}
               </button>
             ))}
@@ -751,7 +770,7 @@ export default function CashPage() {
                 </div>
               )}
 
-              {fld("دلیل / شرح عملیات *", (<textarea rows={3} value={form.reason} onChange={e => setField("reason", e.target.value)} placeholder={form.type === "customer_deposit" ? "مثلاً: واریز نقدی مشتری به حساب…" : form.type === "customer_withdraw" ? "مثلاً: برداشت نقدی مشتری از حساب…" : form.type === "owner_deposit" ? "مثلاً: واریز سرمایه مالک به صندوق…" : form.type === "owner_withdraw" ? "مثلاً: برداشت مالک برای مصارف شخصی…" : form.type === "commission_withdraw" ? "مثلاً: برداشت کارمزد هفتگی…" : form.type === "fee" ? "مثلاً: کارمزد حواله…" : "مثلاً: اصلاح موجودی…"} className={`${uiInput} h-auto py-3 resize-none ${errors.reason ? errInput : ""}`} />))}
+              {fld("دلیل / شرح عملیات *", (<textarea rows={3} value={form.reason} onChange={e => setField("reason", e.target.value)} placeholder={form.type === "customer_deposit" ? "مثلاً: واریز نقدی مشتری به حساب…" : form.type === "customer_withdraw" ? "مثلاً: برداشت نقدی مشتری از حساب…" : form.type === "owner_deposit" ? "مثلاً: واریز سرمایه مالک به صندوق…" : form.type === "owner_withdraw" ? "مثلاً: برداشت مالک برای مصارف شخصی…" : form.type === "commission_withdraw" ? "مثلاً: برداشت کارمزد هفتگی…" : "مثلاً: اصلاح موجودی…"} className={`${uiInput} h-auto py-3 resize-none ${errors.reason ? errInput : ""}`} />))}
 
               {hasType && (
                 <div className={`flex items-center gap-3 rounded-xl border p-4 ${isInType ? dk ? "border-emerald-400/25 bg-emerald-400/[0.07]" : "border-emerald-200 bg-emerald-50" : dk ? "border-rose-400/25 bg-rose-400/[0.07]" : "border-rose-200 bg-rose-50"}`}>
