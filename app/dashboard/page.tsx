@@ -103,9 +103,10 @@ interface Transaction {
   id: string;
   date: string;
   type: "exchange" | "transfer" | "convert";
-  currency?: Currency;
-  amount?: number;
-  afnValue?: number;
+  fromCurrency: Currency;
+  fromAmount: number;
+  toCurrency: Currency;
+  toAmount: number;
   commission?: number;
   commissionCurrency?: Currency;
   status: "active" | "voided";
@@ -114,6 +115,8 @@ interface Transaction {
 interface Hawala {
   id: string;
   date: string;
+  amountFrom: number;
+  currencyFrom: Currency;
   fee?: number;
   feeCurrency?: Currency;
   status: "pending" | "sent" | "paid" | "cancelled";
@@ -261,15 +264,17 @@ export default function DashboardPage() {
     return totals;
   }, [totalCommissionEarned, commissionWithdrawn]);
 
-  // ✅ آمار روزانه (فقط امروز)
+  // ✅ آمار روزانه (مبلغ‌ها و تعدادها)
   const todayStats = useMemo(() => {
     let tradeCount = 0, hawalaCount = 0;
+    let tradeAmountSum = 0, hawalaAmountSum = 0;
     let tradeCommissionSum = 0, hawalaFeeSum = 0;
 
     for (const tx of transactions) {
       if (tx.status === "voided") continue;
       if (isToday(tx.date)) {
         tradeCount++;
+        tradeAmountSum += tx.fromAmount || 0;
         if (tx.commission && tx.commission > 0) {
           tradeCommissionSum += tx.commission;
         }
@@ -280,16 +285,17 @@ export default function DashboardPage() {
       if (h.status === "cancelled") continue;
       if (isToday(h.date)) {
         hawalaCount++;
+        hawalaAmountSum += h.amountFrom || 0;
         if (h.fee && h.fee > 0) {
           hawalaFeeSum += h.fee;
         }
       }
     }
 
-    return { tradeCount, hawalaCount, tradeCommissionSum, hawalaFeeSum };
+    return { tradeCount, hawalaCount, tradeAmountSum, hawalaAmountSum, tradeCommissionSum, hawalaFeeSum };
   }, [transactions, hawalas]);
 
-  // ✅ تعداد مشتریان بدهکار (کسانی که حداقل در یک ارز بدهی دارند)
+  // ✅ تعداد مشتریان بدهکار
   const debtorsCount = useMemo(() => {
     return customers.filter(c => {
       return currencies.some(cur => (c.balances?.[cur] || 0) < 0);
@@ -365,7 +371,7 @@ export default function DashboardPage() {
             </div>
           </header>
 
-          {/* ═══════════ آمار امروز (۴ کارت اصلی) ═══════════ */}
+          {/* ═══════════ آمار امروز ═══════════ */}
           <section className="cs-up space-y-4 md:space-y-5" style={{ animationDelay: "70ms" }}>
             <div className="flex items-center gap-3 mb-1">
               <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl shadow-md ${dk ? "bg-gradient-to-br from-blue-500 to-sky-500 text-white" : "bg-gradient-to-br from-blue-500 to-cyan-500 text-white"}`}>
@@ -378,10 +384,71 @@ export default function DashboardPage() {
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-              <TodayStat dk={dk} icon="💱" label="مجموع تبادل ارز" value={fa(todayStats.tradeCount)} color="blue" />
-              <TodayStat dk={dk} icon="💸" label="مجموع حواله‌ها" value={fa(todayStats.hawalaCount)} color="purple" />
-              <TodayStat dk={dk} icon="💰" label="کارمزد تبادل ارز" value={fmt(todayStats.tradeCommissionSum)} color="amber" />
-              <TodayStat dk={dk} icon="🎯" label="کارمزد حواله‌ها" value={fmt(todayStats.hawalaFeeSum)} color="rose" />
+              {/* 💱 مجموع مبلغ تبادل ارز */}
+              <div className={`group relative overflow-hidden rounded-2xl border p-4 transition-all duration-300 hover:shadow-lg hover:scale-[1.02] ${dk ? "border-blue-400/25 bg-gradient-to-br from-blue-900/30 to-slate-900/50" : "border-blue-200 bg-gradient-to-br from-blue-50 to-white"}`}>
+                <div className="relative flex items-center gap-2.5 mb-2">
+                  <span className={`grid h-10 w-10 place-items-center rounded-xl shadow-sm ${dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-600"}`}>
+                    <span className="text-xl">💱</span>
+                  </span>
+                  <span className={`text-[11px] md:text-[12px] font-black ${dk ? "text-blue-300" : "text-blue-700"}`}>مجموع تبادل ارز</span>
+                </div>
+                <p className={`relative text-2xl md:text-3xl font-black tabular-nums leading-none ${dk ? "text-blue-300" : "text-blue-700"}`}>{fmt(todayStats.tradeAmountSum)}</p>
+                <div className={`mt-1.5 text-[9px] font-bold ${dk ? "text-blue-400/70" : "text-blue-600/70"}`}>{fa(todayStats.tradeCount)} معامله</div>
+              </div>
+
+              {/* 💸 مجموع مبلغ حواله‌ها */}
+              <div className={`group relative overflow-hidden rounded-2xl border p-4 transition-all duration-300 hover:shadow-lg hover:scale-[1.02] ${dk ? "border-purple-400/25 bg-gradient-to-br from-purple-900/30 to-slate-900/50" : "border-purple-200 bg-gradient-to-br from-purple-50 to-white"}`}>
+                <div className="relative flex items-center gap-2.5 mb-2">
+                  <span className={`grid h-10 w-10 place-items-center rounded-xl shadow-sm ${dk ? "bg-purple-400/15 text-purple-300" : "bg-purple-100 text-purple-600"}`}>
+                    <span className="text-xl">💸</span>
+                  </span>
+                  <span className={`text-[11px] md:text-[12px] font-black ${dk ? "text-purple-300" : "text-purple-700"}`}>مجموع حواله‌ها</span>
+                </div>
+                <p className={`relative text-2xl md:text-3xl font-black tabular-nums leading-none ${dk ? "text-purple-300" : "text-purple-700"}`}>{fmt(todayStats.hawalaAmountSum)}</p>
+                <div className={`mt-1.5 text-[9px] font-bold ${dk ? "text-purple-400/70" : "text-purple-600/70"}`}>{fa(todayStats.hawalaCount)} حواله</div>
+              </div>
+
+              {/* 💰 کارمزد تبادل ارز (دو قسمتی) */}
+              <div className={`group relative overflow-hidden rounded-2xl border p-4 transition-all duration-300 hover:shadow-lg hover:scale-[1.02] ${dk ? "border-amber-400/25 bg-gradient-to-br from-amber-900/30 to-slate-900/50" : "border-amber-200 bg-gradient-to-br from-amber-50 to-white"}`}>
+                <div className="relative flex items-center gap-2.5 mb-2">
+                  <span className={`grid h-10 w-10 place-items-center rounded-xl shadow-sm ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}>
+                    <span className="text-xl">💰</span>
+                  </span>
+                  <span className={`text-[11px] md:text-[12px] font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>کارمزد تبادل ارز</span>
+                </div>
+                <div className="relative flex items-center justify-between gap-2">
+                  <div className="text-center flex-1">
+                    <div className={`text-xl md:text-2xl font-black tabular-nums leading-none ${dk ? "text-amber-300" : "text-amber-700"}`}>{fa(todayStats.tradeCount)}</div>
+                    <div className={`mt-1 text-[9px] font-bold ${dk ? "text-amber-400/70" : "text-amber-600/70"}`}>تعداد</div>
+                  </div>
+                  <div className={`w-px h-10 ${dk ? "bg-amber-400/20" : "bg-amber-200"}`} />
+                  <div className="text-center flex-1">
+                    <div className={`text-xl md:text-2xl font-black tabular-nums leading-none ${dk ? "text-amber-300" : "text-amber-700"}`}>{fmt(todayStats.tradeCommissionSum)}</div>
+                    <div className={`mt-1 text-[9px] font-bold ${dk ? "text-amber-400/70" : "text-amber-600/70"}`}>کارمزد</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 🎯 کارمزد حواله‌جات (دو قسمتی) */}
+              <div className={`group relative overflow-hidden rounded-2xl border p-4 transition-all duration-300 hover:shadow-lg hover:scale-[1.02] ${dk ? "border-rose-400/25 bg-gradient-to-br from-rose-900/30 to-slate-900/50" : "border-rose-200 bg-gradient-to-br from-rose-50 to-white"}`}>
+                <div className="relative flex items-center gap-2.5 mb-2">
+                  <span className={`grid h-10 w-10 place-items-center rounded-xl shadow-sm ${dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600"}`}>
+                    <span className="text-xl">🎯</span>
+                  </span>
+                  <span className={`text-[11px] md:text-[12px] font-black ${dk ? "text-rose-300" : "text-rose-700"}`}>کارمزد حواله‌جات</span>
+                </div>
+                <div className="relative flex items-center justify-between gap-2">
+                  <div className="text-center flex-1">
+                    <div className={`text-xl md:text-2xl font-black tabular-nums leading-none ${dk ? "text-rose-300" : "text-rose-700"}`}>{fa(todayStats.hawalaCount)}</div>
+                    <div className={`mt-1 text-[9px] font-bold ${dk ? "text-rose-400/70" : "text-rose-600/70"}`}>تعداد</div>
+                  </div>
+                  <div className={`w-px h-10 ${dk ? "bg-rose-400/20" : "bg-rose-200"}`} />
+                  <div className="text-center flex-1">
+                    <div className={`text-xl md:text-2xl font-black tabular-nums leading-none ${dk ? "text-rose-300" : "text-rose-700"}`}>{fmt(todayStats.hawalaFeeSum)}</div>
+                    <div className={`mt-1 text-[9px] font-bold ${dk ? "text-rose-400/70" : "text-rose-600/70"}`}>کارمزد</div>
+                  </div>
+                </div>
+              </div>
             </div>
           </section>
 
@@ -402,6 +469,7 @@ export default function DashboardPage() {
                 </div>
               </div>
               
+              {/* ✅ بدون مخفف انگلیسی - فقط پرچم و نام فارسی */}
               <div className="relative grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 md:gap-4">
                 {currencies.map(cur => {
                   const bal = physicalCashBalances[cur];
@@ -509,7 +577,7 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* ۴. تعداد مشتریان (دو قسمتی) */}
+            {/* ۴. وضعیت مشتریان (دو قسمتی) */}
             <div className={`group relative overflow-hidden rounded-2xl border p-4 md:p-5 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-cyan-400/25 bg-gradient-to-br from-cyan-900/30 to-slate-900/50" : "border-cyan-200 bg-gradient-to-br from-cyan-50 to-white"}`}>
               <div className={`absolute top-0 right-0 h-24 w-24 rounded-full blur-2xl opacity-10 ${dk ? "bg-cyan-400" : "bg-cyan-300"}`} />
               <div className="relative flex items-center gap-3 mb-3">
@@ -642,7 +710,6 @@ export default function DashboardPage() {
                     );
                   })}
                 </tbody>
-                {/* ✅ tfoot حذف شد - ردیف "مجموع (AFN)" پاک شد */}
               </table>
             </div>
           </section>
@@ -653,55 +720,6 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-// ============================================================
-// کامپوننت کمکی: کارت آمار امروز
-// ============================================================
-function TodayStat({ dk, icon, label, value, color }: {
-  dk: boolean;
-  icon: string;
-  label: string;
-  value: string;
-  color: "blue" | "emerald" | "amber" | "purple" | "rose" | "sky";
-}) {
-  const colorMap = {
-    blue: dk ? "border-blue-400/25 bg-gradient-to-br from-blue-900/30 to-slate-900/50" : "border-blue-200 bg-gradient-to-br from-blue-50 to-white",
-    emerald: dk ? "border-emerald-400/25 bg-gradient-to-br from-emerald-900/30 to-slate-900/50" : "border-emerald-200 bg-gradient-to-br from-emerald-50 to-white",
-    amber: dk ? "border-amber-400/25 bg-gradient-to-br from-amber-900/30 to-slate-900/50" : "border-amber-200 bg-gradient-to-br from-amber-50 to-white",
-    purple: dk ? "border-purple-400/25 bg-gradient-to-br from-purple-900/30 to-slate-900/50" : "border-purple-200 bg-gradient-to-br from-purple-50 to-white",
-    rose: dk ? "border-rose-400/25 bg-gradient-to-br from-rose-900/30 to-slate-900/50" : "border-rose-200 bg-gradient-to-br from-rose-50 to-white",
-    sky: dk ? "border-sky-400/25 bg-gradient-to-br from-sky-900/30 to-slate-900/50" : "border-sky-200 bg-gradient-to-br from-sky-50 to-white",
-  };
-  const iconMap = {
-    blue: dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-600",
-    emerald: dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600",
-    amber: dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600",
-    purple: dk ? "bg-purple-400/15 text-purple-300" : "bg-purple-100 text-purple-600",
-    rose: dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600",
-    sky: dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-600",
-  };
-  const textMap = {
-    blue: dk ? "text-blue-300" : "text-blue-700",
-    emerald: dk ? "text-emerald-300" : "text-emerald-700",
-    amber: dk ? "text-amber-300" : "text-amber-700",
-    purple: dk ? "text-purple-300" : "text-purple-700",
-    rose: dk ? "text-rose-300" : "text-rose-700",
-    sky: dk ? "text-sky-300" : "text-sky-700",
-  };
-
-  return (
-    <div className={`group relative overflow-hidden rounded-2xl border p-4 transition-all duration-300 hover:shadow-lg hover:scale-[1.02] ${colorMap[color]}`}>
-      <div className={`absolute top-0 right-0 h-20 w-20 rounded-full blur-2xl opacity-10 ${dk ? "bg-current" : "bg-current"}`} />
-      <div className="relative flex items-center gap-2.5 mb-2">
-        <span className={`grid h-10 w-10 place-items-center rounded-xl shadow-sm ${iconMap[color]}`}>
-          <span className="text-xl">{icon}</span>
-        </span>
-        <span className={`text-[11px] md:text-[12px] font-black ${textMap[color]}`}>{label}</span>
-      </div>
-      <p className={`relative text-3xl md:text-4xl font-black tabular-nums leading-none ${textMap[color]}`}>{value}</p>
     </div>
   );
 }
