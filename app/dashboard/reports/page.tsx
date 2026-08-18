@@ -1,15 +1,14 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback, type ReactNode } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { initTrackingSystem } from "../lib/trackingCode";
-import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY, loadCustomersShared, loadTransactionsShared, loadHawalasShared, loadCashEntriesShared } from "../lib/defaultData";
+import { CUSTOMERS_KEY, TRANSACTIONS_KEY, CASH_KEY, HAWALAS_KEY, loadCustomersShared, loadTransactionsShared, loadCashEntriesShared, loadHawalasShared } from "../lib/defaultData";
 
 // ============================================================
 // Types
 // ============================================================
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type TxType = "exchange" | "transfer" | "convert" | "hawala" | "deposit" | "withdraw" | "fee" | "correction";
-type CashEntryType = "customer_deposit" | "customer_withdraw" | "owner_deposit" | "owner_withdraw" | "adjustment" | "fee" | "commission_withdraw";
 
 type Customer = {
   id: string;
@@ -42,11 +41,16 @@ type Transaction = {
   toAmount: number;
   rate: number;
   rateLabel: string;
+  rateBase?: Currency;
   commission?: number;
   commissionCurrency?: Currency;
   commissionPayer?: "sender" | "receiver";
   description?: string;
   status: "active" | "voided";
+  profit?: number;
+  profitCurrency?: Currency;
+  customerPhone?: string;
+  customerTelegram?: string;
 };
 
 type CashEntry = {
@@ -130,12 +134,10 @@ const iconPaths = {
   calendar: "M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5",
   history: "M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
   x: "M6 18 18 6M6 6l12 12",
-  phone: "M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 0 0 2.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.355.474-.981.715-1.582.605a16.039 16.039 0 0 1-6.368-2.629 16.039 16.039 0 0 1-2.629-6.368c-.11-.601.131-1.227.605-1.582l1.293-.97c.362-.271.527-.733.417-1.173L6.905 2.753A1.125 1.125 0 0 0 5.814 1.88H4.441A2.25 2.25 0 0 0 2.191 4.13v2.62Z",
   tag: "M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z",
   share: "M7.21 14 2.1 9l2.24-2.24a12 12 0 0 0 15.09 0L21.67 9l-5.11 5a9.5 9.5 0 0 1-9.35 0ZM4.03 19.5h15.94",
   eye: "M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
   inbox: "M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h3.218a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H6.911a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661Z",
-  printer: "M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0 1 10.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0 .229 2.523a1.125 1.125 0 0 1-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0 0 21 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 0 0-1.913-.247M6.34 18H5.25A2.25 2.25 0 0 1 3 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 0 1 1.913-.247m10.5 0a48.536 48.536 0 0 0-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5Zm-3 0h.008v.008H15V10.5Z",
   check: "M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
   copy: "M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125h3.375m7.5 10.5V8.39a1.125 1.125 0 0 1 .33-.795l2.355-2.355a1.125 1.125 0 0 1 .795-.33v12.34a1.125 1.125 0 0 1-1.125 1.125h-9.75m7.5-10.5V7.875c0-.621-.504-1.125-1.125-1.125H8.39a1.125 1.125 0 0 1 .795-.33L11.54 4.07a1.125 1.125 0 0 1 .795-.33h4.905a1.125 1.125 0 0 1 1.125 1.125V9.75",
 };
@@ -185,17 +187,6 @@ function shortDateLabel(s: string) {
   }
 }
 
-function timeLabel(s: string) {
-  try {
-    const d = new Date(s);
-    if (Number.isNaN(d.getTime())) return "-";
-    const p = (n: number) => String(n).padStart(2, "0");
-    return `${p(d.getHours())}:${p(d.getMinutes())}`;
-  } catch {
-    return "-";
-  }
-}
-
 // ============================================================
 // Ledger Builder
 // ============================================================
@@ -205,7 +196,9 @@ function buildLedger(customers: Customer[], transactions: Transaction[], hawalas
 
   for (const tx of transactions) {
     if (!tx || typeof tx !== "object") continue;
-    if (tx.status === "voided" || tx.status === "cancelled") continue;
+    // ✅ اصلاح خطا: حذف "cancelled" زیرا Transaction فقط active یا voided است
+    if (tx.status === "voided") continue; 
+    
     const date = tx.date || new Date().toISOString();
     const refNum = tx.trackingCode || (tx.id ? String(tx.id).slice(-6) : "");
     const fromCur = tx.fromCurrency as Currency, toCur = tx.toCurrency as Currency;
@@ -238,7 +231,7 @@ function buildLedger(customers: Customer[], transactions: Transaction[], hawalas
 
   for (const h of hawalas) {
     if (!h || typeof h !== "object") continue;
-    if (h.status === "cancelled") continue;
+    if (h.status === "cancelled" || h.status === "voided") continue;
     const date = h.date || new Date().toISOString();
     const refNum = h.number || h.trackingCode || "";
     const sender = customers.find(c => c.id === h.senderId) || customers.find(c => c.name === h.senderName);
@@ -251,6 +244,7 @@ function buildLedger(customers: Customer[], transactions: Transaction[], hawalas
 
   for (const ce of cashEntries) {
     if (!ce || typeof ce !== "object") continue;
+    if (ce.status === "voided") continue;
     if (ce.linkedHawalaId || ce.linkedHawalaSettleId || ce.linkedExchangeId || ce.linkedTransferId || ce.linkedConvertId) continue;
     if (ce.type !== "customer_deposit" && ce.type !== "customer_withdraw") continue;
     if (!ce.customerId || ce.customerId === CASH_BOX_ID) continue;
@@ -470,7 +464,6 @@ export default function ReportsPage() {
         <div className={`fixed inset-x-0 top-0 z-30 h-1 bg-gradient-to-l ${dk ? "from-emerald-400 via-teal-400 to-cyan-400" : "from-emerald-500 via-teal-500 to-cyan-500"}`} />
         <div className="relative z-10 mx-auto w-full max-w-7xl space-y-4 md:space-y-6 px-3 pb-16 pt-5 md:px-8 md:pt-9">
 
-          {/* ═══════════ Header ═══════════ */}
           <header className="rp-up flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 md:gap-3.5 min-w-0">
               <div className="relative grid h-11 w-11 md:h-14 md:w-14 shrink-0 place-items-center rounded-xl md:rounded-2xl bg-gradient-to-br from-blue-500 via-sky-500 to-cyan-400 text-white shadow-lg shadow-blue-500/30 ring-1 ring-white/30">
@@ -496,7 +489,6 @@ export default function ReportsPage() {
             </div>
           </header>
 
-          {/* ═══════════ Stats Cards ═══════════ */}
           <div className="rp-up grid grid-cols-2 md:grid-cols-4 gap-3" style={{ animationDelay: "70ms" }}>
             {[
               { label: "کل مشتریان", value: customers.length, icon: "users", color: "from-emerald-500 to-teal-500", text: dk ? "text-emerald-300" : "text-emerald-600" },
@@ -519,7 +511,6 @@ export default function ReportsPage() {
             ))}
           </div>
 
-          {/* ═══════════ Tab Navigation ═══════════ */}
           <div className={`rp-up flex gap-1.5 md:gap-2 rounded-xl md:rounded-2xl border p-1.5 md:p-2 shadow-sm backdrop-blur ${glassChip}`} style={{ animationDelay: "140ms" }}>
             {[
               { id: "search" as const, label: "جستجوی مشتری", icon: "search" },
@@ -542,13 +533,10 @@ export default function ReportsPage() {
             ))}
           </div>
 
-          {/* ═══════════ Search Section ═══════════ */}
           {activeSection === "search" && (
             <section className={`rp-up space-y-4 ${uiCard}`} style={{ animationDelay: "160ms" }}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
-                <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identIcon}`}>
-                  <Ic n="search" className="h-5 w-5" />
-                </span>
+                <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identIcon}`}><Ic n="search" className="h-5 w-5" /></span>
                 <div className="flex-1 min-w-0">
                   <h2 className={`rp-display text-xl md:text-2xl leading-none ${heading}`}>جستجوی مشتری</h2>
                   <p className={`mt-1 text-[11px] font-bold ${subText}`}>بر اساس نام، تلفن یا شماره تذکره</p>
@@ -556,25 +544,14 @@ export default function ReportsPage() {
               </div>
               <div className="px-4 md:px-7 pb-4 space-y-3">
                 <div className="relative">
-                  <input
-                    type="text"
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                    placeholder="نام، تلفن یا شماره تذکره را وارد کنید..."
-                    className={`${uiInput} pr-10`}
-                  />
-                  <span className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 ${subText}`}>
-                    <Ic n="search" className="h-4 w-4" />
-                  </span>
+                  <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="نام، تلفن یا شماره تذکره را وارد کنید..." className={`${uiInput} pr-10`} />
+                  <span className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 ${subText}`}><Ic n="search" className="h-4 w-4" /></span>
                 </div>
-
                 {search && (
                   <div className="space-y-2 max-h-[600px] overflow-y-auto rp-scroll">
                     {searchResults.length === 0 ? (
                       <div className={`text-center py-12 ${subText}`}>
-                        <div className={`grid h-16 w-16 place-items-center rounded-2xl border border-dashed mx-auto mb-3 ${dk ? "border-slate-600 bg-slate-800/40" : "border-slate-300 bg-slate-50"}`}>
-                          <Ic n="inbox" className="h-7 w-7 opacity-70" />
-                        </div>
+                        <div className={`grid h-16 w-16 place-items-center rounded-2xl border border-dashed mx-auto mb-3 ${dk ? "border-slate-600 bg-slate-800/40" : "border-slate-300 bg-slate-50"}`}><Ic n="inbox" className="h-7 w-7 opacity-70" /></div>
                         <p className="text-sm font-black">مشتری‌ای یافت نشد</p>
                       </div>
                     ) : (
@@ -585,9 +562,7 @@ export default function ReportsPage() {
                             <div className="flex items-center justify-between gap-4">
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2">
-                                  <div className={`grid h-10 w-10 place-items-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 text-white font-black text-sm shadow-md`}>
-                                    {c.name.charAt(0)}
-                                  </div>
+                                  <div className={`grid h-10 w-10 place-items-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 text-white font-black text-sm shadow-md`}>{c.name.charAt(0)}</div>
                                   <div>
                                     <b className={`block text-sm font-black ${dk ? "text-white" : "text-slate-900"}`}>{c.name}</b>
                                     {hasDebt && <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600"}`}>⚠️ بدهکار</span>}
@@ -610,20 +585,8 @@ export default function ReportsPage() {
                                 </div>
                               </div>
                               <div className="flex flex-col gap-2 shrink-0">
-                                <button
-                                  onClick={() => setSelectedCustomer(c)}
-                                  className={`px-4 py-2 rounded-lg text-xs font-black flex items-center gap-1.5 ${dk ? "bg-blue-500/20 text-blue-300 hover:bg-blue-500/30" : "bg-blue-100 text-blue-700 hover:bg-blue-200"}`}
-                                >
-                                  <Ic n="eye" className="h-3.5 w-3.5" />
-                                  مشاهده
-                                </button>
-                                <button
-                                  onClick={() => setShareCustomer(c)}
-                                  className={`px-4 py-2 rounded-lg text-xs font-black flex items-center gap-1.5 ${dk ? "bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30" : "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"}`}
-                                >
-                                  <Ic n="share" className="h-3.5 w-3.5" />
-                                  اشتراک
-                                </button>
+                                <button onClick={() => setSelectedCustomer(c)} className={`px-4 py-2 rounded-lg text-xs font-black flex items-center gap-1.5 ${dk ? "bg-blue-500/20 text-blue-300 hover:bg-blue-500/30" : "bg-blue-100 text-blue-700 hover:bg-blue-200"}`}><Ic n="eye" className="h-3.5 w-3.5" />مشاهده</button>
+                                <button onClick={() => setShareCustomer(c)} className={`px-4 py-2 rounded-lg text-xs font-black flex items-center gap-1.5 ${dk ? "bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30" : "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"}`}><Ic n="share" className="h-3.5 w-3.5" />اشتراک</button>
                               </div>
                             </div>
                           </div>
@@ -636,42 +599,31 @@ export default function ReportsPage() {
             </section>
           )}
 
-          {/* ═══════════ Debtors Section ═══════════ */}
           {activeSection === "debtors" && (
             <section className={`rp-up space-y-4 ${uiCard}`} style={{ animationDelay: "160ms" }}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
-                <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${dk ? "from-rose-400/20 to-pink-400/5 text-rose-300 ring-rose-400/25" : "from-rose-400/20 to-pink-400/10 text-rose-600 ring-rose-400/30"}`}>
-                  <Ic n="alert" className="h-5 w-5" />
-                </span>
+                <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${dk ? "from-rose-400/20 to-pink-400/5 text-rose-300 ring-rose-400/25" : "from-rose-400/20 to-pink-400/10 text-rose-600 ring-rose-400/30"}`}><Ic n="alert" className="h-5 w-5" /></span>
                 <div className="flex-1 min-w-0">
                   <h2 className={`rp-display text-xl md:text-2xl leading-none ${heading}`}>مشتریان بدهکار</h2>
                   <p className={`mt-1 text-[11px] font-bold ${subText}`}>{fa(debtorCustomers.length)} مشتری دارای بدهی به صرافی</p>
                 </div>
-                <span className={`rounded-full px-3 py-1.5 text-[10px] font-black ring-1 ${dk ? "bg-rose-400/15 text-rose-300 ring-rose-400/25" : "bg-rose-100 text-rose-700 ring-rose-300/60"}`}>
-                  ⚠️ توجه ویژه
-                </span>
+                <span className={`rounded-full px-3 py-1.5 text-[10px] font-black ring-1 ${dk ? "bg-rose-400/15 text-rose-300 ring-rose-400/25" : "bg-rose-100 text-rose-700 ring-rose-300/60"}`}>⚠️ توجه ویژه</span>
               </div>
               <div className="px-4 md:px-7 pb-4 space-y-3 max-h-[600px] overflow-y-auto rp-scroll">
                 {debtorCustomers.length === 0 ? (
                   <div className={`text-center py-12 ${subText}`}>
-                    <div className={`grid h-16 w-16 place-items-center rounded-2xl border border-dashed mx-auto mb-3 ${dk ? "border-emerald-600 bg-emerald-400/10" : "border-emerald-300 bg-emerald-50"}`}>
-                      <Ic n="check" className="h-7 w-7 text-emerald-500" />
-                    </div>
+                    <div className={`grid h-16 w-16 place-items-center rounded-2xl border border-dashed mx-auto mb-3 ${dk ? "border-emerald-600 bg-emerald-400/10" : "border-emerald-300 bg-emerald-50"}`}><Ic n="check" className="h-7 w-7 text-emerald-500" /></div>
                     <p className="text-sm font-black">هیچ مشتری بدهکاری وجود ندارد</p>
-                    <p className="text-[11px] mt-1">همه مشتریان تسویه هستند ✅</p>
                   </div>
                 ) : (
                   debtorCustomers.map(c => {
                     const debts = currencies.filter(cur => (c.balances?.[cur] || 0) < 0);
-                    const totalDebt = debts.reduce((sum, cur) => sum + Math.abs(c.balances?.[cur] || 0), 0);
                     return (
                       <div key={c.id} className={`p-4 rounded-xl border ${dk ? "border-rose-400/25 bg-rose-400/[0.03]" : "border-rose-200 bg-rose-50/30"}`}>
                         <div className="flex items-start justify-between gap-4">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
-                              <div className={`grid h-10 w-10 place-items-center rounded-lg bg-gradient-to-br from-rose-500 to-pink-500 text-white font-black text-sm shadow-md`}>
-                                {c.name.charAt(0)}
-                              </div>
+                              <div className={`grid h-10 w-10 place-items-center rounded-lg bg-gradient-to-br from-rose-500 to-pink-500 text-white font-black text-sm shadow-md`}>{c.name.charAt(0)}</div>
                               <div>
                                 <b className={`block text-sm font-black ${dk ? "text-white" : "text-slate-900"}`}>{c.name}</b>
                                 <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600"}`}>⚠️ بدهکار</span>
@@ -691,20 +643,8 @@ export default function ReportsPage() {
                             </div>
                           </div>
                           <div className="flex flex-col gap-2 shrink-0">
-                            <button
-                              onClick={() => setSelectedCustomer(c)}
-                              className={`px-4 py-2 rounded-lg text-xs font-black flex items-center gap-1.5 ${dk ? "bg-blue-500/20 text-blue-300 hover:bg-blue-500/30" : "bg-blue-100 text-blue-700 hover:bg-blue-200"}`}
-                            >
-                              <Ic n="eye" className="h-3.5 w-3.5" />
-                              مشاهده
-                            </button>
-                            <button
-                              onClick={() => setShareCustomer(c)}
-                              className={`px-4 py-2 rounded-lg text-xs font-black flex items-center gap-1.5 ${dk ? "bg-rose-500/20 text-rose-300 hover:bg-rose-500/30" : "bg-rose-100 text-rose-700 hover:bg-rose-200"}`}
-                            >
-                              <Ic n="share" className="h-3.5 w-3.5" />
-                              ارسال گزارش
-                            </button>
+                            <button onClick={() => setSelectedCustomer(c)} className={`px-4 py-2 rounded-lg text-xs font-black flex items-center gap-1.5 ${dk ? "bg-blue-500/20 text-blue-300 hover:bg-blue-500/30" : "bg-blue-100 text-blue-700 hover:bg-blue-200"}`}><Ic n="eye" className="h-3.5 w-3.5" />مشاهده</button>
+                            <button onClick={() => setShareCustomer(c)} className={`px-4 py-2 rounded-lg text-xs font-black flex items-center gap-1.5 ${dk ? "bg-rose-500/20 text-rose-300 hover:bg-rose-500/30" : "bg-rose-100 text-rose-700 hover:bg-rose-200"}`}><Ic n="share" className="h-3.5 w-3.5" />ارسال گزارش</button>
                           </div>
                         </div>
                       </div>
@@ -715,13 +655,10 @@ export default function ReportsPage() {
             </section>
           )}
 
-          {/* ═══════════ Daily Journal Section ═══════════ */}
           {activeSection === "journal" && (
             <section className={`rp-up space-y-4 ${uiCard}`} style={{ animationDelay: "160ms" }}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
-                <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${dk ? "from-amber-400/20 to-orange-400/5 text-amber-300 ring-amber-400/25" : "from-amber-400/20 to-orange-400/10 text-amber-600 ring-amber-400/30"}`}>
-                  <Ic n="calendar" className="h-5 w-5" />
-                </span>
+                <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${dk ? "from-amber-400/20 to-orange-400/5 text-amber-300 ring-amber-400/25" : "from-amber-400/20 to-orange-400/10 text-amber-600 ring-amber-400/30"}`}><Ic n="calendar" className="h-5 w-5" /></span>
                 <div className="flex-1 min-w-0">
                   <h2 className={`rp-display text-xl md:text-2xl leading-none ${heading}`}>روزنامچه عمومی</h2>
                   <p className={`mt-1 text-[11px] font-bold ${subText}`}>{fa(dailyJournal.length)} روز ثبت‌شده — به ترتیب تاریخ</p>
@@ -730,9 +667,7 @@ export default function ReportsPage() {
               <div className="px-4 md:px-7 pb-4 space-y-2 max-h-[700px] overflow-y-auto rp-scroll">
                 {dailyJournal.length === 0 ? (
                   <div className={`text-center py-12 ${subText}`}>
-                    <div className={`grid h-16 w-16 place-items-center rounded-2xl border border-dashed mx-auto mb-3 ${dk ? "border-slate-600 bg-slate-800/40" : "border-slate-300 bg-slate-50"}`}>
-                      <Ic n="inbox" className="h-7 w-7 opacity-70" />
-                    </div>
+                    <div className={`grid h-16 w-16 place-items-center rounded-2xl border border-dashed mx-auto mb-3 ${dk ? "border-slate-600 bg-slate-800/40" : "border-slate-300 bg-slate-50"}`}><Ic n="inbox" className="h-7 w-7 opacity-70" /></div>
                     <p className="text-sm font-black">روزی ثبت نشده است</p>
                   </div>
                 ) : (
@@ -741,17 +676,11 @@ export default function ReportsPage() {
                     const txCount = data.transactions.length;
                     const cashCount = data.cashEntries.length;
                     const totalCommission = data.transactions.filter(t => t.type === "fee").reduce((sum, tx) => sum + tx.amount, 0);
-
                     return (
                       <div key={day} className={`rounded-xl border overflow-hidden ${dk ? "border-slate-700" : "border-slate-200"}`}>
-                        <button
-                          onClick={() => toggleDay(day)}
-                          className={`w-full flex items-center justify-between p-4 transition-colors ${dk ? "bg-slate-800/50 hover:bg-slate-800" : "bg-white hover:bg-slate-50"}`}
-                        >
+                        <button onClick={() => toggleDay(day)} className={`w-full flex items-center justify-between p-4 transition-colors ${dk ? "bg-slate-800/50 hover:bg-slate-800" : "bg-white hover:bg-slate-50"}`}>
                           <div className="flex items-center gap-3">
-                            <div className={`grid h-10 w-10 place-items-center rounded-lg bg-gradient-to-br from-amber-500 to-orange-500 text-white shadow-md`}>
-                              <Ic n="calendar" className="h-4 w-4" />
-                            </div>
+                            <div className={`grid h-10 w-10 place-items-center rounded-lg bg-gradient-to-br from-amber-500 to-orange-500 text-white shadow-md`}><Ic n="calendar" className="h-4 w-4" /></div>
                             <div className="text-right">
                               <b className={`block text-sm font-black ${dk ? "text-white" : "text-slate-900"}`}>{day}</b>
                               <div className={`flex gap-3 mt-1 text-[10px] ${subText}`}>
@@ -761,11 +690,8 @@ export default function ReportsPage() {
                               </div>
                             </div>
                           </div>
-                          <span className={`text-xl transition-transform ${isExpanded ? "rotate-180" : ""}`}>
-                            <Ic n="chevron" className="h-5 w-5" />
-                          </span>
+                          <span className={`text-xl transition-transform ${isExpanded ? "rotate-180" : ""}`}><Ic n="chevron" className="h-5 w-5" /></span>
                         </button>
-
                         {isExpanded && (
                           <div className={`p-4 space-y-3 border-t ${dk ? "border-slate-700 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                             {data.transactions.length > 0 && (
@@ -779,9 +705,7 @@ export default function ReportsPage() {
                                         <span className={`truncate ${dk ? "text-slate-300" : "text-slate-700"}`}>{tx.customerName || "—"}</span>
                                       </div>
                                       <div className="text-right shrink-0">
-                                        <span className={`font-black tabular-nums ${tx.direction === "in" ? "text-emerald-500" : "text-rose-500"}`}>
-                                          {tx.direction === "in" ? "+" : "-"} {fmt(tx.amount)}
-                                        </span>
+                                        <span className={`font-black tabular-nums ${tx.direction === "in" ? "text-emerald-500" : "text-rose-500"}`}>{tx.direction === "in" ? "+" : "-"} {fmt(tx.amount)}</span>
                                         <span className={`text-[9px] ${subText} mr-1`}>{labels[tx.currency]}</span>
                                       </div>
                                     </div>
@@ -789,7 +713,6 @@ export default function ReportsPage() {
                                 </div>
                               </div>
                             )}
-
                             {data.cashEntries.length > 0 && (
                               <div>
                                 <b className={`block text-xs font-black mb-2 ${dk ? "text-emerald-300" : "text-emerald-600"}`}>اسناد صندوق ({fa(data.cashEntries.length)}):</b>
@@ -798,13 +721,9 @@ export default function ReportsPage() {
                                     const cur = ce.currency as Currency;
                                     return (
                                       <div key={ce.id} className={`flex items-center justify-between p-2.5 rounded-lg text-xs ${dk ? "bg-slate-800/50" : "bg-white"}`}>
-                                        <span className={`truncate ${dk ? "text-slate-300" : "text-slate-700"}`}>
-                                          {ce.reason || ce.type}
-                                        </span>
+                                        <span className={`truncate ${dk ? "text-slate-300" : "text-slate-700"}`}>{ce.reason || ce.type}</span>
                                         <div className="text-right shrink-0">
-                                          <span className={`font-black tabular-nums ${ce.direction === "in" ? "text-emerald-500" : "text-rose-500"}`}>
-                                            {ce.direction === "in" ? "+" : "-"} {fmt(ce.amount)}
-                                          </span>
+                                          <span className={`font-black tabular-nums ${ce.direction === "in" ? "text-emerald-500" : "text-rose-500"}`}>{ce.direction === "in" ? "+" : "-"} {fmt(ce.amount)}</span>
                                           <span className={`text-[9px] ${subText} mr-1`}>{labels[cur]}</span>
                                         </div>
                                       </div>
@@ -813,11 +732,8 @@ export default function ReportsPage() {
                                 </div>
                               </div>
                             )}
-
                             {data.transactions.length === 0 && data.cashEntries.length === 0 && (
-                              <div className={`text-center py-6 ${subText}`}>
-                                <p className="text-xs font-bold">هیچ رویدادی در این روز ثبت نشده</p>
-                              </div>
+                              <div className={`text-center py-6 ${subText}`}><p className="text-xs font-bold">هیچ رویدادی در این روز ثبت نشده</p></div>
                             )}
                           </div>
                         )}
@@ -829,33 +745,23 @@ export default function ReportsPage() {
             </section>
           )}
 
-          {/* Footer */}
           <div className={`rp-up text-center py-4 text-[11px] font-bold ${subText}`} style={{ animationDelay: "420ms" }}>
             🏦 صرافی برادران نورزاد — هرات | گزارشات لحظه‌ای
           </div>
         </div>
       </div>
 
-      {/* ═══════════ Customer Details Modal ═══════════ */}
       {selectedCustomer && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm" onClick={() => setSelectedCustomer(null)}>
           <div className={`w-full max-w-lg rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={e => e.stopPropagation()}>
             <div className={`flex items-center justify-between border-b px-4 py-3 ${dk ? "border-slate-700" : "border-slate-100"}`}>
-              <b className={`text-sm font-black flex items-center gap-2 ${dk ? "text-slate-100" : "text-slate-800"}`}>
-                <Ic n="user" className="h-4 w-4" />
-                جزئیات مشتری
-              </b>
-              <button onClick={() => setSelectedCustomer(null)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700">
-                <Ic n="x" className="h-4 w-4" />
-              </button>
+              <b className={`text-sm font-black flex items-center gap-2 ${dk ? "text-slate-100" : "text-slate-800"}`}><Ic n="user" className="h-4 w-4" />جزئیات مشتری</b>
+              <button onClick={() => setSelectedCustomer(null)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"><Ic n="x" className="h-4 w-4" /></button>
             </div>
             <div className="max-h-[75vh] overflow-y-auto p-4 space-y-4">
-              {/* Customer Info */}
               <div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-3 mb-3">
-                  <div className={`grid h-12 w-12 place-items-center rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 text-white font-black text-lg shadow-lg`}>
-                    {selectedCustomer.name.charAt(0)}
-                  </div>
+                  <div className={`grid h-12 w-12 place-items-center rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 text-white font-black text-lg shadow-lg`}>{selectedCustomer.name.charAt(0)}</div>
                   <div>
                     <b className={`block text-base font-black ${dk ? "text-white" : "text-slate-900"}`}>{selectedCustomer.name}</b>
                     <div className={`flex flex-wrap gap-3 mt-1 text-[11px] ${subText}`}>
@@ -865,8 +771,6 @@ export default function ReportsPage() {
                   </div>
                 </div>
               </div>
-
-              {/* Balances */}
               <div>
                 <b className={`block text-xs font-black mb-2 ${dk ? "text-emerald-300" : "text-emerald-600"}`}>💼 موجودی حساب:</b>
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
@@ -875,23 +779,17 @@ export default function ReportsPage() {
                     return (
                       <div key={cur} className={`rounded-lg p-2 text-center ${dk ? "bg-slate-800/50" : "bg-slate-100"}`}>
                         <div className={`text-[9px] font-black ${subText}`}>{labels[cur]}</div>
-                        <div className={`text-sm font-black tabular-nums ${bal < 0 ? "text-rose-500" : bal > 0 ? (dk ? "text-emerald-300" : "text-emerald-700") : subText}`}>
-                          {fmt(bal)}
-                        </div>
+                        <div className={`text-sm font-black tabular-nums ${bal < 0 ? "text-rose-500" : bal > 0 ? (dk ? "text-emerald-300" : "text-emerald-700") : subText}`}>{fmt(bal)}</div>
                       </div>
                     );
                   })}
                 </div>
               </div>
-
-              {/* Transaction History */}
               <div>
                 <b className={`block text-xs font-black mb-2 ${dk ? "text-blue-300" : "text-blue-600"}`}>📋 تاریخچه معاملات:</b>
                 <div className="space-y-2 max-h-48 overflow-y-auto rp-scroll">
                   {getCustomerTransactions(selectedCustomer.id).length === 0 ? (
-                    <div className={`text-center py-6 ${subText}`}>
-                      <p className="text-xs">هیچ معامله‌ای ثبت نشده</p>
-                    </div>
+                    <div className={`text-center py-6 ${subText}`}><p className="text-xs">هیچ معامله‌ای ثبت نشده</p></div>
                   ) : (
                     getCustomerTransactions(selectedCustomer.id).slice(0, 10).map(tx => (
                       <div key={tx.id} className={`p-2.5 rounded-lg text-xs ${dk ? "bg-slate-800/50" : "bg-slate-100"}`}>
@@ -901,101 +799,47 @@ export default function ReportsPage() {
                         </div>
                         <div className="flex items-center justify-between text-[11px]">
                           <span>{fmt(tx.amount)} {labels[tx.currency]}</span>
-                          <span className={`font-black ${tx.direction === "in" ? "text-emerald-500" : "text-rose-500"}`}>
-                            {tx.direction === "in" ? "دریافت" : "پرداخت"}
-                          </span>
+                          <span className={`font-black ${tx.direction === "in" ? "text-emerald-500" : "text-rose-500"}`}>{tx.direction === "in" ? "دریافت" : "پرداخت"}</span>
                         </div>
                       </div>
                     ))
                   )}
                 </div>
               </div>
-
-              {/* Share Button */}
-              <button
-                onClick={() => { setShareCustomer(selectedCustomer); setSelectedCustomer(null); }}
-                className={`w-full py-3 rounded-xl text-sm font-black flex items-center justify-center gap-2 ${dk ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400" : "bg-emerald-600 text-white hover:bg-emerald-700"}`}
-              >
-                <Ic n="share" className="h-4 w-4" />
-                اشتراک‌گذاری گزارش
-              </button>
+              <button onClick={() => { setShareCustomer(selectedCustomer); setSelectedCustomer(null); }} className={`w-full py-3 rounded-xl text-sm font-black flex items-center justify-center gap-2 ${dk ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400" : "bg-emerald-600 text-white hover:bg-emerald-700"}`}><Ic n="share" className="h-4 w-4" />اشتراک‌گذاری گزارش</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ═══════════ Share Modal ═══════════ */}
       {shareCustomer && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm" onClick={() => setShareCustomer(null)}>
           <div className={`w-full max-w-md rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={e => e.stopPropagation()}>
             <div className={`flex items-center justify-between border-b px-4 py-3 ${dk ? "border-slate-700" : "border-slate-100"}`}>
-              <b className={`text-sm font-black flex items-center gap-2 ${dk ? "text-slate-100" : "text-slate-800"}`}>
-                <Ic n="share" className="h-4 w-4" />
-                اشتراک‌گذاری گزارش
-              </b>
-              <button onClick={() => setShareCustomer(null)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700">
-                <Ic n="x" className="h-4 w-4" />
-              </button>
+              <b className={`text-sm font-black flex items-center gap-2 ${dk ? "text-slate-100" : "text-slate-800"}`}><Ic n="share" className="h-4 w-4" />اشتراک‌گذاری گزارش</b>
+              <button onClick={() => setShareCustomer(null)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"><Ic n="x" className="h-4 w-4" /></button>
             </div>
             <div className="p-4 space-y-3">
               <div className={`rounded-xl border p-3 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2">
-                  <div className={`grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 text-white font-black text-xs`}>
-                    {shareCustomer.name.charAt(0)}
-                  </div>
+                  <div className={`grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 text-white font-black text-xs`}>{shareCustomer.name.charAt(0)}</div>
                   <div>
                     <p className={`text-xs font-black ${dk ? "text-white" : "text-slate-800"}`}>{shareCustomer.name}</p>
                     <p className={`text-[10px] ${subText}`}>گزارش معاملات این مشتری را ارسال کنید</p>
                   </div>
                 </div>
               </div>
-
-              <button
-                onClick={() => { shareViaTelegram(shareCustomer); setShareCustomer(null); }}
-                className={`w-full py-3 rounded-xl text-sm font-black flex items-center justify-center gap-2 ${dk ? "bg-blue-500/20 text-blue-300 hover:bg-blue-500/30" : "bg-blue-100 text-blue-700 hover:bg-blue-200"}`}
-              >
-                <span className="text-xl">📱</span> تلگرام
-              </button>
-
-              <button
-                onClick={() => { shareViaWhatsApp(shareCustomer); setShareCustomer(null); }}
-                className={`w-full py-3 rounded-xl text-sm font-black flex items-center justify-center gap-2 ${dk ? "bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30" : "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"}`}
-              >
-                <span className="text-xl">💬</span> واتساپ
-              </button>
-
-              <button
-                onClick={() => { shareViaImo(shareCustomer); setShareCustomer(null); }}
-                className={`w-full py-3 rounded-xl text-sm font-black flex items-center justify-center gap-2 ${dk ? "bg-violet-500/20 text-violet-300 hover:bg-violet-500/30" : "bg-violet-100 text-violet-700 hover:bg-violet-200"}`}
-              >
-                <span className="text-xl">📨</span> ایمو (کپی در کلیپ‌بورد)
-              </button>
-
-              <button
-                onClick={async () => {
-                  try {
-                    const text = generateCustomerReport(shareCustomer);
-                    await navigator.clipboard.writeText(text);
-                    showToast("✅ گزارش کپی شد");
-                  } catch {
-                    showToast("❌ خطا در کپی");
-                  }
-                  setShareCustomer(null);
-                }}
-                className={`w-full py-3 rounded-xl text-sm font-black flex items-center justify-center gap-2 ${dk ? "bg-slate-700 text-slate-200 hover:bg-slate-600" : "bg-slate-200 text-slate-700 hover:bg-slate-300"}`}
-              >
-                <Ic n="copy" className="h-4 w-4" /> کپی متن گزارش
-              </button>
+              <button onClick={() => { shareViaTelegram(shareCustomer); setShareCustomer(null); }} className={`w-full py-3 rounded-xl text-sm font-black flex items-center justify-center gap-2 ${dk ? "bg-blue-500/20 text-blue-300 hover:bg-blue-500/30" : "bg-blue-100 text-blue-700 hover:bg-blue-200"}`}><span className="text-xl">📱</span> تلگرام</button>
+              <button onClick={() => { shareViaWhatsApp(shareCustomer); setShareCustomer(null); }} className={`w-full py-3 rounded-xl text-sm font-black flex items-center justify-center gap-2 ${dk ? "bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30" : "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"}`}><span className="text-xl">💬</span> واتساپ</button>
+              <button onClick={() => { shareViaImo(shareCustomer); setShareCustomer(null); }} className={`w-full py-3 rounded-xl text-sm font-black flex items-center justify-center gap-2 ${dk ? "bg-violet-500/20 text-violet-300 hover:bg-violet-500/30" : "bg-violet-100 text-violet-700 hover:bg-violet-200"}`}><span className="text-xl">📨</span> ایمو (کپی در کلیپ‌بورد)</button>
+              <button onClick={async () => { try { const text = generateCustomerReport(shareCustomer); await navigator.clipboard.writeText(text); showToast("✅ گزارش کپی شد"); } catch { showToast("❌ خطا در کپی"); } setShareCustomer(null); }} className={`w-full py-3 rounded-xl text-sm font-black flex items-center justify-center gap-2 ${dk ? "bg-slate-700 text-slate-200 hover:bg-slate-600" : "bg-slate-200 text-slate-700 hover:bg-slate-300"}`}><Ic n="copy" className="h-4 w-4" /> کپی متن گزارش</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Toast */}
       {toast && (
-        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[99] rounded-xl px-4 py-3 text-sm font-bold shadow-lg ${dk ? "bg-slate-800 text-slate-100 border border-slate-600" : "bg-slate-900 text-white"}`}>
-          {toast}
-        </div>
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[99] rounded-xl px-4 py-3 text-sm font-bold shadow-lg ${dk ? "bg-slate-800 text-slate-100 border border-slate-600" : "bg-slate-900 text-white"}`}>{toast}</div>
       )}
     </div>
   );
