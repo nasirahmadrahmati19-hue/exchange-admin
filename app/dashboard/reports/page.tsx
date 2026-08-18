@@ -467,14 +467,14 @@ export default function ReportsPage() {
             ))}
           </div>
 
-          {/* ═══════════ SEARCH SECTION — Full horizontal table ═══════════ */}
+          {/* ═══════════ SEARCH SECTION ═══════════ */}
           {activeSection === "search" && (
             <section className={`rp-up space-y-4 ${uiCard}`} style={{ animationDelay: "160ms" }}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
                 <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${dk ? "from-blue-400/20 to-sky-400/5 text-blue-300 ring-blue-400/25" : "from-blue-400/20 to-sky-400/10 text-blue-600 ring-blue-400/30"}`}><Ic n="search" className="h-5 w-5" /></span>
                 <div className="flex-1 min-w-0">
                   <h2 className={`rp-display text-xl md:text-2xl leading-none ${heading}`}>جستجوی مشتری</h2>
-                  <p className={`mt-1 text-[11px] font-bold ${subText}`}>بر اساس نام، تلفن یا شماره تذکره — نتایج به صورت افقی</p>
+                  {/* توضیح حذف شد */}
                 </div>
               </div>
               <div className="px-4 md:px-7 pb-4 space-y-3">
@@ -590,14 +590,14 @@ export default function ReportsPage() {
             </section>
           )}
 
-          {/* ═══════════ DEBTORS SECTION — Full horizontal table ═══════════ */}
+          {/* ═══════════ DEBTORS SECTION ═══════════ */}
           {activeSection === "debtors" && (
             <section className={`rp-up space-y-4 ${uiCard}`} style={{ animationDelay: "160ms" }}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
                 <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${dk ? "from-rose-400/20 to-pink-400/5 text-rose-300 ring-rose-400/25" : "from-rose-400/20 to-pink-400/10 text-rose-600 ring-rose-400/30"}`}><Ic n="alert" className="h-5 w-5" /></span>
                 <div className="flex-1 min-w-0">
                   <h2 className={`rp-display text-xl md:text-2xl leading-none ${heading}`}>مشتریان بدهکار</h2>
-                  <p className={`mt-1 text-[11px] font-bold ${subText}`}>{fa(debtorCustomers.length)} مشتری دارای بدهی — جزئیات افقی</p>
+                  {/* توضیح حذف شد */}
                 </div>
                 <span className={`rounded-full px-3 py-1.5 text-[10px] font-black ring-1 ${dk ? "bg-rose-400/15 text-rose-300 ring-rose-400/25" : "bg-rose-100 text-rose-700 ring-rose-300/60"}`}>⚠️ توجه ویژه</span>
               </div>
@@ -711,14 +711,14 @@ export default function ReportsPage() {
             </section>
           )}
 
-          {/* ═══════════ DAILY JOURNAL — Full horizontal + Commission + Day Totals ═══════════ */}
+          {/* ═══════════ DAILY JOURNAL ═══════════ */}
           {activeSection === "journal" && (
             <section className={`rp-up space-y-4 ${uiCard}`} style={{ animationDelay: "160ms" }}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
                 <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${dk ? "from-amber-400/20 to-orange-400/5 text-amber-300 ring-amber-400/25" : "from-amber-400/20 to-orange-400/10 text-amber-600 ring-amber-400/30"}`}><Ic n="calendar" className="h-5 w-5" /></span>
                 <div className="flex-1 min-w-0">
                   <h2 className={`rp-display text-xl md:text-2xl leading-none ${heading}`}>روزنامچه عمومی</h2>
-                  <p className={`mt-1 text-[11px] font-bold ${subText}`}>{fa(dailyJournal.length)} روز ثبت‌شده — جزئیات افقی + کارمزد + جمع کل</p>
+                  {/* توضیح حذف شد */}
                 </div>
               </div>
               <div className="px-4 md:px-7 pb-4 space-y-3 max-h-[750px] overflow-y-auto rp-scroll">
@@ -761,10 +761,10 @@ export default function ReportsPage() {
                               <div>
                                 <b className={`block text-xs font-black mb-2 ${dk ? "text-blue-300" : "text-blue-600"}`}>📋 معاملات ({fa(data.transactions.length)}):</b>
                                 <div className="overflow-x-auto rp-scroll">
-                                  <table className="w-full min-w-[1100px] text-sm">
+                                  <table className="w-full min-w-[1200px] text-sm">
                                     <thead>
                                       <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
-                                        {["#", "کد پیگیری", "مشتری", "تاریخ", "نوع", "دریافت", "پرداخت", "نرخ", "کارمزد", "پرداخت‌کننده"].map(h => (
+                                        {["شماره", "کد پیگیری", "مشتری", "تاریخ", "نوع", "دریافت", "پرداخت", "نرخ", "کارمزد", "پرداخت‌کننده"].map(h => (
                                           <th key={h} className="px-3 py-2.5 text-center text-[10px] font-black text-slate-400 whitespace-nowrap">{h}</th>
                                         ))}
                                       </tr>
@@ -855,7 +855,7 @@ export default function ReportsPage() {
                                   <table className="w-full min-w-[800px] text-sm">
                                     <thead>
                                       <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
-                                        {["#", "کد پیگیری", "تاریخ", "نوع", "شرح", "دریافت", "پرداخت", "ارز"].map(h => (
+                                        {["شماره", "کد پیگیری", "تاریخ", "نوع", "شرح", "دریافت", "پرداخت", "ارز"].map(h => (
                                           <th key={h} className="px-3 py-2.5 text-center text-[10px] font-black text-slate-400 whitespace-nowrap">{h}</th>
                                         ))}
                                       </tr>
@@ -1021,7 +1021,7 @@ export default function ReportsPage() {
                       <table className="w-full min-w-[900px] text-sm">
                         <thead className="sticky top-0 z-10">
                           <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800" : "border-slate-100 bg-slate-50"}`}>
-                            {["#", "کد", "تاریخ", "نوع", "دریافت", "پرداخت", "نرخ", "کارمزد"].map(h => (
+                            {["شماره", "کد", "تاریخ", "نوع", "دریافت", "پرداخت", "نرخ", "کارمزد"].map(h => (
                               <th key={h} className="px-3 py-2.5 text-center text-[10px] font-black text-slate-400 whitespace-nowrap">{h}</th>
                             ))}
                           </tr>
