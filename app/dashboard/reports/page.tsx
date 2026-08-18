@@ -8,7 +8,6 @@ import { CUSTOMERS_KEY, TRANSACTIONS_KEY, CASH_KEY, HAWALAS_KEY, loadCustomersSh
 // Types
 // ============================================================
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
-type TxType = "exchange" | "transfer" | "convert" | "hawala" | "deposit" | "withdraw" | "fee" | "correction";
 
 type Customer = {
   id: string;
@@ -41,16 +40,11 @@ type Transaction = {
   toAmount: number;
   rate: number;
   rateLabel: string;
-  rateBase?: Currency;
   commission?: number;
   commissionCurrency?: Currency;
   commissionPayer?: "sender" | "receiver";
   description?: string;
   status: "active" | "voided";
-  profit?: number;
-  profitCurrency?: Currency;
-  customerPhone?: string;
-  customerTelegram?: string;
 };
 
 type CashEntry = {
@@ -72,20 +66,6 @@ type CashEntry = {
   linkedHawalaSettleId?: string;
 };
 
-type LedgerEntry = {
-  id: string;
-  date: string;
-  customerId: string;
-  customerName?: string;
-  type: TxType;
-  description: string;
-  currency: Currency;
-  amount: number;
-  direction: "in" | "out";
-  balanceAfter: number;
-  referenceNumber?: string;
-};
-
 // ============================================================
 // Constants
 // ============================================================
@@ -93,35 +73,10 @@ const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
 const labels: Record<Currency, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
 const CASH_BOX_ID = "CASH_BOX";
 
-const txLabels: Record<TxType, string> = {
-  exchange: "تبادل ارز", transfer: "انتقال", convert: "تبدیل ارز",
-  hawala: "حواله", deposit: "واریز", withdraw: "برداشت",
-  fee: "کارمزد", correction: "اصلاح"
-};
-
-const txColors: Record<TxType, { light: string; dark: string }> = {
-  exchange: { light: "bg-sky-100 text-sky-700", dark: "bg-sky-400/15 text-sky-300" },
-  transfer: { light: "bg-violet-100 text-violet-700", dark: "bg-violet-400/15 text-violet-300" },
-  convert: { light: "bg-purple-100 text-purple-700", dark: "bg-purple-400/15 text-purple-300" },
-  hawala: { light: "bg-blue-100 text-blue-700", dark: "bg-blue-400/15 text-blue-300" },
-  deposit: { light: "bg-emerald-100 text-emerald-700", dark: "bg-emerald-400/15 text-emerald-300" },
-  withdraw: { light: "bg-rose-100 text-rose-700", dark: "bg-rose-400/15 text-rose-300" },
-  fee: { light: "bg-amber-100 text-amber-700", dark: "bg-amber-400/15 text-amber-300" },
-  correction: { light: "bg-orange-100 text-orange-700", dark: "bg-orange-400/15 text-orange-300" }
-};
-
-const currencyColors: Record<Currency, { light: string; dark: string; gradient: string }> = {
-  AFN: { light: "text-emerald-700", dark: "text-emerald-300", gradient: "from-emerald-500 to-teal-400" },
-  USD: { light: "text-sky-700", dark: "text-sky-300", gradient: "from-sky-500 to-cyan-400" },
-  EUR: { light: "text-blue-700", dark: "text-blue-300", gradient: "from-blue-600 to-blue-400" },
-  IRR: { light: "text-amber-700", dark: "text-amber-300", gradient: "from-amber-500 to-orange-400" },
-  PKR: { light: "text-rose-700", dark: "text-rose-300", gradient: "from-rose-500 to-pink-400" }
-};
-
 // ============================================================
 // Icons
 // ============================================================
-const iconPaths = {
+const iconPaths: Record<string, string> = {
   users: "M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z",
   user: "M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z",
   sun: "M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.375 3.375 0 1 1-7.5 0 3.375 3.375 0 0 1 7.5 0Z",
@@ -138,19 +93,16 @@ const iconPaths = {
   inbox: "M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h3.218a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H6.911a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661Z",
   check: "M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
   copy: "M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125h3.375m7.5 10.5V8.39a1.125 1.125 0 0 1 .33-.795l2.355-2.355a1.125 1.125 0 0 1 .795-.33v12.34a1.125 1.125 0 0 1-1.125 1.125h-9.75m7.5-10.5V7.875c0-.621-.504-1.125-1.125-1.125H8.39a1.125 1.125 0 0 1 .795-.33L11.54 4.07a1.125 1.125 0 0 1 .795-.33h4.905a1.125 1.125 0 0 1 1.125 1.125V9.75",
-  clock: "M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
 };
 
-type IconName = keyof typeof iconPaths;
-
-const Ic = ({ n, className = "h-5 w-5" }: { n: IconName; className?: string }) => (
+const Ic = ({ n, className = "h-5 w-5" }: { n: string; className?: string }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
-    <path d={iconPaths[n]} />
+    <path d={iconPaths[n] || ""} />
   </svg>
 );
 
 // ============================================================
-// Helper Functions
+// Helpers
 // ============================================================
 const normalizeDigits = (s: string) => String(s || "").replace(/[۰-۹]/g, d => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))).replace(/[٠-٩]/g, d => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
 const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 2 }) : "0";
@@ -199,79 +151,36 @@ function splitDateTime(s: string): { datePart: string; timePart: string } {
 }
 
 // ============================================================
-// Ledger Builder
+// Transaction helpers
 // ============================================================
-function buildLedger(customers: Customer[], transactions: Transaction[], hawalas: any[], cashEntries: CashEntry[]): LedgerEntry[] {
-  const entries: LedgerEntry[] = [];
-  if (!Array.isArray(customers) || !Array.isArray(transactions) || !Array.isArray(hawalas) || !Array.isArray(cashEntries)) return entries;
-
-  for (const tx of transactions) {
-    if (!tx || typeof tx !== "object") continue;
-    if (tx.status === "voided") continue;
-    
-    const date = tx.date || new Date().toISOString();
-    const refNum = tx.trackingCode || (tx.id ? String(tx.id).slice(-6) : "");
-    const fromCur = tx.fromCurrency as Currency, toCur = tx.toCurrency as Currency;
-    const commCur = tx.commissionCurrency as Currency | undefined;
-    const fromAmt = Number(tx.fromAmount || 0) || 0, toAmt = Number(tx.toAmount || 0) || 0, commAmt = Number(tx.commission || 0) || 0;
-
-    if (tx.type === "exchange") {
-      const cid = tx.customerId || customers.find(c => c.name === (tx.customerName || tx.customerId))?.id;
-      if (cid && cid !== CASH_BOX_ID) {
-        entries.push({ id: `${tx.id}-out`, date, customerId: cid, customerName: tx.customerName, type: "exchange", description: `فروش ${labels[fromCur]}`, currency: fromCur, amount: fromAmt, direction: "out", balanceAfter: 0, referenceNumber: refNum });
-        entries.push({ id: `${tx.id}-in`, date, customerId: cid, customerName: tx.customerName, type: "exchange", description: `خرید ${labels[toCur]}`, currency: toCur, amount: toAmt, direction: "in", balanceAfter: 0, referenceNumber: refNum });
-        if (commAmt > 0 && commCur) entries.push({ id: `${tx.id}-fee`, date, customerId: cid, customerName: tx.customerName, type: "fee", description: "کارمزد معامله", currency: commCur, amount: commAmt, direction: "out", balanceAfter: 0, referenceNumber: refNum });
-      }
-    }
-    if (tx.type === "transfer") {
-      const sId = tx.senderId || customers.find(c => c.name === (tx.senderName || tx.senderId))?.id;
-      const rId = tx.receiverId || customers.find(c => c.name === (tx.receiverName || tx.receiverId))?.id;
-      if (sId && sId !== CASH_BOX_ID) entries.push({ id: `${tx.id}-s-out`, date, customerId: sId, customerName: tx.senderName, type: "transfer", description: `انتقال به ${customers.find(c => c.id === rId)?.name || tx.receiverName || "—"}`, currency: fromCur, amount: fromAmt, direction: "out", balanceAfter: 0, referenceNumber: refNum });
-      if (rId && rId !== CASH_BOX_ID) entries.push({ id: `${tx.id}-r-in`, date, customerId: rId, customerName: tx.receiverName, type: "transfer", description: `دریافت از ${customers.find(c => c.id === sId)?.name || tx.senderName || "—"}`, currency: toCur, amount: toAmt, direction: "in", balanceAfter: 0, referenceNumber: refNum });
-    }
-    if (tx.type === "convert") {
-      const cid = tx.customerId || customers.find(c => c.name === (tx.customerName || tx.customerId))?.id;
-      if (cid && cid !== CASH_BOX_ID) {
-        entries.push({ id: `${tx.id}-c-out`, date, customerId: cid, customerName: tx.customerName, type: "convert", description: `تبدیل از ${labels[fromCur]}`, currency: fromCur, amount: fromAmt, direction: "out", balanceAfter: 0, referenceNumber: refNum });
-        entries.push({ id: `${tx.id}-c-in`, date, customerId: cid, customerName: tx.customerName, type: "convert", description: `تبدیل به ${labels[toCur]}`, currency: toCur, amount: toAmt, direction: "in", balanceAfter: 0, referenceNumber: refNum });
-        if (commAmt > 0 && commCur) entries.push({ id: `${tx.id}-c-fee`, date, customerId: cid, customerName: tx.customerName, type: "fee", description: "کارمزد تبدیل", currency: commCur, amount: commAmt, direction: "out", balanceAfter: 0, referenceNumber: refNum });
-      }
-    }
-  }
-
-  for (const h of hawalas) {
-    if (!h || typeof h !== "object") continue;
-    if (h.status === "cancelled" || h.status === "voided") continue;
-    const date = h.date || new Date().toISOString();
-    const refNum = h.number || h.trackingCode || "";
-    const sender = customers.find(c => c.id === h.senderId) || customers.find(c => c.name === h.senderName);
-    const hFromCur = h.currencyFrom as Currency;
-    const hAmt = Number(h.amountFrom || 0) || 0;
-    if (sender && sender.id !== CASH_BOX_ID) {
-      entries.push({ id: `${h.id}-hs-out`, date, customerId: sender.id, customerName: sender.name, type: "hawala", description: `حواله ارسالی به ${h.receiverName || "—"}`, currency: hFromCur, amount: hAmt, direction: "out", balanceAfter: 0, referenceNumber: refNum });
-    }
-  }
-
-  for (const ce of cashEntries) {
-    if (!ce || typeof ce !== "object") continue;
-    if (ce.status === "voided") continue;
-    if (ce.linkedHawalaId || ce.linkedHawalaSettleId || ce.linkedExchangeId || ce.linkedTransferId || ce.linkedConvertId) continue;
-    if (ce.type !== "customer_deposit" && ce.type !== "customer_withdraw") continue;
-    if (!ce.customerId || ce.customerId === CASH_BOX_ID) continue;
-    if (!customers.find(c => c.id === ce.customerId)) continue;
-    const cur = ce.currency as Currency;
-    if (!currencies.includes(cur)) continue;
-    const amt = Number(ce.amount || 0) || 0;
-    if (amt <= 0) continue;
-    const isIn = ce.type === "customer_deposit";
-    entries.push({ id: `${ce.id}-cash`, date: ce.date || new Date().toISOString(), customerId: ce.customerId, customerName: ce.customerName, type: isIn ? "deposit" : "withdraw", description: isIn ? `واریز - ${ce.reason || ""}` : `برداشت - ${ce.reason || ""}`, currency: cur, amount: amt, direction: isIn ? "in" : "out", balanceAfter: 0, referenceNumber: ce.trackingCode || "" });
-  }
-
-  entries.sort((a, b) => {
-    try { return new Date(b.date).getTime() - new Date(a.date).getTime(); } catch { return 0; }
-  });
-  return entries;
+function transactionTypeLabel(tx: Transaction): string {
+  if (tx.type === "exchange") return tx.dealType === "buy" ? "خرید ارز" : tx.dealType === "sell" ? "فروش ارز" : "تبادل ارز";
+  if (tx.type === "transfer") return "انتقال";
+  return "تبدیل ارز";
 }
+
+function transactionCustomerLabel(tx: Transaction): string {
+  if (tx.type === "transfer") return `${tx.senderName || "—"} ← ${tx.receiverName || "—"}`;
+  if (tx.customerId === CASH_BOX_ID) return "💰 صندوق";
+  return tx.customerName || "—";
+}
+
+function transactionCommissionLabel(tx: Transaction): string {
+  if (!tx.commission || tx.commission <= 0 || !tx.commissionCurrency) return "—";
+  return `${fmt(tx.commission)} ${labels[tx.commissionCurrency]}`;
+}
+
+function commissionPayerLabel(tx: Transaction): string {
+  if (!tx.commission || tx.commission <= 0) return "—";
+  if (tx.type === "transfer") return tx.commissionPayer === "sender" ? "فرستنده" : tx.commissionPayer === "receiver" ? "گیرنده" : "—";
+  return "مشتری";
+}
+
+const typeChipClass = (tx: Transaction, dk: boolean): string => {
+  if (tx.type === "exchange") return dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-700";
+  if (tx.type === "transfer") return dk ? "bg-violet-400/15 text-violet-300" : "bg-violet-100 text-violet-700";
+  return dk ? "bg-purple-400/15 text-purple-300" : "bg-purple-100 text-purple-700";
+};
 
 // ============================================================
 // Main Component
@@ -318,21 +227,32 @@ export default function ReportsPage() {
     return () => window.removeEventListener("storage", handleStorage);
   }, []);
 
+  useEffect(() => {
+    const handleFocus = () => {
+      try {
+        setCustomers(loadCustomersShared() as Customer[]);
+        setTransactions(loadTransactionsShared() as Transaction[]);
+        setHawalas(loadHawalasShared());
+        setCashEntries(loadCashEntriesShared() as CashEntry[]);
+      } catch {}
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, []);
+
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => { setNow(new Date()); const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t); }, []);
   const currentDateTime = now ? formatDateTime(now) : "";
 
-  const ledger = useMemo(() => {
-    try { return buildLedger(customers, transactions, hawalas, cashEntries); } catch { return []; }
-  }, [customers, transactions, hawalas, cashEntries]);
-
+  // ── Daily Journal with all details ──
   const dailyJournal = useMemo(() => {
-    const days: Record<string, { transactions: LedgerEntry[]; cashEntries: CashEntry[]; date: Date }> = {};
+    const days: Record<string, { transactions: Transaction[]; cashEntries: CashEntry[]; date: Date }> = {};
 
-    for (const entry of ledger) {
-      const key = shortDateLabel(entry.date);
-      if (!days[key]) days[key] = { transactions: [], cashEntries: [], date: new Date(entry.date) };
-      days[key].transactions.push(entry);
+    for (const tx of transactions) {
+      if (tx.status === "voided") continue;
+      const key = shortDateLabel(tx.date);
+      if (!days[key]) days[key] = { transactions: [], cashEntries: [], date: new Date(tx.date) };
+      days[key].transactions.push(tx);
     }
 
     for (const ce of cashEntries) {
@@ -344,7 +264,38 @@ export default function ReportsPage() {
     }
 
     return Object.entries(days).sort(([, a], [, b]) => b.date.getTime() - a.date.getTime());
-  }, [ledger, cashEntries]);
+  }, [transactions, cashEntries]);
+
+  // ── Day summary calculations ──
+  const computeDaySummary = useCallback((txs: Transaction[], ces: CashEntry[]) => {
+    const received: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+    const paid: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+    const commission: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+    const cashIn: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+    const cashOut: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+
+    for (const tx of txs) {
+      if (tx.fromCurrency && currencies.includes(tx.fromCurrency)) paid[tx.fromCurrency] += Number(tx.fromAmount || 0) || 0;
+      if (tx.toCurrency && currencies.includes(tx.toCurrency)) received[tx.toCurrency] += Number(tx.toAmount || 0) || 0;
+      if (tx.commission && tx.commission > 0 && tx.commissionCurrency && currencies.includes(tx.commissionCurrency)) commission[tx.commissionCurrency] += tx.commission;
+    }
+
+    for (const ce of ces) {
+      const cur = ce.currency as Currency;
+      if (!currencies.includes(cur)) continue;
+      if (ce.direction === "in") cashIn[cur] += Number(ce.amount || 0) || 0;
+      else cashOut[cur] += Number(ce.amount || 0) || 0;
+    }
+
+    return { received, paid, commission, cashIn, cashOut };
+  }, []);
+
+  // ── Customer transactions (direct from transactions) ──
+  const getCustomerTransactions = useCallback((customerId: string): Transaction[] => {
+    return transactions
+      .filter(tx => tx.status !== "voided" && (tx.customerId === customerId || tx.senderId === customerId || tx.receiverId === customerId))
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [transactions]);
 
   const searchResults = useMemo(() => {
     if (!search.trim()) return [];
@@ -363,10 +314,7 @@ export default function ReportsPage() {
 
   const withBalanceCount = customers.filter(c => currencies.some(cur => (c.balances?.[cur] || 0) !== 0)).length;
 
-  const getCustomerTransactions = useCallback((customerId: string) => {
-    return ledger.filter(e => e.customerId === customerId);
-  }, [ledger]);
-
+  // ── Share functions ──
   const generateCustomerReport = useCallback((customer: Customer): string => {
     const txs = getCustomerTransactions(customer.id);
     let report = `📊 گزارش معاملات مشتری\n\n`;
@@ -377,20 +325,18 @@ export default function ReportsPage() {
     report += `💼 موجودی حساب:\n`;
     for (const cur of currencies) {
       const bal = customer.balances?.[cur] || 0;
-      if (bal !== 0) {
-        const status = bal > 0 ? "طلب" : "قرض";
-        report += `  • ${labels[cur]}: ${fmt(Math.abs(bal))} (${status})\n`;
-      }
+      if (bal !== 0) report += `  • ${labels[cur]}: ${fmt(Math.abs(bal))} (${bal > 0 ? "طلب" : "قرض"})\n`;
     }
     report += `\n━━━━━━━━━━━━━━━━━━━━\n`;
-    report += `📋 تاریخچه معاملات (${txs.length} رویداد):\n\n`;
+    report += `📋 تاریخچه معاملات (${txs.length} معامله):\n\n`;
     txs.slice(0, 20).forEach((tx, i) => {
-      report += `${i + 1}. ${txLabels[tx.type]}\n`;
+      report += `${i + 1}. ${transactionTypeLabel(tx)}\n`;
       report += `   📅 ${shortDateLabel(tx.date)}\n`;
-      report += `   💱 ${fmt(tx.amount)} ${labels[tx.currency]} (${tx.direction === "in" ? "دریافت" : "پرداخت"})\n`;
+      report += `   💱 ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]} → ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}\n`;
+      if (tx.commission && tx.commission > 0 && tx.commissionCurrency) report += `   💼 کارمزد: ${fmt(tx.commission)} ${labels[tx.commissionCurrency]}\n`;
       report += `\n`;
     });
-    if (txs.length > 20) report += `... و ${txs.length - 20} رویداد دیگر\n`;
+    if (txs.length > 20) report += `... و ${txs.length - 20} معامله دیگر\n`;
     report += `\n━━━━━━━━━━━━━━━━━━━━\n`;
     report += `🏦 صرافی برادران نورزاد — هرات`;
     return report;
@@ -398,14 +344,12 @@ export default function ReportsPage() {
 
   const shareViaTelegram = useCallback((customer: Customer) => {
     const text = generateCustomerReport(customer);
-    const url = `https://t.me/share/url?url=${encodeURIComponent(" ")}&text=${encodeURIComponent(text)}`;
-    window.open(url, "_blank");
+    window.open(`https://t.me/share/url?url=${encodeURIComponent(" ")}&text=${encodeURIComponent(text)}`, "_blank");
   }, [generateCustomerReport]);
 
   const shareViaWhatsApp = useCallback((customer: Customer) => {
     const text = generateCustomerReport(customer);
-    const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
-    window.open(url, "_blank");
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
   }, [generateCustomerReport]);
 
   const shareViaImo = useCallback(async (customer: Customer) => {
@@ -423,16 +367,12 @@ export default function ReportsPage() {
   const toggleDay = useCallback((day: string) => {
     setExpandedDays(prev => {
       const next = new Set(prev);
-      if (next.has(day)) next.delete(day);
-      else next.add(day);
+      if (next.has(day)) next.delete(day); else next.add(day);
       return next;
     });
   }, []);
 
-  const showToast = useCallback((m: string) => {
-    setToast(m);
-    setTimeout(() => setToast(""), 3500);
-  }, []);
+  const showToast = useCallback((m: string) => { setToast(m); setTimeout(() => setToast(""), 3500); }, []);
 
   if (!mounted) {
     return (
@@ -452,39 +392,7 @@ export default function ReportsPage() {
   const glassCard = `rounded-2xl border backdrop-blur transition-all duration-300 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-200 bg-white/80"}`;
   const inputShell = `rounded-xl border text-sm font-medium shadow-sm outline-none transition-all duration-200 focus:ring-4 ${dk ? "border-slate-600 bg-slate-900 text-slate-100 placeholder:text-slate-500 hover:border-slate-500 focus:border-emerald-400 focus:ring-emerald-400/10" : "border-slate-200 bg-white text-slate-800 placeholder:text-slate-400 hover:border-emerald-400 focus:border-emerald-500 focus:ring-emerald-500/10"}`;
   const uiInput = `h-12 w-full px-3.5 ${inputShell}`;
-  const identIcon = dk ? "from-blue-400/20 to-sky-400/5 text-blue-300 ring-blue-400/25" : "from-blue-400/20 to-sky-400/10 text-blue-600 ring-blue-400/30";
-
-  // ✅ تابع محاسبه جمع روزانه
-  const calculateDailyTotals = (txs: LedgerEntry[], cashEnts: CashEntry[]) => {
-    const totals: Record<Currency, { in: number; out: number; fee: number; net: number }> = {} as any;
-    currencies.forEach(cur => { totals[cur] = { in: 0, out: 0, fee: 0, net: 0 }; });
-
-    txs.forEach(tx => {
-      const cur = tx.currency;
-      if (!totals[cur]) return;
-      if (tx.type === "fee") {
-        totals[cur].fee += tx.amount;
-      } else if (tx.direction === "in") {
-        totals[cur].in += tx.amount;
-      } else {
-        totals[cur].out += tx.amount;
-      }
-      totals[cur].net += tx.direction === "in" ? tx.amount : -tx.amount;
-    });
-
-    cashEnts.forEach(ce => {
-      const cur = ce.currency as Currency;
-      if (!totals[cur]) return;
-      if (ce.direction === "in") {
-        totals[cur].in += ce.amount;
-      } else {
-        totals[cur].out += ce.amount;
-      }
-      totals[cur].net += ce.direction === "in" ? ce.amount : -ce.amount;
-    });
-
-    return totals;
-  };
+  const cellClass = "px-4 py-3.5 text-center";
 
   return (
     <div dir="rtl" className={dk ? "dark" : ""}>
@@ -493,7 +401,7 @@ export default function ReportsPage() {
         <div className={`fixed inset-x-0 top-0 z-30 h-1 bg-gradient-to-l ${dk ? "from-emerald-400 via-teal-400 to-cyan-400" : "from-emerald-500 via-teal-500 to-cyan-500"}`} />
         <div className="relative z-10 mx-auto w-full max-w-7xl space-y-4 md:space-y-6 px-3 pb-16 pt-5 md:px-8 md:pt-9">
 
-          {/* Header */}
+          {/* ═══════════ Header ═══════════ */}
           <header className="rp-up flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 md:gap-3.5 min-w-0">
               <div className="relative grid h-11 w-11 md:h-14 md:w-14 shrink-0 place-items-center rounded-xl md:rounded-2xl bg-gradient-to-br from-blue-500 via-sky-500 to-cyan-400 text-white shadow-lg shadow-blue-500/30 ring-1 ring-white/30">
@@ -519,7 +427,7 @@ export default function ReportsPage() {
             </div>
           </header>
 
-          {/* Stats Cards */}
+          {/* ═══════════ Stats ═══════════ */}
           <div className="rp-up grid grid-cols-2 md:grid-cols-4 gap-3" style={{ animationDelay: "70ms" }}>
             {[
               { label: "کل مشتریان", value: customers.length, icon: "users", color: "from-emerald-500 to-teal-500", text: dk ? "text-emerald-300" : "text-emerald-600" },
@@ -532,47 +440,41 @@ export default function ReportsPage() {
                 <div className="relative flex items-center justify-between">
                   <div>
                     <div className={`text-[10px] font-black ${subText}`}>{s.label}</div>
-                    <div className={`text-2xl md:text-3xl font-black tabular-nums mt-1 ${s.text}`}>{s.value}</div>
+                    <div className={`text-2xl md:text-3xl font-black tabular-nums mt-1 ${s.text}`}>{fa(s.value)}</div>
                   </div>
                   <div className={`grid h-10 w-10 md:h-12 md:w-12 place-items-center rounded-xl bg-gradient-to-br ${s.color} text-white shadow-lg`}>
-                    <Ic n={s.icon as IconName} className="h-5 w-5 md:h-6 md:w-6" />
+                    <Ic n={s.icon} className="h-5 w-5 md:h-6 md:w-6" />
                   </div>
                 </div>
               </div>
             ))}
           </div>
 
-          {/* Tab Navigation */}
+          {/* ═══════════ Tab Navigation ═══════════ */}
           <div className={`rp-up flex gap-1.5 md:gap-2 rounded-xl md:rounded-2xl border p-1.5 md:p-2 shadow-sm backdrop-blur ${glassChip}`} style={{ animationDelay: "140ms" }}>
             {[
               { id: "search" as const, label: "جستجوی مشتری", icon: "search" },
               { id: "debtors" as const, label: "مشتریان بدهکار", icon: "alert", count: debtorCustomers.length },
               { id: "journal" as const, label: "روزنامچه عمومی", icon: "calendar", count: dailyJournal.length }
             ].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveSection(tab.id)}
-                className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 md:gap-2 rounded-lg md:rounded-xl px-3 md:px-5 py-2.5 md:py-3 text-xs md:text-sm font-black transition-all duration-300 active:scale-[0.97] ${activeSection === tab.id ? `bg-gradient-to-l shadow-lg ${dk ? "from-blue-400 to-sky-400 text-slate-950" : "from-blue-500 to-sky-500 text-white"}` : dk ? "text-slate-400 hover:bg-slate-700/60 hover:text-slate-100" : "text-slate-500 hover:bg-blue-50 hover:text-slate-800"}`}
-              >
-                <Ic n={tab.icon as IconName} className="h-4 w-4" />
+              <button key={tab.id} onClick={() => setActiveSection(tab.id)} className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 md:gap-2 rounded-lg md:rounded-xl px-3 md:px-5 py-2.5 md:py-3 text-xs md:text-sm font-black transition-all duration-300 active:scale-[0.97] ${activeSection === tab.id ? `bg-gradient-to-l shadow-lg ${dk ? "from-blue-400 to-sky-400 text-slate-950" : "from-blue-500 to-sky-500 text-white"}` : dk ? "text-slate-400 hover:bg-slate-700/60 hover:text-slate-100" : "text-slate-500 hover:bg-blue-50 hover:text-slate-800"}`}>
+                <Ic n={tab.icon} className="h-4 w-4" />
                 <span>{tab.label}</span>
                 {tab.count !== undefined && tab.count > 0 && (
-                  <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-black ${activeSection === tab.id ? dk ? "bg-slate-950/20 text-slate-950" : "bg-white/30 text-white" : dk ? "bg-slate-700 text-slate-300" : "bg-blue-100 text-blue-700"}`}>
-                    {fa(tab.count)}
-                  </span>
+                  <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-black ${activeSection === tab.id ? dk ? "bg-slate-950/20 text-slate-950" : "bg-white/30 text-white" : dk ? "bg-slate-700 text-slate-300" : "bg-blue-100 text-blue-700"}`}>{fa(tab.count)}</span>
                 )}
               </button>
             ))}
           </div>
 
-          {/* ═══════════ Search Section - Full Horizontal Details ═══════════ */}
+          {/* ═══════════ SEARCH SECTION — Full horizontal table ═══════════ */}
           {activeSection === "search" && (
             <section className={`rp-up space-y-4 ${uiCard}`} style={{ animationDelay: "160ms" }}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
-                <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identIcon}`}><Ic n="search" className="h-5 w-5" /></span>
+                <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${dk ? "from-blue-400/20 to-sky-400/5 text-blue-300 ring-blue-400/25" : "from-blue-400/20 to-sky-400/10 text-blue-600 ring-blue-400/30"}`}><Ic n="search" className="h-5 w-5" /></span>
                 <div className="flex-1 min-w-0">
                   <h2 className={`rp-display text-xl md:text-2xl leading-none ${heading}`}>جستجوی مشتری</h2>
-                  <p className={`mt-1 text-[11px] font-bold ${subText}`}>بر اساس نام، تلفن یا شماره تذکره</p>
+                  <p className={`mt-1 text-[11px] font-bold ${subText}`}>بر اساس نام، تلفن یا شماره تذکره — نتایج به صورت افقی</p>
                 </div>
               </div>
               <div className="px-4 md:px-7 pb-4 space-y-3">
@@ -580,131 +482,246 @@ export default function ReportsPage() {
                   <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="نام، تلفن یا شماره تذکره را وارد کنید..." className={`${uiInput} pr-10`} />
                   <span className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 ${subText}`}><Ic n="search" className="h-4 w-4" /></span>
                 </div>
-                {search && (
-                  <div className="space-y-3 max-h-[700px] overflow-y-auto rp-scroll">
-                    {searchResults.length === 0 ? (
-                      <div className={`text-center py-12 ${subText}`}>
-                        <div className={`grid h-16 w-16 place-items-center rounded-2xl border border-dashed mx-auto mb-3 ${dk ? "border-slate-600 bg-slate-800/40" : "border-slate-300 bg-slate-50"}`}><Ic n="inbox" className="h-7 w-7 opacity-70" /></div>
-                        <p className="text-sm font-black">مشتری‌ای یافت نشد</p>
+
+                {search && searchResults.length === 0 && (
+                  <div className={`text-center py-12 ${subText}`}>
+                    <div className={`grid h-16 w-16 place-items-center rounded-2xl border border-dashed mx-auto mb-3 ${dk ? "border-slate-600 bg-slate-800/40" : "border-slate-300 bg-slate-50"}`}><Ic n="inbox" className="h-7 w-7 opacity-70" /></div>
+                    <p className="text-sm font-black">مشتری‌ای یافت نشد</p>
+                  </div>
+                )}
+
+                {search && searchResults.length > 0 && (
+                  <>
+                    {/* Desktop horizontal table */}
+                    <div className="hidden md:block overflow-x-auto rp-scroll">
+                      <div className="max-h-[500px] overflow-y-auto rp-scroll">
+                        <table className="w-full min-w-[1100px] text-sm">
+                          <thead className="sticky top-0 z-10">
+                            <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
+                              {["شماره", "مشتری", "تلفن", "تذکره", "تاریخ ثبت", "افغانی", "دالر", "یورو", "تومان", "کلدار", "وضعیت", "عملیات"].map(h => (
+                                <th key={h} className="px-4 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
+                            {searchResults.map((c, idx) => {
+                              const hasDebt = currencies.some(cur => (c.balances?.[cur] || 0) < 0);
+                              const hasCredit = currencies.some(cur => (c.balances?.[cur] || 0) > 0);
+                              return (
+                                <tr key={c.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/50"}`}>
+                                  <td className={cellClass}>
+                                    <span className={`inline-grid h-7 w-7 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>{idx + 1}</span>
+                                  </td>
+                                  <td className={cellClass}>
+                                    <div className="flex items-center gap-2 justify-center">
+                                      <div className={`grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 text-white font-black text-xs shadow`}>{c.name.charAt(0)}</div>
+                                      <span className={`text-[13px] font-black ${dk ? "text-slate-100" : "text-slate-800"}`}>{c.name}</span>
+                                    </div>
+                                  </td>
+                                  <td className={`${cellClass} text-[12px] font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`} dir="ltr">{c.phone || "—"}</td>
+                                  <td className={`${cellClass} text-[12px] font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`} dir="ltr">{c.tazkira || "—"}</td>
+                                  <td className={`${cellClass} text-[11px] tabular-nums ${subText}`} dir="ltr">{c.registeredAt ? shortDateLabel(c.registeredAt) : "—"}</td>
+                                  {currencies.map(cur => {
+                                    const bal = c.balances?.[cur] || 0;
+                                    return (
+                                      <td key={cur} className={`${cellClass} text-[13px] font-black tabular-nums ${bal < 0 ? "text-rose-500" : bal > 0 ? (dk ? "text-emerald-300" : "text-emerald-700") : subText}`}>
+                                        {fmt(bal)}
+                                      </td>
+                                    );
+                                  })}
+                                  <td className={cellClass}>
+                                    {hasDebt ? (
+                                      <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-700"}`}>⚠️ بدهکار</span>
+                                    ) : hasCredit ? (
+                                      <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-700"}`}>✅ طلبکار</span>
+                                    ) : (
+                                      <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${dk ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>⚪ صفر</span>
+                                    )}
+                                  </td>
+                                  <td className={cellClass}>
+                                    <div className="flex items-center justify-center gap-1.5">
+                                      <button onClick={() => setSelectedCustomer(c)} className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[10px] font-black ${dk ? "bg-blue-500/20 text-blue-300 hover:bg-blue-500/30" : "bg-blue-100 text-blue-700 hover:bg-blue-200"}`}><Ic n="eye" className="h-3 w-3" />مشاهده</button>
+                                      <button onClick={() => setShareCustomer(c)} className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[10px] font-black ${dk ? "bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30" : "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"}`}><Ic n="share" className="h-3 w-3" />اشتراک</button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
                       </div>
-                    ) : (
-                      searchResults.map(c => {
+                    </div>
+
+                    {/* Mobile cards */}
+                    <div className="md:hidden space-y-2">
+                      {searchResults.map(c => {
                         const hasDebt = currencies.some(cur => (c.balances?.[cur] || 0) < 0);
                         return (
-                          <div key={c.id} className={`rounded-xl border p-4 ${hasDebt ? (dk ? "border-rose-400/30 bg-rose-400/[0.03]" : "border-rose-200 bg-rose-50/30") : (dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-white")}`}>
-                            {/* اطلاعات اصلی - افقی */}
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                              <div className="flex items-center gap-3">
-                                <div className={`grid h-12 w-12 place-items-center rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 text-white font-black text-lg shadow-md`}>
-                                  {c.name.charAt(0)}
-                                </div>
-                                <div>
-                                  <b className={`block text-base font-black ${dk ? "text-white" : "text-slate-900"}`}>{c.name}</b>
-                                  {hasDebt && <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600"}`}>⚠️ بدهکار</span>}
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-4 text-xs">
-                                {c.phone && <div><span className={subText}>📱</span> <span dir="ltr" className="font-bold">{c.phone}</span></div>}
-                                {c.tazkira && <div><span className={subText}>🆔</span> <span dir="ltr" className="font-bold">{c.tazkira}</span></div>}
-                              </div>
-                              <div className="flex items-center gap-2 justify-end">
-                                <button onClick={() => setSelectedCustomer(c)} className={`px-4 py-2 rounded-lg text-xs font-black flex items-center gap-1.5 ${dk ? "bg-blue-500/20 text-blue-300 hover:bg-blue-500/30" : "bg-blue-100 text-blue-700 hover:bg-blue-200"}`}><Ic n="eye" className="h-3.5 w-3.5" />مشاهده</button>
-                                <button onClick={() => setShareCustomer(c)} className={`px-4 py-2 rounded-lg text-xs font-black flex items-center gap-1.5 ${dk ? "bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30" : "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"}`}><Ic n="share" className="h-3.5 w-3.5" />اشتراک</button>
+                          <div key={c.id} className={`p-4 rounded-xl border ${hasDebt ? (dk ? "border-rose-400/30 bg-rose-400/[0.03]" : "border-rose-200 bg-rose-50/30") : (dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-white")}`}>
+                            <div className="flex items-center gap-2 mb-2">
+                              <div className={`grid h-10 w-10 place-items-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 text-white font-black text-sm`}>{c.name.charAt(0)}</div>
+                              <div>
+                                <b className={`block text-sm font-black ${dk ? "text-white" : "text-slate-900"}`}>{c.name}</b>
+                                {c.phone && <span className={`text-[11px] ${subText}`} dir="ltr">📱 {c.phone}</span>}
                               </div>
                             </div>
-                            {/* موجودی حساب - افقی */}
-                            <div className="grid grid-cols-5 gap-2">
+                            <div className="grid grid-cols-5 gap-1 mt-2">
                               {currencies.map(cur => {
                                 const bal = c.balances?.[cur] || 0;
                                 return (
-                                  <div key={cur} className={`rounded-lg px-2 py-2 text-center ${dk ? "bg-slate-900/50" : "bg-slate-50"}`}>
-                                    <div className={`text-[9px] font-black ${subText}`}>{labels[cur]}</div>
-                                    <div className={`text-sm font-black tabular-nums ${bal < 0 ? "text-rose-500" : bal > 0 ? (dk ? "text-emerald-300" : "text-emerald-700") : subText}`}>{fmt(bal)}</div>
+                                  <div key={cur} className={`rounded-lg px-1 py-1.5 text-center ${dk ? "bg-slate-900/50" : "bg-slate-50"}`}>
+                                    <div className={`text-[8px] font-black ${subText}`}>{labels[cur]}</div>
+                                    <div className={`text-[10px] font-black tabular-nums ${bal < 0 ? "text-rose-500" : bal > 0 ? (dk ? "text-emerald-300" : "text-emerald-700") : subText}`}>{fmt(bal)}</div>
                                   </div>
                                 );
                               })}
                             </div>
+                            <div className="flex gap-2 mt-3">
+                              <button onClick={() => setSelectedCustomer(c)} className={`flex-1 py-2 rounded-lg text-[11px] font-black ${dk ? "bg-blue-500/20 text-blue-300" : "bg-blue-100 text-blue-700"}`}>مشاهده</button>
+                              <button onClick={() => setShareCustomer(c)} className={`flex-1 py-2 rounded-lg text-[11px] font-black ${dk ? "bg-emerald-500/20 text-emerald-300" : "bg-emerald-100 text-emerald-700"}`}>اشتراک</button>
+                            </div>
                           </div>
                         );
-                      })
-                    )}
-                  </div>
+                      })}
+                    </div>
+                  </>
                 )}
               </div>
             </section>
           )}
 
-          {/* ═══════════ Debtors Section - Full Horizontal Details ═══════════ */}
+          {/* ═══════════ DEBTORS SECTION — Full horizontal table ═══════════ */}
           {activeSection === "debtors" && (
             <section className={`rp-up space-y-4 ${uiCard}`} style={{ animationDelay: "160ms" }}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
                 <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${dk ? "from-rose-400/20 to-pink-400/5 text-rose-300 ring-rose-400/25" : "from-rose-400/20 to-pink-400/10 text-rose-600 ring-rose-400/30"}`}><Ic n="alert" className="h-5 w-5" /></span>
                 <div className="flex-1 min-w-0">
                   <h2 className={`rp-display text-xl md:text-2xl leading-none ${heading}`}>مشتریان بدهکار</h2>
-                  <p className={`mt-1 text-[11px] font-bold ${subText}`}>{fa(debtorCustomers.length)} مشتری دارای بدهی به صرافی</p>
+                  <p className={`mt-1 text-[11px] font-bold ${subText}`}>{fa(debtorCustomers.length)} مشتری دارای بدهی — جزئیات افقی</p>
                 </div>
                 <span className={`rounded-full px-3 py-1.5 text-[10px] font-black ring-1 ${dk ? "bg-rose-400/15 text-rose-300 ring-rose-400/25" : "bg-rose-100 text-rose-700 ring-rose-300/60"}`}>⚠️ توجه ویژه</span>
               </div>
-              <div className="px-4 md:px-7 pb-4 space-y-3 max-h-[700px] overflow-y-auto rp-scroll">
+              <div className="px-4 md:px-7 pb-4">
                 {debtorCustomers.length === 0 ? (
                   <div className={`text-center py-12 ${subText}`}>
                     <div className={`grid h-16 w-16 place-items-center rounded-2xl border border-dashed mx-auto mb-3 ${dk ? "border-emerald-600 bg-emerald-400/10" : "border-emerald-300 bg-emerald-50"}`}><Ic n="check" className="h-7 w-7 text-emerald-500" /></div>
                     <p className="text-sm font-black">هیچ مشتری بدهکاری وجود ندارد</p>
                   </div>
                 ) : (
-                  debtorCustomers.map(c => {
-                    const debts = currencies.filter(cur => (c.balances?.[cur] || 0) < 0);
-                    return (
-                      <div key={c.id} className={`rounded-xl border p-4 ${dk ? "border-rose-400/25 bg-rose-400/[0.03]" : "border-rose-200 bg-rose-50/30"}`}>
-                        {/* اطلاعات اصلی - افقی */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                          <div className="flex items-center gap-3">
-                            <div className={`grid h-12 w-12 place-items-center rounded-lg bg-gradient-to-br from-rose-500 to-pink-500 text-white font-black text-lg shadow-md`}>
-                              {c.name.charAt(0)}
-                            </div>
-                            <div>
-                              <b className={`block text-base font-black ${dk ? "text-white" : "text-slate-900"}`}>{c.name}</b>
-                              <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600"}`}>⚠️ بدهکار</span>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-4 text-xs">
-                            {c.phone && <div><span className={subText}>📱</span> <span dir="ltr" className="font-bold">{c.phone}</span></div>}
-                            {c.tazkira && <div><span className={subText}>🆔</span> <span dir="ltr" className="font-bold">{c.tazkira}</span></div>}
-                          </div>
-                          <div className="flex items-center gap-2 justify-end">
-                            <button onClick={() => setSelectedCustomer(c)} className={`px-4 py-2 rounded-lg text-xs font-black flex items-center gap-1.5 ${dk ? "bg-blue-500/20 text-blue-300 hover:bg-blue-500/30" : "bg-blue-100 text-blue-700 hover:bg-blue-200"}`}><Ic n="eye" className="h-3.5 w-3.5" />مشاهده</button>
-                            <button onClick={() => setShareCustomer(c)} className={`px-4 py-2 rounded-lg text-xs font-black flex items-center gap-1.5 ${dk ? "bg-rose-500/20 text-rose-300 hover:bg-rose-500/30" : "bg-rose-100 text-rose-700 hover:bg-rose-200"}`}><Ic n="share" className="h-3.5 w-3.5" />ارسال گزارش</button>
-                          </div>
-                        </div>
-                        {/* جزئیات بدهی - افقی */}
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
-                          {debts.map(cur => (
-                            <div key={cur} className={`rounded-lg p-3 ${dk ? "bg-rose-400/10" : "bg-rose-50"}`}>
-                              <div className={`text-[9px] font-black ${subText}`}>{labels[cur]}</div>
-                              <div className={`text-lg font-black tabular-nums text-rose-500`}>{fmt(Math.abs(c.balances?.[cur] || 0))}</div>
-                              <div className={`text-[8px] font-black ${subText}`}>قرض از صرافی</div>
-                            </div>
-                          ))}
-                        </div>
+                  <>
+                    {/* Desktop horizontal table */}
+                    <div className="hidden md:block overflow-x-auto rp-scroll">
+                      <div className="max-h-[500px] overflow-y-auto rp-scroll">
+                        <table className="w-full min-w-[1100px] text-sm">
+                          <thead className="sticky top-0 z-10">
+                            <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
+                              {["شماره", "مشتری", "تلفن", "تذکره", "بدهی افغانی", "بدهی دالر", "بدهی یورو", "بدهی تومان", "بدهی کلدار", "عملیات"].map(h => (
+                                <th key={h} className="px-4 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
+                            {debtorCustomers.map((c, idx) => (
+                              <tr key={c.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-rose-50/30"}`}>
+                                <td className={cellClass}>
+                                  <span className={`inline-grid h-7 w-7 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>{idx + 1}</span>
+                                </td>
+                                <td className={cellClass}>
+                                  <div className="flex items-center gap-2 justify-center">
+                                    <div className={`grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-rose-500 to-pink-500 text-white font-black text-xs shadow`}>{c.name.charAt(0)}</div>
+                                    <span className={`text-[13px] font-black ${dk ? "text-slate-100" : "text-slate-800"}`}>{c.name}</span>
+                                  </div>
+                                </td>
+                                <td className={`${cellClass} text-[12px] font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`} dir="ltr">{c.phone || "—"}</td>
+                                <td className={`${cellClass} text-[12px] font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`} dir="ltr">{c.tazkira || "—"}</td>
+                                {currencies.map(cur => {
+                                  const bal = c.balances?.[cur] || 0;
+                                  const debt = bal < 0 ? Math.abs(bal) : 0;
+                                  return (
+                                    <td key={cur} className={`${cellClass} text-[13px] font-black tabular-nums ${debt > 0 ? "text-rose-500" : subText}`}>
+                                      {debt > 0 ? fmt(debt) : "—"}
+                                    </td>
+                                  );
+                                })}
+                                <td className={cellClass}>
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    <button onClick={() => setSelectedCustomer(c)} className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[10px] font-black ${dk ? "bg-blue-500/20 text-blue-300 hover:bg-blue-500/30" : "bg-blue-100 text-blue-700 hover:bg-blue-200"}`}><Ic n="eye" className="h-3 w-3" />مشاهده</button>
+                                    <button onClick={() => setShareCustomer(c)} className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[10px] font-black ${dk ? "bg-rose-500/20 text-rose-300 hover:bg-rose-500/30" : "bg-rose-100 text-rose-700 hover:bg-rose-200"}`}><Ic n="share" className="h-3 w-3" />گزارش</button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          {/* Totals row */}
+                          <tfoot>
+                            <tr className={`border-t-2 ${dk ? "border-rose-400/50 bg-rose-400/10" : "border-rose-300 bg-rose-50"}`}>
+                              <td colSpan={4} className="px-4 py-3.5 text-right">
+                                <span className={`text-[12px] font-black ${dk ? "text-rose-300" : "text-rose-700"}`}>📊 مجموع کل بدهی‌ها</span>
+                              </td>
+                              {currencies.map(cur => {
+                                const totalDebt = debtorCustomers.reduce((sum, c) => {
+                                  const bal = c.balances?.[cur] || 0;
+                                  return sum + (bal < 0 ? Math.abs(bal) : 0);
+                                }, 0);
+                                return (
+                                  <td key={cur} className={`${cellClass} text-[13px] font-black tabular-nums text-rose-500`}>
+                                    {totalDebt > 0 ? fmt(totalDebt) : "—"}
+                                  </td>
+                                );
+                              })}
+                              <td className={cellClass} />
+                            </tr>
+                          </tfoot>
+                        </table>
                       </div>
-                    );
-                  })
+                    </div>
+
+                    {/* Mobile cards */}
+                    <div className="md:hidden space-y-2">
+                      {debtorCustomers.map(c => {
+                        const debts = currencies.filter(cur => (c.balances?.[cur] || 0) < 0);
+                        return (
+                          <div key={c.id} className={`p-4 rounded-xl border ${dk ? "border-rose-400/25 bg-rose-400/[0.03]" : "border-rose-200 bg-rose-50/30"}`}>
+                            <div className="flex items-center gap-2 mb-2">
+                              <div className={`grid h-10 w-10 place-items-center rounded-lg bg-gradient-to-br from-rose-500 to-pink-500 text-white font-black text-sm`}>{c.name.charAt(0)}</div>
+                              <div>
+                                <b className={`block text-sm font-black ${dk ? "text-white" : "text-slate-900"}`}>{c.name}</b>
+                                {c.phone && <span className={`text-[11px] ${subText}`} dir="ltr">📱 {c.phone}</span>}
+                              </div>
+                            </div>
+                            <div className="space-y-1.5 mt-2">
+                              {debts.map(cur => (
+                                <div key={cur} className={`flex items-center justify-between text-xs rounded-lg px-3 py-1.5 ${dk ? "bg-slate-900/30" : "bg-white/70"}`}>
+                                  <span className={`font-black ${dk ? "text-slate-300" : "text-slate-600"}`}>{labels[cur]}</span>
+                                  <span className="font-black tabular-nums text-rose-500">{fmt(Math.abs(c.balances?.[cur] || 0))}</span>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="flex gap-2 mt-3">
+                              <button onClick={() => setSelectedCustomer(c)} className={`flex-1 py-2 rounded-lg text-[11px] font-black ${dk ? "bg-blue-500/20 text-blue-300" : "bg-blue-100 text-blue-700"}`}>مشاهده</button>
+                              <button onClick={() => setShareCustomer(c)} className={`flex-1 py-2 rounded-lg text-[11px] font-black ${dk ? "bg-rose-500/20 text-rose-300" : "bg-rose-100 text-rose-700"}`}>ارسال گزارش</button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
                 )}
               </div>
             </section>
           )}
 
-          {/* ═══════════ Daily Journal - Full Horizontal with Totals ═══════════ */}
+          {/* ═══════════ DAILY JOURNAL — Full horizontal + Commission + Day Totals ═══════════ */}
           {activeSection === "journal" && (
             <section className={`rp-up space-y-4 ${uiCard}`} style={{ animationDelay: "160ms" }}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
                 <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${dk ? "from-amber-400/20 to-orange-400/5 text-amber-300 ring-amber-400/25" : "from-amber-400/20 to-orange-400/10 text-amber-600 ring-amber-400/30"}`}><Ic n="calendar" className="h-5 w-5" /></span>
                 <div className="flex-1 min-w-0">
                   <h2 className={`rp-display text-xl md:text-2xl leading-none ${heading}`}>روزنامچه عمومی</h2>
-                  <p className={`mt-1 text-[11px] font-bold ${subText}`}>{fa(dailyJournal.length)} روز ثبت‌شده — به ترتیب تاریخ</p>
+                  <p className={`mt-1 text-[11px] font-bold ${subText}`}>{fa(dailyJournal.length)} روز ثبت‌شده — جزئیات افقی + کارمزد + جمع کل</p>
                 </div>
               </div>
-              <div className="px-4 md:px-7 pb-4 space-y-3 max-h-[800px] overflow-y-auto rp-scroll">
+              <div className="px-4 md:px-7 pb-4 space-y-3 max-h-[750px] overflow-y-auto rp-scroll">
                 {dailyJournal.length === 0 ? (
                   <div className={`text-center py-12 ${subText}`}>
                     <div className={`grid h-16 w-16 place-items-center rounded-2xl border border-dashed mx-auto mb-3 ${dk ? "border-slate-600 bg-slate-800/40" : "border-slate-300 bg-slate-50"}`}><Ic n="inbox" className="h-7 w-7 opacity-70" /></div>
@@ -713,165 +730,238 @@ export default function ReportsPage() {
                 ) : (
                   dailyJournal.map(([day, data]) => {
                     const isExpanded = expandedDays.has(day);
-                    const dailyTotals = calculateDailyTotals(data.transactions, data.cashEntries);
                     const txCount = data.transactions.length;
                     const cashCount = data.cashEntries.length;
-                    const totalCommission = data.transactions.filter(t => t.type === "fee").reduce((sum, tx) => sum + tx.amount, 0);
+                    const summary = computeDaySummary(data.transactions, data.cashEntries);
+                    const totalCommission = currencies.reduce((sum, cur) => sum + summary.commission[cur], 0);
 
                     return (
                       <div key={day} className={`rounded-xl border overflow-hidden ${dk ? "border-slate-700" : "border-slate-200"}`}>
-                        {/* Header Day */}
+                        {/* Day header */}
                         <button onClick={() => toggleDay(day)} className={`w-full flex items-center justify-between p-4 transition-colors ${dk ? "bg-slate-800/50 hover:bg-slate-800" : "bg-white hover:bg-slate-50"}`}>
                           <div className="flex items-center gap-3">
                             <div className={`grid h-10 w-10 place-items-center rounded-lg bg-gradient-to-br from-amber-500 to-orange-500 text-white shadow-md`}><Ic n="calendar" className="h-4 w-4" /></div>
                             <div className="text-right">
                               <b className={`block text-sm font-black ${dk ? "text-white" : "text-slate-900"}`}>{day}</b>
-                              <div className={`flex gap-3 mt-1 text-[10px] ${subText}`}>
+                              <div className={`flex flex-wrap gap-3 mt-1 text-[10px] ${subText}`}>
                                 <span>{fa(txCount)} معامله</span>
                                 <span>{fa(cashCount)} سند صندوق</span>
-                                {totalCommission > 0 && <span className={dk ? "text-amber-300" : "text-amber-600"}>💰 {fmt(totalCommission)}</span>}
+                                {totalCommission > 0 && <span className={dk ? "text-amber-300" : "text-amber-600"}>💰 کارمزد: {fmt(totalCommission)}</span>}
                               </div>
                             </div>
                           </div>
-                          <span className={`text-xl transition-transform ${isExpanded ? "rotate-180" : ""}`}><Ic n="chevron" className="h-5 w-5" /></span>
+                          <span className={`transition-transform ${isExpanded ? "rotate-180" : ""}`}><Ic n="chevron" className="h-5 w-5" /></span>
                         </button>
 
                         {isExpanded && (
                           <div className={`p-4 space-y-4 border-t ${dk ? "border-slate-700 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
-                            {/* Transactions with Full Horizontal Details */}
+
+                            {/* ── Transactions table ── */}
                             {data.transactions.length > 0 && (
                               <div>
-                                <b className={`block text-xs font-black mb-3 ${dk ? "text-blue-300" : "text-blue-600"}`}>📋 معاملات مشتریان ({fa(data.transactions.length)}):</b>
-                                <div className="space-y-2 max-h-96 overflow-y-auto rp-scroll">
-                                  {data.transactions.map(tx => {
-                                    const dt = splitDateTime(tx.date);
-                                    return (
-                                      <div key={tx.id} className={`rounded-lg border p-3 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-white"}`}>
-                                        {/* ردیف اول: نوع، مشتری، کد */}
-                                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-2 pb-2 border-b border-dashed border-slate-300/30">
-                                          <div>
-                                            <div className={`text-[9px] font-black ${subText}`}>نوع</div>
-                                            <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-black ${txColors[tx.type][dk ? "dark" : "light"]}`}>{txLabels[tx.type]}</span>
+                                <b className={`block text-xs font-black mb-2 ${dk ? "text-blue-300" : "text-blue-600"}`}>📋 معاملات ({fa(data.transactions.length)}):</b>
+                                <div className="overflow-x-auto rp-scroll">
+                                  <table className="w-full min-w-[1100px] text-sm">
+                                    <thead>
+                                      <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
+                                        {["#", "کد پیگیری", "مشتری", "تاریخ", "نوع", "دریافت", "پرداخت", "نرخ", "کارمزد", "پرداخت‌کننده"].map(h => (
+                                          <th key={h} className="px-3 py-2.5 text-center text-[10px] font-black text-slate-400 whitespace-nowrap">{h}</th>
+                                        ))}
+                                      </tr>
+                                    </thead>
+                                    <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
+                                      {data.transactions.map((tx, index) => {
+                                        const dt = splitDateTime(tx.date);
+                                        return (
+                                          <tr key={tx.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/50"}`}>
+                                            <td className={cellClass}>
+                                              <span className={`inline-grid h-7 w-7 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>{index + 1}</span>
+                                            </td>
+                                            <td className={cellClass}>
+                                              <span className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-black ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-cyan-300 bg-cyan-50 text-cyan-700"}`} dir="ltr">
+                                                <Ic n="tag" className="h-3 w-3" />
+                                                {tx.trackingCode}
+                                              </span>
+                                            </td>
+                                            <td className={`${cellClass} text-[12px] font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>{transactionCustomerLabel(tx)}</td>
+                                            <td className={cellClass}>
+                                              <div className="flex flex-col items-center gap-0.5">
+                                                <span dir="ltr" className={`text-xs font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`}>{dt.datePart}</span>
+                                                <span dir="ltr" className={`text-[10px] tabular-nums ${subText}`}>{dt.timePart}</span>
+                                              </div>
+                                            </td>
+                                            <td className={cellClass}>
+                                              <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${typeChipClass(tx, dk)}`}>{transactionTypeLabel(tx)}</span>
+                                            </td>
+                                            <td className={cellClass}>
+                                              <div className={`text-[13px] font-black tabular-nums ${dk ? "text-emerald-300" : "text-emerald-700"}`}>{fmt(tx.toAmount)}</div>
+                                              <div className={`text-[10px] ${subText}`}>{labels[tx.toCurrency]}</div>
+                                            </td>
+                                            <td className={cellClass}>
+                                              <div className={`text-[13px] font-black tabular-nums ${dk ? "text-rose-300" : "text-rose-700"}`}>{fmt(tx.fromAmount)}</div>
+                                              <div className={`text-[10px] ${subText}`}>{labels[tx.fromCurrency]}</div>
+                                            </td>
+                                            <td className={`${cellClass} text-[11px] ${dk ? "text-slate-400" : "text-slate-500"}`}>{tx.rateLabel}</td>
+                                            <td className={`${cellClass} text-xs font-bold tabular-nums ${tx.commission && tx.commission > 0 ? (dk ? "text-amber-300" : "text-amber-700") : subText}`}>{transactionCommissionLabel(tx)}</td>
+                                            <td className={`${cellClass} text-[11px] ${dk ? "text-slate-300" : "text-slate-600"}`}>{commissionPayerLabel(tx)}</td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                    {/* Day totals for transactions */}
+                                    <tfoot>
+                                      <tr className={`border-t-2 ${dk ? "border-emerald-400/50 bg-emerald-400/10" : "border-emerald-300 bg-emerald-50"}`}>
+                                        <td colSpan={5} className="px-3 py-3 text-right">
+                                          <span className={`text-[11px] font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}>📊 جمع کل معاملات روز</span>
+                                        </td>
+                                        <td className={cellClass}>
+                                          <div className="space-y-0.5">
+                                            {currencies.map(cur => summary.received[cur] > 0 && (
+                                              <div key={cur} className={`text-[11px] font-black tabular-nums ${dk ? "text-emerald-300" : "text-emerald-700"}`}>{fmt(summary.received[cur])} <span className="text-[9px]">{labels[cur]}</span></div>
+                                            ))}
+                                            {currencies.every(cur => summary.received[cur] === 0) && <span className={`text-[11px] ${subText}`}>—</span>}
                                           </div>
-                                          <div>
-                                            <div className={`text-[9px] font-black ${subText}`}>مشتری</div>
-                                            <div className={`text-xs font-black truncate ${dk ? "text-slate-200" : "text-slate-700"}`}>{tx.customerName || "—"}</div>
+                                        </td>
+                                        <td className={cellClass}>
+                                          <div className="space-y-0.5">
+                                            {currencies.map(cur => summary.paid[cur] > 0 && (
+                                              <div key={cur} className={`text-[11px] font-black tabular-nums ${dk ? "text-rose-300" : "text-rose-700"}`}>{fmt(summary.paid[cur])} <span className="text-[9px]">{labels[cur]}</span></div>
+                                            ))}
+                                            {currencies.every(cur => summary.paid[cur] === 0) && <span className={`text-[11px] ${subText}`}>—</span>}
                                           </div>
-                                          <div>
-                                            <div className={`text-[9px] font-black ${subText}`}>کد پیگیری</div>
-                                            <div className={`text-xs font-black ${dk ? "text-cyan-300" : "text-cyan-700"}`} dir="ltr">{tx.referenceNumber || "-"}</div>
+                                        </td>
+                                        <td className={cellClass} />
+                                        <td className={cellClass}>
+                                          <div className="space-y-0.5">
+                                            {currencies.map(cur => summary.commission[cur] > 0 && (
+                                              <div key={cur} className={`text-[11px] font-black tabular-nums ${dk ? "text-amber-300" : "text-amber-700"}`}>{fmt(summary.commission[cur])} <span className="text-[9px]">{labels[cur]}</span></div>
+                                            ))}
+                                            {currencies.every(cur => summary.commission[cur] === 0) && <span className={`text-[11px] ${subText}`}>—</span>}
                                           </div>
-                                          <div>
-                                            <div className={`text-[9px] font-black ${subText}`}>شرح</div>
-                                            <div className={`text-xs font-bold truncate ${dk ? "text-slate-300" : "text-slate-600"}`}>{tx.description}</div>
-                                          </div>
-                                        </div>
-                                        {/* ردیف دوم: تاریخ، ساعت، مبلغ، جهت */}
-                                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                                          <div>
-                                            <div className={`text-[9px] font-black ${subText}`}>📅 تاریخ</div>
-                                            <div className={`text-xs font-black ${dk ? "text-slate-200" : "text-slate-700"}`} dir="ltr">{dt.datePart}</div>
-                                          </div>
-                                          <div>
-                                            <div className={`text-[9px] font-black ${subText}`}>⏰ ساعت</div>
-                                            <div className={`text-xs font-black ${dk ? "text-slate-200" : "text-slate-700"}`} dir="ltr">{dt.timePart}</div>
-                                          </div>
-                                          <div>
-                                            <div className={`text-[9px] font-black ${subText}`}>💱 مبلغ</div>
-                                            <div className={`text-sm font-black tabular-nums ${tx.direction === "in" ? "text-emerald-500" : "text-rose-500"}`}>
-                                              {tx.direction === "in" ? "+" : "-"} {fmt(tx.amount)}
-                                            </div>
-                                            <div className={`text-[10px] font-black ${currencyColors[tx.currency][dk ? "dark" : "light"]}`}>{labels[tx.currency]}</div>
-                                          </div>
-                                          <div>
-                                            <div className={`text-[9px] font-black ${subText}`}>💰 مانده بعد</div>
-                                            <div className={`text-sm font-black tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`}>{fmt(tx.balanceAfter)}</div>
-                                            <div className={`text-[10px] font-black ${currencyColors[tx.currency][dk ? "dark" : "light"]}`}>{labels[tx.currency]}</div>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
+                                        </td>
+                                        <td className={cellClass} />
+                                      </tr>
+                                    </tfoot>
+                                  </table>
                                 </div>
                               </div>
                             )}
 
-                            {/* Cash Entries with Full Horizontal Details */}
+                            {/* ── Cash entries table ── */}
                             {data.cashEntries.length > 0 && (
                               <div>
-                                <b className={`block text-xs font-black mb-3 ${dk ? "text-emerald-300" : "text-emerald-600"}`}>💵 اسناد صندوق ({fa(data.cashEntries.length)}):</b>
-                                <div className="space-y-2 max-h-96 overflow-y-auto rp-scroll">
-                                  {data.cashEntries.map(ce => {
-                                    const cur = ce.currency as Currency;
-                                    const dt = splitDateTime(ce.date);
-                                    return (
-                                      <div key={ce.id} className={`rounded-lg border p-3 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-white"}`}>
-                                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-2 pb-2 border-b border-dashed border-slate-300/30">
-                                          <div>
-                                            <div className={`text-[9px] font-black ${subText}`}>نوع</div>
-                                            <div className={`text-xs font-black ${dk ? "text-slate-200" : "text-slate-700"}`}>{ce.reason || ce.type}</div>
+                                <b className={`block text-xs font-black mb-2 ${dk ? "text-emerald-300" : "text-emerald-600"}`}>🏦 اسناد صندوق ({fa(data.cashEntries.length)}):</b>
+                                <div className="overflow-x-auto rp-scroll">
+                                  <table className="w-full min-w-[800px] text-sm">
+                                    <thead>
+                                      <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
+                                        {["#", "کد پیگیری", "تاریخ", "نوع", "شرح", "دریافت", "پرداخت", "ارز"].map(h => (
+                                          <th key={h} className="px-3 py-2.5 text-center text-[10px] font-black text-slate-400 whitespace-nowrap">{h}</th>
+                                        ))}
+                                      </tr>
+                                    </thead>
+                                    <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
+                                      {data.cashEntries.map((ce, index) => {
+                                        const dt = splitDateTime(ce.date);
+                                        const cur = ce.currency as Currency;
+                                        return (
+                                          <tr key={ce.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/50"}`}>
+                                            <td className={cellClass}>
+                                              <span className={`inline-grid h-7 w-7 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>{index + 1}</span>
+                                            </td>
+                                            <td className={cellClass}>
+                                              <span className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-black ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-cyan-300 bg-cyan-50 text-cyan-700"}`} dir="ltr">
+                                                <Ic n="tag" className="h-3 w-3" />
+                                                {ce.trackingCode || "-"}
+                                              </span>
+                                            </td>
+                                            <td className={cellClass}>
+                                              <div className="flex flex-col items-center gap-0.5">
+                                                <span dir="ltr" className={`text-xs font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`}>{dt.datePart}</span>
+                                                <span dir="ltr" className={`text-[10px] tabular-nums ${subText}`}>{dt.timePart}</span>
+                                              </div>
+                                            </td>
+                                            <td className={cellClass}>
+                                              <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${ce.direction === "in" ? (dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-700") : (dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-700")}`}>
+                                                {ce.direction === "in" ? "واریز" : "برداشت"}
+                                              </span>
+                                            </td>
+                                            <td className={`${cellClass} text-[12px] max-w-[200px] truncate ${dk ? "text-slate-200" : "text-slate-700"}`}>{ce.reason || ce.type}</td>
+                                            <td className={`${cellClass} text-[13px] font-black tabular-nums ${dk ? "text-emerald-300" : "text-emerald-700"}`}>{ce.direction === "in" ? fmt(ce.amount) : "—"}</td>
+                                            <td className={`${cellClass} text-[13px] font-black tabular-nums ${dk ? "text-rose-300" : "text-rose-700"}`}>{ce.direction === "out" ? fmt(ce.amount) : "—"}</td>
+                                            <td className={`${cellClass} text-[11px] font-black ${dk ? "text-slate-300" : "text-slate-600"}`}>{labels[cur]}</td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                    {/* Day totals for cash entries */}
+                                    <tfoot>
+                                      <tr className={`border-t-2 ${dk ? "border-emerald-400/50 bg-emerald-400/10" : "border-emerald-300 bg-emerald-50"}`}>
+                                        <td colSpan={5} className="px-3 py-3 text-right">
+                                          <span className={`text-[11px] font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}>📊 جمع کل صندوق روز</span>
+                                        </td>
+                                        <td className={cellClass}>
+                                          <div className="space-y-0.5">
+                                            {currencies.map(cur => summary.cashIn[cur] > 0 && (
+                                              <div key={cur} className={`text-[11px] font-black tabular-nums ${dk ? "text-emerald-300" : "text-emerald-700"}`}>{fmt(summary.cashIn[cur])} <span className="text-[9px]">{labels[cur]}</span></div>
+                                            ))}
+                                            {currencies.every(cur => summary.cashIn[cur] === 0) && <span className={`text-[11px] ${subText}`}>—</span>}
                                           </div>
-                                          <div>
-                                            <div className={`text-[9px] font-black ${subText}`}>📅 تاریخ</div>
-                                            <div className={`text-xs font-black ${dk ? "text-slate-200" : "text-slate-700"}`} dir="ltr">{dt.datePart}</div>
+                                        </td>
+                                        <td className={cellClass}>
+                                          <div className="space-y-0.5">
+                                            {currencies.map(cur => summary.cashOut[cur] > 0 && (
+                                              <div key={cur} className={`text-[11px] font-black tabular-nums ${dk ? "text-rose-300" : "text-rose-700"}`}>{fmt(summary.cashOut[cur])} <span className="text-[9px]">{labels[cur]}</span></div>
+                                            ))}
+                                            {currencies.every(cur => summary.cashOut[cur] === 0) && <span className={`text-[11px] ${subText}`}>—</span>}
                                           </div>
-                                          <div>
-                                            <div className={`text-[9px] font-black ${subText}`}>⏰ ساعت</div>
-                                            <div className={`text-xs font-black ${dk ? "text-slate-200" : "text-slate-700"}`} dir="ltr">{dt.timePart}</div>
-                                          </div>
-                                          <div>
-                                            <div className={`text-[9px] font-black ${subText}`}>💱 مبلغ</div>
-                                            <div className={`text-sm font-black tabular-nums ${ce.direction === "in" ? "text-emerald-500" : "text-rose-500"}`}>
-                                              {ce.direction === "in" ? "+" : "-"} {fmt(ce.amount)}
-                                            </div>
-                                            <div className={`text-[10px] font-black ${currencyColors[cur][dk ? "dark" : "light"]}`}>{labels[cur]}</div>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
+                                        </td>
+                                        <td className={cellClass} />
+                                      </tr>
+                                    </tfoot>
+                                  </table>
                                 </div>
                               </div>
                             )}
 
-                            {/* ═══════════ Daily Summary - جمع کل روز ═══════════ */}
-                            <div className={`rounded-xl border p-4 ${dk ? "border-cyan-400/30 bg-cyan-400/10" : "border-cyan-200 bg-cyan-50"}`}>
-                              <b className={`block text-sm font-black mb-3 ${dk ? "text-cyan-300" : "text-cyan-700"}`}>📊 جمع کل روز {day}</b>
-                              <div className="overflow-x-auto rp-scroll">
-                                <table className="w-full text-xs">
-                                  <thead>
-                                    <tr className={`border-b ${dk ? "border-cyan-400/20" : "border-cyan-300"}`}>
-                                      <th className={`px-3 py-2 text-right font-black ${dk ? "text-cyan-300" : "text-cyan-700"}`}>ارز</th>
-                                      <th className={`px-3 py-2 text-center font-black text-emerald-500`}>دریافت</th>
-                                      <th className={`px-3 py-2 text-center font-black text-rose-500`}>پرداخت</th>
-                                      <th className={`px-3 py-2 text-center font-black text-amber-500`}>کارمزد</th>
-                                      <th className={`px-3 py-2 text-center font-black ${dk ? "text-slate-200" : "text-slate-700"}`}>خالص</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
+                            {/* ── Grand Day Summary Card ── */}
+                            <div className={`rounded-xl border-2 p-4 ${dk ? "border-amber-400/40 bg-gradient-to-br from-amber-900/20 to-slate-900/40" : "border-amber-300 bg-gradient-to-br from-amber-50 to-white"}`}>
+                              <div className="flex items-center gap-2 mb-3">
+                                <span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="check" className="h-4 w-4" /></span>
+                                <b className={`text-sm font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>📊 خلاصه نهایی روز {day}</b>
+                              </div>
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <div className={`rounded-lg p-3 text-center ${dk ? "bg-slate-900/50" : "bg-white/80"}`}>
+                                  <div className={`text-[9px] font-black ${subText}`}>تعداد معاملات</div>
+                                  <div className={`text-xl font-black tabular-nums mt-1 ${dk ? "text-blue-300" : "text-blue-700"}`}>{fa(txCount)}</div>
+                                </div>
+                                <div className={`rounded-lg p-3 text-center ${dk ? "bg-slate-900/50" : "bg-white/80"}`}>
+                                  <div className={`text-[9px] font-black ${subText}`}>اسناد صندوق</div>
+                                  <div className={`text-xl font-black tabular-nums mt-1 ${dk ? "text-emerald-300" : "text-emerald-700"}`}>{fa(cashCount)}</div>
+                                </div>
+                                <div className={`rounded-lg p-3 text-center ${dk ? "bg-slate-900/50" : "bg-white/80"}`}>
+                                  <div className={`text-[9px] font-black ${subText}`}>مجموع کارمزد</div>
+                                  <div className={`text-xl font-black tabular-nums mt-1 ${dk ? "text-amber-300" : "text-amber-700"}`}>
+                                    {currencies.some(cur => summary.commission[cur] > 0) ? currencies.filter(cur => summary.commission[cur] > 0).map(cur => `${fmt(summary.commission[cur])} ${labels[cur]}`).join(" | ") : "۰"}
+                                  </div>
+                                </div>
+                                <div className={`rounded-lg p-3 text-center ${dk ? "bg-slate-900/50" : "bg-white/80"}`}>
+                                  <div className={`text-[9px] font-black ${subText}`}>خالص صندوق</div>
+                                  <div className="mt-1 space-y-0.5">
                                     {currencies.map(cur => {
-                                      const t = dailyTotals[cur];
-                                      if (t.in === 0 && t.out === 0 && t.fee === 0) return null;
+                                      const net = summary.cashIn[cur] - summary.cashOut[cur];
+                                      if (net === 0) return null;
                                       return (
-                                        <tr key={cur} className={`border-b ${dk ? "border-cyan-400/10" : "border-cyan-200"}`}>
-                                          <td className={`px-3 py-2 text-right font-black ${currencyColors[cur][dk ? "dark" : "light"]}`}>{labels[cur]}</td>
-                                          <td className="px-3 py-2 text-center font-black tabular-nums text-emerald-500">{fmt(t.in)}</td>
-                                          <td className="px-3 py-2 text-center font-black tabular-nums text-rose-500">{fmt(t.out)}</td>
-                                          <td className="px-3 py-2 text-center font-black tabular-nums text-amber-500">{fmt(t.fee)}</td>
-                                          <td className={`px-3 py-2 text-center font-black tabular-nums ${t.net >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
-                                            {t.net >= 0 ? "+" : ""}{fmt(t.net)}
-                                          </td>
-                                        </tr>
+                                        <div key={cur} className={`text-[11px] font-black tabular-nums ${net > 0 ? (dk ? "text-emerald-300" : "text-emerald-700") : "text-rose-500"}`}>
+                                          {net > 0 ? "+" : ""}{fmt(net)} <span className="text-[9px]">{labels[cur]}</span>
+                                        </div>
                                       );
                                     })}
-                                  </tbody>
-                                </table>
+                                    {currencies.every(cur => (summary.cashIn[cur] - summary.cashOut[cur]) === 0) && <span className={`text-[11px] ${subText}`}>—</span>}
+                                  </div>
+                                </div>
                               </div>
                             </div>
-
-                            {data.transactions.length === 0 && data.cashEntries.length === 0 && (
-                              <div className={`text-center py-6 ${subText}`}><p className="text-xs font-bold">هیچ رویدادی در این روز ثبت نشده</p></div>
-                            )}
                           </div>
                         )}
                       </div>
@@ -891,110 +981,90 @@ export default function ReportsPage() {
       {/* ═══════════ Customer Details Modal ═══════════ */}
       {selectedCustomer && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm" onClick={() => setSelectedCustomer(null)}>
-          <div className={`w-full max-w-3xl rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={e => e.stopPropagation()}>
+          <div className={`w-full max-w-4xl rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={e => e.stopPropagation()}>
             <div className={`flex items-center justify-between border-b px-4 py-3 ${dk ? "border-slate-700" : "border-slate-100"}`}>
-              <b className={`text-sm font-black flex items-center gap-2 ${dk ? "text-slate-100" : "text-slate-800"}`}><Ic n="user" className="h-4 w-4" />جزئیات کامل مشتری</b>
+              <b className={`text-sm font-black flex items-center gap-2 ${dk ? "text-slate-100" : "text-slate-800"}`}><Ic n="user" className="h-4 w-4" />جزئیات کامل — {selectedCustomer.name}</b>
               <button onClick={() => setSelectedCustomer(null)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"><Ic n="x" className="h-4 w-4" /></button>
             </div>
             <div className="max-h-[80vh] overflow-y-auto p-4 space-y-4">
-              {/* اطلاعات مشتری - افقی */}
+              {/* Info */}
               <div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"}`}>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className={`grid h-14 w-14 place-items-center rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 text-white font-black text-2xl shadow-lg`}>
-                      {selectedCustomer.name.charAt(0)}
-                    </div>
-                    <div>
-                      <b className={`block text-lg font-black ${dk ? "text-white" : "text-slate-900"}`}>{selectedCustomer.name}</b>
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-2 text-xs">
-                    {selectedCustomer.phone && <div><span className={subText}>📱 تلفن:</span> <span dir="ltr" className="font-bold">{selectedCustomer.phone}</span></div>}
-                    {selectedCustomer.tazkira && <div><span className={subText}>🆔 تذکره:</span> <span dir="ltr" className="font-bold">{selectedCustomer.tazkira}</span></div>}
-                  </div>
-                  <div className="flex items-center justify-end">
-                    <button onClick={() => { setShareCustomer(selectedCustomer); setSelectedCustomer(null); }} className={`px-4 py-2 rounded-lg text-xs font-black flex items-center gap-1.5 ${dk ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400" : "bg-emerald-600 text-white hover:bg-emerald-700"}`}><Ic n="share" className="h-4 w-4" />اشتراک‌گذاری</button>
-                  </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                  <div><span className={`block text-[9px] font-black ${subText}`}>👤 نام</span><b className={dk ? "text-slate-200" : "text-slate-700"}>{selectedCustomer.name}</b></div>
+                  <div><span className={`block text-[9px] font-black ${subText}`}>📱 تلفن</span><b className={dk ? "text-slate-200" : "text-slate-700"} dir="ltr">{selectedCustomer.phone || "—"}</b></div>
+                  <div><span className={`block text-[9px] font-black ${subText}`}>🆔 تذکره</span><b className={dk ? "text-slate-200" : "text-slate-700"} dir="ltr">{selectedCustomer.tazkira || "—"}</b></div>
+                  <div><span className={`block text-[9px] font-black ${subText}`}>📅 ثبت</span><b className={dk ? "text-slate-200" : "text-slate-700"} dir="ltr">{selectedCustomer.registeredAt ? shortDateLabel(selectedCustomer.registeredAt) : "—"}</b></div>
                 </div>
               </div>
 
-              {/* موجودی - افقی */}
-              <div>
-                <b className={`block text-xs font-black mb-2 ${dk ? "text-emerald-300" : "text-emerald-600"}`}>💼 موجودی حساب:</b>
-                <div className="grid grid-cols-5 gap-2">
-                  {currencies.map(cur => {
-                    const bal = selectedCustomer.balances?.[cur] || 0;
-                    return (
-                      <div key={cur} className={`rounded-lg p-3 text-center ${dk ? "bg-slate-800/50" : "bg-slate-100"}`}>
-                        <div className={`text-[9px] font-black ${subText}`}>{labels[cur]}</div>
-                        <div className={`text-lg font-black tabular-nums mt-1 ${bal < 0 ? "text-rose-500" : bal > 0 ? (dk ? "text-emerald-300" : "text-emerald-700") : subText}`}>{fmt(bal)}</div>
-                      </div>
-                    );
-                  })}
-                </div>
+              {/* Balances */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                {currencies.map(cur => {
+                  const bal = selectedCustomer.balances?.[cur] || 0;
+                  return (
+                    <div key={cur} className={`rounded-lg p-3 text-center ${dk ? "bg-slate-800/50" : "bg-slate-100"}`}>
+                      <div className={`text-[9px] font-black ${subText}`}>{labels[cur]}</div>
+                      <div className={`text-lg font-black tabular-nums mt-1 ${bal < 0 ? "text-rose-500" : bal > 0 ? (dk ? "text-emerald-300" : "text-emerald-700") : subText}`}>{fmt(bal)}</div>
+                    </div>
+                  );
+                })}
               </div>
 
-              {/* تاریخچه معاملات - افقی کامل */}
+              {/* Transactions — horizontal table */}
               <div>
-                <b className={`block text-xs font-black mb-3 ${dk ? "text-blue-300" : "text-blue-600"}`}>📋 تاریخچه معاملات:</b>
-                <div className="space-y-3 max-h-96 overflow-y-auto rp-scroll">
-                  {getCustomerTransactions(selectedCustomer.id).length === 0 ? (
-                    <div className={`text-center py-8 ${subText}`}><p className="text-xs">هیچ رویداد مالی ثبت نشده</p></div>
-                  ) : (
-                    getCustomerTransactions(selectedCustomer.id).map(tx => {
-                      const dt = splitDateTime(tx.date);
-                      return (
-                        <div key={tx.id} className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-white"}`}>
-                          {/* ردیف اول: نوع، مشتری، کد */}
-                          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3 pb-3 border-b border-dashed border-slate-300/30">
-                            <div>
-                              <div className={`text-[9px] font-black ${subText}`}>نوع</div>
-                              <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${txColors[tx.type][dk ? "dark" : "light"]}`}>{txLabels[tx.type]}</span>
-                            </div>
-                            <div>
-                              <div className={`text-[9px] font-black ${subText}`}>شرح</div>
-                              <div className={`text-xs font-bold truncate ${dk ? "text-slate-200" : "text-slate-700"}`}>{tx.description}</div>
-                            </div>
-                            <div>
-                              <div className={`text-[9px] font-black ${subText}`}>📅 تاریخ</div>
-                              <div className={`text-xs font-black ${dk ? "text-slate-200" : "text-slate-700"}`} dir="ltr">{dt.datePart}</div>
-                            </div>
-                            <div>
-                              <div className={`text-[9px] font-black ${subText}`}>⏰ ساعت</div>
-                              <div className={`text-xs font-black ${dk ? "text-slate-200" : "text-slate-700"}`} dir="ltr">{dt.timePart}</div>
-                            </div>
-                          </div>
-                          {/* ردیف دوم: مبلغ، جهت، مانده، کد */}
-                          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                            <div className={`rounded-lg p-3 ${tx.direction === "in" ? (dk ? "bg-emerald-400/10" : "bg-emerald-50") : (dk ? "bg-rose-400/10" : "bg-rose-50")}`}>
-                              <div className={`text-[9px] font-black ${subText}`}>{tx.direction === "in" ? "💵 دریافت" : "💰 پرداخت"}</div>
-                              <div className={`text-lg font-black tabular-nums ${tx.direction === "in" ? "text-emerald-500" : "text-rose-500"}`}>
-                                {tx.direction === "in" ? "+" : "-"} {fmt(tx.amount)}
-                              </div>
-                              <div className={`text-[10px] font-black ${currencyColors[tx.currency][dk ? "dark" : "light"]}`}>{labels[tx.currency]}</div>
-                            </div>
-                            <div>
-                              <div className={`text-[9px] font-black ${subText}`}>💰 مانده بعد</div>
-                              <div className={`text-sm font-black tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`}>{fmt(tx.balanceAfter)}</div>
-                              <div className={`text-[10px] font-black ${currencyColors[tx.currency][dk ? "dark" : "light"]}`}>{labels[tx.currency]}</div>
-                            </div>
-                            <div>
-                              <div className={`text-[9px] font-black ${subText}`}>🛅 کد پیگیری</div>
-                              <div className={`text-xs font-black ${dk ? "text-cyan-300" : "text-cyan-700"}`} dir="ltr">{tx.referenceNumber || "-"}</div>
-                            </div>
-                            <div>
-                              <div className={`text-[9px] font-black ${subText}`}>📊 جهت</div>
-                              <div className={`text-xs font-black ${tx.direction === "in" ? "text-emerald-500" : "text-rose-500"}`}>
-                                {tx.direction === "in" ? "⬇️ دریافت" : "⬆️ پرداخت"}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
+                <b className={`block text-xs font-black mb-2 ${dk ? "text-blue-300" : "text-blue-600"}`}>📋 تاریخچه معاملات ({fa(getCustomerTransactions(selectedCustomer.id).length)}):</b>
+                {getCustomerTransactions(selectedCustomer.id).length === 0 ? (
+                  <div className={`text-center py-6 ${subText}`}><p className="text-xs">هیچ معامله‌ای ثبت نشده</p></div>
+                ) : (
+                  <div className="overflow-x-auto rp-scroll">
+                    <div className="max-h-72 overflow-y-auto rp-scroll">
+                      <table className="w-full min-w-[900px] text-sm">
+                        <thead className="sticky top-0 z-10">
+                          <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800" : "border-slate-100 bg-slate-50"}`}>
+                            {["#", "کد", "تاریخ", "نوع", "دریافت", "پرداخت", "نرخ", "کارمزد"].map(h => (
+                              <th key={h} className="px-3 py-2.5 text-center text-[10px] font-black text-slate-400 whitespace-nowrap">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
+                          {getCustomerTransactions(selectedCustomer.id).map((tx, index) => {
+                            const dt = splitDateTime(tx.date);
+                            return (
+                              <tr key={tx.id} className={dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/50"}>
+                                <td className={cellClass}>
+                                  <span className={`inline-grid h-6 w-6 place-items-center rounded-lg text-[10px] font-black ${dk ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>{index + 1}</span>
+                                </td>
+                                <td className={cellClass}>
+                                  <span className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-black ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-cyan-300 bg-cyan-50 text-cyan-700"}`} dir="ltr"><Ic n="tag" className="h-3 w-3" />{tx.trackingCode}</span>
+                                </td>
+                                <td className={cellClass}>
+                                  <div className="flex flex-col items-center gap-0.5">
+                                    <span dir="ltr" className={`text-[11px] font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`}>{dt.datePart}</span>
+                                    <span dir="ltr" className={`text-[9px] tabular-nums ${subText}`}>{dt.timePart}</span>
+                                  </div>
+                                </td>
+                                <td className={cellClass}><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${typeChipClass(tx, dk)}`}>{transactionTypeLabel(tx)}</span></td>
+                                <td className={cellClass}>
+                                  <div className={`text-[12px] font-black tabular-nums ${dk ? "text-emerald-300" : "text-emerald-700"}`}>{fmt(tx.toAmount)}</div>
+                                  <div className={`text-[9px] ${subText}`}>{labels[tx.toCurrency]}</div>
+                                </td>
+                                <td className={cellClass}>
+                                  <div className={`text-[12px] font-black tabular-nums ${dk ? "text-rose-300" : "text-rose-700"}`}>{fmt(tx.fromAmount)}</div>
+                                  <div className={`text-[9px] ${subText}`}>{labels[tx.fromCurrency]}</div>
+                                </td>
+                                <td className={`${cellClass} text-[10px] ${subText}`}>{tx.rateLabel}</td>
+                                <td className={`${cellClass} text-[11px] font-bold tabular-nums ${tx.commission && tx.commission > 0 ? (dk ? "text-amber-300" : "text-amber-700") : subText}`}>{transactionCommissionLabel(tx)}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
+
+              <button onClick={() => { setShareCustomer(selectedCustomer); setSelectedCustomer(null); }} className={`w-full py-3 rounded-xl text-sm font-black flex items-center justify-center gap-2 ${dk ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400" : "bg-emerald-600 text-white hover:bg-emerald-700"}`}><Ic n="share" className="h-4 w-4" />اشتراک‌گذاری گزارش</button>
             </div>
           </div>
         </div>
@@ -1021,7 +1091,7 @@ export default function ReportsPage() {
               <button onClick={() => { shareViaTelegram(shareCustomer); setShareCustomer(null); }} className={`w-full py-3 rounded-xl text-sm font-black flex items-center justify-center gap-2 ${dk ? "bg-blue-500/20 text-blue-300 hover:bg-blue-500/30" : "bg-blue-100 text-blue-700 hover:bg-blue-200"}`}><span className="text-xl">📱</span> تلگرام</button>
               <button onClick={() => { shareViaWhatsApp(shareCustomer); setShareCustomer(null); }} className={`w-full py-3 rounded-xl text-sm font-black flex items-center justify-center gap-2 ${dk ? "bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30" : "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"}`}><span className="text-xl">💬</span> واتساپ</button>
               <button onClick={() => { shareViaImo(shareCustomer); setShareCustomer(null); }} className={`w-full py-3 rounded-xl text-sm font-black flex items-center justify-center gap-2 ${dk ? "bg-violet-500/20 text-violet-300 hover:bg-violet-500/30" : "bg-violet-100 text-violet-700 hover:bg-violet-200"}`}><span className="text-xl">📨</span> ایمو (کپی در کلیپ‌بورد)</button>
-              <button onClick={async () => { try { const text = generateCustomerReport(shareCustomer); await navigator.clipboard.writeText(text); showToast("✅ گزارش کپی شد"); } catch { showToast("❌ خطا در کپی"); } setShareCustomer(null); }} className={`w-full py-3 rounded-xl text-sm font-black flex items-center justify-center gap-2 ${dk ? "bg-slate-700 text-slate-200 hover:bg-slate-600" : "bg-slate-200 text-slate-700 hover:bg-slate-300"}`}><Ic n="copy" className="h-4 w-4" /> کپی متن گزارش</button>
+              <button onClick={async () => { try { await navigator.clipboard.writeText(generateCustomerReport(shareCustomer)); showToast("✅ گزارش کپی شد"); } catch { showToast("❌ خطا در کپی"); } setShareCustomer(null); }} className={`w-full py-3 rounded-xl text-sm font-black flex items-center justify-center gap-2 ${dk ? "bg-slate-700 text-slate-200 hover:bg-slate-600" : "bg-slate-200 text-slate-700 hover:bg-slate-300"}`}><Ic n="copy" className="h-4 w-4" /> کپی متن گزارش</button>
             </div>
           </div>
         </div>
