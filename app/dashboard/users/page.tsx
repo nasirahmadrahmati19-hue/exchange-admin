@@ -394,7 +394,7 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
   return entries;
 }
 
-// ✅ تابع اصلاح‌شده: روزنامچه صندوق با نوع درست برای هر سند
+// ✅ تابع اصلاح‌شده: روزنامچه صندوق با نوع درست برای هر سند (جدا از مشتریان)
 function buildCashBoxLedger(cashEntries: any[]): LedgerEntry[] {
   const entries: LedgerEntry[] = [];
   if (!Array.isArray(cashEntries)) return entries;
@@ -404,6 +404,10 @@ function buildCashBoxLedger(cashEntries: any[]): LedgerEntry[] {
   const bals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
   for (const ce of sorted) {
     if (ce.status === "voided") continue;
+    // ❌ نادیده گرفتن اسناد مرتبط با مشتریان و معاملات
+    if (ce.type === "customer_deposit" || ce.type === "customer_withdraw") continue;
+    if (ce.linkedExchangeId || ce.linkedTransferId || ce.linkedConvertId || ce.linkedHawalaId || ce.linkedHawalaSettleId) continue;
+
     const cur = ce.currency as Currency;
     if (!isCurrency(cur)) continue;
     const amt = Number(ce.amount || 0) || 0;
@@ -412,9 +416,7 @@ function buildCashBoxLedger(cashEntries: any[]): LedgerEntry[] {
     bals[cur] += isIn ? amt : -amt;
 
     let txType: TxType = "correction";
-    if (ce.type === "customer_deposit") txType = "deposit";
-    else if (ce.type === "customer_withdraw") txType = "withdraw";
-    else if (ce.type === "owner_deposit") txType = "deposit";
+    if (ce.type === "owner_deposit") txType = "deposit";
     else if (ce.type === "owner_withdraw") txType = "withdraw";
     else if (ce.type === "fee") txType = "fee";
     else if (ce.type === "adjustment") txType = "correction";
@@ -425,7 +427,7 @@ function buildCashBoxLedger(cashEntries: any[]): LedgerEntry[] {
       date: ce.date || new Date().toISOString(),
       customerId: CASH_BOX_ID,
       type: txType,
-      description: ce.reason || entryTypeLabels[ce.type as CashEntryType] || "",
+      description: ce.reason || entryTypeLabels[ce.type as CashEntryType] || "عملیات صندوق",
       currency: cur,
       amount: amt,
       direction: isIn ? "in" : "out",
@@ -442,6 +444,10 @@ function computeCashBoxBalances(cashEntries: any[]): Record<Currency, number> {
   if (!Array.isArray(cashEntries)) return balances;
   for (const ce of cashEntries) {
     if (ce.status === "voided") continue;
+    // ❌ نادیده گرفتن اسناد مرتبط با مشتریان و معاملات
+    if (ce.type === "customer_deposit" || ce.type === "customer_withdraw") continue;
+    if (ce.linkedExchangeId || ce.linkedTransferId || ce.linkedConvertId || ce.linkedHawalaId || ce.linkedHawalaSettleId) continue;
+
     const cur = ce.currency as Currency;
     if (!isCurrency(cur)) continue;
     balances[cur] += ce.direction === "in" ? (ce.amount || 0) : -(ce.amount || 0);
