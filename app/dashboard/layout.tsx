@@ -4,13 +4,14 @@ import { useEffect, useState, useRef, useCallback, memo, type ReactNode } from "
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 
+// ✅ تغییر: tickets → reports
 const menuItems = [
   { title: "داشبورد", href: "/dashboard" },
   { title: "حواله‌جات", href: "/dashboard/hawala" },
   { title: "تبادل ارز", href: "/dashboard/trades" },
   { title: "صندوق", href: "/dashboard/cash" },
   { title: "مشتریان", href: "/dashboard/users" },
-  { title: "تیکت‌ها", href: "/dashboard/tickets" },
+  { title: "گزارش", href: "/dashboard/reports" },
 ];
 
 const CUSTOMERS_KEY = "fx-customers";
