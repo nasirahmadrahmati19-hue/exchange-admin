@@ -21,9 +21,6 @@ const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
 const labels: Record<Currency, string> = {
   AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار",
 };
-const flags: Record<Currency, string> = {
-  AFN: "🇦🇫", USD: "🇺🇸", EUR: "🇪🇺", IRR: "🇮🇷", PKR: "🇵🇰",
-};
 
 // ============================================================
 // توابع کمکی
@@ -103,10 +100,9 @@ interface Transaction {
   id: string;
   date: string;
   type: "exchange" | "transfer" | "convert";
-  fromCurrency: Currency;
-  fromAmount: number;
-  toCurrency: Currency;
-  toAmount: number;
+  currency?: Currency;
+  amount?: number;
+  afnValue?: number;
   commission?: number;
   commissionCurrency?: Currency;
   status: "active" | "voided";
@@ -274,7 +270,7 @@ export default function DashboardPage() {
       if (tx.status === "voided") continue;
       if (isToday(tx.date)) {
         tradeCount++;
-        tradeAmountSum += tx.fromAmount || 0;
+        tradeAmountSum += tx.amount || 0;
         if (tx.commission && tx.commission > 0) {
           tradeCommissionSum += tx.commission;
         }
@@ -469,14 +465,13 @@ export default function DashboardPage() {
                 </div>
               </div>
               
-              {/* ✅ بدون مخفف انگلیسی - فقط پرچم و نام فارسی */}
+              {/* ✅ بدون پرچم — فقط نام فارسی ارز */}
               <div className="relative grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 md:gap-4">
                 {currencies.map(cur => {
                   const bal = physicalCashBalances[cur];
                   const isNeg = bal < 0;
                   return (
                     <div key={cur} className={`group relative overflow-hidden rounded-2xl p-4 text-center transition-all duration-300 hover:scale-[1.02] ${dk ? "bg-slate-950/60 ring-1 ring-slate-700/50" : "bg-white/90 ring-1 ring-emerald-100 shadow-sm"}`}>
-                      <div className="text-2xl mb-1.5">{flags[cur]}</div>
                       <div className={`text-[12px] md:text-[13px] font-black mb-2 ${dk ? "text-slate-400" : "text-slate-500"}`}>{labels[cur]}</div>
                       <div className={`text-xl md:text-2xl font-black tabular-nums leading-tight ${isNeg ? "text-rose-500" : dk ? "text-emerald-300" : "text-emerald-700"}`}>{fmt(bal)}</div>
                       <div className={`mt-1.5 text-[9px] md:text-[10px] font-black ${isNeg ? "text-rose-500" : dk ? "text-emerald-400/70" : "text-emerald-600/70"}`}>{isNeg ? "⚠️ کسری" : "✅ نقدی"}</div>
@@ -507,8 +502,8 @@ export default function DashboardPage() {
                   const bal = customerDeposits[cur];
                   return (
                     <div key={cur} className={`flex items-center justify-between rounded-xl px-3 py-2 transition-colors ${dk ? "bg-slate-900/50" : "bg-white/80"}`}>
-                      <span className={`text-[12px] font-black flex items-center gap-1.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>
-                        <span className="text-base">{flags[cur]}</span> {labels[cur]}
+                      <span className={`text-[12px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>
+                        {labels[cur]}
                       </span>
                       <span className={`text-[15px] md:text-base font-black tabular-nums ${bal > 0 ? (dk ? "text-sky-300" : "text-sky-700") : subText}`}>
                         {fmt(bal)}
@@ -536,8 +531,8 @@ export default function DashboardPage() {
                   const bal = customerDebts[cur];
                   return (
                     <div key={cur} className={`flex items-center justify-between rounded-xl px-3 py-2 transition-colors ${dk ? "bg-slate-900/50" : "bg-white/80"}`}>
-                      <span className={`text-[12px] font-black flex items-center gap-1.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>
-                        <span className="text-base">{flags[cur]}</span> {labels[cur]}
+                      <span className={`text-[12px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>
+                        {labels[cur]}
                       </span>
                       <span className={`text-[15px] md:text-base font-black tabular-nums ${bal > 0 ? "text-rose-500" : subText}`}>
                         {fmt(bal)}
@@ -565,8 +560,8 @@ export default function DashboardPage() {
                   const bal = ownerNetCapital[cur];
                   return (
                     <div key={cur} className={`flex items-center justify-between rounded-xl px-3 py-2 transition-colors ${dk ? "bg-slate-900/50" : "bg-white/80"}`}>
-                      <span className={`text-[12px] font-black flex items-center gap-1.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>
-                        <span className="text-base">{flags[cur]}</span> {labels[cur]}
+                      <span className={`text-[12px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>
+                        {labels[cur]}
                       </span>
                       <span className={`text-[15px] md:text-base font-black tabular-nums ${bal < 0 ? "text-rose-500" : dk ? "text-violet-300" : "text-violet-700"}`}>
                         {fmt(bal)}
@@ -684,12 +679,9 @@ export default function DashboardPage() {
                     return (
                       <tr key={cur} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/70"}`}>
                         <td className="px-3 py-3 text-right">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xl">{flags[cur]}</span>
-                            <span className={`font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>
-                              {labels[cur]}
-                            </span>
-                          </div>
+                          <span className={`font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>
+                            {labels[cur]}
+                          </span>
                         </td>
                         <td className={`px-3 py-3 text-center text-[13px] font-black tabular-nums ${cash < 0 ? "text-rose-500" : dk ? "text-emerald-300" : "text-emerald-700"}`}>
                           {fmt(cash)}
