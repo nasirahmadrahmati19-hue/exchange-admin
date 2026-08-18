@@ -289,6 +289,13 @@ export default function DashboardPage() {
     return { tradeCount, hawalaCount, tradeCommissionSum, hawalaFeeSum };
   }, [transactions, hawalas]);
 
+  // ✅ تعداد مشتریان بدهکار (کسانی که حداقل در یک ارز بدهی دارند)
+  const debtorsCount = useMemo(() => {
+    return customers.filter(c => {
+      return currencies.some(cur => (c.balances?.[cur] || 0) < 0);
+    }).length;
+  }, [customers]);
+
   // ── استایل‌ها ──
   const dk = theme === "dark";
   const heading = dk ? "text-white" : "text-slate-900";
@@ -378,7 +385,7 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          {/* ═══════════ موجودی فیزیکی صندوق (بخش بزرگ) ═══════════ */}
+          {/* ═══════════ موجودی فیزیکی صندوق ═══════════ */}
           <section className="cs-up space-y-4 md:space-y-5" style={{ animationDelay: "140ms" }}>
             <div className={`relative overflow-hidden rounded-2xl md:rounded-3xl border-2 p-5 md:p-7 transition-all duration-300 hover:shadow-2xl ${dk ? "border-emerald-400/40 bg-gradient-to-br from-emerald-900/40 via-slate-900/60 to-teal-900/40 shadow-[0_20px_60px_-15px_rgba(16,185,129,0.3)]" : "border-emerald-300 bg-gradient-to-br from-emerald-50 via-white to-teal-50 shadow-[0_20px_60px_-15px_rgba(16,185,129,0.25)]"}`}>
               <div className={`absolute -top-24 -left-24 h-48 w-48 rounded-full blur-3xl opacity-20 ${dk ? "bg-emerald-400" : "bg-emerald-300"}`} />
@@ -412,7 +419,7 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          {/* ═══════════ چهار کارت حساب‌ها (اصلاح شده) ═══════════ */}
+          {/* ═══════════ چهار کارت حساب‌ها ═══════════ */}
           <section className="cs-up grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4" style={{ animationDelay: "210ms" }}>
 
             {/* ۱. موجودی مشتریان */}
@@ -502,25 +509,46 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* ۴. تعداد مشتریان (جدید) */}
+            {/* ۴. تعداد مشتریان (دو قسمتی) */}
             <div className={`group relative overflow-hidden rounded-2xl border p-4 md:p-5 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-cyan-400/25 bg-gradient-to-br from-cyan-900/30 to-slate-900/50" : "border-cyan-200 bg-gradient-to-br from-cyan-50 to-white"}`}>
               <div className={`absolute top-0 right-0 h-24 w-24 rounded-full blur-2xl opacity-10 ${dk ? "bg-cyan-400" : "bg-cyan-300"}`} />
-              <div className="relative flex items-center gap-3 mb-4">
+              <div className="relative flex items-center gap-3 mb-3">
                 <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${dk ? "bg-cyan-400/15 text-cyan-300" : "bg-cyan-100 text-cyan-600"}`}>
                   <span className="text-xl">👥</span>
                 </span>
                 <div className="min-w-0">
-                  <b className={`block text-[13px] md:text-[14px] font-black leading-tight ${dk ? "text-cyan-300" : "text-cyan-700"}`}>👥 تعداد مشتریان</b>
-                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${subText}`}>مشتریان ثبت‌شده در سیستم</span>
+                  <b className={`block text-[13px] md:text-[14px] font-black leading-tight ${dk ? "text-cyan-300" : "text-cyan-700"}`}>👥 وضعیت مشتریان</b>
+                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${subText}`}>کل و بدهکاران</span>
                 </div>
               </div>
-              <div className="relative flex items-center justify-center h-[140px]">
+              
+              {/* قسمت بالا: تعداد کل مشتریان */}
+              <div className={`relative flex items-center justify-center py-3 mb-2 rounded-xl ${dk ? "bg-slate-900/50" : "bg-white/80"}`}>
                 <div className="text-center">
-                  <div className={`text-5xl md:text-6xl font-black tabular-nums leading-none ${dk ? "text-cyan-300" : "text-cyan-700"}`}>
+                  <div className={`text-[10px] font-black mb-1 ${dk ? "text-cyan-300/70" : "text-cyan-600/70"}`}>
+                    کل مشتریان
+                  </div>
+                  <div className={`text-3xl md:text-4xl font-black tabular-nums leading-none ${dk ? "text-cyan-300" : "text-cyan-700"}`}>
                     {fa(customers.length)}
                   </div>
-                  <div className={`mt-3 text-[12px] font-black ${dk ? "text-cyan-400/70" : "text-cyan-600/70"}`}>
-                    نفر
+                  <div className={`mt-1 text-[9px] font-black ${subText}`}>نفر</div>
+                </div>
+              </div>
+
+              {/* خط جداکننده */}
+              <div className={`h-px my-2 ${dk ? "bg-cyan-400/20" : "bg-cyan-200"}`} />
+
+              {/* قسمت پایین: تعداد مشتریان بدهکار */}
+              <div className={`relative flex items-center justify-center py-3 rounded-xl ${dk ? "bg-rose-400/10" : "bg-rose-50"}`}>
+                <div className="text-center">
+                  <div className={`text-[10px] font-black mb-1 ${dk ? "text-rose-300/80" : "text-rose-600/80"}`}>
+                    مشتریان بدهکار
+                  </div>
+                  <div className={`text-3xl md:text-4xl font-black tabular-nums leading-none ${debtorsCount > 0 ? "text-rose-500" : subText}`}>
+                    {fa(debtorsCount)}
+                  </div>
+                  <div className={`mt-1 text-[9px] font-black ${debtorsCount > 0 ? (dk ? "text-rose-300/70" : "text-rose-600/70") : subText}`}>
+                    {debtorsCount > 0 ? "⚠️ دارای بدهی" : "✅ بدون بدهی"}
                   </div>
                 </div>
               </div>
@@ -614,30 +642,7 @@ export default function DashboardPage() {
                     );
                   })}
                 </tbody>
-                <tfoot>
-                  <tr className={`border-t-2 ${dk ? "border-slate-600 bg-slate-800/80" : "border-slate-200 bg-slate-50"}`}>
-                    <td className="px-3 py-3 text-right">
-                      <span className={`text-[12px] font-black ${dk ? "text-slate-300" : "text-slate-700"}`}>
-                        📊 مجموع (AFN)
-                      </span>
-                    </td>
-                    <td className={`px-3 py-3 text-center text-[13px] font-black tabular-nums ${dk ? "text-emerald-300" : "text-emerald-700"}`}>
-                      {fmt(physicalCashBalances.AFN)}
-                    </td>
-                    <td className={`px-3 py-3 text-center text-[13px] font-black tabular-nums ${dk ? "text-sky-300" : "text-sky-700"}`}>
-                      {fmt(customerDeposits.AFN)}
-                    </td>
-                    <td className={`px-3 py-3 text-center text-[13px] font-black tabular-nums text-rose-500`}>
-                      {fmt(customerDebts.AFN)}
-                    </td>
-                    <td className={`px-3 py-3 text-center text-[13px] font-black tabular-nums ${dk ? "text-violet-300" : "text-violet-700"}`}>
-                      {fmt(ownerNetCapital.AFN)}
-                    </td>
-                    <td className={`px-3 py-3 text-center text-[13px] font-black tabular-nums ${dk ? "text-amber-300" : "text-amber-700"}`}>
-                      {fmt(availableCommission.AFN)}
-                    </td>
-                  </tr>
-                </tfoot>
+                {/* ✅ tfoot حذف شد - ردیف "مجموع (AFN)" پاک شد */}
               </table>
             </div>
           </section>
