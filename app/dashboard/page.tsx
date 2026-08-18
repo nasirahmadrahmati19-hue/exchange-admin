@@ -261,17 +261,17 @@ export default function DashboardPage() {
     return totals;
   }, [totalCommissionEarned, commissionWithdrawn]);
 
+  // ✅ آمار روزانه (فقط امروز)
   const todayStats = useMemo(() => {
-    let tradeCount = 0, hawalaCount = 0, cashCount = 0;
-    const tradeCommission: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-    const hawalaFee: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+    let tradeCount = 0, hawalaCount = 0;
+    let tradeCommissionSum = 0, hawalaFeeSum = 0;
 
     for (const tx of transactions) {
       if (tx.status === "voided") continue;
       if (isToday(tx.date)) {
         tradeCount++;
-        if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
-          tradeCommission[tx.commissionCurrency] += tx.commission;
+        if (tx.commission && tx.commission > 0) {
+          tradeCommissionSum += tx.commission;
         }
       }
     }
@@ -280,19 +280,14 @@ export default function DashboardPage() {
       if (h.status === "cancelled") continue;
       if (isToday(h.date)) {
         hawalaCount++;
-        if (h.fee && h.fee > 0 && h.feeCurrency) {
-          hawalaFee[h.feeCurrency] += h.fee;
+        if (h.fee && h.fee > 0) {
+          hawalaFeeSum += h.fee;
         }
       }
     }
 
-    for (const e of entries) {
-      if (e.status === "voided") continue;
-      if (isToday(e.date)) cashCount++;
-    }
-
-    return { tradeCount, hawalaCount, cashCount, tradeCommission, hawalaFee };
-  }, [transactions, hawalas, entries]);
+    return { tradeCount, hawalaCount, tradeCommissionSum, hawalaFeeSum };
+  }, [transactions, hawalas]);
 
   // ── استایل‌ها ──
   const dk = theme === "dark";
@@ -363,7 +358,7 @@ export default function DashboardPage() {
             </div>
           </header>
 
-          {/* ═══════════ آمار امروز - استایل مدرن ═══════════ */}
+          {/* ═══════════ آمار امروز (۴ کارت اصلی) ═══════════ */}
           <section className="cs-up space-y-4 md:space-y-5" style={{ animationDelay: "70ms" }}>
             <div className="flex items-center gap-3 mb-1">
               <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl shadow-md ${dk ? "bg-gradient-to-br from-blue-500 to-sky-500 text-white" : "bg-gradient-to-br from-blue-500 to-cyan-500 text-white"}`}>
@@ -371,42 +366,21 @@ export default function DashboardPage() {
               </div>
               <div>
                 <h2 className={`cs-display text-xl md:text-2xl leading-none ${heading}`}>آمار امروز</h2>
-                <p className={`mt-1 text-[10px] md:text-xs font-bold ${subText}`}>خلاصه فعالیت‌های روزانه صرافی</p>
+                <p className={`mt-1 text-[10px] md:text-xs font-bold ${subText}`}>خلاصه فعالیت‌های روزانه (فقط امروز)</p>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 md:gap-4">
-              <TodayStat dk={dk} icon="💱" label="معاملات" value={fa(todayStats.tradeCount)} color="blue" />
-              <TodayStat dk={dk} icon="💸" label="حواله‌ها" value={fa(todayStats.hawalaCount)} color="purple" />
-              <TodayStat dk={dk} icon="🏦" label="عملیات صندوق" value={fa(todayStats.cashCount)} color="emerald" />
-              <TodayStat
-                dk={dk}
-                icon="💰"
-                label="کارمزد معاملات"
-                value={Object.values(todayStats.tradeCommission).reduce((a, b) => a + b, 0) > 0 ? "✅" : "۰"}
-                color="amber"
-              />
-              <TodayStat
-                dk={dk}
-                icon="🎯"
-                label="کارمزد حواله‌ها"
-                value={Object.values(todayStats.hawalaFee).reduce((a, b) => a + b, 0) > 0 ? "✅" : "۰"}
-                color="rose"
-              />
-              <TodayStat
-                dk={dk}
-                icon="👥"
-                label="مشتریان فعال"
-                value={fa(customers.length)}
-                color="sky"
-              />
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+              <TodayStat dk={dk} icon="💱" label="مجموع تبادل ارز" value={fa(todayStats.tradeCount)} color="blue" />
+              <TodayStat dk={dk} icon="💸" label="مجموع حواله‌ها" value={fa(todayStats.hawalaCount)} color="purple" />
+              <TodayStat dk={dk} icon="💰" label="کارمزد تبادل ارز" value={fmt(todayStats.tradeCommissionSum)} color="amber" />
+              <TodayStat dk={dk} icon="🎯" label="کارمزد حواله‌ها" value={fmt(todayStats.hawalaFeeSum)} color="rose" />
             </div>
           </section>
 
-          {/* ═══════════ موجودی فیزیکی صندوق - استایل مدرن و کلان ═══════════ */}
+          {/* ═══════════ موجودی فیزیکی صندوق (بخش بزرگ) ═══════════ */}
           <section className="cs-up space-y-4 md:space-y-5" style={{ animationDelay: "140ms" }}>
             <div className={`relative overflow-hidden rounded-2xl md:rounded-3xl border-2 p-5 md:p-7 transition-all duration-300 hover:shadow-2xl ${dk ? "border-emerald-400/40 bg-gradient-to-br from-emerald-900/40 via-slate-900/60 to-teal-900/40 shadow-[0_20px_60px_-15px_rgba(16,185,129,0.3)]" : "border-emerald-300 bg-gradient-to-br from-emerald-50 via-white to-teal-50 shadow-[0_20px_60px_-15px_rgba(16,185,129,0.25)]"}`}>
-              {/* جلوه‌های بصری پس‌زمینه */}
               <div className={`absolute -top-24 -left-24 h-48 w-48 rounded-full blur-3xl opacity-20 ${dk ? "bg-emerald-400" : "bg-emerald-300"}`} />
               <div className={`absolute -bottom-24 -right-24 h-48 w-48 rounded-full blur-3xl opacity-20 ${dk ? "bg-teal-400" : "bg-teal-300"}`} />
               
@@ -438,10 +412,10 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          {/* ═══════════ چهار کارت حساب‌ها - استایل مدرن و کلان ═══════════ */}
+          {/* ═══════════ چهار کارت حساب‌ها (اصلاح شده) ═══════════ */}
           <section className="cs-up grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4" style={{ animationDelay: "210ms" }}>
 
-            {/* موجودی مشتریان (طلبکار) */}
+            {/* ۱. موجودی مشتریان */}
             <div className={`group relative overflow-hidden rounded-2xl border p-4 md:p-5 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-sky-400/25 bg-gradient-to-br from-sky-900/30 to-slate-900/50" : "border-sky-200 bg-gradient-to-br from-sky-50 to-white"}`}>
               <div className={`absolute top-0 right-0 h-24 w-24 rounded-full blur-2xl opacity-10 ${dk ? "bg-sky-400" : "bg-sky-300"}`} />
               <div className="relative flex items-center gap-3 mb-4">
@@ -449,7 +423,7 @@ export default function DashboardPage() {
                   <span className="text-xl">💳</span>
                 </span>
                 <div className="min-w-0">
-                  <b className={`block text-[13px] md:text-[14px] font-black leading-tight ${dk ? "text-sky-300" : "text-sky-700"}`}>💳 موجودی مشتریان (طلب)</b>
+                  <b className={`block text-[13px] md:text-[14px] font-black leading-tight ${dk ? "text-sky-300" : "text-sky-700"}`}>💳 موجودی مشتریان</b>
                   <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${subText}`}>پول مشتری نزد صرافی</span>
                 </div>
               </div>
@@ -470,7 +444,7 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* بدهی مشتریان */}
+            {/* ۲. بدهی مشتریان */}
             <div className={`group relative overflow-hidden rounded-2xl border p-4 md:p-5 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-rose-400/25 bg-gradient-to-br from-rose-900/30 to-slate-900/50" : "border-rose-200 bg-gradient-to-br from-rose-50 to-white"}`}>
               <div className={`absolute top-0 right-0 h-24 w-24 rounded-full blur-2xl opacity-10 ${dk ? "bg-rose-400" : "bg-rose-300"}`} />
               <div className="relative flex items-center gap-3 mb-4">
@@ -499,7 +473,7 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* سرمایه خالص مالک */}
+            {/* ۳. سرمایه خالص مالک */}
             <div className={`group relative overflow-hidden rounded-2xl border p-4 md:p-5 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-violet-400/25 bg-gradient-to-br from-violet-900/30 to-slate-900/50" : "border-violet-200 bg-gradient-to-br from-violet-50 to-white"}`}>
               <div className={`absolute top-0 right-0 h-24 w-24 rounded-full blur-2xl opacity-10 ${dk ? "bg-violet-400" : "bg-violet-300"}`} />
               <div className="relative flex items-center gap-3 mb-4">
@@ -528,37 +502,33 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* کارمزد قابل برداشت */}
-            <div className={`group relative overflow-hidden rounded-2xl border p-4 md:p-5 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-amber-400/25 bg-gradient-to-br from-amber-900/30 to-slate-900/50" : "border-amber-200 bg-gradient-to-br from-amber-50 to-white"}`}>
-              <div className={`absolute top-0 right-0 h-24 w-24 rounded-full blur-2xl opacity-10 ${dk ? "bg-amber-400" : "bg-amber-300"}`} />
+            {/* ۴. تعداد مشتریان (جدید) */}
+            <div className={`group relative overflow-hidden rounded-2xl border p-4 md:p-5 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-cyan-400/25 bg-gradient-to-br from-cyan-900/30 to-slate-900/50" : "border-cyan-200 bg-gradient-to-br from-cyan-50 to-white"}`}>
+              <div className={`absolute top-0 right-0 h-24 w-24 rounded-full blur-2xl opacity-10 ${dk ? "bg-cyan-400" : "bg-cyan-300"}`} />
               <div className="relative flex items-center gap-3 mb-4">
-                <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}>
-                  <span className="text-xl">💎</span>
+                <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${dk ? "bg-cyan-400/15 text-cyan-300" : "bg-cyan-100 text-cyan-600"}`}>
+                  <span className="text-xl">👥</span>
                 </span>
                 <div className="min-w-0">
-                  <b className={`block text-[13px] md:text-[14px] font-black leading-tight ${dk ? "text-amber-300" : "text-amber-700"}`}>💎 کارمزد قابل برداشت</b>
-                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${subText}`}>درآمد خالص صرافی</span>
+                  <b className={`block text-[13px] md:text-[14px] font-black leading-tight ${dk ? "text-cyan-300" : "text-cyan-700"}`}>👥 تعداد مشتریان</b>
+                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${subText}`}>مشتریان ثبت‌شده در سیستم</span>
                 </div>
               </div>
-              <div className="relative space-y-1.5">
-                {currencies.map(cur => {
-                  const bal = availableCommission[cur];
-                  return (
-                    <div key={cur} className={`flex items-center justify-between rounded-xl px-3 py-2 transition-colors ${dk ? "bg-slate-900/50" : "bg-white/80"}`}>
-                      <span className={`text-[12px] font-black flex items-center gap-1.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>
-                        <span className="text-base">{flags[cur]}</span> {labels[cur]}
-                      </span>
-                      <span className={`text-[15px] md:text-base font-black tabular-nums ${bal > 0 ? (dk ? "text-amber-300" : "text-amber-700") : subText}`}>
-                        {fmt(bal)}
-                      </span>
-                    </div>
-                  );
-                })}
+              <div className="relative flex items-center justify-center h-[140px]">
+                <div className="text-center">
+                  <div className={`text-5xl md:text-6xl font-black tabular-nums leading-none ${dk ? "text-cyan-300" : "text-cyan-700"}`}>
+                    {fa(customers.length)}
+                  </div>
+                  <div className={`mt-3 text-[12px] font-black ${dk ? "text-cyan-400/70" : "text-cyan-600/70"}`}>
+                    نفر
+                  </div>
+                </div>
               </div>
             </div>
+
           </section>
 
-          {/* ═══════════ فرمول حسابداری - استایل مدرن ═══════════ */}
+          {/* ═══════════ فرمول حسابداری ═══════════ */}
           <div className={`cs-up rounded-2xl border-2 px-5 py-4 md:py-5 ${dk ? "border-slate-700/70 bg-gradient-to-r from-slate-800/60 to-slate-900/60" : "border-slate-200 bg-gradient-to-r from-white to-slate-50"}`} style={{ animationDelay: "280ms" }}>
             <div className={`flex flex-wrap items-center justify-center gap-3 md:gap-4 text-[12px] md:text-[13px] font-black ${dk ? "text-slate-300" : "text-slate-600"}`}>
               <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${dk ? "bg-emerald-400/10 text-emerald-300 ring-1 ring-emerald-400/30" : "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"}`}>
@@ -683,7 +653,7 @@ export default function DashboardPage() {
 }
 
 // ============================================================
-// کامپوننت کمکی: کارت آمار امروز (استایل مدرن)
+// کامپوننت کمکی: کارت آمار امروز
 // ============================================================
 function TodayStat({ dk, icon, label, value, color }: {
   dk: boolean;
