@@ -22,6 +22,9 @@ const labels: Record<Currency, string> = {
   AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار",
 };
 
+const CASH_BOX_ID = "CASH_BOX";
+const EXCHANGE_ACCOUNT_ID = "EXCHANGE_ACCOUNT";
+
 // ============================================================
 // توابع کمکی
 // ============================================================
@@ -195,9 +198,11 @@ export default function DashboardPage() {
     return balances;
   }, [entries]);
 
+  // ✅ جداسازی حساب صرافی و صندوق از موجودی مشتریان
   const customerDeposits = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
+      if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) continue;
       for (const cur of currencies) {
         const bal = c.balances?.[cur] || 0;
         if (bal > 0) totals[cur] += bal;
@@ -209,6 +214,7 @@ export default function DashboardPage() {
   const customerDebts = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
+      if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) continue;
       for (const cur of currencies) {
         const bal = c.balances?.[cur] || 0;
         if (bal < 0) totals[cur] += Math.abs(bal);
@@ -217,13 +223,12 @@ export default function DashboardPage() {
     return totals;
   }, [customers]);
 
-  const ownerNetCapital = useMemo(() => {
-    const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-    for (const cur of currencies) {
-      totals[cur] = (physicalCashBalances[cur] || 0) - (customerDeposits[cur] || 0) + (customerDebts[cur] || 0);
-    }
-    return totals;
-  }, [physicalCashBalances, customerDeposits, customerDebts]);
+  // ✅ خواندن مستقیم موجودی حساب صرافی
+  const exchangeAccount = useMemo(() => customers.find(c => c.id === EXCHANGE_ACCOUNT_ID), [customers]);
+  const exchangeBalance = useMemo(() => {
+    if (!exchangeAccount) return { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+    return exchangeAccount.balances;
+  }, [exchangeAccount]);
 
   const totalCommissionEarned = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
@@ -291,9 +296,10 @@ export default function DashboardPage() {
     return { tradeCount, hawalaCount, tradeAmountSum, hawalaAmountSum, tradeCommissionSum, hawalaFeeSum };
   }, [transactions, hawalas]);
 
-  // ✅ تعداد مشتریان بدهکار
+  // ✅ تعداد مشتریان بدهکار (بدون احتساب حساب صرافی)
   const debtorsCount = useMemo(() => {
     return customers.filter(c => {
+      if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) return false;
       return currencies.some(cur => (c.balances?.[cur] || 0) < 0);
     }).length;
   }, [customers]);
@@ -465,7 +471,6 @@ export default function DashboardPage() {
                 </div>
               </div>
               
-              {/* ✅ بدون پرچم — فقط نام فارسی ارز */}
               <div className="relative grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 md:gap-4">
                 {currencies.map(cur => {
                   const bal = physicalCashBalances[cur];
@@ -543,21 +548,21 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* ۳. سرمایه خالص مالک */}
+            {/* ۳. موجودی حساب صرافی */}
             <div className={`group relative overflow-hidden rounded-2xl border p-4 md:p-5 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-violet-400/25 bg-gradient-to-br from-violet-900/30 to-slate-900/50" : "border-violet-200 bg-gradient-to-br from-violet-50 to-white"}`}>
               <div className={`absolute top-0 right-0 h-24 w-24 rounded-full blur-2xl opacity-10 ${dk ? "bg-violet-400" : "bg-violet-300"}`} />
               <div className="relative flex items-center gap-3 mb-4">
                 <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${dk ? "bg-violet-400/15 text-violet-300" : "bg-violet-100 text-violet-600"}`}>
-                  <span className="text-xl">👑</span>
+                  <span className="text-xl">💼</span>
                 </span>
                 <div className="min-w-0">
-                  <b className={`block text-[13px] md:text-[14px] font-black leading-tight ${dk ? "text-violet-300" : "text-violet-700"}`}>💼 سرمایه خالص مالک</b>
-                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${subText}`}>صندوق - طلب + بدهی</span>
+                  <b className={`block text-[13px] md:text-[14px] font-black leading-tight ${dk ? "text-violet-300" : "text-violet-700"}`}>💼 موجودی حساب صرافی</b>
+                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${subText}`}>حساب داخلی و سرمایه مالک</span>
                 </div>
               </div>
               <div className="relative space-y-1.5">
                 {currencies.map(cur => {
-                  const bal = ownerNetCapital[cur];
+                  const bal = exchangeBalance[cur];
                   return (
                     <div key={cur} className={`flex items-center justify-between rounded-xl px-3 py-2 transition-colors ${dk ? "bg-slate-900/50" : "bg-white/80"}`}>
                       <span className={`text-[12px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>
@@ -627,7 +632,7 @@ export default function DashboardPage() {
               </span>
               <span className="text-slate-400">=</span>
               <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${dk ? "bg-violet-400/10 text-violet-300 ring-1 ring-violet-400/30" : "bg-violet-50 text-violet-700 ring-1 ring-violet-200"}`}>
-                👑 سرمایه مالک
+                💼 حساب صرافی
               </span>
               <span className="text-slate-400">+</span>
               <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${dk ? "bg-sky-400/10 text-sky-300 ring-1 ring-sky-400/30" : "bg-sky-50 text-sky-700 ring-1 ring-sky-200"}`}>
@@ -664,7 +669,7 @@ export default function DashboardPage() {
                     <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">💰 صندوق</th>
                     <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">💳 طلب مشتریان</th>
                     <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">📉 بدهی مشتریان</th>
-                    <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">👑 سرمایه مالک</th>
+                    <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">💼 حساب صرافی</th>
                     <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">💎 کارمزد</th>
                   </tr>
                 </thead>
@@ -673,7 +678,7 @@ export default function DashboardPage() {
                     const cash = physicalCashBalances[cur];
                     const deps = customerDeposits[cur];
                     const debts = customerDebts[cur];
-                    const equity = ownerNetCapital[cur];
+                    const equity = exchangeBalance[cur];
                     const comm = availableCommission[cur];
 
                     return (
