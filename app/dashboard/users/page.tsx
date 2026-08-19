@@ -183,11 +183,8 @@ function timeLabel(s: string) { try { const d = new Date(s); if (Number.isNaN(d.
 
 const emptyForm: FormState = { name: "", tazkira: "", phone: "", address: "", note: "", telegram: "" };
 
-// ✅ تابع یکپارچه محاسبه موجودی (دقیقاً مطابق با منطق CashPage برای تضمین همگام‌سازی ۱۰۰٪)
 function getLedgerBalance(customerId: string, currency: Currency, cashEntries: any[], ledger: LedgerEntry[]): number {
   let balance = 0;
-  
-  // ۱. محاسبه حساب‌های مجازی مستقیماً از CashEntries (منبع حقیقت صندوق)
   if (customerId === CASH_BOX_ID) {
     for (const e of cashEntries) {
       if (e.status === "voided" || e.currency !== currency) continue;
@@ -201,7 +198,6 @@ function getLedgerBalance(customerId: string, currency: Currency, cashEntries: a
       else if (e.type === "owner_withdraw" || e.type === "loan_given") balance -= e.amount;
     }
   } 
-  // ۲. محاسبه مشتریان عادی از روی Ledger جامع
   else {
     for (const e of ledger) {
       if (e.customerId === customerId && e.currency === currency) {
@@ -443,8 +439,6 @@ export default function CustomersPage() {
   const ledger = useMemo(() => { try { return buildLedger(customers, transactions, hawalas, cashEntries); } catch { return []; } }, [customers, transactions, hawalas, cashEntries]);
   const cashBoxLedger = useMemo(() => { try { return buildCashBoxLedger(cashEntries); } catch { return []; } }, [cashEntries]);
 
-  // ✅ نقشه جامع موجودی‌ها (Single Source of Truth)
-  // این تابع تضمین می‌کند که اعداد نمایش‌داده‌شده در این تب، دقیقاً با تب صندوق و داشبورد یکی هستند.
   const allBalances = useMemo(() => {
     const map: Record<string, Record<Currency, number>> = {};
     customers.forEach(c => { map[c.id] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; });
@@ -713,6 +707,10 @@ export default function CustomersPage() {
 
   if (!mounted) return (<div className="min-h-screen flex items-center justify-center"><div className="text-center"><div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-slate-300 border-t-emerald-500" /><p className="mt-4 text-slate-500">در حال بارگذاری...</p></div></div>);
 
+  // ✅ رفع خطا: تعریف متغیرهای heading و subText که در JSX استفاده می‌شدند
+  const heading = dk ? "text-white" : "text-slate-900";
+  const subText = dk ? "text-slate-500" : "text-slate-400";
+  
   const uiCard = `rounded-2xl border backdrop-blur transition-colors duration-300 ${dk ? "border-slate-700 bg-slate-800/90 shadow-[0_16px_40px_-24px_rgba(0,0,0,0.6)]" : "border-emerald-100 bg-white/95 shadow-[0_16px_40px_-28px_rgba(16,185,129,0.35)]"}`;
   const glassCard = `rounded-2xl border backdrop-blur transition-all duration-300 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-200 bg-white/80"}`;
   const inputShell = `rounded-xl border text-sm font-medium shadow-sm outline-none transition-all duration-200 focus:ring-4 ${dk ? "border-slate-600 bg-slate-900 text-slate-100 placeholder:text-slate-500 hover:border-slate-500 focus:border-emerald-400 focus:ring-emerald-400/10" : "border-slate-200 bg-white text-slate-800 placeholder:text-slate-400 hover:border-emerald-400 focus:border-emerald-500 focus:ring-emerald-500/10"}`;
