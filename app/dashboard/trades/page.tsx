@@ -22,7 +22,8 @@ const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
 const labels: Record<Currency, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
 const rateUnits: Record<Currency, number> = { AFN: 1, USD: 1, EUR: 1, IRR: 1000, PKR: 1000 };
 const CASH_BOX_ID = "CASH_BOX";
-const CASH_BOX_NAME = "صندوق";
+// ✅ تغییر: نام صندوق به "موجودی صرافی" تغییر یافت
+const CASH_BOX_NAME = "موجودی صرافی";
 const CASH_BOX_CUSTOMER: Customer = { id: CASH_BOX_ID, name: CASH_BOX_NAME, phone: "", telegram: "", telegramChatId: "", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
 const hasTelegram = (c: Customer): boolean => Boolean(c.telegramChatId || c.telegram);
 const normalizeDigits = (s: string) => s.replace(/[۰-۹]/g, d => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))).replace(/[٠-٩]/g, d => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
@@ -122,9 +123,11 @@ return 0;
 }
 const afnRateLabel = (foreign: Currency, rate: number) => `${fmt(rateUnits[foreign])} ${labels[foreign]} = ${fmt(rate)} ${labels.AFN}`;
 const directRateLabel = (base: Currency, counter: Currency, rate: number) => `${fmt(rateUnits[base])} ${labels[base]} = ${fmt(rate)} ${labels[counter]}`;
+// ✅ اصلاح: پشتیبانی از CASH_BOX_ID
 function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): Customer[] {
 return customers.map(c => {
-const cc = changes.filter(ch => ch.customerId === c.id && ch.customerId !== CASH_BOX_ID);
+// ✅ اصلاح: حذف شرط !== CASH_BOX_ID تا موجودی صرافی هم تغییر کند
+const cc = changes.filter(ch => ch.customerId === c.id);
 if (cc.length === 0) return c;
 const nb = { ...c.balances };
 for (const ch of cc) {
@@ -134,25 +137,26 @@ nb[ch.currency] = (nb[ch.currency] || 0) + ch.amount;
 return { ...c, balances: nb };
 });
 }
+// ✅ اصلاح: پشتیبانی از CASH_BOX_ID و حذف شرط !== CASH_BOX_ID
 function getBalanceChangesForTransaction(tx: Transaction, action: "register" | "reverse"): BalanceChange[] {
 const changes: BalanceChange[] = [];
 const sign = action === "register" ? 1 : -1;
-if (tx.type === "exchange" && tx.customerId && tx.customerId !== CASH_BOX_ID) {
+if (tx.type === "exchange" && tx.customerId) {
 changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.fromCurrency, amount: -tx.fromAmount * sign });
 changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.toCurrency, amount: tx.toAmount * sign });
 if (tx.commission && tx.commission > 0 && tx.commissionCurrency) changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.commissionCurrency, amount: -tx.commission * sign });
 }
 if (tx.type === "transfer") {
-if (tx.senderId && tx.senderId !== CASH_BOX_ID) {
+if (tx.senderId) {
 changes.push({ customerId: tx.senderId, customerName: tx.senderName || "", currency: tx.fromCurrency, amount: -tx.fromAmount * sign });
 if (tx.commissionPayer === "sender" && tx.commission && tx.commission > 0 && tx.commissionCurrency) changes.push({ customerId: tx.senderId, customerName: tx.senderName || "", currency: tx.commissionCurrency, amount: -tx.commission * sign });
 }
-if (tx.receiverId && tx.receiverId !== CASH_BOX_ID) {
+if (tx.receiverId) {
 changes.push({ customerId: tx.receiverId, customerName: tx.receiverName || "", currency: tx.toCurrency, amount: tx.toAmount * sign });
 if (tx.commissionPayer === "receiver" && tx.commission && tx.commission > 0 && tx.commissionCurrency) changes.push({ customerId: tx.receiverId, customerName: tx.receiverName || "", currency: tx.commissionCurrency, amount: -tx.commission * sign });
 }
 }
-if (tx.type === "convert" && tx.customerId && tx.customerId !== CASH_BOX_ID) {
+if (tx.type === "convert" && tx.customerId) {
 changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.fromCurrency, amount: -tx.fromAmount * sign });
 changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.toCurrency, amount: tx.toAmount * sign });
 if (tx.commission && tx.commission > 0 && tx.commissionCurrency) changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.commissionCurrency, amount: -tx.commission * sign });
@@ -201,17 +205,20 @@ balances[cur] += ce.direction === "in" ? (ce.amount || 0) : -(ce.amount || 0);
 }
 return balances;
 }
+// ✅ اصلاح: تشخیص "موجودی صرافی" به جای "صندوق"
+function isCashBoxName(name: string | undefined): boolean {
+return name?.trim() === CASH_BOX_NAME;
+}
 function syncCashEntriesForExchange(action: "add" | "remove" | "replace", tx: Transaction | null, oldTxId?: string) {
 let entries = loadCashEntries();
 const targetId = oldTxId || tx?.id;
-if (targetId) {
-entries = entries.filter((e: any) => e.linkedExchangeId !== targetId);
-}
+if (targetId) entries = entries.filter((e: any) => e.linkedExchangeId !== targetId);
 if ((action === "add" || action === "replace") && tx) {
 const newEntries: any[] = [];
 const dateStr = tx.date || new Date().toISOString();
 const tcBase = tx.trackingCode;
-const isCashBox = tx.customerId === CASH_BOX_ID || tx.customerName === CASH_BOX_NAME;
+// ✅ اصلاح: تشخیص "موجودی صرافی"
+const isCashBox = tx.customerId === CASH_BOX_ID || isCashBoxName(tx.customerName);
 newEntries.push({
 id: newId(), trackingCode: `${tcBase}-IN`, date: dateStr,
 type: isCashBox ? "owner_deposit" : "customer_deposit",
@@ -250,33 +257,32 @@ saveCashEntries(entries);
 function syncCashEntriesForTransfer(action: "add" | "remove" | "replace", tx: Transaction | null, oldTxId?: string) {
 let entries = loadCashEntries();
 const targetId = oldTxId || tx?.id;
-if (targetId) {
-entries = entries.filter((e: any) => e.linkedTransferId !== targetId);
-}
+if (targetId) entries = entries.filter((e: any) => e.linkedTransferId !== targetId);
 if ((action === "add" || action === "replace") && tx) {
 const newEntries: any[] = [];
 const dateStr = tx.date || new Date().toISOString();
 const tcBase = tx.trackingCode;
-const isSenderCashbox = tx.senderId === CASH_BOX_ID || tx.senderName === CASH_BOX_NAME;
-const isReceiverCashbox = tx.receiverId === CASH_BOX_ID || tx.receiverName === CASH_BOX_NAME;
+// ✅ اصلاح: تشخیص "موجودی صرافی"
+const isSenderCash = tx.senderId === CASH_BOX_ID || isCashBoxName(tx.senderName);
+const isReceiverCash = tx.receiverId === CASH_BOX_ID || isCashBoxName(tx.receiverName);
 newEntries.push({
 id: newId(), trackingCode: `${tcBase}-S-OUT`, date: dateStr,
-type: isSenderCashbox ? "owner_withdraw" : "customer_withdraw",
+type: isSenderCash ? "owner_withdraw" : "customer_withdraw",
 currency: tx.fromCurrency, amount: tx.fromAmount, direction: "out",
-reason: `انتقال - برداشت از ${isSenderCashbox ? "صندوق" : tx.senderName}`,
+reason: `انتقال - برداشت از ${isSenderCash ? "موجودی صرافی" : tx.senderName}`,
 balanceAfter: 0,
-customerId: isSenderCashbox ? undefined : tx.senderId,
-customerName: isSenderCashbox ? undefined : tx.senderName,
+customerId: isSenderCash ? undefined : tx.senderId,
+customerName: isSenderCash ? undefined : tx.senderName,
 linkedTransferId: tx.id,
 });
 newEntries.push({
 id: newId(), trackingCode: `${tcBase}-R-IN`, date: dateStr,
-type: isReceiverCashbox ? "owner_deposit" : "customer_deposit",
+type: isReceiverCash ? "owner_deposit" : "customer_deposit",
 currency: tx.toCurrency, amount: tx.toAmount, direction: "in",
-reason: `انتقال - پرداخت به ${isReceiverCashbox ? "صندوق" : tx.receiverName}`,
+reason: `انتقال - پرداخت به ${isReceiverCash ? "موجودی صرافی" : tx.receiverName}`,
 balanceAfter: 0,
-customerId: isReceiverCashbox ? undefined : tx.receiverId,
-customerName: isReceiverCashbox ? undefined : tx.receiverName,
+customerId: isReceiverCash ? undefined : tx.receiverId,
+customerName: isReceiverCash ? undefined : tx.receiverName,
 linkedTransferId: tx.id,
 });
 if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
@@ -295,19 +301,18 @@ saveCashEntries(entries);
 function syncCashEntriesForConvert(action: "add" | "remove" | "replace", tx: Transaction | null, oldTxId?: string) {
 let entries = loadCashEntries();
 const targetId = oldTxId || tx?.id;
-if (targetId) {
-entries = entries.filter((e: any) => e.linkedConvertId !== targetId);
-}
+if (targetId) entries = entries.filter((e: any) => e.linkedConvertId !== targetId);
 if ((action === "add" || action === "replace") && tx) {
 const newEntries: any[] = [];
 const dateStr = tx.date || new Date().toISOString();
 const tcBase = tx.trackingCode;
-const isCashBox = tx.customerId === CASH_BOX_ID || tx.customerName === CASH_BOX_NAME;
+// ✅ اصلاح: تشخیص "موجودی صرافی"
+const isCashBox = tx.customerId === CASH_BOX_ID || isCashBoxName(tx.customerName);
 newEntries.push({
 id: newId(), trackingCode: `${tcBase}-OUT`, date: dateStr,
 type: isCashBox ? "owner_withdraw" : "customer_withdraw",
 currency: tx.fromCurrency, amount: tx.fromAmount, direction: "out",
-reason: `تبدیل ارز - برداشت از ${isCashBox ? "صندوق" : tx.customerName}`,
+reason: `تبدیل ارز - برداشت از ${isCashBox ? "موجودی صرافی" : tx.customerName}`,
 balanceAfter: 0,
 customerId: isCashBox ? undefined : tx.customerId,
 customerName: isCashBox ? undefined : tx.customerName,
@@ -317,7 +322,7 @@ newEntries.push({
 id: newId(), trackingCode: `${tcBase}-IN`, date: dateStr,
 type: isCashBox ? "owner_deposit" : "customer_deposit",
 currency: tx.toCurrency, amount: tx.toAmount, direction: "in",
-reason: `تبدیل ارز - واریز به ${isCashBox ? "صندوق" : tx.customerName}`,
+reason: `تبدیل ارز - واریز به ${isCashBox ? "موجودی صرافی" : tx.customerName}`,
 balanceAfter: 0,
 customerId: isCashBox ? undefined : tx.customerId,
 customerName: isCashBox ? undefined : tx.customerName,
@@ -335,351 +340,6 @@ entries = [...entries, ...newEntries];
 }
 entries = recomputeCashBalances(entries);
 saveCashEntries(entries);
-}
-function formatShamsiDateTime(date: Date): string {
-try {
-const parts = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", { year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
-const g = (t: string) => parts.find(p => p.type === t)?.value || "0";
-const y = g("year"), m = g("month"), d = g("day");
-const h = date.getHours(), min = String(date.getMinutes()).padStart(2, "0");
-const ampm = h >= 12 ? "PM" : "AM"; const h12 = h % 12 || 12;
-return `${y}/${m}/${d} ${h12}:${min} ${ampm}`;
-} catch { return "-"; }
-}
-function numberToPersianWords(num: number): string {
-if (!Number.isFinite(num) || num === 0) return "صفر";
-const ones = ["", "یک", "دو", "سه", "چهار", "پنج", "شش", "هفت", "هشت", "نه"];
-const teens = ["ده", "یازده", "دوازده", "سیزده", "چهارده", "پانزده", "شانزده", "هفده", "هجده", "نوزده"];
-const tens = ["", "", "بیست", "سی", "چهل", "پنجاه", "شصت", "هفتاد", "هشتاد", "نود"];
-const hundreds = ["", "یکصد", "دوصد", "سیصد", "چهارصد", "پنجصد", "ششصد", "هفتصد", "هشتصد", "نهصد"];
-const scales = ["", "هزار", "میلیون", "میلیارد", "تریلیون"];
-function threeDigits(n: number): string {
-if (n === 0) return "";
-const h = Math.floor(n / 100); const rem = n % 100;
-const t = Math.floor(rem / 10); const o = rem % 10;
-let r = hundreds[h];
-if (rem >= 10 && rem <= 19) { if (r) r += " و "; r += teens[rem - 10]; }
-else { if (t > 0) { if (r) r += " و "; r += tens[t]; } if (o > 0) { if (r) r += " و "; r += ones[o]; } }
-return r;
-}
-const parts: string[] = []; let si = 0; let n = Math.floor(Math.abs(num));
-while (n > 0 && si < scales.length) {
-const chunk = n % 1000;
-if (chunk > 0) { const cw = threeDigits(chunk); if (si > 0) parts.unshift(`${cw} ${scales[si]}`); else parts.unshift(cw); }
-n = Math.floor(n / 1000); si++;
-}
-return parts.join(" و ");
-}
-async function sendTelegramMessage(botToken: string, chatId: string, text: string): Promise<boolean> {
-if (!botToken || !chatId) return false;
-try {
-const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-method: "POST", headers: { "Content-Type": "application/json" },
-body: JSON.stringify({ chat_id: chatId, text: text }),
-});
-const data = await res.json(); return data.ok === true;
-} catch { return false; }
-}
-function getTelegramSettings() {
-try { const r = localStorage.getItem("fx-settings"); if (!r) return { enabled: false, botToken: "", notifyExchange: true };
-const s = JSON.parse(r); return {
-enabled: s.telegram?.enabled || false,
-botToken: s.telegram?.botToken || "",
-notifyExchange: s.telegram?.notifyExchange !== false,
-};
-} catch { return { enabled: false, botToken: "", notifyExchange: true }; }
-}
-function getCustomerChatId(customerId: string | undefined, customers: Customer[]): string {
-if (!customerId || customerId === CASH_BOX_ID) return "";
-try {
-const c = customers.find(x => x.id === customerId);
-if (!c) return "";
-return c.telegramChatId || c.telegram || "";
-} catch { return ""; }
-}
-function buildTransactionReceiptText(params: {
-tx: Transaction;
-customerName: string;
-role: "customer" | "sender" | "receiver";
-balances: Record<string, number>;
-date: Date;
-}): string {
-const { tx, customerName, role, balances, date } = params;
-const dateStr = formatShamsiDateTime(date);
-let text = `📑 سند تبادل ارز
-`;
-text += `🗓 تاریخ: ${dateStr}
-`;
-text += `🛅 پیگیری: ${tx.trackingCode}
-`;
-text += `👤 مشتری: ${customerName}
-`;
-if (tx.type === "exchange") {
-text += `📑 شرح: ${tx.dealType === "buy" ? "خرید" : "فروش"} ارز
-`;
-text += `💵 دریافت: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]}
-`;
-text += `📝 به حروف: ${numberToPersianWords(tx.fromAmount)}
-`;
-text += `💰 پرداخت: ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}
-`;
-text += `📝 به حروف: ${numberToPersianWords(tx.toAmount)}
-`;
-text += `📊 نرخ: ${tx.rateLabel}
-`;
-if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
-text += `💼 کارمزد: ${fmt(tx.commission)} ${labels[tx.commissionCurrency]}
-`;
-text += `📝 به حروف: ${numberToPersianWords(tx.commission)}
-`;
-}
-}
-if (tx.type === "transfer") {
-if (role === "sender") {
-text += `📑 شرح: انتقال به ${tx.receiverName}
-`;
-text += `💰 پرداخت: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]}
-`;
-text += `📝 به حروف: ${numberToPersianWords(tx.fromAmount)}
-`;
-if (tx.commission && tx.commission > 0 && tx.commissionPayer === "sender" && tx.commissionCurrency) {
-text += `💼 کارمزد: ${fmt(tx.commission)} ${labels[tx.commissionCurrency]}
-`;
-text += `📝 به حروف: ${numberToPersianWords(tx.commission)}
-`;
-}
-} else {
-text += `📑 شرح: دریافت از ${tx.senderName}
-`;
-text += `💵 دریافت: ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}
-`;
-text += `📝 به حروف: ${numberToPersianWords(tx.toAmount)}
-`;
-if (tx.commission && tx.commission > 0 && tx.commissionPayer === "receiver" && tx.commissionCurrency) {
-text += `💼 کارمزد: ${fmt(tx.commission)} ${labels[tx.commissionCurrency]}
-`;
-text += `📝 به حروف: ${numberToPersianWords(tx.commission)}
-`;
-}
-}
-text += `📊 نرخ: ${tx.rateLabel}
-`;
-}
-if (tx.type === "convert") {
-text += `📑 شرح: تبدیل ارز در حساب شما
-`;
-text += `💰 کسرشده: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]}
-`;
-text += `📝 به حروف: ${numberToPersianWords(tx.fromAmount)}
-`;
-text += `💵 اضافه‌شده: ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}
-`;
-text += `📝 به حروف: ${numberToPersianWords(tx.toAmount)}
-`;
-text += `📊 نرخ: ${tx.rateLabel}
-`;
-if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
-text += `💼 کارمزد: ${fmt(tx.commission)} ${labels[tx.commissionCurrency]}
-`;
-text += `📝 به حروف: ${numberToPersianWords(tx.commission)}
-`;
-}
-}
-text += `
--------------بیلانس فعلی شما--------------
-`;
-const curLabels: Record<string, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
-for (const [cur, bal] of Object.entries(balances)) {
-const label = curLabels[cur] || cur;
-const status = bal > 0 ? "طلب" : bal < 0 ? "قرض" : "";
-const fb = Math.abs(bal).toLocaleString("en-US");
-text += `${label}: ${fb} ${status}
-`;
-}
-text += `
-🏦 صرافی برادران نورزاد — هرات`;
-return text;
-}
-function buildVoidNoticeText(params: {
-tx: Transaction;
-customerName: string;
-role: "customer" | "sender" | "receiver";
-balances: Record<string, number>;
-date: Date;
-}): string {
-const { tx, customerName, role, balances, date } = params;
-const dateStr = formatShamsiDateTime(date);
-let text = `📬 اطلاعیه لغو معامله
-`;
-text += `🗓 تاریخ: ${dateStr}
-`;
-text += `🛅 پیگیری: ${tx.trackingCode}
-`;
-text += `👤 مشتری: ${customerName}
-`;
-if (tx.type === "exchange") {
-text += `📑 شرح: معامله لغو شد — موجودی حساب شما برگشت داده شد
-`;
-text += `💰 مبلغ برگشتی: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]} و ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}
-`;
-text += `📝 به حروف: ${numberToPersianWords(tx.fromAmount)} و ${numberToPersianWords(tx.toAmount)}
-`;
-}
-if (tx.type === "transfer") {
-if (role === "sender") {
-text += `📑 شرح: انتقال لغو شد — مبلغ به حساب شما برگشت داده شد
-`;
-text += `💰 مبلغ برگشتی: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]}
-`;
-text += `📝 به حروف: ${numberToPersianWords(tx.fromAmount)}
-`;
-} else {
-text += `📑 شرح: انتقال لغو شد — مبلغ از حساب شما کسر گردید
-`;
-text += `💰 مبلغ کسرشده: ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}
-`;
-text += `📝 به حروف: ${numberToPersianWords(tx.toAmount)}
-`;
-}
-}
-if (tx.type === "convert") {
-text += `📑 شرح: تبدیل ارز لغو شد — موجودی حساب شما برگشت داده شد
-`;
-text += `💰 مبلغ برگشتی: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]} و ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}
-`;
-text += `📝 به حروف: ${numberToPersianWords(tx.fromAmount)} و ${numberToPersianWords(tx.toAmount)}
-`;
-}
-text += `
--------------بیلانس فعلی شما--------------
-`;
-const curLabels: Record<string, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
-for (const [cur, bal] of Object.entries(balances)) {
-const label = curLabels[cur] || cur;
-const status = bal > 0 ? "طلب" : bal < 0 ? "قرض" : "";
-const fb = Math.abs(bal).toLocaleString("en-US");
-text += `${label}: ${fb} ${status}
-`;
-}
-text += `
-🏦 صرافی برادران نورزاد — هرات`;
-return text;
-}
-async function sendTransactionReceipts(params: {
-tx: Transaction;
-action: "register" | "void";
-customers: Customer[];
-}) {
-const settings = getTelegramSettings();
-if (!settings.enabled || !settings.botToken) return;
-if (!settings.notifyExchange) return;
-const { tx, action, customers } = params;
-const receipts: { chatId: string; text: string }[] = [];
-const now = new Date();
-const getBalances = (customerId: string | undefined): Record<string, number> => {
-const balances: Record<string, number> = {};
-for (const cur of currencies) balances[cur] = 0;
-if (!customerId || customerId === CASH_BOX_ID) return balances;
-const c = customers.find(x => x.id === customerId);
-if (!c) return balances;
-for (const cur of currencies) balances[cur] = c.balances[cur] || 0;
-return balances;
-};
-const isRealCustomer = (id: string | undefined): boolean => Boolean(id && id !== CASH_BOX_ID);
-if (action === "register") {
-if (tx.type === "exchange" && isRealCustomer(tx.customerId)) {
-const chatId = getCustomerChatId(tx.customerId, customers);
-if (chatId) {
-const text = buildTransactionReceiptText({
-tx, customerName: tx.customerName || "", role: "customer",
-balances: getBalances(tx.customerId), date: now,
-});
-receipts.push({ chatId, text });
-}
-}
-if (tx.type === "transfer") {
-if (isRealCustomer(tx.senderId)) {
-const chatId = getCustomerChatId(tx.senderId, customers);
-if (chatId) {
-const text = buildTransactionReceiptText({
-tx, customerName: tx.senderName || "", role: "sender",
-balances: getBalances(tx.senderId), date: now,
-});
-receipts.push({ chatId, text });
-}
-}
-if (isRealCustomer(tx.receiverId)) {
-const chatId = getCustomerChatId(tx.receiverId, customers);
-if (chatId) {
-const text = buildTransactionReceiptText({
-tx, customerName: tx.receiverName || "", role: "receiver",
-balances: getBalances(tx.receiverId), date: now,
-});
-receipts.push({ chatId, text });
-}
-}
-}
-if (tx.type === "convert" && isRealCustomer(tx.customerId)) {
-const chatId = getCustomerChatId(tx.customerId, customers);
-if (chatId) {
-const text = buildTransactionReceiptText({
-tx, customerName: tx.customerName || "", role: "customer",
-balances: getBalances(tx.customerId), date: now,
-});
-receipts.push({ chatId, text });
-}
-}
-}
-if (action === "void") {
-if (tx.type === "exchange" && isRealCustomer(tx.customerId)) {
-const chatId = getCustomerChatId(tx.customerId, customers);
-if (chatId) {
-const text = buildVoidNoticeText({
-tx, customerName: tx.customerName || "", role: "customer",
-balances: getBalances(tx.customerId), date: now,
-});
-receipts.push({ chatId, text });
-}
-}
-if (tx.type === "transfer") {
-if (isRealCustomer(tx.senderId)) {
-const chatId = getCustomerChatId(tx.senderId, customers);
-if (chatId) {
-const text = buildVoidNoticeText({
-tx, customerName: tx.senderName || "", role: "sender",
-balances: getBalances(tx.senderId), date: now,
-});
-receipts.push({ chatId, text });
-}
-}
-if (isRealCustomer(tx.receiverId)) {
-const chatId = getCustomerChatId(tx.receiverId, customers);
-if (chatId) {
-const text = buildVoidNoticeText({
-tx, customerName: tx.receiverName || "", role: "receiver",
-balances: getBalances(tx.receiverId), date: now,
-});
-receipts.push({ chatId, text });
-}
-}
-}
-if (tx.type === "convert" && isRealCustomer(tx.customerId)) {
-const chatId = getCustomerChatId(tx.customerId, customers);
-if (chatId) {
-const text = buildVoidNoticeText({
-tx, customerName: tx.customerName || "", role: "customer",
-balances: getBalances(tx.customerId), date: now,
-});
-receipts.push({ chatId, text });
-}
-}
-}
-const sentToChatIds = new Set<string>();
-for (const r of receipts) {
-if (sentToChatIds.has(r.chatId)) continue;
-await sendTelegramMessage(settings.botToken, r.chatId, r.text);
-sentToChatIds.add(r.chatId);
-}
 }
 const iconPaths = {
 swap: "M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5",
@@ -721,9 +381,7 @@ return (
 </div>
 );
 });
-function getStoredCustomers(): Customer[] {
-return loadCustomersShared() as Customer[];
-}
+function getStoredCustomers(): Customer[] { return loadCustomersShared() as Customer[]; }
 export default function CurrencyExchangePage() {
 const [customers, setCustomers] = useState<Customer[]>(getStoredCustomers);
 const [transactions, setTransactions] = useState<Transaction[]>(() => {
@@ -733,26 +391,15 @@ try { return loadTransactionsShared(); } catch { return []; }
 const [cashEntries, setCashEntries] = useState<any[]>(() => {
 try { return loadCashEntriesShared(); } catch { return []; }
 });
-// ✅ تغییر ۱: اضافه شدن dispatch برای sync با داشبورد
-useEffect(() => { try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); window.dispatchEvent(new Event("db:updated")); } catch {} }, [customers]);
-// ✅ تغییر ۲: اضافه شدن dispatch برای sync با داشبورد
-useEffect(() => { try { window.localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(transactions)); window.dispatchEvent(new Event("db:updated")); } catch {} }, [transactions]);
+useEffect(() => { try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); } catch {} }, [customers]);
+useEffect(() => { try { window.localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(transactions)); } catch {} }, [transactions]);
 useEffect(() => { try { initTrackingSystem(); } catch {} }, []);
 useEffect(() => {
 const handleStorage = (e: StorageEvent) => {
 try {
-if (e.key === CUSTOMERS_KEY && e.newValue) {
-const parsed = JSON.parse(e.newValue);
-if (Array.isArray(parsed)) setCustomers(parsed);
-}
-if (e.key === TRANSACTIONS_KEY && e.newValue) {
-const parsed = JSON.parse(e.newValue);
-if (Array.isArray(parsed)) setTransactions(parsed);
-}
-if (e.key === CASH_KEY && e.newValue) {
-const parsed = JSON.parse(e.newValue);
-if (Array.isArray(parsed)) setCashEntries(parsed);
-}
+if (e.key === CUSTOMERS_KEY && e.newValue) { const parsed = JSON.parse(e.newValue); if (Array.isArray(parsed)) setCustomers(parsed); }
+if (e.key === TRANSACTIONS_KEY && e.newValue) { const parsed = JSON.parse(e.newValue); if (Array.isArray(parsed)) setTransactions(parsed); }
+if (e.key === CASH_KEY && e.newValue) { const parsed = JSON.parse(e.newValue); if (Array.isArray(parsed)) setCashEntries(parsed); }
 } catch {}
 };
 window.addEventListener("storage", handleStorage);
@@ -916,6 +563,7 @@ if (showConvertList && convertListRef.current && !convertListRef.current.contain
 const timer = setTimeout(() => document.addEventListener("mousedown", handler), 0);
 return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); };
 }, [anyDropdownOpen, showCustomerList, showSenderList, showReceiverList, showConvertList]);
+// ✅ اصلاح: نمایش "موجودی صرافی" به جای "صندوق"
 const filteredCustomerList = useMemo(() => {
 const cashBoxOption = CASH_BOX_CUSTOMER;
 if (!customerFilter) return [cashBoxOption, ...customers];
@@ -948,10 +596,11 @@ const filtered = customers.filter(c => c.name.toLowerCase().includes(q) || (c.ph
 if (CASH_BOX_NAME.includes(q)) return [cashBoxOption, ...filtered];
 return filtered;
 }, [customers, convertFilter]);
-const isCustomerCashBox = customer.trim() === CASH_BOX_NAME;
-const isSenderCashBox = sender.trim() === CASH_BOX_NAME;
-const isReceiverCashBox = receiver.trim() === CASH_BOX_NAME;
-const isConvertCustomerCashBox = convertCustomer.trim() === CASH_BOX_NAME;
+// ✅ اصلاح: تشخیص "موجودی صرافی"
+const isCustomerCashBox = isCashBoxName(customer);
+const isSenderCashBox = isCashBoxName(sender);
+const isReceiverCashBox = isCashBoxName(receiver);
+const isConvertCustomerCashBox = isCashBoxName(convertCustomer);
 const selectedCustomer = useMemo(() => {
 if (isCustomerCashBox) return CASH_BOX_CUSTOMER;
 return customers.find(c => c.name === customer) || null;
@@ -1010,7 +659,7 @@ return e;
 }, [sender, receiver, senderAmount, transferMode, transferRate, transferDirectCounter, receiverAmount, commission]);
 const validateConvert = useCallback((): ConvertFormErrors => {
 const e: ConvertFormErrors = {};
-if (!convertCustomer) e.customer = "مشتری خالی خالی است.";
+if (!convertCustomer) e.customer = "مشتری خالی است.";
 const a = parseAmount(convertAmount);
 if (!a) e.amount = "مبلغ خالی است.";
 if (convertMode !== "same") { if (!parseAmount(convertRate)) e.rate = "نرخ خالی است."; }
@@ -1031,7 +680,8 @@ const tr = exchangeMode === "same" ? 1 : exchangeRateValue;
 if (exchangeMode === "same") rl = "بدون تبدیل";
 if (exchangeMode === "afn" && exchangeForeign) rl = afnRateLabel(exchangeForeign, tr);
 if (exchangeMode === "direct" && exchangeDirectCounter) rl = directRateLabel(exchangeDirectBaseValue, exchangeDirectCounter, tr);
-const isCash = customer.trim() === CASH_BOX_NAME;
+// ✅ اصلاح: تشخیص "موجودی صرافی"
+const isCash = isCashBoxName(customer);
 const selC = isCash ? CASH_BOX_CUSTOMER : customers.find(c => c.name === customer);
 const tx: Transaction = {
 id: editingExchangeId || newId(),
@@ -1064,8 +714,9 @@ const tr = transferMode === "same" ? 1 : transferRateValue;
 if (transferMode === "same") rl = "بدون تبدیل";
 if (transferMode === "afn" && transferForeign) rl = afnRateLabel(transferForeign, tr);
 if (transferMode === "direct" && transferDirectCounter) rl = directRateLabel(transferDirectBaseValue, transferDirectCounter, tr);
-const isSenderCash = sender.trim() === CASH_BOX_NAME;
-const isReceiverCash = receiver.trim() === CASH_BOX_NAME;
+// ✅ اصلاح: تشخیص "موجودی صرافی"
+const isSenderCash = isCashBoxName(sender);
+const isReceiverCash = isCashBoxName(receiver);
 const selS = isSenderCash ? CASH_BOX_CUSTOMER : customers.find(c => c.name === sender);
 const selR = isReceiverCash ? CASH_BOX_CUSTOMER : customers.find(c => c.name === receiver);
 const tx: Transaction = {
@@ -1100,7 +751,8 @@ const tr = convertMode === "same" ? 1 : convertRateValue;
 if (convertMode === "same") rl = "بدون تبدیل";
 if (convertMode === "afn" && convertForeign) rl = afnRateLabel(convertForeign, tr);
 if (convertMode === "direct" && convertDirectCounter) rl = directRateLabel(convertDirectBaseValue, convertDirectCounter, tr);
-const isCash = convertCustomer.trim() === CASH_BOX_NAME;
+// ✅ اصلاح: تشخیص "موجودی صرافی"
+const isCash = isCashBoxName(convertCustomer);
 const selC = isCash ? CASH_BOX_CUSTOMER : customers.find(c => c.name === convertCustomer);
 const tx: Transaction = {
 id: editingConvertId || newId(),
@@ -1120,29 +772,22 @@ profit: convertCommissionValue, profitCurrency: convertCommissionCurrency
 setPreviewData(tx);
 setPreviewOpen(true);
 }, [validateConvert, convertFromAmount, convertToAmount, convertMode, convertRateValue, convertForeign, convertDirectCounter, convertDirectBaseValue, convertDescription, convertCommissionValue, convertCommissionCurrency, editingConvertId, transactions, convertCustomer, convertFromCurrency, convertToCurrency, customers]);
-const confirmRegister = useCallback(async () => {
+const confirmRegister = useCallback(() => {
 if (!previewData) return;
 const tx = { ...previewData, trackingCode: consumeTrackingCode() };
-let updatedCustomers = customers;
 if (editingExchangeId) {
 const oldTx = transactions.find(t => t.id === editingExchangeId);
-if (oldTx && oldTx.status !== "voided") {
-updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForTransaction(oldTx, "reverse"));
-}
+if (oldTx && oldTx.status !== "voided") setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForTransaction(oldTx, "reverse")));
 syncCashEntriesForExchange("replace", tx, editingExchangeId);
 setTransactions(p => p.map(t => t.id === editingExchangeId ? { ...tx, id: editingExchangeId, trackingCode: t.trackingCode, date: t.date } : t));
 } else if (editingTransferId) {
 const oldTx = transactions.find(t => t.id === editingTransferId);
-if (oldTx && oldTx.status !== "voided") {
-updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForTransaction(oldTx, "reverse"));
-}
+if (oldTx && oldTx.status !== "voided") setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForTransaction(oldTx, "reverse")));
 syncCashEntriesForTransfer("replace", tx, editingTransferId);
 setTransactions(p => p.map(t => t.id === editingTransferId ? { ...tx, id: editingTransferId, trackingCode: t.trackingCode, date: t.date } : t));
 } else if (editingConvertId) {
 const oldTx = transactions.find(t => t.id === editingConvertId);
-if (oldTx && oldTx.status !== "voided") {
-updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForTransaction(oldTx, "reverse"));
-}
+if (oldTx && oldTx.status !== "voided") setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForTransaction(oldTx, "reverse")));
 syncCashEntriesForConvert("replace", tx, editingConvertId);
 setTransactions(p => p.map(t => t.id === editingConvertId ? { ...tx, id: editingConvertId, trackingCode: t.trackingCode, date: t.date } : t));
 } else {
@@ -1151,13 +796,12 @@ if (tx.type === "exchange") syncCashEntriesForExchange("add", tx);
 else if (tx.type === "transfer") syncCashEntriesForTransfer("add", tx);
 else if (tx.type === "convert") syncCashEntriesForConvert("add", tx);
 }
-updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForTransaction(tx, "register"));
-setCustomers(updatedCustomers);
+// ✅ اصلاح: اعمال تغییرات موجودی (شامل CASH_BOX_ID)
+setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForTransaction(tx, "register")));
 resetExchangeForm(); resetTransferForm(); resetConvertForm();
 setPreviewOpen(false); setPreviewData(null);
 setCashEntries(loadCashEntriesShared());
-await sendTransactionReceipts({ tx, action: "register", customers: updatedCustomers });
-}, [previewData, editingExchangeId, editingTransferId, editingConvertId, transactions, customers, resetExchangeForm, resetTransferForm, resetConvertForm]);
+}, [previewData, editingExchangeId, editingTransferId, editingConvertId, transactions, resetExchangeForm, resetTransferForm, resetConvertForm]);
 const customerName = useCallback((id?: string) => {
 if (id === CASH_BOX_ID) return CASH_BOX_NAME;
 return customers.find(c => c.id === id)?.name || customers.find(c => c.name === id)?.name || id || "-";
@@ -1225,19 +869,17 @@ setConvertErrors({});
 }
 }, []);
 const viewTransaction = useCallback((tx: Transaction) => setSelectedTransaction(tx), []);
-const voidTransaction = useCallback(async (tx: Transaction) => {
+const voidTransaction = useCallback((tx: Transaction) => {
 if (tx.status === "voided") return;
 if (!window.confirm("لغو شود؟")) return;
-const updatedCustomers = applyBalanceChanges(customers, getBalanceChangesForTransaction(tx, "reverse"));
-setCustomers(updatedCustomers);
+setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForTransaction(tx, "reverse")));
 setTransactions(p => p.map(t => t.id === tx.id ? { ...t, status: "voided" } : t));
 if (tx.type === "exchange") syncCashEntriesForExchange("remove", null, tx.id);
 else if (tx.type === "transfer") syncCashEntriesForTransfer("remove", null, tx.id);
 else if (tx.type === "convert") syncCashEntriesForConvert("remove", null, tx.id);
 setEditingExchangeId(null); setEditingTransferId(null); setEditingConvertId(null);
 setCashEntries(loadCashEntriesShared());
-await sendTransactionReceipts({ tx, action: "void", customers: updatedCustomers });
-}, [customers]);
+}, []);
 const deleteTransaction = useCallback((tx: Transaction) => {
 if (!window.confirm(`حذف ${tx.trackingCode}؟`)) return;
 if (tx.status !== "voided") {
@@ -1397,7 +1039,8 @@ const currencySelect = (v: Currency, ch: (v: Currency) => void) => (
 const CustomerBalanceCard = memo(({ customer, color, isCashBox }: { customer: Customer | null; color: "cyan" | "orange" | "violet"; isCashBox?: boolean }) => {
 if (!customer) return null;
 const balances = isCashBox ? cashBoxBalances : customer.balances;
-const title = isCashBox ? "💰 موجودی فیزیکی صندوق" : `موجودی حساب ${customer.name}`;
+// ✅ اصلاح: نمایش "موجودی صرافی" به جای "صندوق"
+const title = isCashBox ? "💰 موجودی صرافی" : `موجودی حساب ${customer.name}`;
 const colors = {
 cyan: { border: dk ? "border-cyan-400/30 bg-cyan-400/10" : "border-cyan-200 bg-cyan-50", text: dk ? "text-cyan-300" : "text-cyan-700", icon: dk ? "text-cyan-300" : "text-cyan-600" },
 orange: { border: dk ? "border-orange-400/30 bg-orange-400/10" : "border-orange-200 bg-orange-50", text: dk ? "text-orange-300" : "text-orange-700", icon: dk ? "text-orange-300" : "text-orange-600" },
@@ -1553,7 +1196,7 @@ return (
 <input value={customer} onChange={e => {
 const val = e.target.value; setCustomer(val); setCustomerFilter(val);
 if (!showCustomerList) setShowCustomerList(true);
-if (val.trim() === CASH_BOX_NAME) { setCustomerPhone(""); setCustomerTelegram(""); }
+if (isCashBoxName(val)) { setCustomerPhone(""); setCustomerTelegram(""); }
 else {
 const c = customers.find(x => x.name === val);
 if (c) { setCustomerPhone(c.phone || ""); setCustomerTelegram(c.telegram || ""); }
@@ -1575,7 +1218,7 @@ setCustomer(c.name); setCustomerPhone(c.phone || ""); setCustomerTelegram(c.tele
 setCustomerFilter(""); setShowCustomerList(false); setExchangeErrors(p => ({ ...p, customer: undefined }));
 }} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-cyan-400/15 hover:text-cyan-300" : "text-slate-700 hover:bg-cyan-50 hover:text-cyan-600"}`}>
 <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-cyan-500 to-sky-500`}>{idx + 1}</span>
-<span className="flex-1 truncate flex items-center gap-1.5">{c.name}{c.id === CASH_BOX_ID && " 💰"}{hasTelegram(c) && c.id !== CASH_BOX_ID && <span title="دارای چت آیدی تلگرام">📱</span>}</span>
+<span className="flex-1 truncate">{c.name}{c.id === CASH_BOX_ID && " 💰"}</span>
 {c.phone && <span className={`text-[10px] ${subText}`} dir="ltr">{c.phone}</span>}
 </button>
 ))
@@ -1685,7 +1328,7 @@ setReceivedAmount(toNumericText(e.target.value)); setExchangeErrors(p => ({ ...p
 <input value={sender} onChange={e => {
 const val = e.target.value; setSender(val); setSenderFilter(val);
 if (!showSenderList) setShowSenderList(true);
-if (val.trim() === CASH_BOX_NAME) { setSenderPhone(""); setSenderTelegram(""); }
+if (isCashBoxName(val)) { setSenderPhone(""); setSenderTelegram(""); }
 else {
 const c = customers.find(x => x.name === val);
 if (c) { setSenderPhone(c.phone || ""); setSenderTelegram(c.telegram || ""); }
@@ -1707,7 +1350,7 @@ setSender(c.name); setSenderPhone(c.phone || ""); setSenderTelegram(c.telegram |
 setSenderFilter(""); setShowSenderList(false); setTransferErrors(p => ({ ...p, sender: undefined }));
 }} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-orange-400/15 hover:text-orange-300" : "text-slate-700 hover:bg-orange-50 hover:text-orange-600"}`}>
 <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-orange-500 to-amber-500`}>{idx + 1}</span>
-<span className="flex-1 truncate flex items-center gap-1.5">{c.name}{c.id === CASH_BOX_ID && " 💰"}{hasTelegram(c) && c.id !== CASH_BOX_ID && <span title="دارای چت آیدی تلگرام">📱</span>}</span>
+<span className="flex-1 truncate">{c.name}{c.id === CASH_BOX_ID && " 💰"}</span>
 {c.phone && <span className={`text-[10px] ${subText}`} dir="ltr">{c.phone}</span>}
 </button>
 ))
@@ -1734,7 +1377,7 @@ setSenderAmount(toNumericText(e.target.value)); setTransferErrors(p => ({ ...p, 
 <input value={receiver} onChange={e => {
 const val = e.target.value; setReceiver(val); setReceiverFilter(val);
 if (!showReceiverList) setShowReceiverList(true);
-if (val.trim() === CASH_BOX_NAME) { setReceiverPhone(""); setReceiverTelegram(""); }
+if (isCashBoxName(val)) { setReceiverPhone(""); setReceiverTelegram(""); }
 else {
 const c = customers.find(x => x.name === val);
 if (c) { setReceiverPhone(c.phone || ""); setReceiverTelegram(c.telegram || ""); }
@@ -1756,7 +1399,7 @@ setReceiver(c.name); setReceiverPhone(c.phone || ""); setReceiverTelegram(c.tele
 setReceiverFilter(""); setShowReceiverList(false); setTransferErrors(p => ({ ...p, receiver: undefined }));
 }} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-emerald-400/15 hover:text-emerald-300" : "text-slate-700 hover:bg-emerald-50 hover:text-emerald-600"}`}>
 <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-emerald-500 to-teal-500`}>{idx + 1}</span>
-<span className="flex-1 truncate flex items-center gap-1.5">{c.name}{c.id === CASH_BOX_ID && " 💰"}{hasTelegram(c) && c.id !== CASH_BOX_ID && <span title="دارای چت آیدی تلگرام">📱</span>}</span>
+<span className="flex-1 truncate">{c.name}{c.id === CASH_BOX_ID && " 💰"}</span>
 {c.phone && <span className={`text-[10px] ${subText}`} dir="ltr">{c.phone}</span>}
 </button>
 ))
@@ -1840,7 +1483,7 @@ setReceiverFilter(""); setShowReceiverList(false); setTransferErrors(p => ({ ...
 <input value={convertCustomer} onChange={e => {
 const val = e.target.value; setConvertCustomer(val); setConvertFilter(val);
 if (!showConvertList) setShowConvertList(true);
-if (val.trim() === CASH_BOX_NAME) { setConvertCustomerPhone(""); setConvertCustomerTelegram(""); }
+if (isCashBoxName(val)) { setConvertCustomerPhone(""); setConvertCustomerTelegram(""); }
 else {
 const c = customers.find(x => x.name === val);
 if (c) { setConvertCustomerPhone(c.phone || ""); setConvertCustomerTelegram(c.telegram || ""); }
@@ -1862,7 +1505,7 @@ setConvertCustomer(c.name); setConvertCustomerPhone(c.phone || ""); setConvertCu
 setConvertFilter(""); setShowConvertList(false); setConvertErrors(p => ({ ...p, customer: undefined }));
 }} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-violet-400/15 hover:text-violet-300" : "text-slate-700 hover:bg-violet-50 hover:text-violet-600"}`}>
 <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-violet-500 to-purple-500`}>{idx + 1}</span>
-<span className="flex-1 truncate flex items-center gap-1.5">{c.name}{c.id === CASH_BOX_ID && " 💰"}{hasTelegram(c) && c.id !== CASH_BOX_ID && <span title="دارای چت آیدی تلگرام">📱</span>}</span>
+<span className="flex-1 truncate">{c.name}{c.id === CASH_BOX_ID && " 💰"}</span>
 {c.phone && <span className={`text-[10px] ${subText}`} dir="ltr">{c.phone}</span>}
 </button>
 ))
@@ -2037,7 +1680,7 @@ transactions.map((tx, index) => <TransactionRow key={tx.id} tx={tx} index={index
 <div>
 <span className={subText}>نام: </span>
 <b className={dk ? "text-slate-100" : "text-slate-800"}>{previewData.customerName}</b>
-{previewData.customerId === CASH_BOX_ID && <span className={`mr-2 text-[10px] font-black ${dk ? "text-sky-300" : "text-sky-600"}`}>💰 صندوق</span>}
+{previewData.customerId === CASH_BOX_ID && <span className={`mr-2 text-[10px] font-black ${dk ? "text-sky-300" : "text-sky-600"}`}>💰 موجودی صرافی</span>}
 {previewData.customerId && previewData.customerId !== CASH_BOX_ID && <span className={`mr-2 text-[10px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>✅ مشتری ثبت‌شده</span>}
 {!previewData.customerId && <span className={`mr-2 text-[10px] font-black ${dk ? "text-amber-300" : "text-amber-600"}`}>⚠️ غیر مشتری (نقدی)</span>}
 </div>
@@ -2057,7 +1700,7 @@ transactions.map((tx, index) => <TransactionRow key={tx.id} tx={tx} index={index
 <div>
 <span className={subText}>نام: </span>
 <b>{previewData.senderName}</b>
-{previewData.senderId === CASH_BOX_ID && <span className={`mr-2 text-[10px] font-black ${dk ? "text-sky-300" : "text-sky-600"}`}>💰 صندوق</span>}
+{previewData.senderId === CASH_BOX_ID && <span className={`mr-2 text-[10px] font-black ${dk ? "text-sky-300" : "text-sky-600"}`}>💰 موجودی صرافی</span>}
 {previewData.senderId && previewData.senderId !== CASH_BOX_ID && <span className={`mr-2 text-[10px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>✅ مشتری ثبت‌شده</span>}
 {!previewData.senderId && <span className={`mr-2 text-[10px] font-black ${dk ? "text-amber-300" : "text-amber-600"}`}>⚠️ غیر مشتری (نقدی)</span>}
 </div>
@@ -2072,7 +1715,7 @@ transactions.map((tx, index) => <TransactionRow key={tx.id} tx={tx} index={index
 <div>
 <span className={subText}>نام: </span>
 <b>{previewData.receiverName}</b>
-{previewData.receiverId === CASH_BOX_ID && <span className={`mr-2 text-[10px] font-black ${dk ? "text-sky-300" : "text-sky-600"}`}>💰 صندوق</span>}
+{previewData.receiverId === CASH_BOX_ID && <span className={`mr-2 text-[10px] font-black ${dk ? "text-sky-300" : "text-sky-600"}`}>💰 موجودی صرافی</span>}
 {previewData.receiverId && previewData.receiverId !== CASH_BOX_ID && <span className={`mr-2 text-[10px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>✅ مشتری ثبت‌شده</span>}
 {!previewData.receiverId && <span className={`mr-2 text-[10px] font-black ${dk ? "text-amber-300" : "text-amber-600"}`}>⚠️ غیر مشتری (نقدی)</span>}
 </div>
@@ -2090,7 +1733,7 @@ transactions.map((tx, index) => <TransactionRow key={tx.id} tx={tx} index={index
 <div>
 <span className={subText}>نام: </span>
 <b className={dk ? "text-slate-100" : "text-slate-800"}>{previewData.customerName}</b>
-{previewData.customerId === CASH_BOX_ID && <span className={`mr-2 text-[10px] font-black ${dk ? "text-sky-300" : "text-sky-600"}`}>💰 صندوق</span>}
+{previewData.customerId === CASH_BOX_ID && <span className={`mr-2 text-[10px] font-black ${dk ? "text-sky-300" : "text-sky-600"}`}>💰 موجودی صرافی</span>}
 {previewData.customerId && previewData.customerId !== CASH_BOX_ID && <span className={`mr-2 text-[10px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>✅ مشتری ثبت‌شده</span>}
 {!previewData.customerId && <span className={`mr-2 text-[10px] font-black ${dk ? "text-amber-300" : "text-amber-600"}`}>⚠️ غیر مشتری (نقدی)</span>}
 </div>
@@ -2118,32 +1761,6 @@ transactions.map((tx, index) => <TransactionRow key={tx.id} tx={tx} index={index
 <b className={`text-sm font-black ${dk ? "text-slate-300" : "text-slate-600"}`}>توضیحات</b>
 </div>
 <p className={`text-sm ${dk ? "text-slate-300" : "text-slate-600"}`}>{previewData.description}</p>
-</div>
-)}
-{((previewData.type === "exchange" && previewData.customerId === CASH_BOX_ID) ||
-(previewData.type === "transfer" && (previewData.senderId === CASH_BOX_ID || previewData.receiverId === CASH_BOX_ID)) ||
-(previewData.type === "convert" && previewData.customerId === CASH_BOX_ID)) && (
-<div className={`rounded-xl border p-4 ${dk ? "border-sky-400/30 bg-sky-400/10" : "border-sky-200 bg-sky-50"}`}>
-<div className="flex items-center gap-2 mb-2">
-<Ic n="info" className={`h-4 w-4 ${dk ? "text-sky-300" : "text-sky-600"}`} />
-<b className={`text-sm font-black ${dk ? "text-sky-300" : "text-sky-600"}`}>💰 اطلاعیه صندوق</b>
-</div>
-<p className={`text-sm ${dk ? "text-slate-300" : "text-slate-600"}`}>
-صندوق در این معامله شرکت دارد. مبلغ‌ها از موجودی فیزیکی صندوق کسر یا به آن اضافه خواهد شد. این تراکنش به نام صندوق در روزنامچه ثبت می‌شود و تغییری در حساب مشتریان ایجاد نمی‌کند.
-</p>
-</div>
-)}
-{((previewData.type === "exchange" && !previewData.customerId) ||
-(previewData.type === "transfer" && (!previewData.senderId || !previewData.receiverId)) ||
-(previewData.type === "convert" && !previewData.customerId)) && (
-<div className={`rounded-xl border p-4 ${dk ? "border-amber-400/30 bg-amber-400/10" : "border-amber-200 bg-amber-50"}`}>
-<div className="flex items-center gap-2 mb-2">
-<Ic n="info" className={`h-4 w-4 ${dk ? "text-amber-300" : "text-amber-600"}`} />
-<b className={`text-sm font-black ${dk ? "text-amber-300" : "text-amber-600"}`}>⚠️ اطلاعیه مهم</b>
-</div>
-<p className={`text-sm ${dk ? "text-slate-300" : "text-slate-600"}`}>
-یک یا چند طرف معامله در لیست مشتریان ثبت نشده‌اند. این معامله به صورت نقدی پردازش می‌شود و فقط در روزنامچه صندوق ثبت خواهد شد. هیچ تغییری در موجودی حساب مشتریان ایجاد نخواهد شد.
-</p>
 </div>
 )}
 <div className="flex flex-wrap gap-3 pt-2">
