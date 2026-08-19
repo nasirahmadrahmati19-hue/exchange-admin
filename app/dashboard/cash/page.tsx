@@ -15,7 +15,17 @@ type FormErrors = Partial<Record<keyof FormState, string>>;
 
 const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
 const labels: Record<Currency, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
-const entryTypeLabels: Record<CashEntryType, string> = { customer_deposit: "واریز مشتری", customer_withdraw: "برداشت مشتری", owner_deposit: "واریز مالک", owner_withdraw: "برداشت مالک", adjustment: "اصلاح صندوق", fee: "کارمزد", commission_withdraw: "برداشت کارمزد", loan_given: "پرداخت قرض", loan_received: "دریافت قرض" };
+const entryTypeLabels: Record<CashEntryType, string> = { 
+  customer_deposit: "واریز مشتری", 
+  customer_withdraw: "برداشت مشتری", 
+  owner_deposit: "واریز مالک به صرافی", 
+  owner_withdraw: "برداشت مالک از صرافی", 
+  adjustment: "اصلاح صندوق", 
+  fee: "کارمزد", 
+  commission_withdraw: "برداشت کارمزد",
+  loan_given: "پرداخت قرض", 
+  loan_received: "دریافت قرض" 
+};
 const entryTypeColors: Record<CashEntryType, { light: string; dark: string }> = { customer_deposit: { light: "bg-teal-100 text-teal-700", dark: "bg-teal-400/15 text-teal-300" }, customer_withdraw: { light: "bg-orange-100 text-orange-700", dark: "bg-orange-400/15 text-orange-300" }, owner_deposit: { light: "bg-sky-100 text-sky-700", dark: "bg-sky-400/15 text-sky-300" }, owner_withdraw: { light: "bg-amber-100 text-amber-700", dark: "bg-amber-400/15 text-amber-300" }, adjustment: { light: "bg-violet-100 text-violet-700", dark: "bg-violet-400/15 text-violet-300" }, fee: { light: "bg-emerald-100 text-emerald-700", dark: "bg-emerald-400/15 text-emerald-300" }, commission_withdraw: { light: "bg-purple-100 text-purple-700", dark: "bg-purple-400/15 text-purple-300" }, loan_given: { light: "bg-rose-100 text-rose-700", dark: "bg-rose-400/15 text-rose-300" }, loan_received: { light: "bg-indigo-100 text-indigo-700", dark: "bg-indigo-400/15 text-indigo-300" } };
 const currencyColors: Record<Currency, { light: string; dark: string; gradient: string }> = { AFN: { light: "text-emerald-700", dark: "text-emerald-300", gradient: "from-emerald-500 to-teal-400" }, USD: { light: "text-sky-700", dark: "text-sky-300", gradient: "from-sky-500 to-cyan-400" }, EUR: { light: "text-blue-700", dark: "text-blue-300", gradient: "from-blue-600 to-blue-400" }, IRR: { light: "text-amber-700", dark: "text-amber-300", gradient: "from-amber-500 to-orange-400" }, PKR: { light: "text-rose-700", dark: "text-rose-300", gradient: "from-rose-500 to-pink-400" } };
 
@@ -46,26 +56,29 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: CashE
     if (entry.status === "voided" || entry.currency !== currency) continue;
     
     if (customerId === CASH_BOX_ID) {
-      // ✅ قرض (loan) تأثیری روی موجودی فیزیکی صندوق ندارد، زیرا مستقیماً از حساب صرافی مدیریت می‌شود
-      if (entry.type !== "loan_given" && entry.type !== "loan_received") {
+      // ✅ محاسبه دقیق موجودی فیزیکی: قرض دادن پول را از صندوق خارج می‌کند، دریافت قرض پول را برمی‌گرداند
+      if (entry.type === "loan_given") {
+        balance -= entry.amount;
+      } else if (entry.type === "loan_received") {
+        balance += entry.amount;
+      } else {
         const physicalMultiplier = entry.direction === "in" ? 1 : -1;
         balance += entry.amount * physicalMultiplier;
       }
     } 
     else if (customerId === EXCHANGE_ACCOUNT_ID) {
-      // ✅ تنها بدهی (قرض) از موجودی حساب صرافی کم و زیاد می‌شود
-      if (entry.type === "loan_given") {
-        balance -= entry.amount; // صرافی قرض داده، موجودی حساب صرافی کاهش می‌یابد
-      } else if (entry.type === "loan_received") {
-        balance += entry.amount; // مشتری قرض را پس داده، موجودی حساب صرافی افزایش می‌یابد
-      }
+      // ✅ موجودی حساب صرافی: تحت تأثیر واریز/برداشت مالک و دادن/دریافت قرض
+      if (entry.type === "owner_deposit") balance += entry.amount;
+      else if (entry.type === "owner_withdraw") balance -= entry.amount;
+      else if (entry.type === "loan_given") balance -= entry.amount;
+      else if (entry.type === "loan_received") balance += entry.amount;
     } 
     else {
       if (entry.customerId === customerId) {
         if (entry.type === "customer_deposit") balance += entry.amount;
         else if (entry.type === "customer_withdraw") balance -= entry.amount;
-        else if (entry.type === "loan_given") balance -= entry.amount; // مشتری قرض گرفته، بدهکار می‌شود (کاهش موجودی)
-        else if (entry.type === "loan_received") balance += entry.amount; // مشتری قرض را پس داده، بدهی کاهش می‌یابد
+        else if (entry.type === "loan_given") balance -= entry.amount;
+        else if (entry.type === "loan_received") balance += entry.amount;
       }
     }
   }
@@ -119,9 +132,14 @@ function getBalanceChangesForCashEntry(entry: CashEntry, action: "register" | "r
     }
   }
   
-  // ✅ تنها بدهی (قرض) روی حساب صرافی تأثیر می‌گذارد
-  if (entry.type === "loan_given" || entry.type === "loan_received") {
-    const exchangeDelta = entry.type === "loan_given" ? -entry.amount : entry.amount;
+  // ✅ تغییرات حساب صرافی: واریز/برداشت مالک + دادن/دریافت قرض
+  if (entry.type === "owner_deposit" || entry.type === "owner_withdraw" || entry.type === "loan_given" || entry.type === "loan_received") {
+    let exchangeDelta = 0;
+    if (entry.type === "owner_deposit") exchangeDelta = entry.amount;
+    else if (entry.type === "owner_withdraw") exchangeDelta = -entry.amount;
+    else if (entry.type === "loan_given") exchangeDelta = -entry.amount;
+    else if (entry.type === "loan_received") exchangeDelta = entry.amount;
+    
     changes.push({ customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, currency: entry.currency, amount: exchangeDelta * sign });
   }
   
@@ -545,8 +563,12 @@ export default function CashPage() {
   const errorList = Object.values(errors).filter((msg): msg is string => Boolean(msg));
 
   const entryTypeOptions: [string, string][] = [
-    ["", "— انتخاب کنید —"], ["customer_deposit", "واریز مشتری به حساب"], ["customer_withdraw", "برداشت مشتری از حساب"],
-    ["owner_deposit", "واریز مالک به صندوق"], ["owner_withdraw", "برداشت مالک از صندوق"], ["commission_withdraw", "💎 برداشت کارمزد صرافی"],
+    ["", "— انتخاب کنید —"], 
+    ["customer_deposit", "واریز مشتری به حساب"], 
+    ["customer_withdraw", "برداشت مشتری از حساب"],
+    ["owner_deposit", "واریز مالک به صرافی"], 
+    ["owner_withdraw", "برداشت مالک از صرافی"], 
+    ["commission_withdraw", "💎 برداشت کارمزد صرافی"],
   ];
 
   return (
@@ -575,7 +597,7 @@ export default function CashPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <b className={`block text-sm md:text-base font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}>💰 موجودی فیزیکی صندوق</b>
-                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>مجموع خالص تمام ورودی‌ها و خروجی‌های ثبت‌شده (بدون احتساب قرض)</span>
+                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>مجموع موجودی مشتریان + موجودی حساب صرافی</span>
                 </div>
               </div>
               <div className="relative grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-3">
@@ -600,7 +622,7 @@ export default function CashPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <b className={`block text-sm md:text-base font-black ${dk ? "text-violet-300" : "text-violet-700"}`}>💼 موجودی حساب صرافی</b>
-                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>تنها تحت تأثیر پرداخت و دریافت قرض</span>
+                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>سرمایه صرافی (واریز/برداشت مالک + قرض)</span>
                 </div>
               </div>
               <div className="relative grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-3">
@@ -793,7 +815,7 @@ export default function CashPage() {
                 </div>
               )}
 
-              {fld("دلیل / شرح عملیات *", (<textarea rows={3} value={form.reason} onChange={e => setField("reason", e.target.value)} placeholder={form.type === "customer_deposit" ? "مثلاً: واریز نقدی مشتری به حساب…" : form.type === "customer_withdraw" ? "مثلاً: برداشت نقدی مشتری از حساب…" : form.type === "owner_deposit" ? "مثلاً: واریز سرمایه مالک به صندوق…" : form.type === "owner_withdraw" ? "مثلاً: برداشت مالک برای مصارف شخصی…" : form.type === "commission_withdraw" ? "مثلاً: برداشت کارمزد هفتگی…" : "مثلاً: اصلاح موجودی…"} className={`${uiInput} h-auto py-3 resize-none ${errors.reason ? errInput : ""}`} />))}
+              {fld("دلیل / شرح عملیات *", (<textarea rows={3} value={form.reason} onChange={e => setField("reason", e.target.value)} placeholder={form.type === "customer_deposit" ? "مثلاً: واریز نقدی مشتری به حساب…" : form.type === "customer_withdraw" ? "مثلاً: برداشت نقدی مشتری از حساب…" : form.type === "owner_deposit" ? "مثلاً: واریز سرمایه مالک به صرافی…" : form.type === "owner_withdraw" ? "مثلاً: برداشت مالک برای مصارف شخصی…" : form.type === "commission_withdraw" ? "مثلاً: برداشت کارمزد هفتگی…" : "مثلاً: اصلاح موجودی…"} className={`${uiInput} h-auto py-3 resize-none ${errors.reason ? errInput : ""}`} />))}
 
               {hasType && (
                 <div className={`flex items-center gap-3 rounded-xl border p-4 ${isInType ? dk ? "border-emerald-400/25 bg-emerald-400/[0.07]" : "border-emerald-200 bg-emerald-50" : dk ? "border-rose-400/25 bg-rose-400/[0.07]" : "border-rose-200 bg-rose-50"}`}>
