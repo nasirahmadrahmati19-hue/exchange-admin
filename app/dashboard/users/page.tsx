@@ -6,7 +6,11 @@ import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY, loadCustomersSh
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type Customer = { id: string; name: string; phone?: string; tazkira?: string; address?: string; note?: string; telegram?: string; registeredAt: string; balances: Record<Currency, number>; };
 type TxType = "exchange" | "transfer" | "convert" | "hawala" | "deposit" | "withdraw" | "fee" | "correction";
-type CashEntryType = "customer_deposit" | "customer_withdraw" | "owner_deposit" | "owner_withdraw" | "adjustment" | "fee" | "commission_withdraw" | "loan_given" | "loan_received";
+type CashEntryType = 
+  | "customer_deposit" | "customer_withdraw" 
+  | "owner_deposit" | "owner_withdraw" 
+  | "adjustment" | "fee" | "commission_withdraw"
+  | "loan_given" | "loan_received";
 type LedgerEntry = { id: string; date: string; customerId: string; type: TxType; description: string; currency: Currency; amount: number; direction: "in" | "out"; balanceAfter: number; referenceId?: string; referenceNumber?: string; counterPartyId?: string; };
 type FormState = { name: string; tazkira: string; phone: string; address: string; note: string; telegram: string; };
 type FormErrors = Partial<Record<keyof FormState, string>>;
@@ -179,10 +183,8 @@ function timeLabel(s: string) { try { const d = new Date(s); if (Number.isNaN(d.
 
 const emptyForm: FormState = { name: "", tazkira: "", phone: "", address: "", note: "", telegram: "" };
 
-// ✅ منطق ساده‌سازی شده و ضدگلوله برای محاسبه موجودی
 function getLedgerBalance(customerId: string, currency: Currency, cashEntries: any[], ledger: LedgerEntry[]): number {
   let balance = 0;
-  
   if (customerId === CASH_BOX_ID) {
     for (const e of cashEntries) {
       if (e.status === "voided" || e.currency !== currency) continue;
@@ -190,12 +192,10 @@ function getLedgerBalance(customerId: string, currency: Currency, cashEntries: a
     }
   } 
   else if (customerId === EXCHANGE_ACCOUNT_ID) {
-    // ✅ ساده‌سازی مطلق: اگر سند متعلق به حساب صرافی است، فقط جهت حرکت پول مهم است
     for (const e of cashEntries) {
       if (e.status === "voided" || e.currency !== currency) continue;
-      if (e.customerId === EXCHANGE_ACCOUNT_ID) {
-        balance += e.direction === "in" ? e.amount : -e.amount;
-      }
+      if (e.type === "owner_deposit" || e.type === "loan_received") balance += e.amount;
+      else if (e.type === "owner_withdraw" || e.type === "loan_given") balance -= e.amount;
     }
   } 
   else {
@@ -565,7 +565,7 @@ export default function CustomersPage() {
         type: "loan_given",
         currency: loanCurrency,
         amount: amt,
-        direction: "in", // مشتری پول دریافت کرد (بدهکار شد)
+        direction: "in",
         reason: `قرض داده‌شده - ${reason}`,
         balanceAfter: 0,
         customerId: selectedCustomer.id,
@@ -573,7 +573,7 @@ export default function CustomersPage() {
         counterPartyId: EXCHANGE_ACCOUNT_ID,
         status: "active"
       });
-      // ۲. سند حساب صرافی (موجودی آن کم می‌شود) - این خط کلید حل مشکل است!
+      // ۲. سند حساب صرافی (موجودی آن کم می‌شود) - این خط حیاتی است!
       newEntries.push({
         id: generateId(),
         trackingCode: `${trackingCode}-EXCH`,
@@ -581,10 +581,10 @@ export default function CustomersPage() {
         type: "loan_given",
         currency: loanCurrency,
         amount: amt,
-        direction: "out", // پول از حساب صرافی خارج شد
+        direction: "out",
         reason: `قرض به ${selectedCustomer.name} - ${reason}`,
         balanceAfter: 0,
-        customerId: EXCHANGE_ACCOUNT_ID, // <-- این خط باعث می‌شود صندوق آن را شناسایی و کم کند
+        customerId: EXCHANGE_ACCOUNT_ID,
         customerName: EXCHANGE_ACCOUNT_NAME,
         counterPartyId: selectedCustomer.id,
         status: "active"
@@ -598,7 +598,7 @@ export default function CustomersPage() {
         type: "loan_received",
         currency: loanCurrency,
         amount: amt,
-        direction: "out", // مشتری پول پرداخت کرد (بدهی کم شد)
+        direction: "out",
         reason: `بازپرداخت قرض - ${reason}`,
         balanceAfter: 0,
         customerId: selectedCustomer.id,
@@ -614,7 +614,7 @@ export default function CustomersPage() {
         type: "loan_received",
         currency: loanCurrency,
         amount: amt,
-        direction: "in", // پول به حساب صرافی برگشت
+        direction: "in",
         reason: `دریافت قرض از ${selectedCustomer.name} - ${reason}`,
         balanceAfter: 0,
         customerId: EXCHANGE_ACCOUNT_ID,
@@ -624,15 +624,12 @@ export default function CustomersPage() {
       });
     }
 
-    // ✅ لاگ برای اطمینان از صحت داده‌ها (در کنسول مرورگر F12 چک کنید)
-    console.log("🚀 در حال ثبت اسناد قرض:", newEntries);
-
     setCashEntries(prev => {
       const nextEntries = [...prev, ...newEntries];
       try {
         localStorage.setItem(CASH_KEY, JSON.stringify(nextEntries));
         window.dispatchEvent(new Event("db:updated"));
-      } catch (e) { console.error("Storage error", e); }
+      } catch {}
       return nextEntries;
     });
 
