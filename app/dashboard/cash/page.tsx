@@ -56,7 +56,7 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: CashE
     if (entry.status === "voided" || entry.currency !== currency) continue;
     
     if (customerId === CASH_BOX_ID) {
-      // ✅ محاسبه دقیق موجودی فیزیکی: قرض دادن پول را از صندوق خارج می‌کند، دریافت قرض پول را برمی‌گرداند
+      // ✅ قرض دادن پول را از صندوق خارج می‌کند (کاهش)، دریافت قرض پول را برمی‌گرداند (افزایش)
       if (entry.type === "loan_given") {
         balance -= entry.amount;
       } else if (entry.type === "loan_received") {
@@ -67,18 +67,17 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: CashE
       }
     } 
     else if (customerId === EXCHANGE_ACCOUNT_ID) {
-      // ✅ موجودی حساب صرافی: تحت تأثیر واریز/برداشت مالک و دادن/دریافت قرض
+      // ✅ طبق درخواست شما: حساب صرافی فقط تحت تأثیر واریز و برداشت مالک است.
+      // قرض دادن یا دریافت قرض تأثیری روی موجودی حساب صرافی ندارد.
       if (entry.type === "owner_deposit") balance += entry.amount;
       else if (entry.type === "owner_withdraw") balance -= entry.amount;
-      else if (entry.type === "loan_given") balance -= entry.amount;
-      else if (entry.type === "loan_received") balance += entry.amount;
     } 
     else {
       if (entry.customerId === customerId) {
         if (entry.type === "customer_deposit") balance += entry.amount;
         else if (entry.type === "customer_withdraw") balance -= entry.amount;
-        else if (entry.type === "loan_given") balance -= entry.amount;
-        else if (entry.type === "loan_received") balance += entry.amount;
+        else if (entry.type === "loan_given") balance -= entry.amount; // مشتری بدهکار می‌شود
+        else if (entry.type === "loan_received") balance += entry.amount; // بدهی مشتری کم می‌شود
       }
     }
   }
@@ -132,14 +131,9 @@ function getBalanceChangesForCashEntry(entry: CashEntry, action: "register" | "r
     }
   }
   
-  // ✅ تغییرات حساب صرافی: واریز/برداشت مالک + دادن/دریافت قرض
-  if (entry.type === "owner_deposit" || entry.type === "owner_withdraw" || entry.type === "loan_given" || entry.type === "loan_received") {
-    let exchangeDelta = 0;
-    if (entry.type === "owner_deposit") exchangeDelta = entry.amount;
-    else if (entry.type === "owner_withdraw") exchangeDelta = -entry.amount;
-    else if (entry.type === "loan_given") exchangeDelta = -entry.amount;
-    else if (entry.type === "loan_received") exchangeDelta = entry.amount;
-    
+  // ✅ فقط واریز و برداشت مالک روی حساب صرافی تأثیر می‌گذارد (قرض حذف شد)
+  if (entry.type === "owner_deposit" || entry.type === "owner_withdraw") {
+    const exchangeDelta = entry.type === "owner_deposit" ? entry.amount : -entry.amount;
     changes.push({ customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, currency: entry.currency, amount: exchangeDelta * sign });
   }
   
@@ -597,7 +591,7 @@ export default function CashPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <b className={`block text-sm md:text-base font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}>💰 موجودی فیزیکی صندوق</b>
-                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>مجموع موجودی مشتریان + موجودی حساب صرافی</span>
+                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>مجموع خالص تمام ورودی‌ها و خروجی‌ها (شامل قرض)</span>
                 </div>
               </div>
               <div className="relative grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-3">
@@ -622,7 +616,7 @@ export default function CashPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <b className={`block text-sm md:text-base font-black ${dk ? "text-violet-300" : "text-violet-700"}`}>💼 موجودی حساب صرافی</b>
-                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>سرمایه صرافی (واریز/برداشت مالک + قرض)</span>
+                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>فقط واریز و برداشت مالک (بدون تأثیر قرض)</span>
                 </div>
               </div>
               <div className="relative grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-3">
