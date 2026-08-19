@@ -116,7 +116,7 @@ function recomputeCashBalancesLocal(entries: any[]): any[] {
   return sorted.map(e => { if (e.status === "voided") return { ...e, balanceAfter: bals[e.currency] || 0 }; if (e.currency && bals[e.currency] !== undefined) bals[e.currency] += e.direction === "in" ? (e.amount || 0) : -(e.amount || 0); return { ...e, balanceAfter: bals[e.currency] || 0 }; });
 }
 
-// ✅ اصلاح حیاتی ۱: ثبت سند آینه‌ای برای حساب صرافی هنگام ثبت حواله
+// ✅ اصلاح حیاتی: حذف سند آینه‌ای اشتباه. فقط مشتری و صندوق فیزیکی تحت تأثیر قرار می‌گیرند.
 function syncCashEntriesForHawala(action: "add" | "remove", h: Hawala | null, oldHawalaId?: string) {
   let entries = loadCashEntriesLocal();
   const targetId = oldHawalaId || h?.id;
@@ -126,24 +126,18 @@ function syncCashEntriesForHawala(action: "add" | "remove", h: Hawala | null, ol
     const dateStr = h.date || new Date().toISOString();
 
     if (h.senderId && h.senderId !== CASH_BOX_ID) {
-      // ۱. سند برداشت از حساب مشتری
+      // فقط کسر از حساب مشتری
       const outCode = getNextTrackingCode();
       entries.push({ id: generateId(), trackingCode: outCode, date: dateStr, type: "customer_withdraw", currency: h.currencyFrom, amount: h.amountFrom, direction: "out", reason: `ارسال حواله ${h.number} - ${h.senderName} به ${h.receiverName}`, balanceAfter: 0, customerId: h.senderId, customerName: h.senderName, customerPhone: h.senderPhone, linkedHawalaId: h.id, status: "active" });
       
-      // ۲. سند آینه‌ای: کاهش بدهی حساب صرافی به مشتری
-      entries.push({ id: generateId(), trackingCode: getNextTrackingCode(), date: dateStr, type: "customer_withdraw", currency: h.currencyFrom, amount: h.amountFrom, direction: "out", reason: `کسر بدهی صرافی بابت حواله ${h.number}`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedHawalaId: h.id, status: "active" });
-
       if (h.fee > 0 && h.feePayer === "sender") {
-        // ۳. سند پرداخت کارمزد توسط مشتری
         const feeCode = `TR-${getCurrentShamsiYear()}-${String(getTrackingNumberValue(outCode) + 1).padStart(5, "0")}`;
         entries.push({ id: generateId(), trackingCode: feeCode, date: dateStr, type: "fee", currency: h.feeCurrency, amount: h.fee, direction: "out", reason: `کارمزد حواله ${h.number}`, balanceAfter: 0, customerId: h.senderId, customerName: h.senderName, linkedHawalaId: h.id, status: "active" });
-        
-        // ۴. سند آینه‌ای: درآمد کارمزد برای حساب صرافی
-        entries.push({ id: generateId(), trackingCode: getNextTrackingCode(), date: dateStr, type: "fee", currency: h.feeCurrency, amount: h.fee, direction: "in", reason: `دریافت کارمزد حواله ${h.number}`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedHawalaId: h.id, status: "active" });
       }
     }
 
     if (h.senderId === CASH_BOX_ID) {
+      // کسر از صندوق فیزیکی
       const outCode = getNextTrackingCode();
       entries.push({ id: generateId(), trackingCode: outCode, date: dateStr, type: "owner_withdraw", currency: h.currencyFrom, amount: h.amountFrom, direction: "out", reason: `ارسال حواله ${h.number} از صندوق به ${h.receiverName}`, balanceAfter: 0, customerId: CASH_BOX_ID, customerName: CASH_BOX_NAME, linkedHawalaId: h.id, status: "active" });
       if (h.fee > 0 && h.feePayer === "sender") {
@@ -156,7 +150,7 @@ function syncCashEntriesForHawala(action: "add" | "remove", h: Hawala | null, ol
   saveCashEntriesLocal(entries);
 }
 
-// ✅ اصلاح حیاتی ۲: اصلاح جهت (direction) و ثبت سند آینه‌ای برای حساب صرافی هنگام تسویه
+// ✅ اصلاح حیاتی: در تسویه هم فقط حساب مشتری و صندوق فیزیکی درگیر می‌شوند.
 function syncCashEntriesForHawalaSettlement(action: "add" | "remove", h: Hawala) {
   let entries = loadCashEntriesLocal();
   if (action === "remove") entries = entries.filter((e: any) => e.linkedHawalaSettleId !== h.id);
@@ -165,12 +159,9 @@ function syncCashEntriesForHawalaSettlement(action: "add" | "remove", h: Hawala)
     const dateStr = h.paidAt || h.date || new Date().toISOString();
 
     if (h.receiverId && h.receiverId !== CASH_BOX_ID) {
-      // ۱. سند واریز به حساب مشتری گیرنده (direction باید "in" باشد، نه "out")
+      // فقط واریز به حساب مشتری گیرنده
       const payCode = getNextTrackingCode();
       entries.push({ id: generateId(), trackingCode: payCode, date: dateStr, type: "customer_deposit", currency: h.currencyTo, amount: h.finalAmount, direction: "in", reason: `تسویه حواله ${h.number} از ${h.senderName}`, balanceAfter: 0, customerId: h.receiverId, customerName: h.receiverName, linkedHawalaSettleId: h.id, status: "active" });
-      
-      // ۲. سند آینه‌ای: افزایش بدهی حساب صرافی به مشتری گیرنده
-      entries.push({ id: generateId(), trackingCode: getNextTrackingCode(), date: dateStr, type: "customer_deposit", currency: h.currencyTo, amount: h.finalAmount, direction: "in", reason: `افزایش بدهی صرافی بابت تسویه حواله ${h.number}`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedHawalaSettleId: h.id, status: "active" });
     }
 
     if (h.receiverId === CASH_BOX_ID) {
