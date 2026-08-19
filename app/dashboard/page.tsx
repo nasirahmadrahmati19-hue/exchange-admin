@@ -25,6 +25,46 @@ const labels: Record<Currency, string> = {
 const CASH_BOX_ID = "CASH_BOX";
 const EXCHANGE_ACCOUNT_ID = "EXCHANGE_ACCOUNT";
 
+interface CashEntry {
+  id: string;
+  trackingCode: string;
+  date: string;
+  type: string; // برای محاسبه Ledger ضروری است
+  currency: Currency;
+  amount: number;
+  direction: "in" | "out";
+  status: "active" | "voided";
+  customerId?: string;
+}
+
+interface Customer {
+  id: string;
+  name: string;
+  balances: Record<Currency, number>;
+}
+
+interface Transaction {
+  id: string;
+  date: string;
+  type: "exchange" | "transfer" | "convert";
+  currency?: Currency;
+  amount?: number;
+  afnValue?: number;
+  commission?: number;
+  commissionCurrency?: Currency;
+  status: "active" | "voided";
+}
+
+interface Hawala {
+  id: string;
+  date: string;
+  amountFrom: number;
+  currencyFrom: Currency;
+  fee?: number;
+  feeCurrency?: Currency;
+  status: "pending" | "sent" | "paid" | "cancelled";
+}
+
 // ============================================================
 // توابع کمکی
 // ============================================================
@@ -78,47 +118,27 @@ function isToday(dateStr: string | number | undefined | null): boolean {
   return false;
 }
 
-// ============================================================
-// تایپ‌های داده
-// ============================================================
-interface CashEntry {
-  id: string;
-  trackingCode: string;
-  date: string;
-  type: string;
-  currency: Currency;
-  amount: number;
-  direction: "in" | "out";
-  status: "active" | "voided";
-  customerId?: string;
-}
-
-interface Customer {
-  id: string;
-  name: string;
-  balances: Record<Currency, number>;
-}
-
-interface Transaction {
-  id: string;
-  date: string;
-  type: "exchange" | "transfer" | "convert";
-  currency?: Currency;
-  amount?: number;
-  afnValue?: number;
-  commission?: number;
-  commissionCurrency?: Currency;
-  status: "active" | "voided";
-}
-
-interface Hawala {
-  id: string;
-  date: string;
-  amountFrom: number;
-  currencyFrom: Currency;
-  fee?: number;
-  feeCurrency?: Currency;
-  status: "pending" | "sent" | "paid" | "cancelled";
+// ✅ تابع حیاتی: محاسبه موجودی فقط و فقط از روی Ledger (همان منطق CashPage)
+function getLedgerBalance(customerId: string, currency: Currency, entries: CashEntry[]): number {
+  let balance = 0;
+  for (const entry of entries) {
+    if (entry.status === "voided" || entry.currency !== currency) continue;
+    
+    if (customerId === CASH_BOX_ID) {
+      balance += entry.direction === "in" ? entry.amount : -entry.amount;
+    } 
+    else if (customerId === EXCHANGE_ACCOUNT_ID) {
+      if (entry.type === "owner_deposit" || entry.type === "loan_received") balance += entry.amount;
+      else if (entry.type === "owner_withdraw" || entry.type === "loan_given") balance -= entry.amount;
+    } 
+    else {
+      if (entry.customerId === customerId) {
+        if (entry.type === "customer_deposit") balance += entry.amount;
+        else if (entry.type === "customer_withdraw") balance -= entry.amount;
+      }
+    }
+  }
+  return balance;
 }
 
 // ============================================================
@@ -183,53 +203,53 @@ export default function DashboardPage() {
     };
   }, []);
 
-  // ── محاسبات ──
+  // ── محاسبات مبتنی بر Ledger (منبع واحد حقیقت) ──
+  
+  // ۱. موجودی فیزیکی صندوق
   const physicalCashBalances = useMemo(() => {
     const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-    const sorted = [...entries].sort((a, b) => {
-      try { return new Date(a.date).getTime() - new Date(b.date).getTime(); }
-      catch { return 0; }
-    });
-    for (const e of sorted) {
-      if (!currencies.includes(e.currency)) continue;
-      if (e.status === "voided") continue;
-      balances[e.currency] += e.direction === "in" ? e.amount : -e.amount;
+    for (const cur of currencies) {
+      balances[cur] = getLedgerBalance(CASH_BOX_ID, cur, entries);
     }
     return balances;
   }, [entries]);
 
-  // ✅ جداسازی حساب صرافی و صندوق از موجودی مشتریان
+  // ۲. موجودی حساب صرافی (واریز/برداشت مالک + قرض)
+  const exchangeBalance = useMemo(() => {
+    const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+    for (const cur of currencies) {
+      balances[cur] = getLedgerBalance(EXCHANGE_ACCOUNT_ID, cur, entries);
+    }
+    return balances;
+  }, [entries]);
+
+  // ۳. مجموع طلب مشتریان (فقط مقادیر مثبت)
   const customerDeposits = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
       if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) continue;
       for (const cur of currencies) {
-        const bal = c.balances?.[cur] || 0;
+        const bal = getLedgerBalance(c.id, cur, entries);
         if (bal > 0) totals[cur] += bal;
       }
     }
     return totals;
-  }, [customers]);
+  }, [customers, entries]);
 
+  // ۴. مجموع بدهی مشتریان (فقط مقادیر منفی)
   const customerDebts = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
       if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) continue;
       for (const cur of currencies) {
-        const bal = c.balances?.[cur] || 0;
+        const bal = getLedgerBalance(c.id, cur, entries);
         if (bal < 0) totals[cur] += Math.abs(bal);
       }
     }
     return totals;
-  }, [customers]);
+  }, [customers, entries]);
 
-  // ✅ خواندن مستقیم موجودی حساب صرافی
-  const exchangeAccount = useMemo(() => customers.find(c => c.id === EXCHANGE_ACCOUNT_ID), [customers]);
-  const exchangeBalance = useMemo(() => {
-    if (!exchangeAccount) return { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-    return exchangeAccount.balances;
-  }, [exchangeAccount]);
-
+  // ۵. کارمزدها
   const totalCommissionEarned = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const tx of transactions) {
@@ -265,7 +285,7 @@ export default function DashboardPage() {
     return totals;
   }, [totalCommissionEarned, commissionWithdrawn]);
 
-  // ✅ آمار روزانه (مبلغ‌ها و تعدادها)
+  // ۶. آمار روزانه
   const todayStats = useMemo(() => {
     let tradeCount = 0, hawalaCount = 0;
     let tradeAmountSum = 0, hawalaAmountSum = 0;
@@ -296,13 +316,13 @@ export default function DashboardPage() {
     return { tradeCount, hawalaCount, tradeAmountSum, hawalaAmountSum, tradeCommissionSum, hawalaFeeSum };
   }, [transactions, hawalas]);
 
-  // ✅ تعداد مشتریان بدهکار (بدون احتساب حساب صرافی)
+  // ۷. تعداد مشتریان بدهکار (بر اساس Ledger)
   const debtorsCount = useMemo(() => {
     return customers.filter(c => {
       if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) return false;
-      return currencies.some(cur => (c.balances?.[cur] || 0) < 0);
+      return currencies.some(cur => getLedgerBalance(c.id, cur, entries) < 0);
     }).length;
-  }, [customers]);
+  }, [customers, entries]);
 
   // ── استایل‌ها ──
   const dk = theme === "dark";
@@ -410,7 +430,7 @@ export default function DashboardPage() {
                 <div className={`mt-1.5 text-[9px] font-bold ${dk ? "text-purple-400/70" : "text-purple-600/70"}`}>{fa(todayStats.hawalaCount)} حواله</div>
               </div>
 
-              {/* 💰 کارمزد تبادل ارز (دو قسمتی) */}
+              {/* 💰 کارمزد تبادل ارز */}
               <div className={`group relative overflow-hidden rounded-2xl border p-4 transition-all duration-300 hover:shadow-lg hover:scale-[1.02] ${dk ? "border-amber-400/25 bg-gradient-to-br from-amber-900/30 to-slate-900/50" : "border-amber-200 bg-gradient-to-br from-amber-50 to-white"}`}>
                 <div className="relative flex items-center gap-2.5 mb-2">
                   <span className={`grid h-10 w-10 place-items-center rounded-xl shadow-sm ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}>
@@ -431,7 +451,7 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* 🎯 کارمزد حواله‌جات (دو قسمتی) */}
+              {/* 🎯 کارمزد حواله‌جات */}
               <div className={`group relative overflow-hidden rounded-2xl border p-4 transition-all duration-300 hover:shadow-lg hover:scale-[1.02] ${dk ? "border-rose-400/25 bg-gradient-to-br from-rose-900/30 to-slate-900/50" : "border-rose-200 bg-gradient-to-br from-rose-50 to-white"}`}>
                 <div className="relative flex items-center gap-2.5 mb-2">
                   <span className={`grid h-10 w-10 place-items-center rounded-xl shadow-sm ${dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600"}`}>
@@ -467,7 +487,7 @@ export default function DashboardPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <b className={`block text-base md:text-lg font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}>💰 موجودی فیزیکی صندوق</b>
-                  <span className={`block text-[11px] md:text-xs font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>فقط اسناد صندوق — بدون موجودی مشتریان</span>
+                  <span className={`block text-[11px] md:text-xs font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>محاسبه‌شده مستقیم از دفتر کل (Ledger)</span>
                 </div>
               </div>
               
@@ -557,7 +577,7 @@ export default function DashboardPage() {
                 </span>
                 <div className="min-w-0">
                   <b className={`block text-[13px] md:text-[14px] font-black leading-tight ${dk ? "text-violet-300" : "text-violet-700"}`}>💼 موجودی حساب صرافی</b>
-                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${subText}`}>حساب داخلی و سرمایه مالک</span>
+                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${subText}`}>واریز/برداشت مالک + قرض</span>
                 </div>
               </div>
               <div className="relative space-y-1.5">
@@ -590,31 +610,20 @@ export default function DashboardPage() {
                 </div>
               </div>
               
-              {/* قسمت بالا: تعداد کل مشتریان */}
               <div className={`relative flex items-center justify-center py-3 mb-2 rounded-xl ${dk ? "bg-slate-900/50" : "bg-white/80"}`}>
                 <div className="text-center">
-                  <div className={`text-[10px] font-black mb-1 ${dk ? "text-cyan-300/70" : "text-cyan-600/70"}`}>
-                    کل مشتریان
-                  </div>
-                  <div className={`text-3xl md:text-4xl font-black tabular-nums leading-none ${dk ? "text-cyan-300" : "text-cyan-700"}`}>
-                    {fa(customers.length)}
-                  </div>
+                  <div className={`text-[10px] font-black mb-1 ${dk ? "text-cyan-300/70" : "text-cyan-600/70"}`}>کل مشتریان</div>
+                  <div className={`text-3xl md:text-4xl font-black tabular-nums leading-none ${dk ? "text-cyan-300" : "text-cyan-700"}`}>{fa(customers.length)}</div>
                   <div className={`mt-1 text-[9px] font-black ${subText}`}>نفر</div>
                 </div>
               </div>
 
-              {/* خط جداکننده */}
               <div className={`h-px my-2 ${dk ? "bg-cyan-400/20" : "bg-cyan-200"}`} />
 
-              {/* قسمت پایین: تعداد مشتریان بدهکار */}
               <div className={`relative flex items-center justify-center py-3 rounded-xl ${dk ? "bg-rose-400/10" : "bg-rose-50"}`}>
                 <div className="text-center">
-                  <div className={`text-[10px] font-black mb-1 ${dk ? "text-rose-300/80" : "text-rose-600/80"}`}>
-                    مشتریان بدهکار
-                  </div>
-                  <div className={`text-3xl md:text-4xl font-black tabular-nums leading-none ${debtorsCount > 0 ? "text-rose-500" : subText}`}>
-                    {fa(debtorsCount)}
-                  </div>
+                  <div className={`text-[10px] font-black mb-1 ${dk ? "text-rose-300/80" : "text-rose-600/80"}`}>مشتریان بدهکار</div>
+                  <div className={`text-3xl md:text-4xl font-black tabular-nums leading-none ${debtorsCount > 0 ? "text-rose-500" : subText}`}>{fa(debtorsCount)}</div>
                   <div className={`mt-1 text-[9px] font-black ${debtorsCount > 0 ? (dk ? "text-rose-300/70" : "text-rose-600/70") : subText}`}>
                     {debtorsCount > 0 ? "⚠️ دارای بدهی" : "✅ بدون بدهی"}
                   </div>
