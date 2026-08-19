@@ -21,7 +21,7 @@ const currencyColors: Record<Currency, { light: string; dark: string; gradient: 
 
 const CASH_BOX_ID = "CASH_BOX";
 const CASH_BOX_NAME = "صندوق";
-const CASH_BOX_CUSTOMER: Customer = { id: CASH_BOX_ID, name: CASH_BOX_NAME, phone: "", tazkira: "", address: "", note: "", telegram: "", telegramChatId: "", registeredAt: "", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
+// ✅ تغییر ۱: حذف ثابت CASH_BOX_CUSTOMER از لیست انتخاب مشتریان
 
 const EXCHANGE_ACCOUNT_ID = "EXCHANGE_ACCOUNT";
 const EXCHANGE_ACCOUNT_NAME = "حساب صرافی";
@@ -53,12 +53,9 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: CashE
       balance += entry.amount * physicalMultiplier;
     } 
     else if (customerId === EXCHANGE_ACCOUNT_ID) {
-      // حساب صرافی: تحت تأثیر واریز/برداشت مالک + طرف مقابل واریز/برداشت مشتری
-      if (entry.type === "owner_deposit" || entry.type === "customer_deposit") {
-        balance += entry.amount;
-      } else if (entry.type === "owner_withdraw" || entry.type === "customer_withdraw") {
-        balance -= entry.amount;
-      }
+      // ✅ تغییر ۲: حساب صرافی فقط تحت تأثیر واریز و برداشت مالک است (موجودی مشتریان در اینجا جمع نمی‌شود)
+      if (entry.type === "owner_deposit") balance += entry.amount;
+      else if (entry.type === "owner_withdraw") balance -= entry.amount;
     } 
     else {
       // مشتری عادی: فقط تحت تأثیر واریز و برداشت خودش
@@ -116,8 +113,7 @@ function getBalanceChangesForCashEntry(entry: CashEntry, action: "register" | "r
       const delta = entry.type === "customer_deposit" ? entry.amount : -entry.amount;
       changes.push({ customerId: entry.customerId, customerName: entry.customerName || "", currency: entry.currency, amount: delta * sign });
     }
-    const exchangeDelta = entry.type === "customer_deposit" ? entry.amount : -entry.amount;
-    changes.push({ customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, currency: entry.currency, amount: exchangeDelta * sign });
+    // ✅ تغییر ۳: حذف تأثیر عملیات مشتری روی حساب صرافی در تغییرات بالانس
   }
   
   if (entry.type === "owner_deposit" || entry.type === "owner_withdraw") {
@@ -404,11 +400,12 @@ export default function CashPage() {
     return totals;
   }, [totalCommissionEarned, commissionWithdrawn]);
 
-  // ✅ لیست مشتریان با حساب‌های مجازی همیشه در بالا
+  // ✅ تغییر ۴: لیست مشتریان بدون "صندوق"
   const filteredCustomerList = useMemo(() => {
     const q = normalizeDigits(customerFilter.trim()).toLowerCase();
     
-    const virtualAccounts = [CASH_BOX_CUSTOMER, EXCHANGE_ACCOUNT_CUSTOMER].filter(acc => !q || acc.name.includes(q));
+    // فقط حساب صرافی نگه داشته می‌شود، صندوق (CASH_BOX) کاملاً حذف شد
+    const virtualAccounts = [EXCHANGE_ACCOUNT_CUSTOMER].filter(acc => !q || acc.name.includes(q));
     
     const normalCustomers = customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID)
       .filter(c => !q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q)) || (c.tazkira && normalizeDigits(c.tazkira).includes(q)));
@@ -605,7 +602,8 @@ export default function CashPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <b className={`block text-sm md:text-base font-black ${dk ? "text-violet-300" : "text-violet-700"}`}>💼 موجودی حساب صرافی</b>
-                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>واریز/برداشت مالک + طرف مقابل عملیات مشتریان</span>
+                  {/* ✅ تغییر ۵: به‌روزرسانی توضیحات برای شفاف‌سازی منطق */}
+                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>فقط واریز و برداشت مالک</span>
                 </div>
               </div>
               <div className="relative grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-3">
@@ -730,15 +728,13 @@ export default function CashPage() {
                         <div className={`absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
                           {filteredCustomerList.length === 0 ? (<div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>) : (
                             filteredCustomerList.map((c) => {
-                              // محاسبه موجودی زنده برای نمایش در لیست
                               const liveBal = getLedgerBalance(c.id, form.currency, entries);
                               return (
                                 <button key={c.id} type="button" onClick={() => { setField("customerId", c.id); setField("customerName", c.name); setCustomerFilter(""); setShowCustomerList(false); }} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-teal-400/15 hover:text-teal-300" : "text-slate-700 hover:bg-teal-50 hover:text-teal-600"}`}>
                                   <span className="flex-1 truncate flex items-center gap-1.5">
                                     {c.name}
-                                    {c.id === CASH_BOX_ID && " 💰"}
                                     {c.id === EXCHANGE_ACCOUNT_ID && " 💼"}
-                                    {hasTelegram(c) && c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID && <span title="دارای چت آیدی تلگرام">📱</span>}
+                                    {hasTelegram(c) && c.id !== EXCHANGE_ACCOUNT_ID && <span title="دارای چت آیدی تلگرام">📱</span>}
                                   </span>
                                   <span className={`text-[10px] tabular-nums font-bold ${currencyColors[form.currency][dk ? "dark" : "light"]}`}>{fmt(liveBal)} {labels[form.currency]}</span>
                                 </button>
