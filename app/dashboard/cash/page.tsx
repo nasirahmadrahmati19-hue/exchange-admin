@@ -59,36 +59,26 @@ function formatShamsiDate(d: Date) { const s = shamsiParts(d); return `${s.year}
 function shortDateLabel(s: string) { try { const d = new Date(s); return Number.isNaN(d.getTime()) ? "-" : formatShamsiDate(d); } catch (e) { return "-"; } }
 function timeLabel(s: string) { try { const d = new Date(s); if (Number.isNaN(d.getTime())) return "-"; const pad = (n: number) => String(n).padStart(2, "0"); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; } catch (e) { return "-"; } }
 
-// ✅ منطق ضدگلوله و تضمینی محاسبه موجودی
+// ✅ منطق ساده‌سازی شده و ضدگلوله برای محاسبه موجودی
 function getLedgerBalance(customerId: string, currency: Currency, entries: CashEntry[]): number {
   let balance = 0;
   for (const entry of entries) {
     if (entry.status === "voided" || entry.currency !== currency) continue;
-    
+
     if (customerId === CASH_BOX_ID) {
-      // قرض دادن پول نقد را خارج می‌کند، دریافت قرض پول نقد را برمی‌گرداند
       if (entry.type === "loan_given") balance -= entry.amount;
       else if (entry.type === "loan_received") balance += entry.amount;
       else balance += (entry.direction === "in" ? 1 : -1) * entry.amount;
     } 
     else if (customerId === EXCHANGE_ACCOUNT_ID) {
-      // ✅ تغییر قطعی و ضدگلوله: اگر سند متعلق به حساب صرافی است، نوع آن را بررسی کن
+      // ✅ ساده‌سازی مطلق: اگر سند متعلق به حساب صرافی است، فقط جهت حرکت پول مهم است
       if (entry.customerId === EXCHANGE_ACCOUNT_ID) {
-        if (entry.type === "loan_given" || entry.type === "owner_withdraw") {
-          balance -= entry.amount; // قرض داده شد یا مالک برداشت کرد
-        } else if (entry.type === "loan_received" || entry.type === "owner_deposit") {
-          balance += entry.amount; // قرض پس داده شد یا مالک واریز کرد
-        }
+        balance += (entry.direction === "in" ? 1 : -1) * entry.amount;
       }
     } 
     else {
-      // مشتری عادی
       if (entry.customerId === customerId) {
-        if (entry.type === "customer_deposit" || entry.type === "loan_received") {
-          balance += entry.amount;
-        } else if (entry.type === "customer_withdraw" || entry.type === "loan_given") {
-          balance -= entry.amount;
-        }
+        balance += (entry.direction === "in" ? 1 : -1) * entry.amount;
       }
     }
   }
@@ -140,13 +130,12 @@ function getBalanceChangesForCashEntry(entry: CashEntry, action: "register" | "r
     }
   }
   
-  // ✅ تغییرات حساب صرافی برای واریز/برداشت مالک و دادن/دریافت قرض
   if (entry.type === "owner_deposit" || entry.type === "owner_withdraw" || entry.type === "loan_given" || entry.type === "loan_received") {
     let exchangeDelta = 0;
     if (entry.type === "owner_deposit") exchangeDelta = entry.amount;
     else if (entry.type === "owner_withdraw") exchangeDelta = -entry.amount;
-    else if (entry.type === "loan_given") exchangeDelta = -entry.amount; // قرض داده شد، از حساب صرافی کم می‌شود
-    else if (entry.type === "loan_received") exchangeDelta = entry.amount; // قرض پس داده شد، به حساب صرافی اضافه می‌شود
+    else if (entry.type === "loan_given") exchangeDelta = -entry.amount;
+    else if (entry.type === "loan_received") exchangeDelta = entry.amount;
     
     changes.push({ customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, currency: entry.currency, amount: exchangeDelta * sign });
   }
