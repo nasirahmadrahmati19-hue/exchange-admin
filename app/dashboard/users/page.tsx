@@ -284,8 +284,7 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
       ce.type === "loan_given" || ce.type === "loan_received" ? EXCHANGE_ACCOUNT_ID : CASH_BOX_ID
     );
 
-    const isIn = ce.type === "customer_deposit" || (ce.type === "loan_given" && ce.customerId !== EXCHANGE_ACCOUNT_ID) || (ce.type === "loan_received" && ce.customerId === EXCHANGE_ACCOUNT_ID);
-
+const isIn = ce.type === "customer_deposit" || ce.type === "loan_received";
     entries.push({
       id: `${ce.id}-cash`,
       date: ce.date || new Date().toISOString(),
