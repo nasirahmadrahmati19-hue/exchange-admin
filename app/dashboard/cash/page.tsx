@@ -48,21 +48,16 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: CashE
     const physicalMultiplier = entry.direction === "in" ? 1 : -1;
 
     if (customerId === CASH_BOX_ID) {
-      // موجودی فیزیکی: جمع جبری تمام ورودی‌ها و خروجی‌ها
       balance += entry.amount * physicalMultiplier;
     } 
     else if (customerId === EXCHANGE_ACCOUNT_ID) {
-      // ✅ تغییر جدید: حساب صرافی تحت تأثیر مالک + پرداخت و بدهی مشتریان
+      // حساب صرافی تحت تأثیر واریز و برداشت مالک + قرض دادن و دریافت قرض
       if (entry.type === "owner_deposit") balance += entry.amount;
       else if (entry.type === "owner_withdraw") balance -= entry.amount;
-      
-      // واریز مشتری (پرداخت بدهی/افزایش موجودی) -> اضافه به حساب صرافی
-      if (entry.type === "customer_deposit") balance += entry.amount;
-      // برداشت مشتری (قرض/کاهش موجودی) -> کم از حساب صرافی
-      else if (entry.type === "customer_withdraw") balance -= entry.amount;
+      else if (entry.type === "loan_given") balance -= entry.amount; // صرافی قرض داده، موجودی کاهش می‌یابد
+      else if (entry.type === "loan_received") balance += entry.amount; // صرافی قرض دریافت کرده، موجودی افزایش می‌یابد
     } 
     else {
-      // مشتری عادی: فقط تحت تأثیر واریز و برداشت خودش
       if (entry.customerId === customerId) {
         if (entry.type === "customer_deposit") balance += entry.amount;
         else if (entry.type === "customer_withdraw") balance -= entry.amount;
@@ -117,13 +112,16 @@ function getBalanceChangesForCashEntry(entry: CashEntry, action: "register" | "r
       const delta = entry.type === "customer_deposit" ? entry.amount : -entry.amount;
       changes.push({ customerId: entry.customerId, customerName: entry.customerName || "", currency: entry.currency, amount: delta * sign });
     }
-    // ✅ تغییر جدید: تأثیر عملیات مشتری روی حساب صرافی
-    const exchangeDelta = entry.type === "customer_deposit" ? entry.amount : -entry.amount;
-    changes.push({ customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, currency: entry.currency, amount: exchangeDelta * sign });
   }
   
   if (entry.type === "owner_deposit" || entry.type === "owner_withdraw") {
     const exchangeDelta = entry.type === "owner_deposit" ? entry.amount : -entry.amount;
+    changes.push({ customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, currency: entry.currency, amount: exchangeDelta * sign });
+  }
+  
+  // ✅ تغییر جدید: محاسبه تغییرات حساب صرافی برای قرض دادن و دریافت قرض
+  if (entry.type === "loan_given" || entry.type === "loan_received") {
+    const exchangeDelta = entry.type === "loan_given" ? -entry.amount : entry.amount;
     changes.push({ customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, currency: entry.currency, amount: exchangeDelta * sign });
   }
   
@@ -354,7 +352,6 @@ export default function CashPage() {
     return () => document.removeEventListener("mousedown", handler);
   }, [openActionId]);
 
-  // ✅ محاسبات کاملاً مبتنی بر Ledger
   const physicalCashBalances = useMemo(() => computeCashBalances(entries), [entries]);
   
   const exchangeBalance = useMemo(() => {
@@ -570,7 +567,6 @@ export default function CashPage() {
           </header>
 
           <div className="cs-up space-y-4 md:space-y-5" style={{ animationDelay: "70ms" }}>
-            {/* کارت موجودی فیزیکی صندوق */}
             <div className={`relative overflow-hidden rounded-xl md:rounded-2xl border-2 p-3 md:p-4 transition-all duration-300 hover:shadow-xl ${dk ? "border-emerald-400/40 bg-gradient-to-br from-emerald-900/40 via-slate-900/60 to-teal-900/40 shadow-[0_10px_30px_-10px_rgba(16,185,129,0.3)]" : "border-emerald-300 bg-gradient-to-br from-emerald-50 via-white to-teal-50 shadow-[0_10px_30px_-10px_rgba(16,185,129,0.25)]"}`}>
               <div className="relative flex items-center gap-3 mb-3">
                 <div className={`relative grid h-10 w-10 md:h-12 md:w-12 shrink-0 place-items-center rounded-xl shadow-md ${dk ? "bg-gradient-to-br from-emerald-400 to-teal-400 text-slate-950" : "bg-gradient-to-br from-emerald-500 to-teal-500 text-white"}`}>
@@ -597,7 +593,6 @@ export default function CashPage() {
               </div>
             </div>
 
-            {/* کارت موجودی حساب صرافی */}
             <div className={`relative overflow-hidden rounded-xl md:rounded-2xl border-2 p-3 md:p-4 transition-all duration-300 hover:shadow-xl ${dk ? "border-violet-400/40 bg-gradient-to-br from-violet-900/40 via-slate-900/60 to-indigo-900/40" : "border-violet-300 bg-gradient-to-br from-violet-50 via-white to-indigo-50"}`}>
               <div className="relative flex items-center gap-3 mb-3">
                 <div className={`relative grid h-10 w-10 md:h-12 md:w-12 shrink-0 place-items-center rounded-xl shadow-md ${dk ? "bg-gradient-to-br from-violet-400 to-indigo-400 text-slate-950" : "bg-gradient-to-br from-violet-500 to-indigo-500 text-white"}`}>
@@ -605,8 +600,7 @@ export default function CashPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <b className={`block text-sm md:text-base font-black ${dk ? "text-violet-300" : "text-violet-700"}`}>💼 موجودی حساب صرافی</b>
-                  {/* ✅ تغییر: به‌روزرسانی توضیحات برای نمایش منطق جدید */}
-                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>واریز/برداشت مالک + پرداخت و بدهی مشتریان</span>
+                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>واریز و برداشت مالک + قرض دادن و دریافت قرض</span>
                 </div>
               </div>
               <div className="relative grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-3">
@@ -625,7 +619,6 @@ export default function CashPage() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
-              {/* کارت موجودی مشتریان */}
               <div className={`group relative overflow-hidden rounded-2xl border p-4 md:p-5 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-sky-400/25 bg-gradient-to-br from-sky-900/30 to-slate-900/50" : "border-sky-200 bg-gradient-to-br from-sky-50 to-white"}`}>
                 <div className="relative flex items-center gap-3 mb-4">
                   <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-600"}`}><Ic n="user" className="h-5 w-5" /></span>
@@ -647,7 +640,6 @@ export default function CashPage() {
                 </div>
               </div>
 
-              {/* کارت بدهی مشتریان */}
               <div className={`group relative overflow-hidden rounded-2xl border p-4 md:p-5 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-rose-400/25 bg-gradient-to-br from-rose-900/30 to-slate-900/50" : "border-rose-200 bg-gradient-to-br from-rose-50 to-white"}`}>
                 <div className="relative flex items-center gap-3 mb-4">
                   <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600"}`}><Ic n="alert" className="h-5 w-5" /></span>
@@ -669,7 +661,6 @@ export default function CashPage() {
                 </div>
               </div>
 
-              {/* کارت کارمزد قابل برداشت */}
               <div className={`group relative overflow-hidden rounded-2xl border p-4 md:p-5 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-amber-400/25 bg-gradient-to-br from-amber-900/30 to-slate-900/50" : "border-amber-200 bg-gradient-to-br from-amber-50 to-white"}`}>
                 <div className="relative flex items-center gap-3 mb-4">
                   <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="gem" className="h-5 w-5" /></span>
