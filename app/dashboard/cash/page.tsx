@@ -85,11 +85,54 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: CashE
   return balance;
 }
 
-function computeCashBalances(entries: CashEntry[]): Record<Currency, number> {
-  const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+function computeCashBalances(
+  entries: CashEntry[],
+  customers: Customer[]
+): Record<Currency, number> {
+  const balances: Record<Currency, number> = {
+    AFN: 0,
+    USD: 0,
+    EUR: 0,
+    IRR: 0,
+    PKR: 0
+  };
+
   for (const cur of currencies) {
-    balances[cur] = getLedgerBalance(CASH_BOX_ID, cur, entries);
+
+    // 1. فقط موجودی مثبت مشتریان
+    let customerBalances = 0;
+
+    for (const customer of customers) {
+      if (
+        !customer ||
+        customer.id === CASH_BOX_ID ||
+        customer.id === EXCHANGE_ACCOUNT_ID
+      ) {
+        continue;
+      }
+
+      const balance = getLedgerBalance(
+        customer.id,
+        cur,
+        entries
+      );
+
+      if (balance > 0) {
+        customerBalances += balance;
+      }
+    }
+
+    // 2. موجودی حساب خود صرافی
+    const exchangeBalance = getLedgerBalance(
+      EXCHANGE_ACCOUNT_ID,
+      cur,
+      entries
+    );
+
+    // 3. موجودی فیزیکی صندوق
+    balances[cur] = customerBalances + exchangeBalance;
   }
+
   return balances;
 }
 
