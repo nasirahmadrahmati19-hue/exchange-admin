@@ -183,6 +183,35 @@ function timeLabel(s: string) { try { const d = new Date(s); if (Number.isNaN(d.
 
 const emptyForm: FormState = { name: "", tazkira: "", phone: "", address: "", note: "", telegram: "" };
 
+// ✅ تابع یکپارچه محاسبه موجودی (دقیقاً مطابق با منطق CashPage برای تضمین همگام‌سازی ۱۰۰٪)
+function getLedgerBalance(customerId: string, currency: Currency, cashEntries: any[], ledger: LedgerEntry[]): number {
+  let balance = 0;
+  
+  // ۱. محاسبه حساب‌های مجازی مستقیماً از CashEntries (منبع حقیقت صندوق)
+  if (customerId === CASH_BOX_ID) {
+    for (const e of cashEntries) {
+      if (e.status === "voided" || e.currency !== currency) continue;
+      balance += e.direction === "in" ? e.amount : -e.amount;
+    }
+  } 
+  else if (customerId === EXCHANGE_ACCOUNT_ID) {
+    for (const e of cashEntries) {
+      if (e.status === "voided" || e.currency !== currency) continue;
+      if (e.type === "owner_deposit" || e.type === "loan_received") balance += e.amount;
+      else if (e.type === "owner_withdraw" || e.type === "loan_given") balance -= e.amount;
+    }
+  } 
+  // ۲. محاسبه مشتریان عادی از روی Ledger جامع
+  else {
+    for (const e of ledger) {
+      if (e.customerId === customerId && e.currency === currency) {
+        balance += e.direction === "in" ? e.amount : -e.amount;
+      }
+    }
+  }
+  return balance;
+}
+
 function buildLedger(customers: Customer[], transactions: any[], hawalas: any[], cashEntries: any[]): LedgerEntry[] {
   const entries: LedgerEntry[] = [];
   if (!Array.isArray(customers) || !Array.isArray(transactions) || !Array.isArray(hawalas) || !Array.isArray(cashEntries)) return entries;
@@ -314,39 +343,6 @@ function buildCashBoxLedger(cashEntries: any[]): LedgerEntry[] {
   return entries;
 }
 
-function computeExchangeAccountBalances(ledger: LedgerEntry[]): Record<Currency, number> {
-  const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-  for (const e of ledger) {
-    if (e.customerId !== EXCHANGE_ACCOUNT_ID) continue;
-    if (!isCurrency(e.currency)) continue;
-    balances[e.currency] += e.direction === "in" ? e.amount : -e.amount;
-  }
-  return balances;
-}
-
-function computePhysicalCashBoxBalances(ledger: LedgerEntry[]): Record<Currency, number> {
-  const physical: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-  for (const e of ledger) {
-    if (e.customerId === CASH_BOX_ID) continue;
-    if (!isCurrency(e.currency)) continue;
-    physical[e.currency] += e.direction === "in" ? e.amount : -e.amount;
-  }
-  return physical;
-}
-
-function computeCashBoxBalances(cashEntries: any[]): Record<Currency, number> {
-  const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-  if (!Array.isArray(cashEntries)) return balances;
-  for (const ce of cashEntries) {
-    if (ce.status === "voided") continue;
-    if (ce.type === "customer_deposit" || ce.type === "customer_withdraw" || ce.type === "loan_given" || ce.type === "loan_received") continue;
-    if (ce.linkedExchangeId || ce.linkedTransferId || ce.linkedConvertId || ce.linkedHawalaId || ce.linkedHawalaSettleId) continue;
-    const cur = ce.currency as Currency; if (!isCurrency(cur)) continue;
-    balances[cur] += ce.direction === "in" ? (ce.amount || 0) : -(ce.amount || 0);
-  }
-  return balances;
-}
-
 export default function CustomersPage() {
   const [mounted, setMounted] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -447,11 +443,36 @@ export default function CustomersPage() {
   const ledger = useMemo(() => { try { return buildLedger(customers, transactions, hawalas, cashEntries); } catch { return []; } }, [customers, transactions, hawalas, cashEntries]);
   const cashBoxLedger = useMemo(() => { try { return buildCashBoxLedger(cashEntries); } catch { return []; } }, [cashEntries]);
 
-  const exchangeAccountBalances = useMemo(() => computeExchangeAccountBalances(ledger), [ledger]);
-  const physicalCashBoxBalances = useMemo(() => computePhysicalCashBoxBalances(ledger), [ledger]);
-  const cashBoxBalances = useMemo(() => { try { return computeCashBoxBalances(cashEntries); } catch { return { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; } }, [cashEntries]);
+  // ✅ نقشه جامع موجودی‌ها (Single Source of Truth)
+  // این تابع تضمین می‌کند که اعداد نمایش‌داده‌شده در این تب، دقیقاً با تب صندوق و داشبورد یکی هستند.
+  const allBalances = useMemo(() => {
+    const map: Record<string, Record<Currency, number>> = {};
+    customers.forEach(c => { map[c.id] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; });
+    map[CASH_BOX_ID] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+    map[EXCHANGE_ACCOUNT_ID] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
 
-  // ✅ اصلاحیه #4: منطق اشتباه در فیلتر جستجوی حساب‌های مجازی
+    for (const c of customers) {
+      for (const cur of currencies) {
+        map[c.id][cur] = getLedgerBalance(c.id, cur, cashEntries, ledger);
+      }
+    }
+    map[CASH_BOX_ID] = {
+      AFN: getLedgerBalance(CASH_BOX_ID, "AFN", cashEntries, ledger),
+      USD: getLedgerBalance(CASH_BOX_ID, "USD", cashEntries, ledger),
+      EUR: getLedgerBalance(CASH_BOX_ID, "EUR", cashEntries, ledger),
+      IRR: getLedgerBalance(CASH_BOX_ID, "IRR", cashEntries, ledger),
+      PKR: getLedgerBalance(CASH_BOX_ID, "PKR", cashEntries, ledger),
+    };
+    map[EXCHANGE_ACCOUNT_ID] = {
+      AFN: getLedgerBalance(EXCHANGE_ACCOUNT_ID, "AFN", cashEntries, ledger),
+      USD: getLedgerBalance(EXCHANGE_ACCOUNT_ID, "USD", cashEntries, ledger),
+      EUR: getLedgerBalance(EXCHANGE_ACCOUNT_ID, "EUR", cashEntries, ledger),
+      IRR: getLedgerBalance(EXCHANGE_ACCOUNT_ID, "IRR", cashEntries, ledger),
+      PKR: getLedgerBalance(EXCHANGE_ACCOUNT_ID, "PKR", cashEntries, ledger),
+    };
+    return map;
+  }, [customers, cashEntries, ledger]);
+
   const filteredCustomers = useMemo(() => {
     const cashBoxOption = CASH_BOX_CUSTOMER;
     const exchangeOption = EXCHANGE_ACCOUNT_CUSTOMER;
@@ -463,7 +484,6 @@ export default function CustomersPage() {
       return [c.name, c.phone || "", c.tazkira || "", c.telegram || "", c.id].some(f => normalizeDigits(String(f)).toLowerCase().includes(q));
     });
 
-    // ✅ هر حساب مجازی به صورت مستقل بررسی می‌شود
     const result: Customer[] = [];
     if (!q || CASH_BOX_NAME.includes(q)) result.push(cashBoxOption);
     if (!q || EXCHANGE_ACCOUNT_NAME.includes(q)) result.push(exchangeOption);
@@ -481,20 +501,10 @@ export default function CustomersPage() {
   const isCashBox = selectedCustomer?.id === CASH_BOX_ID;
   const isExchangeAccount = selectedCustomer?.id === EXCHANGE_ACCOUNT_ID;
 
-  // ✅ اصلاحیه #1: محاسبه موجودی تمام مشتریان (عادی و حساب صرافی) مستقیماً از روی Ledger
   const customerBalances = useMemo(() => {
     if (!selectedCustomer) return null;
-    if (selectedCustomer.id === CASH_BOX_ID) return physicalCashBoxBalances;
-    
-    // این کار باعث می‌شود وام‌ها و تراکنش‌ها فوراً و بدون نیاز به آپدیت دستی Customer.balances اعمال شوند
-    const bals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-    for (const e of ledger) {
-      if (e.customerId === selectedCustomer.id && isCurrency(e.currency)) {
-        bals[e.currency] += e.direction === "in" ? e.amount : -e.amount;
-      }
-    }
-    return bals;
-  }, [selectedCustomer, physicalCashBoxBalances, ledger]);
+    return allBalances[selectedCustomer.id];
+  }, [selectedCustomer, allBalances]);
 
   const customerLedger = useMemo(() => {
     if (selectedCustomerId === CASH_BOX_ID || selectedCustomerId === CASH_BOX_NAME) return cashBoxLedger;
@@ -502,18 +512,13 @@ export default function CustomersPage() {
     return ledger.filter(e => e.customerId === selectedCustomerId);
   }, [ledger, cashBoxLedger, selectedCustomerId]);
 
-  // ✅ اصلاحیه #5: عدم کارکرد جستجوی اعداد فرمت‌شده در روزنامچه
   const filteredLedger = useMemo(() => {
-    // حذف کاما، فاصله و اعراب از کوئری جستجو
     const q = normalizeDigits(ledgerSearch.trim()).replace(/[,،\s]/g, "").toLowerCase();
-    
     return customerLedger.filter(e => {
       if (ledgerTypeFilter !== "all" && e.type !== ledgerTypeFilter) return false;
       if (ledgerCurrencyFilter !== "all" && e.currency !== ledgerCurrencyFilter) return false;
       if (ledgerDirFilter !== "all" && e.direction !== ledgerDirFilter) return false;
       if (!q) return true;
-      
-      // حذف کاما از مبلغ برای تطبیق صحیح با جستجوی کاربر
       const rawAmount = String(e.amount).replace(/[,،\s]/g, "");
       return [e.description, e.referenceNumber || "", labels[e.currency], rawAmount].some(f => 
         normalizeDigits(String(f)).replace(/[,،\s]/g, "").toLowerCase().includes(q)
@@ -521,8 +526,8 @@ export default function CustomersPage() {
     }).reverse();
   }, [customerLedger, ledgerSearch, ledgerTypeFilter, ledgerCurrencyFilter, ledgerDirFilter]);
 
-  const withBalanceCount = customers.filter(c => c.id !== EXCHANGE_ACCOUNT_ID && currencies.some(cur => c.balances[cur] !== 0)).length;
-  const withoutBalanceCount = customers.filter(c => c.id !== EXCHANGE_ACCOUNT_ID && currencies.every(cur => c.balances[cur] === 0)).length;
+  const withBalanceCount = customers.filter(c => c.id !== EXCHANGE_ACCOUNT_ID && currencies.some(cur => allBalances[c.id][cur] !== 0)).length;
+  const withoutBalanceCount = customers.filter(c => c.id !== EXCHANGE_ACCOUNT_ID && currencies.every(cur => allBalances[c.id][cur] === 0)).length;
 
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(""), 3500); };
   const setField = (f: keyof FormState, v: string) => { setForm(p => ({ ...p, [f]: v })); setErrors(p => ({ ...p, [f]: undefined })); };
@@ -538,7 +543,6 @@ export default function CustomersPage() {
     setLoanModalOpen(true);
   };
 
-  // ✅ اصلاحیه #3: خطر Stale Closure در ذخیره LocalStorage (ثبت قرض)
   const processLoan = () => {
     if (!selectedCustomer || selectedCustomer.id === CASH_BOX_ID || selectedCustomer.id === EXCHANGE_ACCOUNT_ID) {
       showToast("فقط برای مشتریان واقعی قابل انجام است.");
@@ -571,6 +575,7 @@ export default function CustomersPage() {
         customerId: selectedCustomer.id,
         customerName: selectedCustomer.name,
         counterPartyId: EXCHANGE_ACCOUNT_ID,
+        status: "active"
       });
       newEntries.push({
         id: generateId(),
@@ -585,6 +590,7 @@ export default function CustomersPage() {
         customerId: EXCHANGE_ACCOUNT_ID,
         customerName: EXCHANGE_ACCOUNT_NAME,
         counterPartyId: selectedCustomer.id,
+        status: "active"
       });
     } else {
       newEntries.push({
@@ -600,6 +606,7 @@ export default function CustomersPage() {
         customerId: selectedCustomer.id,
         customerName: selectedCustomer.name,
         counterPartyId: EXCHANGE_ACCOUNT_ID,
+        status: "active"
       });
       newEntries.push({
         id: generateId(),
@@ -614,10 +621,10 @@ export default function CustomersPage() {
         customerId: EXCHANGE_ACCOUNT_ID,
         customerName: EXCHANGE_ACCOUNT_NAME,
         counterPartyId: selectedCustomer.id,
+        status: "active"
       });
     }
 
-    // ✅ استفاده از Functional Update برای دسترسی همیشگی به آخرین وضعیت State
     setCashEntries(prev => {
       const nextEntries = [...prev, ...newEntries];
       try {
@@ -638,7 +645,7 @@ export default function CustomersPage() {
     setOpenMenuId(null);
     const c = customers.find(x => x.id === id);
     if (!c) return;
-    const hasBal = currencies.some(cur => c.balances[cur] !== 0);
+    const hasBal = currencies.some(cur => allBalances[id][cur] !== 0);
     const cnt = ledger.filter(e => e.customerId === id).length;
     let msg = `آیا از حذف "${c.name}" مطمئن هستید؟`;
     if (cnt > 0) msg += `\n⚠️ ${cnt} رویداد مالی دارد.`;
@@ -653,13 +660,11 @@ export default function CustomersPage() {
     showToast(`"${c.name}" حذف شد.`);
   };
 
-  // ✅ اصلاحیه #2: خطای "تکراری است" هنگام ویرایش مشتری
   const validateForm = () => {
     const errs: FormErrors = {};
     if (!form.name.trim()) errs.name = "نام ضروری است.";
     if (!form.phone.trim()) errs.phone = "تماس ضروری است.";
     
-    // استثنا کردن شناسه مشتری فعلی (selectedCustomer) از بررسی تکراری بودن
     const currentId = selectedCustomer?.id;
     if (customers.find(c => c.phone === form.phone.trim() && c.id !== EXCHANGE_ACCOUNT_ID && c.id !== currentId)) {
       errs.phone = "تکراری است.";
@@ -708,9 +713,6 @@ export default function CustomersPage() {
 
   if (!mounted) return (<div className="min-h-screen flex items-center justify-center"><div className="text-center"><div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-slate-300 border-t-emerald-500" /><p className="mt-4 text-slate-500">در حال بارگذاری...</p></div></div>);
 
-  const heading = dk ? "text-white" : "text-slate-900";
-  const subText = dk ? "text-slate-500" : "text-slate-400";
-  const glassChip = dk ? "border-slate-600/70 bg-slate-800/80" : "border-emerald-100 bg-white/85";
   const uiCard = `rounded-2xl border backdrop-blur transition-colors duration-300 ${dk ? "border-slate-700 bg-slate-800/90 shadow-[0_16px_40px_-24px_rgba(0,0,0,0.6)]" : "border-emerald-100 bg-white/95 shadow-[0_16px_40px_-28px_rgba(16,185,129,0.35)]"}`;
   const glassCard = `rounded-2xl border backdrop-blur transition-all duration-300 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-200 bg-white/80"}`;
   const inputShell = `rounded-xl border text-sm font-medium shadow-sm outline-none transition-all duration-200 focus:ring-4 ${dk ? "border-slate-600 bg-slate-900 text-slate-100 placeholder:text-slate-500 hover:border-slate-500 focus:border-emerald-400 focus:ring-emerald-400/10" : "border-slate-200 bg-white text-slate-800 placeholder:text-slate-400 hover:border-emerald-400 focus:border-emerald-500 focus:ring-emerald-500/10"}`;
@@ -721,6 +723,7 @@ export default function CustomersPage() {
   const fld = (label: string, node: ReactNode) => (<div><label className={uiLabel}>{label}</label>{node}</div>);
   const errBox = (list: string[]) => list.length === 0 ? null : (<div className={`space-y-2 rounded-xl border p-4 ${dk ? "border-rose-500/50 bg-rose-500/10 text-rose-300" : "border-rose-500 bg-rose-50 text-rose-600"}`}><b className="flex items-center gap-2 text-sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 shrink-0"><path d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>لطفاً فیلدهای اجباری را تکمیل کنید:</b><ul className="list-disc pr-5 text-sm space-y-1">{list.map((m, i) => <li key={i}>{m}</li>)}</ul></div>);
   const errorList = Object.values(errors).filter((m): m is string => Boolean(m));
+  const glassChip = dk ? "border-slate-600/70 bg-slate-800/80" : "border-emerald-100 bg-white/85";
 
   return (
     <div dir="rtl" className={dk ? "dark" : ""}>
@@ -748,7 +751,7 @@ export default function CustomersPage() {
               { label: "رویدادهای مالی", value: ledger.length + cashBoxLedger.length, icon: "history", color: "from-amber-500 to-orange-500", text: dk ? "text-amber-300" : "text-amber-600" },
               { label: "با موجودی", value: withBalanceCount, icon: "wallet", color: "from-sky-500 to-cyan-500", text: dk ? "text-sky-300" : "text-sky-600" },
               { label: "بدون موجودی", value: withoutBalanceCount, icon: "x", color: "from-rose-500 to-pink-500", text: dk ? "text-rose-300" : "text-rose-600" },
-              { label: "💰 موجودی فیزیکی صندوق", value: fmt(Object.values(physicalCashBoxBalances).reduce((a, b) => a + Math.abs(b), 0)), icon: "cash", color: "from-violet-500 to-purple-500", text: dk ? "text-violet-300" : "text-violet-600" },
+              { label: "💰 موجودی فیزیکی صندوق", value: fmt(Object.values(allBalances[CASH_BOX_ID]).reduce((a, b) => a + Math.abs(b), 0)), icon: "cash", color: "from-violet-500 to-purple-500", text: dk ? "text-violet-300" : "text-violet-600" },
             ].map((s, i) => (
               <div key={i} className={`group relative overflow-hidden rounded-2xl border p-4 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${glassCard}`}>
                 <div className={`absolute inset-0 bg-gradient-to-br ${s.color} opacity-0 transition-opacity group-hover:opacity-10`} />
@@ -793,7 +796,7 @@ export default function CustomersPage() {
                 {filteredCustomers.map(c => {
                   const isCashBoxRow = c.id === CASH_BOX_ID;
                   const isExchRow = c.id === EXCHANGE_ACCOUNT_ID;
-                  const balSource = isCashBoxRow ? physicalCashBoxBalances : isExchRow ? exchangeAccountBalances : c.balances;
+                  const balSource = allBalances[c.id];
                   return (
                     <div key={c.id} className={`rounded-2xl border p-4 ${glassCard} ${isCashBoxRow ? (dk ? "border-emerald-400/30" : "border-emerald-200") : ""} ${isExchRow ? (dk ? "border-violet-400/30" : "border-violet-200") : ""}`}>
                       <div className="flex items-start gap-3">
@@ -851,7 +854,7 @@ export default function CustomersPage() {
                     {filteredCustomers.map((c, idx) => {
                       const isCashBoxRow = c.id === CASH_BOX_ID;
                       const isExchRow = c.id === EXCHANGE_ACCOUNT_ID;
-                      const balSource = isCashBoxRow ? physicalCashBoxBalances : isExchRow ? exchangeAccountBalances : c.balances;
+                      const balSource = allBalances[c.id];
                       const hasBal = currencies.some(cur => balSource[cur] !== 0);
                       const isOpen = openMenuId === c.id;
                       return (
@@ -871,7 +874,7 @@ export default function CustomersPage() {
                             {!isCashBoxRow && !isExchRow ? (<><div className={`text-[12px] font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`} dir="ltr">📱 {c.phone || "-"}</div><div className={`text-[10px] tabular-nums mt-1 ${subText}`} dir="ltr">🆔 {c.tazkira || "-"}</div></>) : (<div className={`text-[10px] ${subText}`}>—</div>)}
                           </td>
                           <td className="px-4 py-3.5 text-center align-middle">
-                            {!isCashBoxRow && !isExchRow ? (<><div className={`text-[11px] tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{c.registeredAt ? shortDateLabel(c.registeredAt) : "-"}</div><div className={`text-[10px] mt-1 ${subText}`}>{ledger.filter(e => e.customerId === c.id).length} رویداد</div></>) : (<>
+                            {!isCashBoxRow && !isExchRow ? (<><div className={`text-[11px] tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`}>{c.registeredAt ? shortDateLabel(c.registeredAt) : "-"}</div><div className={`text-[10px] mt-1 ${subText}`}>{ledger.filter(e => e.customerId === c.id).length} رویداد</div></>) : (<>
                               <div className={`text-[11px] tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`}>—</div>
                               <div className={`text-[10px] mt-1 ${subText}`}>
                                 {isCashBoxRow ? `${cashBoxLedger.length} رویداد` : `${ledger.filter(e => e.customerId === EXCHANGE_ACCOUNT_ID).length} رویداد`}
@@ -977,7 +980,7 @@ export default function CustomersPage() {
                     {isCashBox ? "💰 موجودی فیزیکی صندوق" : isExchangeAccount ? "🏦 موجودی حساب صرافی" : "موجودی فعلی"}
                   </b>
                   <span className={`ml-auto text-[10px] font-bold ${subText}`}>
-                    {isCashBox ? "فرمول: مجموع مشتریان + حساب صرافی" : isExchangeAccount ? "از تراکنش‌های قرض" : "از تمام منابع"}
+                    {isCashBox ? "فرمول: مجموع ورودی‌ها - خروجی‌ها" : isExchangeAccount ? "از تراکنش‌های مالک و قرض" : "محاسبه‌شده از دفتر کل (Ledger)"}
                   </span>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
