@@ -371,14 +371,40 @@ export default function CashPage() {
   }, [openActionId]);
 
   const physicalCashBalances = useMemo(() => computeCashBalances(entries), [entries]);
-  
+
+  const customerDeposits = useMemo(() => {
+    const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+    for (const c of customers) {
+      if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) continue;
+      for (const cur of currencies) {
+        const bal = getLedgerBalance(c.id, cur, entries);
+        if (bal > 0) totals[cur] += bal;
+      }
+    }
+    return totals;
+  }, [customers, entries]);
+
+  // بدهی باز مشتریان: این مبلغ از سرمایه حساب صرافی کسر می‌شود.
+  const customerDebts = useMemo(() => {
+    const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+    for (const c of customers) {
+      if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) continue;
+      for (const cur of currencies) {
+        const bal = getLedgerBalance(c.id, cur, entries);
+        if (bal < 0) totals[cur] += Math.abs(bal);
+      }
+    }
+    return totals;
+  }, [customers, entries]);
+
+  // موجودی حساب صرافی = سرمایه مالک - بدهی‌های باز مشتریان
+  // بازپرداخت قرض، بدهی را کم می‌کند و در نتیجه موجودی حساب صرافی دوباره افزایش می‌یابد.
   const exchangeBalance = useMemo(() => {
     const bal: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
 
     for (const cur of currencies) {
       let ownerBalance = 0;
 
-      // موجودی پایه متعلق به خود صرافی
       for (const entry of entries) {
         if (entry.status === "voided" || entry.currency !== cur) continue;
 
@@ -389,39 +415,11 @@ export default function CashPage() {
         }
       }
 
-      // هر مقدار بدهیِ باز مشتریان باید از موجودی حساب صرافی کسر شود.
-      // هنگام بازپرداخت، بدهی کاهش می‌یابد و همین مبلغ دوباره به حساب صرافی برمی‌گردد.
-      const outstandingDebt = customerDebts[cur] || 0;
-
-      bal[cur] = ownerBalance - outstandingDebt;
+      bal[cur] = ownerBalance - (customerDebts[cur] || 0);
     }
 
     return bal;
   }, [entries, customerDebts]);
-
-  const customerDeposits = useMemo(() => {
-    const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-    for (const c of customers) {
-      if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) continue;
-      for (const cur of currencies) { 
-        const bal = getLedgerBalance(c.id, cur, entries);
-        if (bal > 0) totals[cur] += bal; 
-      }
-    }
-    return totals;
-  }, [customers, entries]);
-
-  const customerDebts = useMemo(() => {
-    const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-    for (const c of customers) {
-      if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) continue;
-      for (const cur of currencies) { 
-        const bal = getLedgerBalance(c.id, cur, entries);
-        if (bal < 0) totals[cur] += Math.abs(bal); 
-      }
-    }
-    return totals;
-  }, [customers, entries]);
 
   const totalCommissionEarned = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
