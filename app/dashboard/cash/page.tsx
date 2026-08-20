@@ -370,9 +370,34 @@ export default function CashPage() {
     return () => document.removeEventListener("mousedown", handler);
   }, [openActionId]);
 
+  const physicalCashBalances = useMemo(() => computeCashBalances(entries), [entries]);
+  
   const exchangeBalance = useMemo(() => {
     const bal: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-    for (const cur of currencies) bal[cur] = getLedgerBalance(EXCHANGE_ACCOUNT_ID, cur, entries);
+
+    for (const cur of currencies) {
+      let value = 0;
+
+      for (const entry of entries) {
+        if (entry.status === "voided" || entry.currency !== cur) continue;
+
+        // فقط منطق قرض روی موجودی حساب صرافی:
+        // پرداخت قرض = کسر از حساب صرافی
+        // پرداخت بدهی = اضافه شدن به حساب صرافی
+        if (entry.type === "loan_given") {
+          value -= entry.amount;
+        } else if (entry.type === "loan_received") {
+          value += entry.amount;
+        } else if (entry.type === "owner_deposit") {
+          value += entry.amount;
+        } else if (entry.type === "owner_withdraw") {
+          value -= entry.amount;
+        }
+      }
+
+      bal[cur] = value;
+    }
+
     return bal;
   }, [entries]);
 
@@ -387,18 +412,6 @@ export default function CashPage() {
     }
     return totals;
   }, [customers, entries]);
-
-  // موجودی فیزیکی صندوق فقط از دو منبع تشکیل می‌شود:
-  // 1) مجموع موجودی مثبت مشتریان
-  // 2) مجموع موجودی حساب خود صرافی
-  // بنابراین قرض مشتری در این کارت دوباره محاسبه نمی‌شود.
-  const physicalCashBalances = useMemo(() => {
-    const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-    for (const cur of currencies) {
-      totals[cur] = (customerDeposits[cur] || 0) + (exchangeBalance[cur] || 0);
-    }
-    return totals;
-  }, [customerDeposits, exchangeBalance]);
 
   const customerDebts = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
