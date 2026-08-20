@@ -756,7 +756,7 @@ export default function CustomersPage() {
               { label: "رویدادهای مالی", value: ledger.length + cashBoxLedger.length, icon: "history", color: "from-amber-500 to-orange-500", text: dk ? "text-amber-300" : "text-amber-600" },
               { label: "با موجودی", value: withBalanceCount, icon: "wallet", color: "from-sky-500 to-cyan-500", text: dk ? "text-sky-300" : "text-sky-600" },
               { label: "بدون موجودی", value: withoutBalanceCount, icon: "x", color: "from-rose-500 to-pink-500", text: dk ? "text-rose-300" : "text-rose-600" },
-              { label: "💰 موجودی فیزیکی صندوق", value: fmt(Object.values(allBalances[CASH_BOX_ID] || {}) as number[]).reduce((a, b) => a + Math.abs(b), 0)), icon: "cash", color: "from-violet-500 to-purple-500", text: dk ? "text-violet-300" : "text-violet-600" },
+              { label: "💰 موجودی فیزیکی صندوق", value: fmt((Object.values(allBalances[CASH_BOX_ID] || {}) as number[]).reduce((a, b) => a + Math.abs(b), 0)), icon: "cash", color: "from-violet-500 to-purple-500", text: dk ? "text-violet-300" : "text-violet-600" },
             ].map((s, i) => (
               <div key={i} className={`group relative overflow-hidden rounded-2xl border p-4 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${glassCard}`}>
                 <div className={`absolute inset-0 bg-gradient-to-br ${s.color} opacity-0 transition-opacity group-hover:opacity-10`} />
