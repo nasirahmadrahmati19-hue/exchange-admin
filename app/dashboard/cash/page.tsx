@@ -19,7 +19,7 @@ const entryTypeLabels: Record<CashEntryType, string> = {
   customer_deposit: "واریز مشتری", customer_withdraw: "برداشت مشتری", 
   owner_deposit: "واریز مالک به صرافی", owner_withdraw: "برداشت مالک از صرافی", 
   adjustment: "اصلاح صندوق", fee: "کارمزد", commission_withdraw: "برداشت کارمزد",
-  loan_given: "پرداخت قرض", loan_received: "دریافت قرض" 
+  loan_given: "قرض داده‌شده", loan_received: "دریافت قرض" 
 };
 const entryTypeColors: Record<CashEntryType, { light: string; dark: string }> = { 
   customer_deposit: { light: "bg-teal-100 text-teal-700", dark: "bg-teal-400/15 text-teal-300" }, 
@@ -59,24 +59,24 @@ function formatShamsiDate(d: Date) { const s = shamsiParts(d); return `${s.year}
 function shortDateLabel(s: string) { try { const d = new Date(s); return Number.isNaN(d.getTime()) ? "-" : formatShamsiDate(d); } catch (e) { return "-"; } }
 function timeLabel(s: string) { try { const d = new Date(s); if (Number.isNaN(d.getTime())) return "-"; const pad = (n: number) => String(n).padStart(2, "0"); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; } catch (e) { return "-"; } }
 
-// ✅ منطق ساده‌سازی شده و ضدگلوله برای محاسبه موجودی
+// ✅ منطق ضدگلوله و دقیق محاسبه موجودی
 function getLedgerBalance(customerId: string, currency: Currency, entries: CashEntry[]): number {
   let balance = 0;
   for (const entry of entries) {
     if (entry.status === "voided" || entry.currency !== currency) continue;
 
     if (customerId === CASH_BOX_ID) {
-      if (entry.type === "loan_given") balance -= entry.amount;
-      else if (entry.type === "loan_received") balance += entry.amount;
-      else balance += (entry.direction === "in" ? 1 : -1) * entry.amount;
+      // صندوق فیزیکی: قرض‌ها به صورت خودکار توسط سند جداگانه مدیریت می‌شوند، اما جهت حرکت پول مهم است
+      balance += (entry.direction === "in" ? 1 : -1) * entry.amount;
     } 
     else if (customerId === EXCHANGE_ACCOUNT_ID) {
-      // ✅ ساده‌سازی مطلق: اگر سند متعلق به حساب صرافی است، فقط جهت حرکت پول مهم است
+      // حساب صرافی: فقط اسنادی که مشخصاً متعلق به آن هستند
       if (entry.customerId === EXCHANGE_ACCOUNT_ID) {
         balance += (entry.direction === "in" ? 1 : -1) * entry.amount;
       }
     } 
     else {
+      // مشتری عادی
       if (entry.customerId === customerId) {
         balance += (entry.direction === "in" ? 1 : -1) * entry.amount;
       }
@@ -448,6 +448,7 @@ export default function CashPage() {
   const showToast = useCallback((message: string) => { setToast(message); setTimeout(() => setToast(""), 3500); }, []);
   const setField = useCallback((field: keyof FormState, value: string) => { setForm(prev => ({ ...prev, [field]: value })); setErrors(prev => ({ ...prev, [field]: undefined })); }, []);
 
+  // ✅ اعتبارسنجی اصلاح‌شده: اجازه برداشت بیش از موجودی برای ایجاد بدهی خودکار
   const validateForm = useCallback(() => {
     const errs: FormErrors = {};
     if (!form.type) errs.type = "نوع عملیات را انتخاب کنید.";
@@ -455,16 +456,13 @@ export default function CashPage() {
     if (!amount) errs.amount = "مبلغ خالی یا صفر است.";
     if (!form.reason.trim()) errs.reason = "دلیل / شرح ضروری است.";
     if (isCustomerType && !form.customerName.trim()) errs.customerName = "انتخاب مشتری ضروری است.";
-    if (form.type === "customer_withdraw" && form.customerId && form.customerId !== CASH_BOX_ID && form.customerId !== EXCHANGE_ACCOUNT_ID) {
-      const currentBal = getLedgerBalance(form.customerId, form.currency, entries);
-      if (amount > currentBal) errs.amount = `موجودی کافی نیست. موجودی فعلی: ${fmt(currentBal)} ${labels[form.currency]}`;
-    }
+    
     if (form.type === "commission_withdraw") {
       const avail = availableCommission[form.currency] || 0;
       if (amount > avail) errs.amount = `کارمزد کافی نیست. قابل برداشت: ${fmt(avail)} ${labels[form.currency]}`;
     }
     return errs;
-  }, [form, isCustomerType, entries, availableCommission]);
+  }, [form, isCustomerType, availableCommission]);
 
   const cancelEdit = useCallback(() => { setEditingEntryId(null); setForm(emptyForm); setErrors({}); }, []);
   const editEntry = useCallback((entry: CashEntry) => {
@@ -492,22 +490,85 @@ export default function CashPage() {
     showToast(`سند ${entry.trackingCode} حذف شد.`);
   }, [showToast, entries]);
 
+  // ✅ منطق هوشمند ثبت عملیات با پشتیبانی از قرض خودکار
   const handleSubmitClick = useCallback(() => {
-    const errs = validateForm(); setErrors(errs);
+    const errs = validateForm();
+    setErrors(errs);
     if (Object.keys(errs).length > 0) { showToast("لطفاً فیلدهای ضروری را تکمیل کنید."); return; }
+
     const amount = parseAmount(form.amount);
     const direction: "in" | "out" = isInType ? "in" : "out";
-    let entry: CashEntry;
-    if (editingEntryId) {
-      const old = entries.find(e => e.id === editingEntryId);
-      entry = { id: editingEntryId, trackingCode: old?.trackingCode || getNextTrackingCode(), date: old?.date || new Date().toISOString(), type: form.type as CashEntryType, currency: form.currency, amount, direction, reason: form.reason.trim(), balanceAfter: 0, customerId: isCustomerType ? form.customerId : undefined, customerName: isCustomerType ? form.customerName : undefined, status: "active" };
-    } else {
-      const currentBal = physicalCashBalances[form.currency] || 0;
-      const newBal = isInType ? currentBal + amount : currentBal - amount;
-      entry = { id: generateId(), trackingCode: getNextTrackingCode(), date: new Date().toISOString(), type: form.type as CashEntryType, currency: form.currency, amount, direction, reason: form.reason.trim(), balanceAfter: newBal, customerId: isCustomerType ? form.customerId : undefined, customerName: isCustomerType ? form.customerName : undefined, status: "active" };
+    
+    // بررسی موجودی فعلی مشتری برای تشخیص نیاز به قرض خودکار
+    const currentBal = form.customerId && form.customerId !== CASH_BOX_ID && form.customerId !== EXCHANGE_ACCOUNT_ID 
+      ? getLedgerBalance(form.customerId, form.currency, entries) 
+      : 0;
+
+    let loanShortfall = 0;
+    if (form.type === "customer_withdraw" && form.customerId && form.customerId !== CASH_BOX_ID && form.customerId !== EXCHANGE_ACCOUNT_ID) {
+      if (amount > currentBal) {
+        loanShortfall = amount - currentBal;
+      }
     }
-    setPreviewData(entry); setPreviewOpen(true);
-  }, [validateForm, form, physicalCashBalances, isInType, isCustomerType, showToast, editingEntryId, entries]);
+
+    const newEntries: CashEntry[] = [];
+
+    // ۱. ثبت سند اصلی عملیات
+    const mainEntry: CashEntry = { 
+      id: generateId(), 
+      trackingCode: getNextTrackingCode(), 
+      date: new Date().toISOString(), 
+      type: form.type as CashEntryType, 
+      currency: form.currency, 
+      amount, 
+      direction, 
+      reason: form.reason.trim(), 
+      balanceAfter: 0, 
+      customerId: isCustomerType ? form.customerId : undefined, 
+      customerName: isCustomerType ? form.customerName : undefined, 
+      status: "active" 
+    };
+    newEntries.push(mainEntry);
+
+    // ۲. ثبت خودکار سند قرض در صورت کسری موجودی
+    if (loanShortfall > 0) {
+      const loanEntry: CashEntry = {
+        id: generateId(),
+        trackingCode: getNextTrackingCode(),
+        date: new Date().toISOString(),
+        type: "loan_given",
+        currency: form.currency,
+        amount: loanShortfall,
+        direction: "out",
+        reason: `قرض خودکار به دلیل برداشت بیش از موجودی (${form.customerName})`,
+        balanceAfter: 0,
+        customerId: EXCHANGE_ACCOUNT_ID,
+        customerName: EXCHANGE_ACCOUNT_NAME,
+        counterPartyId: form.customerId,
+        status: "active"
+      };
+      newEntries.push(loanEntry);
+    }
+
+    // اگر قرض خودکار ایجاد شد، مستقیماً ثبت کن (بدون پیش‌نمایش برای سادگی)
+    if (loanShortfall > 0) {
+      const finalEntries = [...entries, ...newEntries];
+      setEntries(finalEntries);
+      try {
+        localStorage.setItem(CASH_KEY, JSON.stringify(finalEntries));
+        window.dispatchEvent(new Event("db:updated"));
+      } catch (e) { console.error("Storage error", e); }
+      showToast(`عملیات ثبت شد. مبلغ ${fmt(loanShortfall)} ${labels[form.currency]} به عنوان قرض از طرف حساب صرافی ثبت گردید و مشتری بدهکار شد.`);
+      setForm(emptyForm);
+    } else {
+      // در غیر این صورت، نمایش پیش‌نمایش عادی
+      const currentBalForPreview = physicalCashBalances[form.currency] || 0;
+      const newBal = isInType ? currentBalForPreview + amount : currentBalForPreview - amount;
+      mainEntry.balanceAfter = newBal;
+      setPreviewData(mainEntry); 
+      setPreviewOpen(true);
+    }
+  }, [validateForm, form, entries, isInType, isCustomerType, showToast, physicalCashBalances, labels]);
 
   const confirmRegister = useCallback(async () => {
     if (!previewData) return;
