@@ -8,7 +8,6 @@ type Customer = { id: string; name: string; phone?: string; tazkira?: string; ad
 type CashEntryType = "customer_deposit" | "customer_withdraw" | "owner_deposit" | "owner_withdraw" | "adjustment" | "fee" | "commission_withdraw" | "loan_given" | "loan_received";
 type BalanceChange = { customerId?: string; customerName: string; currency: Currency; amount: number; };
 
-// ✅ اصلاح خطای TypeScript: اضافه شدن counterPartyId به تعریف نوع
 type CashEntry = { 
   id: string; 
   trackingCode: string; 
@@ -82,22 +81,22 @@ function formatShamsiDate(d: Date) { const s = shamsiParts(d); return `${s.year}
 function shortDateLabel(s: string) { try { const d = new Date(s); return Number.isNaN(d.getTime()) ? "-" : formatShamsiDate(d); } catch (e) { return "-"; } }
 function timeLabel(s: string) { try { const d = new Date(s); if (Number.isNaN(d.getTime())) return "-"; const pad = (n: number) => String(n).padStart(2, "0"); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; } catch (e) { return "-"; } }
 
-// ✅✅✅ منطق اصلاح‌شده و دقیق برای جلوگیری از اثرگذاری بدهی بر صندوق فیزیکی
+// ✅✅✅ منطق اصلاح‌شده و دقیق حسابداری
 function getLedgerBalance(customerId: string, currency: Currency, entries: CashEntry[]): number {
   let balance = 0;
   for (const entry of entries) {
     if (entry.status === "voided" || entry.currency !== currency) continue;
 
     if (customerId === CASH_BOX_ID) {
-      // صندوق فیزیکی: عملیات‌های داخلی حساب صرافی (مثل قرض) نباید روی موجودی فیزیکی صندوق اثر بگذارند
-      // تا از شمارش مضاعف جلوگیری شود.
+      // صندوق فیزیکی: تمام واریزها و برداشت‌های عادی را محاسبه کن.
+      // ورودی‌های داخلی حساب صرافی (مثل loan_given) را نادیده بگیر تا از شمارش مضاعف خروجی نقد جلوگیری شود.
       if (entry.customerId === EXCHANGE_ACCOUNT_ID) {
-        continue;
+        continue; 
       }
       balance += (entry.direction === "in" ? 1 : -1) * entry.amount;
     } 
     else if (customerId === EXCHANGE_ACCOUNT_ID) {
-      // حساب صرافی: فقط عملیات‌هایی که مستقیماً به حساب صرافی اختصاص داده شده‌اند
+      // حساب صرافی: فقط ورودی‌هایی که مستقیماً به حساب صرافی اختصاص دارند (مثل پوشش بدهی)
       if (entry.customerId === EXCHANGE_ACCOUNT_ID) {
         balance += (entry.direction === "in" ? 1 : -1) * entry.amount;
       }
@@ -157,13 +156,9 @@ function getBalanceChangesForCashEntry(entry: CashEntry, action: "register" | "r
     }
   }
   
-  if (entry.type === "owner_deposit" || entry.type === "owner_withdraw" || entry.type === "loan_given" || entry.type === "loan_received") {
-    let exchangeDelta = 0;
-    if (entry.type === "owner_deposit") exchangeDelta = entry.amount;
-    else if (entry.type === "owner_withdraw") exchangeDelta = -entry.amount;
-    else if (entry.type === "loan_given") exchangeDelta = -entry.amount;
-    else if (entry.type === "loan_received") exchangeDelta = entry.amount;
-    
+  // تغییرات حساب صرافی برای قرض‌ها
+  if (entry.type === "loan_given" || entry.type === "loan_received") {
+    let exchangeDelta = entry.type === "loan_given" ? -entry.amount : entry.amount;
     changes.push({ customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, currency: entry.currency, amount: exchangeDelta * sign });
   }
   
@@ -516,142 +511,88 @@ export default function CashPage() {
     showToast(`سند ${entry.trackingCode} حذف شد.`);
   }, [showToast, entries]);
 
-  // ✅✅✅ منطق هوشمند و دقیق: جلوگیری از کسر بدهی از صندوق فیزیکی
+  // ✅✅✅ منطق هوشمند و دقیق: ثبت یک سند اصلی + یک سند پوشش بدهی در صورت نیاز
   const handleSubmitClick = useCallback(() => {
     const errs = validateForm();
     setErrors(errs);
     if (Object.keys(errs).length > 0) { showToast("لطفاً فیلدهای ضروری را تکمیل کنید."); return; }
 
     const amount = parseAmount(form.amount);
-    const direction: "in" | "out" = isInType ? "in" : "out";
     
     const currentBal = form.customerId && form.customerId !== CASH_BOX_ID && form.customerId !== EXCHANGE_ACCOUNT_ID 
       ? getLedgerBalance(form.customerId, form.currency, entries) 
       : 0;
 
-    let loanShortfall = 0;
-    // اگر مشتری بخواهد بیشتر از موجودی خود برداشت کند، مابه‌التفاوت به عنوان بدهی ثبت می‌شود
-    if (form.type === "customer_withdraw" && form.customerId && form.customerId !== CASH_BOX_ID && form.customerId !== EXCHANGE_ACCOUNT_ID) {
-      if (amount > currentBal) {
-        loanShortfall = amount - currentBal;
-      }
-    }
-
-    const newEntries: CashEntry[] = [];
-
-    if (loanShortfall > 0) {
-      // ۱. ثبت برداشت به اندازه موجودی مثبت مشتری (صندوق فیزیکی فقط به این اندازه کم می‌شود)
-      if (currentBal > 0) {
-        newEntries.push({ 
-          id: generateId(), 
-          trackingCode: getNextTrackingCode(), 
-          date: new Date().toISOString(), 
-          type: "customer_withdraw", 
-          currency: form.currency, 
-          amount: currentBal, 
-          direction: "out", 
-          reason: `برداشت مشتری (تا سقف موجودی) - ${form.reason.trim()}`, 
-          balanceAfter: 0, 
-          customerId: form.customerId, 
-          customerName: form.customerName, 
-          status: "active" 
-        });
-      }
-
-      // ۲. ثبت برداشت مازاد به عنوان بدهی مشتری (موجودی مشتری منفی می‌شود و در کارت "بدهی مشتریان" نمایش داده می‌شود)
-      newEntries.push({
-        id: generateId(),
-        trackingCode: getNextTrackingCode(),
-        date: new Date().toISOString(),
-        type: "customer_withdraw",
-        currency: form.currency,
-        amount: loanShortfall,
-        direction: "out",
-        reason: `برداشت مازاد بر موجودی (ایجاد بدهی) - ${form.reason.trim()}`,
-        balanceAfter: 0,
-        customerId: form.customerId,
-        customerName: form.customerName,
-        status: "active"
-      });
-
-      // ۳. ثبت معادل بدهی در حساب صرافی (تا موجودی حساب صرافی هم کاهش یابد و در کارت "موجودی حساب صرافی" نمایش داده شود)
-      // توجه: این ورودی در getLedgerBalance برای CASH_BOX_ID نادیده گرفته می‌شود تا موجودی فیزیکی دوبار کسر نشود.
-      newEntries.push({
-        id: generateId(),
-        trackingCode: getNextTrackingCode(),
-        date: new Date().toISOString(),
-        type: "loan_given",
-        currency: form.currency,
-        amount: loanShortfall,
-        direction: "out",
-        reason: `پوشش بدهی مشتری ${form.customerName} از حساب صرافی`,
-        balanceAfter: 0,
-        customerId: EXCHANGE_ACCOUNT_ID,
-        customerName: EXCHANGE_ACCOUNT_NAME,
-        counterPartyId: form.customerId,
-        status: "active"
-      });
-
-      const finalEntries = [...entries, ...newEntries];
-      setEntries(finalEntries);
-      try {
-        localStorage.setItem(CASH_KEY, JSON.stringify(finalEntries));
-        window.dispatchEvent(new Event("db:updated"));
-      } catch (e) { console.error("Storage error", e); }
-      
-      showToast(`عملیات ثبت شد. مبلغ ${fmt(loanShortfall)} به عنوان بدهی از حساب مشتری و حساب صرافی کسر گردید.`);
-      setForm(emptyForm);
-    } else {
-      // حالت عادی: برداشت یا واریز معمولی
-      const mainEntry: CashEntry = { 
-        id: generateId(), 
-        trackingCode: getNextTrackingCode(), 
-        date: new Date().toISOString(), 
-        type: form.type as CashEntryType, 
-        currency: form.currency, 
-        amount, 
-        direction, 
-        reason: form.reason.trim(), 
-        balanceAfter: 0, 
-        customerId: isCustomerType ? form.customerId : undefined, 
-        customerName: isCustomerType ? form.customerName : undefined, 
-        status: "active" 
-      };
-      
-      const currentBalForPreview = physicalCashBalances[form.currency] || 0;
-      const newBal = isInType ? currentBalForPreview + amount : currentBalForPreview - amount;
-      mainEntry.balanceAfter = newBal;
-      
-      setPreviewData(mainEntry); 
-      setPreviewOpen(true);
-    }
-  }, [validateForm, form, entries, isInType, isCustomerType, showToast, physicalCashBalances, labels]);
+    const mainEntry: CashEntry = { 
+      id: generateId(), 
+      trackingCode: getNextTrackingCode(), 
+      date: new Date().toISOString(), 
+      type: form.type as CashEntryType, 
+      currency: form.currency, 
+      amount, 
+      direction: isInType ? "in" : "out", 
+      reason: form.reason.trim(), 
+      balanceAfter: 0, 
+      customerId: isCustomerType ? form.customerId : undefined, 
+      customerName: isCustomerType ? form.customerName : undefined, 
+      status: "active" 
+    };
+    
+    const currentBalForPreview = physicalCashBalances[form.currency] || 0;
+    const newBal = isInType ? currentBalForPreview + amount : currentBalForPreview - amount;
+    mainEntry.balanceAfter = newBal;
+    
+    setPreviewData(mainEntry); 
+    setPreviewOpen(true);
+  }, [validateForm, form, entries, isInType, isCustomerType, showToast, physicalCashBalances]);
 
   const confirmRegister = useCallback(async () => {
     if (!previewData) return;
-    const wasEditing = !!editingEntryId;
+    
     let updatedCustomers = customers;
-    let finalEntry = previewData;
-    if (wasEditing) {
-      const oldEntry = entries.find(e => e.id === editingEntryId);
-      if (oldEntry) updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForCashEntry(oldEntry, "reverse"));
-      const updated: CashEntry = { ...previewData, id: editingEntryId!, trackingCode: oldEntry?.trackingCode || previewData.trackingCode, date: oldEntry?.date || previewData.date, status: "active" };
-      if (updated.customerId && updated.customerId !== CASH_BOX_ID) { const cust = customers.find(c => c.id === updated.customerId); if (cust) { updated.customerPhone = cust.phone || ""; updated.customerTazkira = cust.tazkira || ""; } }
-      updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForCashEntry(updated, "register"));
-      setEntries(prev => recomputeCashBalances(prev.map(e => e.id === editingEntryId ? updated : e)));
-      finalEntry = updated;
-    } else {
-      const entry = { ...previewData, trackingCode: consumeTrackingCode(), status: "active" as const };
-      if (entry.customerId && entry.customerId !== CASH_BOX_ID) { const cust = customers.find(c => c.id === entry.customerId); if (cust) { entry.customerPhone = cust.phone || ""; entry.customerTazkira = cust.tazkira || ""; } }
-      updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForCashEntry(entry, "register"));
-      setEntries(prev => recomputeCashBalances([...prev, entry]));
-      finalEntry = entry;
+    let finalEntries = [...entries];
+
+    // ۱. ثبت سند اصلی (واریز یا برداشت به اندازه کل مبلغ)
+    updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForCashEntry(previewData, "register"));
+    finalEntries.push(previewData);
+
+    // ۲. اگر برداشت مشتری بیشتر از موجودی او بود، مابه‌التفاوت به عنوان بدهی از حساب صرافی کسر می‌شود
+    if (previewData.type === "customer_withdraw" && previewData.customerId && previewData.customerId !== CASH_BOX_ID && previewData.customerId !== EXCHANGE_ACCOUNT_ID) {
+      const balanceBefore = getLedgerBalance(previewData.customerId, previewData.currency, entries);
+      const shortfall = previewData.amount - balanceBefore;
+      
+      if (shortfall > 0) {
+        const loanEntry: CashEntry = {
+          id: generateId(),
+          trackingCode: getNextTrackingCode(),
+          date: new Date().toISOString(),
+          type: "loan_given",
+          currency: previewData.currency,
+          amount: shortfall,
+          direction: "out",
+          reason: `پوشش کسری برداشت مشتری ${previewData.customerName} از سرمایه صرافی`,
+          balanceAfter: 0,
+          customerId: EXCHANGE_ACCOUNT_ID,
+          customerName: EXCHANGE_ACCOUNT_NAME,
+          counterPartyId: previewData.customerId,
+          status: "active"
+        };
+        
+        updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForCashEntry(loanEntry, "register"));
+        finalEntries.push(loanEntry);
+      }
     }
+
     setCustomers(updatedCustomers);
-    setForm(emptyForm); setErrors({}); setEditingEntryId(null); setPreviewOpen(false); setPreviewData(null);
-    await sendCashReceipts({ entry: finalEntry, action: "register", customers: updatedCustomers });
-    showToast(wasEditing ? "سند با موفقیت ویرایش شد." : isCommissionType ? "کارمزد با موفقیت برداشت شد." : "عملیات صندوق با موفقیت ثبت شد.");
-  }, [previewData, editingEntryId, entries, customers, showToast, isCommissionType]);
+    setEntries(recomputeCashBalances(finalEntries));
+    setForm(emptyForm); 
+    setErrors({}); 
+    setPreviewOpen(false); 
+    setPreviewData(null);
+    
+    await sendCashReceipts({ entry: previewData, action: "register", customers: updatedCustomers });
+    showToast("عملیات صندوق با موفقیت ثبت شد.");
+  }, [previewData, entries, customers, showToast]);
 
   if (!mounted) return (<div className="min-h-screen flex items-center justify-center"><div className="text-center"><div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-slate-300 border-t-emerald-500" /><p className="mt-4 text-slate-500">در حال بارگذاری...</p></div></div>);
 
@@ -700,7 +641,7 @@ export default function CashPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <b className={`block text-sm md:text-base font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}>💰 موجودی فیزیکی صندوق</b>
-                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>مجموع خالص تمام ورودی‌ها و خروجی‌ها (بدون احتساب بدهی مشتریان)</span>
+                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>مجموع خالص تمام ورودی‌ها و خروجی‌های نقدی</span>
                 </div>
               </div>
               <div className="relative grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-3">
@@ -725,7 +666,7 @@ export default function CashPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <b className={`block text-sm md:text-base font-black ${dk ? "text-violet-300" : "text-violet-700"}`}>💼 موجودی حساب صرافی</b>
-                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>سرمایه صرافی (کسر خودکار هنگام ایجاد بدهی مشتری)</span>
+                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>سرمایه صرافی (کسر خودکار هنگام پوشش بدهی مشتری)</span>
                 </div>
               </div>
               <div className="relative grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-3">
