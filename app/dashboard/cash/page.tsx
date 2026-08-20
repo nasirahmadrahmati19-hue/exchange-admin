@@ -27,7 +27,7 @@ type CashEntry = {
   linkedHawalaId?: string; 
   linkedHawalaSettleId?: string; 
   customerDeleted?: boolean; 
-  counterPartyId?: string; // <-- این خط اضافه شد تا خطای بیلد برطرف شود
+  counterPartyId?: string; 
   status: "active" | "voided"; 
 };
 
@@ -82,17 +82,22 @@ function formatShamsiDate(d: Date) { const s = shamsiParts(d); return `${s.year}
 function shortDateLabel(s: string) { try { const d = new Date(s); return Number.isNaN(d.getTime()) ? "-" : formatShamsiDate(d); } catch (e) { return "-"; } }
 function timeLabel(s: string) { try { const d = new Date(s); if (Number.isNaN(d.getTime())) return "-"; const pad = (n: number) => String(n).padStart(2, "0"); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; } catch (e) { return "-"; } }
 
+// ✅✅✅ منطق اصلاح‌شده و دقیق برای جلوگیری از اثرگذاری بدهی بر صندوق فیزیکی
 function getLedgerBalance(customerId: string, currency: Currency, entries: CashEntry[]): number {
   let balance = 0;
   for (const entry of entries) {
     if (entry.status === "voided" || entry.currency !== currency) continue;
 
     if (customerId === CASH_BOX_ID) {
-      // صندوق فیزیکی فقط تحت تأثیر واریز و برداشت عادی است
+      // صندوق فیزیکی: عملیات‌های داخلی حساب صرافی (مثل قرض) نباید روی موجودی فیزیکی صندوق اثر بگذارند
+      // تا از شمارش مضاعف جلوگیری شود.
+      if (entry.customerId === EXCHANGE_ACCOUNT_ID) {
+        continue;
+      }
       balance += (entry.direction === "in" ? 1 : -1) * entry.amount;
     } 
     else if (customerId === EXCHANGE_ACCOUNT_ID) {
-      // حساب صرافی تحت تأثیر واریز/برداشت مالک و قرض‌ها است
+      // حساب صرافی: فقط عملیات‌هایی که مستقیماً به حساب صرافی اختصاص داده شده‌اند
       if (entry.customerId === EXCHANGE_ACCOUNT_ID) {
         balance += (entry.direction === "in" ? 1 : -1) * entry.amount;
       }
@@ -511,7 +516,7 @@ export default function CashPage() {
     showToast(`سند ${entry.trackingCode} حذف شد.`);
   }, [showToast, entries]);
 
-  // ✅ منطق هوشمند و دقیق: جلوگیری از کسر بدهی از صندوق فیزیکی
+  // ✅✅✅ منطق هوشمند و دقیق: جلوگیری از کسر بدهی از صندوق فیزیکی
   const handleSubmitClick = useCallback(() => {
     const errs = validateForm();
     setErrors(errs);
@@ -536,24 +541,42 @@ export default function CashPage() {
 
     if (loanShortfall > 0) {
       // ۱. ثبت برداشت به اندازه موجودی مثبت مشتری (صندوق فیزیکی فقط به این اندازه کم می‌شود)
-      const mainEntry: CashEntry = { 
-        id: generateId(), 
-        trackingCode: getNextTrackingCode(), 
-        date: new Date().toISOString(), 
-        type: "customer_withdraw", 
-        currency: form.currency, 
-        amount: currentBal, 
-        direction: "out", 
-        reason: `برداشت مشتری (تا سقف موجودی) - ${form.reason.trim()}`, 
-        balanceAfter: 0, 
-        customerId: form.customerId, 
-        customerName: form.customerName, 
-        status: "active" 
-      };
-      newEntries.push(mainEntry);
+      if (currentBal > 0) {
+        newEntries.push({ 
+          id: generateId(), 
+          trackingCode: getNextTrackingCode(), 
+          date: new Date().toISOString(), 
+          type: "customer_withdraw", 
+          currency: form.currency, 
+          amount: currentBal, 
+          direction: "out", 
+          reason: `برداشت مشتری (تا سقف موجودی) - ${form.reason.trim()}`, 
+          balanceAfter: 0, 
+          customerId: form.customerId, 
+          customerName: form.customerName, 
+          status: "active" 
+        });
+      }
 
-      // ۲. ثبت خودکار قرض به اندازه مبلغ اضافی (فقط از حساب صرافی کسر می‌شود، نه صندوق فیزیکی)
-      const loanEntry: CashEntry = {
+      // ۲. ثبت برداشت مازاد به عنوان بدهی مشتری (موجودی مشتری منفی می‌شود و در کارت "بدهی مشتریان" نمایش داده می‌شود)
+      newEntries.push({
+        id: generateId(),
+        trackingCode: getNextTrackingCode(),
+        date: new Date().toISOString(),
+        type: "customer_withdraw",
+        currency: form.currency,
+        amount: loanShortfall,
+        direction: "out",
+        reason: `برداشت مازاد بر موجودی (ایجاد بدهی) - ${form.reason.trim()}`,
+        balanceAfter: 0,
+        customerId: form.customerId,
+        customerName: form.customerName,
+        status: "active"
+      });
+
+      // ۳. ثبت معادل بدهی در حساب صرافی (تا موجودی حساب صرافی هم کاهش یابد و در کارت "موجودی حساب صرافی" نمایش داده شود)
+      // توجه: این ورودی در getLedgerBalance برای CASH_BOX_ID نادیده گرفته می‌شود تا موجودی فیزیکی دوبار کسر نشود.
+      newEntries.push({
         id: generateId(),
         trackingCode: getNextTrackingCode(),
         date: new Date().toISOString(),
@@ -561,14 +584,13 @@ export default function CashPage() {
         currency: form.currency,
         amount: loanShortfall,
         direction: "out",
-        reason: `قرض خودکار به دلیل برداشت بیش از موجودی (${form.customerName})`,
+        reason: `پوشش بدهی مشتری ${form.customerName} از حساب صرافی`,
         balanceAfter: 0,
         customerId: EXCHANGE_ACCOUNT_ID,
         customerName: EXCHANGE_ACCOUNT_NAME,
         counterPartyId: form.customerId,
         status: "active"
-      };
-      newEntries.push(loanEntry);
+      });
 
       const finalEntries = [...entries, ...newEntries];
       setEntries(finalEntries);
@@ -577,7 +599,7 @@ export default function CashPage() {
         window.dispatchEvent(new Event("db:updated"));
       } catch (e) { console.error("Storage error", e); }
       
-      showToast(`عملیات ثبت شد. مبلغ ${fmt(currentBal)} از صندوق و مبلغ ${fmt(loanShortfall)} به عنوان قرض از حساب صرافی ثبت گردید.`);
+      showToast(`عملیات ثبت شد. مبلغ ${fmt(loanShortfall)} به عنوان بدهی از حساب مشتری و حساب صرافی کسر گردید.`);
       setForm(emptyForm);
     } else {
       // حالت عادی: برداشت یا واریز معمولی
