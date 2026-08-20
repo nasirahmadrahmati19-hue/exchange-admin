@@ -7,7 +7,30 @@ type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type Customer = { id: string; name: string; phone?: string; tazkira?: string; address?: string; note?: string; telegram?: string; telegramChatId?: string; registeredAt: string; balances: Record<Currency, number>; };
 type CashEntryType = "customer_deposit" | "customer_withdraw" | "owner_deposit" | "owner_withdraw" | "adjustment" | "fee" | "commission_withdraw" | "loan_given" | "loan_received";
 type BalanceChange = { customerId?: string; customerName: string; currency: Currency; amount: number; };
-type CashEntry = { id: string; trackingCode: string; date: string; type: CashEntryType; currency: Currency; amount: number; direction: "in" | "out"; reason: string; balanceAfter: number; customerId?: string; customerName?: string; customerPhone?: string; customerTazkira?: string; linkedExchangeId?: string; linkedHawalaId?: string; linkedHawalaSettleId?: string; customerDeleted?: boolean; status: "active" | "voided"; };
+
+// ✅ اصلاح خطای تایپ‌اسکریپت: اضافه شدن counterPartyId به تعریف نوع
+type CashEntry = { 
+  id: string; 
+  trackingCode: string; 
+  date: string; 
+  type: CashEntryType; 
+  currency: Currency; 
+  amount: number; 
+  direction: "in" | "out"; 
+  reason: string; 
+  balanceAfter: number; 
+  customerId?: string; 
+  customerName?: string; 
+  customerPhone?: string; 
+  customerTazkira?: string; 
+  linkedExchangeId?: string; 
+  linkedHawalaId?: string; 
+  linkedHawalaSettleId?: string; 
+  customerDeleted?: boolean; 
+  counterPartyId?: string; // <-- این خط اضافه شد
+  status: "active" | "voided"; 
+};
+
 type Transaction = { id: string; trackingCode: string; date: string; type: "exchange" | "transfer" | "convert"; fromCurrency: Currency; fromAmount: number; toCurrency: Currency; toAmount: number; rate: number; rateLabel: string; commission?: number; commissionCurrency?: Currency; commissionPayer?: "sender" | "receiver"; status: "active" | "voided"; customerId?: string; customerName?: string; senderId?: string; senderName?: string; receiverId?: string; receiverName?: string; };
 type Hawala = { id: string; number: string; date: string; currencyFrom: Currency; currencyTo: Currency; amountFrom: number; finalAmount: number; fee: number; feeCurrency: Currency; feePayer: "sender" | "receiver"; status: "pending" | "sent" | "paid" | "cancelled"; senderId?: string; senderName: string; receiverId?: string; receiverName: string; };
 type FormState = { type: CashEntryType | ""; currency: Currency; amount: string; reason: string; customerId: string; customerName: string; };
@@ -59,24 +82,20 @@ function formatShamsiDate(d: Date) { const s = shamsiParts(d); return `${s.year}
 function shortDateLabel(s: string) { try { const d = new Date(s); return Number.isNaN(d.getTime()) ? "-" : formatShamsiDate(d); } catch (e) { return "-"; } }
 function timeLabel(s: string) { try { const d = new Date(s); if (Number.isNaN(d.getTime())) return "-"; const pad = (n: number) => String(n).padStart(2, "0"); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; } catch (e) { return "-"; } }
 
-// ✅ منطق ضدگلوله و دقیق محاسبه موجودی
 function getLedgerBalance(customerId: string, currency: Currency, entries: CashEntry[]): number {
   let balance = 0;
   for (const entry of entries) {
     if (entry.status === "voided" || entry.currency !== currency) continue;
 
     if (customerId === CASH_BOX_ID) {
-      // صندوق فیزیکی: قرض‌ها به صورت خودکار توسط سند جداگانه مدیریت می‌شوند، اما جهت حرکت پول مهم است
       balance += (entry.direction === "in" ? 1 : -1) * entry.amount;
     } 
     else if (customerId === EXCHANGE_ACCOUNT_ID) {
-      // حساب صرافی: فقط اسنادی که مشخصاً متعلق به آن هستند
       if (entry.customerId === EXCHANGE_ACCOUNT_ID) {
         balance += (entry.direction === "in" ? 1 : -1) * entry.amount;
       }
     } 
     else {
-      // مشتری عادی
       if (entry.customerId === customerId) {
         balance += (entry.direction === "in" ? 1 : -1) * entry.amount;
       }
@@ -448,7 +467,6 @@ export default function CashPage() {
   const showToast = useCallback((message: string) => { setToast(message); setTimeout(() => setToast(""), 3500); }, []);
   const setField = useCallback((field: keyof FormState, value: string) => { setForm(prev => ({ ...prev, [field]: value })); setErrors(prev => ({ ...prev, [field]: undefined })); }, []);
 
-  // ✅ اعتبارسنجی اصلاح‌شده: اجازه برداشت بیش از موجودی برای ایجاد بدهی خودکار
   const validateForm = useCallback(() => {
     const errs: FormErrors = {};
     if (!form.type) errs.type = "نوع عملیات را انتخاب کنید.";
@@ -490,7 +508,6 @@ export default function CashPage() {
     showToast(`سند ${entry.trackingCode} حذف شد.`);
   }, [showToast, entries]);
 
-  // ✅ منطق هوشمند ثبت عملیات با پشتیبانی از قرض خودکار
   const handleSubmitClick = useCallback(() => {
     const errs = validateForm();
     setErrors(errs);
@@ -499,7 +516,6 @@ export default function CashPage() {
     const amount = parseAmount(form.amount);
     const direction: "in" | "out" = isInType ? "in" : "out";
     
-    // بررسی موجودی فعلی مشتری برای تشخیص نیاز به قرض خودکار
     const currentBal = form.customerId && form.customerId !== CASH_BOX_ID && form.customerId !== EXCHANGE_ACCOUNT_ID 
       ? getLedgerBalance(form.customerId, form.currency, entries) 
       : 0;
@@ -513,7 +529,6 @@ export default function CashPage() {
 
     const newEntries: CashEntry[] = [];
 
-    // ۱. ثبت سند اصلی عملیات
     const mainEntry: CashEntry = { 
       id: generateId(), 
       trackingCode: getNextTrackingCode(), 
@@ -530,7 +545,6 @@ export default function CashPage() {
     };
     newEntries.push(mainEntry);
 
-    // ۲. ثبت خودکار سند قرض در صورت کسری موجودی
     if (loanShortfall > 0) {
       const loanEntry: CashEntry = {
         id: generateId(),
@@ -550,7 +564,6 @@ export default function CashPage() {
       newEntries.push(loanEntry);
     }
 
-    // اگر قرض خودکار ایجاد شد، مستقیماً ثبت کن (بدون پیش‌نمایش برای سادگی)
     if (loanShortfall > 0) {
       const finalEntries = [...entries, ...newEntries];
       setEntries(finalEntries);
@@ -561,7 +574,6 @@ export default function CashPage() {
       showToast(`عملیات ثبت شد. مبلغ ${fmt(loanShortfall)} ${labels[form.currency]} به عنوان قرض از طرف حساب صرافی ثبت گردید و مشتری بدهکار شد.`);
       setForm(emptyForm);
     } else {
-      // در غیر این صورت، نمایش پیش‌نمایش عادی
       const currentBalForPreview = physicalCashBalances[form.currency] || 0;
       const newBal = isInType ? currentBalForPreview + amount : currentBalForPreview - amount;
       mainEntry.balanceAfter = newBal;
