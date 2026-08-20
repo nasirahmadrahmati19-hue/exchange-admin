@@ -284,7 +284,7 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
       ce.type === "loan_given" || ce.type === "loan_received" ? EXCHANGE_ACCOUNT_ID : CASH_BOX_ID
     );
 
-    const isIn = ce.type === "customer_deposit" || (ce.type === "loan_given" && ce.customerId !== EXCHANGE_ACCOUNT_ID) || (ce.type === "loan_received" && ce.customerId === EXCHANGE_ACCOUNT_ID);
+    const isIn = ce.type === "customer_deposit" || ce.type === "loan_received";
 
     entries.push({
       id: `${ce.id}-cash`,
@@ -756,7 +756,7 @@ export default function CustomersPage() {
               { label: "رویدادهای مالی", value: ledger.length + cashBoxLedger.length, icon: "history", color: "from-amber-500 to-orange-500", text: dk ? "text-amber-300" : "text-amber-600" },
               { label: "با موجودی", value: withBalanceCount, icon: "wallet", color: "from-sky-500 to-cyan-500", text: dk ? "text-sky-300" : "text-sky-600" },
               { label: "بدون موجودی", value: withoutBalanceCount, icon: "x", color: "from-rose-500 to-pink-500", text: dk ? "text-rose-300" : "text-rose-600" },
-              { label: "💰 موجودی فیزیکی صندوق", value: fmt(Object.values(allBalances[CASH_BOX_ID]).reduce((a, b) => a + Math.abs(b), 0)), icon: "cash", color: "from-violet-500 to-purple-500", text: dk ? "text-violet-300" : "text-violet-600" },
+              { label: "💰 موجودی فیزیکی صندوق", value: fmt(Object.values(allBalances[CASH_BOX_ID] || {}) as number[]).reduce((a, b) => a + Math.abs(b), 0)), icon: "cash", color: "from-violet-500 to-purple-500", text: dk ? "text-violet-300" : "text-violet-600" },
             ].map((s, i) => (
               <div key={i} className={`group relative overflow-hidden rounded-2xl border p-4 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${glassCard}`}>
                 <div className={`absolute inset-0 bg-gradient-to-br ${s.color} opacity-0 transition-opacity group-hover:opacity-10`} />
@@ -1124,28 +1124,88 @@ export default function CustomersPage() {
               {profileTab === "statement" && (
                 <div className={`rounded-2xl border p-4 md:p-6 ${uiCard}`}>
                   <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                    <div className="flex items-center gap-2"><span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg></span><b className={`text-sm font-black ${headingText}`}>{isCashBox ? "صورت‌حساب صندوق" : isExchangeAccount ? "صورت‌حساب حساب صرافی" : "صورت‌حساب کامل"}</b></div>
-                    <button onClick={printStatement} className={`flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-l px-4 py-2 text-sm font-black shadow-lg ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 to-teal-500 text-white"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0 1 10.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0 .229 2.523a1.125 1.125 0 0 1-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0 0 21 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 0 0-1.913-.247M6.34 18H5.25A2.25 2.25 0 0 1 3 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 0 1 1.913-.247m10.5 0a48.536 48.536 0 0 0-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5Zm-3 0h.008v.008H15V10.5Z" /></svg>چاپ</button>
+                    <div className="flex items-center gap-2">
+                      <span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg>
+                      </span>
+                      <div>
+                        <b className={`text-sm font-black ${headingText}`}>{isCashBox ? "صورت‌حساب صندوق" : isExchangeAccount ? "صورت‌حساب حساب صرافی" : "صورت‌حساب کامل مشتری"}</b>
+                        <div className={`text-[10px] font-bold ${subTextVar}`}>{customerLedger.length} رویداد مالی</div>
+                      </div>
+                    </div>
+                    <button onClick={printStatement} className={`flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-l px-4 py-2 text-sm font-black shadow-lg ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 to-teal-500 text-white"}`}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0 1 10.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0 .229 2.523a1.125 1.125 0 0 1-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0 0 21 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 0 0-1.913-.247M6.34 18H5.25A2.25 2.25 0 0 1 3 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 0 1 1.913-.247m10.5 0a48.536 48.536 0 0 0-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5Zm-3 0h.008v.008H15V10.5Z" /></svg>
+                      چاپ صورت‌حساب
+                    </button>
                   </div>
+
                   <div className="grid gap-3 md:grid-cols-2 mb-4">
                     <div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-200 bg-white"}`}>
-                      <b className={`text-xs font-black ${headingText}`}>مشخصات</b>
+                      <b className={`text-xs font-black ${headingText}`}>مشخصات حساب</b>
                       <div className={`space-y-1 text-xs mt-2 ${dk ? "text-slate-300" : "text-slate-600"}`}>
                         <div><b>نام:</b> {selectedCustomer.name}</div>
                         <div><b>کد:</b> <span dir="ltr">{isCashBox ? "CASH_BOX" : isExchangeAccount ? "EXCHANGE_ACCOUNT" : selectedCustomer.id.slice(-6)}</span></div>
-                        {!isCashBox && !isExchangeAccount && (<><div><b>تلفن:</b> <span dir="ltr">{selectedCustomer.phone || "-"}</span></div><div><b>تذکره:</b> <span dir="ltr">{selectedCustomer.tazkira || "-"}</span></div><div><b>تلگرام:</b> <span dir="ltr">{selectedCustomer.telegram || "-"}</span></div>{selectedCustomer.address && <div><b>آدرس:</b> {selectedCustomer.address}</div>}{selectedCustomer.note && <div><b>یادداشت:</b> {selectedCustomer.note}</div>}</>)}
-                        {isCashBox && <div><b>توضیحات:</b> موجودی فیزیکی صندوق صرافی</div>}
-                        {isExchangeAccount && <div><b>توضیحات:</b> حساب داخلی صرافی</div>}
+                        {!isCashBox && !isExchangeAccount && (
+                          <>
+                            <div><b>تلفن:</b> <span dir="ltr">{selectedCustomer.phone || "-"}</span></div>
+                            <div><b>تذکره:</b> <span dir="ltr">{selectedCustomer.tazkira || "-"}</span></div>
+                            <div><b>تلگرام:</b> <span dir="ltr">{selectedCustomer.telegram || "-"}</span></div>
+                          </>
+                        )}
+                        {isCashBox && <div><b>نوع:</b> موجودی فیزیکی صندوق</div>}
+                        {isExchangeAccount && <div><b>نوع:</b> حساب داخلی صرافی</div>}
                       </div>
                     </div>
+
                     <div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-200 bg-white"}`}>
-                      <b className={`text-xs font-black ${headingText}`}>آمار</b>
-                      <div className={`space-y-1 text-xs mt-2 ${dk ? "text-slate-300" : "text-slate-600"}`}>
-                        <div><b>رویدادها:</b> {customerLedger.length}</div>
-                        <div><b>اولین:</b> {customerLedger.length > 0 ? shortDateLabel(customerLedger[0].date) : "-"}</div>
-                        <div><b>آخرین:</b> {customerLedger.length > 0 ? shortDateLabel(customerLedger[customerLedger.length - 1].date) : "-"}</div>
+                      <b className={`text-xs font-black ${headingText}`}>مانده فعلی</b>
+                      <div className="grid grid-cols-2 gap-2 mt-2">
+                        {currencies.map(cur => (
+                          <div key={cur} className={`rounded-lg px-3 py-2 ${dk ? "bg-slate-900/60" : "bg-slate-50"}`}>
+                            <div className={`text-[10px] ${subTextVar}`}>{labels[cur]}</div>
+                            <div className={`text-sm font-black tabular-nums ${customerBalances[cur] < 0 ? "text-rose-500" : dk ? "text-emerald-300" : "text-emerald-700"}`}>{fmt(customerBalances[cur])}</div>
+                          </div>
+                        ))}
                       </div>
                     </div>
+                  </div>
+
+                  <div className={`rounded-xl border overflow-hidden ${dk ? "border-slate-700" : "border-slate-200"}`}>
+                    <div className={`px-4 py-3 border-b ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
+                      <b className={`text-xs font-black ${headingText}`}>گردش کامل حساب</b>
+                    </div>
+
+                    {customerLedger.length === 0 ? (
+                      <div className={`py-12 text-center text-sm font-bold ${subTextVar}`}>برای این حساب هنوز رویداد مالی ثبت نشده است.</div>
+                    ) : (
+                      <div className="overflow-x-auto cu-scroll">
+                        <table className="w-full min-w-[950px] text-sm">
+                          <thead>
+                            <tr className={`border-b ${dk ? "border-slate-700 bg-slate-800/70" : "border-slate-100 bg-slate-50"}`}>
+                              {["شماره","تاریخ","ساعت","سند","نوع","شرح","ارز","دریافت","پرداخت","مانده"].map(h => (
+                                <th key={h} className="px-3 py-2.5 text-center text-[10px] font-black text-slate-400">{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
+                            {[...customerLedger].reverse().map((e, i) => (
+                              <tr key={e.id} className={`${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/50"}`}>
+                                <td className="px-3 py-2.5 text-center text-[11px] font-black tabular-nums">{customerLedger.length - i}</td>
+                                <td className={`px-3 py-2.5 text-center text-[11px] tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{shortDateLabel(e.date)}</td>
+                                <td className={`px-3 py-2.5 text-center text-[11px] tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`} dir="ltr">{timeLabel(e.date)}</td>
+                                <td className="px-3 py-2.5 text-center"><span className={`inline-flex rounded-md border px-1.5 py-0.5 text-[10px] font-black tabular-nums ${dk ? "border-slate-600 text-slate-300" : "border-slate-200 text-slate-600"}`} dir="ltr">{e.referenceNumber || "-"}</span></td>
+                                <td className="px-3 py-2.5 text-center"><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${txColors[e.type][dk ? "dark" : "light"]}`}>{txLabels[e.type]}</span></td>
+                                <td className={`px-3 py-2.5 text-center text-[11px] max-w-[200px] truncate ${dk ? "text-slate-200" : "text-slate-700"}`}>{e.description}</td>
+                                <td className={`px-3 py-2.5 text-center text-[11px] font-black ${currencyColors[e.currency][dk ? "dark" : "light"]}`}>{labels[e.currency]}</td>
+                                <td className="px-3 py-2.5 text-center text-[11px] font-black tabular-nums text-emerald-500">{e.direction === "in" ? fmt(e.amount) : ""}</td>
+                                <td className="px-3 py-2.5 text-center text-[11px] font-black tabular-nums text-rose-500">{e.direction === "out" ? fmt(e.amount) : ""}</td>
+                                <td className={`px-3 py-2.5 text-center text-[11px] font-black tabular-nums ${currencyColors[e.currency][dk ? "dark" : "light"]}`}>{fmt(e.balanceAfter)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
