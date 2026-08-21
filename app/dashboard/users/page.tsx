@@ -19,7 +19,6 @@ const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
 const labels: Record<Currency, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
 const entryTypeLabels: Record<CashEntryType, string> = { customer_deposit: "واریز مشتری", customer_withdraw: "برداشت مشتری", owner_deposit: "واریز مالک", owner_withdraw: "برداشت مالک", adjustment: "اصلاح صندوق", fee: "کارمزد", commission_withdraw: "برداشت کارمزد", loan_given: "قرض داده‌شده", loan_received: "دریافت قرض" };
 const currencyColors: Record<Currency, string> = { AFN: "text-emerald-700", USD: "text-sky-700", EUR: "text-blue-700", IRR: "text-amber-700", PKR: "text-rose-700" };
-const currencyGradients: Record<Currency, string> = { AFN: "from-emerald-500 to-teal-400", USD: "from-sky-500 to-cyan-400", EUR: "from-blue-600 to-blue-400", IRR: "from-amber-500 to-orange-400", PKR: "from-rose-500 to-pink-400" };
 const txLabels: Record<TxType, string> = { exchange: "تبادل ارز", transfer: "انتقال", convert: "تبدیل ارز", hawala: "حواله", deposit: "واریز", withdraw: "برداشت", fee: "کارمزد", correction: "اصلاح" };
 const txColors: Record<TxType, string> = { exchange: "bg-sky-100 text-sky-700", transfer: "bg-violet-100 text-violet-700", convert: "bg-purple-100 text-purple-700", hawala: "bg-blue-100 text-blue-700", deposit: "bg-emerald-100 text-emerald-700", withdraw: "bg-rose-100 text-rose-700", fee: "bg-amber-100 text-amber-700", correction: "bg-orange-100 text-orange-700" };
 const CASH_BOX_ID = "CASH_BOX";
@@ -416,17 +415,17 @@ export default function CustomersPage() {
     const amt = Number(normalizeDigits(loanAmount).replace(/,/g, ""));
     if (!Number.isFinite(amt) || amt <= 0) { showToast("مبلغ معتبر وارد کنید."); return; }
     if (!isCurrency(loanCurrency)) return;
-    const now = new Date().toISOString();
+    const nowDate = new Date().toISOString();
     const reason = loanReason.trim() || (loanModalType === "give" ? "قرض به مشتری" : "بازپرداخت قرض توسط مشتری");
     const trackingCode = `LN-${Date.now().toString(36).toUpperCase()}`;
     const newEntries: any[] = [];
 
     if (loanModalType === "give") {
-      newEntries.push({ id: generateId(), trackingCode: `${trackingCode}-CUST`, date: now, type: "loan_given", currency: loanCurrency, amount: amt, direction: "out", reason: `قرض داده‌شده - ${reason}`, balanceAfter: 0, customerId: selectedCustomer.id, customerName: selectedCustomer.name, counterPartyId: EXCHANGE_ACCOUNT_ID, status: "active" });
-      newEntries.push({ id: generateId(), trackingCode: `${trackingCode}-EXCH`, date: now, type: "loan_given", currency: loanCurrency, amount: amt, direction: "out", reason: `قرض به ${selectedCustomer.name} - ${reason}`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: "حساب صرافی", counterPartyId: selectedCustomer.id, status: "active" });
+      newEntries.push({ id: generateId(), trackingCode: `${trackingCode}-CUST`, date: nowDate, type: "loan_given", currency: loanCurrency, amount: amt, direction: "out", reason: `قرض داده‌شده - ${reason}`, balanceAfter: 0, customerId: selectedCustomer.id, customerName: selectedCustomer.name, counterPartyId: EXCHANGE_ACCOUNT_ID, status: "active" });
+      newEntries.push({ id: generateId(), trackingCode: `${trackingCode}-EXCH`, date: nowDate, type: "loan_given", currency: loanCurrency, amount: amt, direction: "out", reason: `قرض به ${selectedCustomer.name} - ${reason}`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: "حساب صرافی", counterPartyId: selectedCustomer.id, status: "active" });
     } else {
-      newEntries.push({ id: generateId(), trackingCode: `${trackingCode}-CUST`, date: now, type: "loan_received", currency: loanCurrency, amount: amt, direction: "in", reason: `بازپرداخت قرض - ${reason}`, balanceAfter: 0, customerId: selectedCustomer.id, customerName: selectedCustomer.name, counterPartyId: EXCHANGE_ACCOUNT_ID, status: "active" });
-      newEntries.push({ id: generateId(), trackingCode: `${trackingCode}-EXCH`, date: now, type: "loan_received", currency: loanCurrency, amount: amt, direction: "in", reason: `دریافت قرض از ${selectedCustomer.name} - ${reason}`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: "حساب صرافی", counterPartyId: selectedCustomer.id, status: "active" });
+      newEntries.push({ id: generateId(), trackingCode: `${trackingCode}-CUST`, date: nowDate, type: "loan_received", currency: loanCurrency, amount: amt, direction: "in", reason: `بازپرداخت قرض - ${reason}`, balanceAfter: 0, customerId: selectedCustomer.id, customerName: selectedCustomer.name, counterPartyId: EXCHANGE_ACCOUNT_ID, status: "active" });
+      newEntries.push({ id: generateId(), trackingCode: `${trackingCode}-EXCH`, date: nowDate, type: "loan_received", currency: loanCurrency, amount: amt, direction: "in", reason: `دریافت قرض از ${selectedCustomer.name} - ${reason}`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: "حساب صرافی", counterPartyId: selectedCustomer.id, status: "active" });
     }
 
     setCashEntries(prev => {
@@ -457,22 +456,48 @@ export default function CustomersPage() {
     showToast(`"${c.name}" حذف شد.`);
   };
 
+  // ✅ اصلاح حیاتی: منطق اعتبارسنجی برای ثبت جدید و ویرایش به صورت جداگانه و دقیق
   const validateForm = () => {
     const errs: FormErrors = {};
     if (!form.name.trim()) errs.name = "نام ضروری است.";
-    if (!form.phone.trim()) errs.phone = "تماس ضروری است.";
-    const currentId = selectedCustomer?.id;
-    if (customers.find(c => c.phone === form.phone.trim() && c.id !== EXCHANGE_ACCOUNT_ID && c.id !== currentId)) errs.phone = "تکراری است.";
-    if (form.tazkira.trim() && customers.find(c => c.tazkira === form.tazkira.trim() && c.id !== EXCHANGE_ACCOUNT_ID && c.id !== currentId)) errs.tazkira = "تکراری است.";
+    if (!form.phone.trim()) errs.phone = "شماره تماس ضروری است.";
+    
+    // تشخیص می‌دهیم که آیا در حال ویرایش هستیم یا ثبت جدید
+    const isEditing = activeTab === "profile" && !!selectedCustomerId;
+    const currentId = isEditing ? selectedCustomerId : "NEW_CUSTOMER_ID_PLACEHOLDER";
+
+    if (customers.find(c => c.phone === form.phone.trim() && c.id !== EXCHANGE_ACCOUNT_ID && c.id !== currentId)) {
+      errs.phone = "این شماره تماس قبلاً ثبت شده است.";
+    }
+    if (form.tazkira.trim() && customers.find(c => c.tazkira === form.tazkira.trim() && c.id !== EXCHANGE_ACCOUNT_ID && c.id !== currentId)) {
+      errs.tazkira = "این شماره تذکره قبلاً ثبت شده است.";
+    }
     return errs;
   };
 
   const submitNew = () => {
-    const errs = validateForm(); setErrors(errs);
-    if (Object.keys(errs).length > 0) { showToast("فیلدها را تکمیل کنید."); return; }
-    const nc: Customer = { id: generateId(), name: form.name.trim(), phone: form.phone.trim(), tazkira: form.tazkira.trim(), address: form.address.trim(), note: form.note.trim(), telegram: form.telegram.trim(), registeredAt: new Date().toISOString(), balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
-    setCustomers(p => [...p, nc]); setForm(emptyForm); setErrors({}); setActiveTab("list");
-    showToast(`"${nc.name}" ثبت شد.`);
+    const errs = validateForm(); 
+    setErrors(errs);
+    if (Object.keys(errs).length > 0) { 
+      showToast("⚠️ لطفاً خطاهای مشخص‌شده در فرم را برطرف کنید."); 
+      return; 
+    }
+    const nc: Customer = { 
+      id: generateId(), 
+      name: form.name.trim(), 
+      phone: form.phone.trim(), 
+      tazkira: form.tazkira.trim(), 
+      address: form.address.trim(), 
+      note: form.note.trim(), 
+      telegram: form.telegram.trim(), 
+      registeredAt: new Date().toISOString(), 
+      balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } 
+    };
+    setCustomers(p => [...p, nc]); 
+    setForm(emptyForm); 
+    setErrors({}); 
+    setActiveTab("list"); // بازگشت قطعی به تب لیست
+    showToast(`✅ "${nc.name}" با موفقیت ثبت شد.`);
   };
 
   const updateCustomer = () => {
@@ -485,7 +510,7 @@ export default function CustomersPage() {
       setHawalas(prev => prev.map((h: any) => { const u = { ...h }; if (h.senderName === oldName) u.senderName = newName; if (h.receiverName === oldName) u.receiverName = newName; return u; }));
       setCashEntries(prev => prev.map((ce: any) => { const u = { ...ce }; if (ce.customerName === oldName) u.customerName = newName; return u; }));
     }
-    showToast("به‌روز شد.");
+    showToast("✅ اطلاعات مشتری به‌روز شد.");
   };
 
   useEffect(() => { if (profileTab === "info" && selectedCustomer && selectedCustomer.id !== CASH_BOX_ID && selectedCustomer.id !== EXCHANGE_ACCOUNT_ID) { setForm({ name: selectedCustomer.name, phone: selectedCustomer.phone || "", tazkira: selectedCustomer.tazkira || "", address: selectedCustomer.address || "", note: selectedCustomer.note || "", telegram: selectedCustomer.telegram || "" }); } }, [profileTab, selectedCustomer]);
@@ -498,7 +523,7 @@ export default function CustomersPage() {
       const customerInfo = isCashBox ? "موجودی فیزیکی صندوق صرافی" : isExchangeAccount ? "موجودی حساب داخلی صرافی" : `تلفن: ${selectedCustomer.phone || "-"} | تذکره: ${selectedCustomer.tazkira || "-"} | تلگرام: ${selectedCustomer.telegram || "-"}`;
       win.document.write(`<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8"><title>${title}</title><style>body{font-family:Tahoma;padding:24px;direction:rtl}h1{color:#0369a1}table{width:100%;border-collapse:collapse;font-size:12px;margin:12px 0}th,td{border:1px solid #cbd5e1;padding:6px 8px;text-align:right}th{background:#f0f9ff}.in{color:#059669;font-weight:bold}.out{color:#dc2626;font-weight:bold}.box{display:inline-block;padding:8px 14px;border:2px solid #0ea5e9;border-radius:8px;margin:4px;font-weight:bold}</style></head><body><h1>${title}</h1><p>${customerInfo}</p><h3>مانده</h3><div>${currencies.map(c => `<span class="box">${labels[c]}: ${fmt(customerBalances[c])}</span>`).join("")}</div><h3>گردش (${customerLedger.length})</h3><table><tr><th>شماره</th><th>تاریخ</th><th>ساعت</th><th>سند</th><th>نوع</th><th>شرح</th><th>ارز</th><th>دریافت</th><th>پرداخت</th><th>مانده</th></tr>${customerLedger.map((e, i) => `<tr><td>${i + 1}</td><td>${shortDateLabel(e.date)}</td><td>${timeLabel(e.date)}</td><td>${e.referenceNumber || "-"}</td><td>${txLabels[e.type]}</td><td>${e.description}</td><td>${labels[e.currency]}</td><td class="in">${e.direction === "in" ? fmt(e.amount) : ""}</td><td class="out">${e.direction === "out" ? fmt(e.amount) : ""}</td><td>${fmt(e.balanceAfter)}</td></tr>`).join("")}</table><script>window.print()</script></body></html>`);
       win.document.close(); win.focus();
-    } catch { showToast("خطا در چاپ"); }
+    } catch { showToast("خطا در باز کردن پنجره چاپ"); }
   };
 
   if (!mounted) return (<div className="min-h-screen flex items-center justify-center"><div className="text-center"><div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-slate-300 border-t-emerald-500" /><p className="mt-4 text-slate-500">در حال بارگذاری...</p></div></div>);
@@ -513,7 +538,7 @@ export default function CustomersPage() {
   const subText = "text-slate-500";
   const identIcon = "from-emerald-400/20 to-teal-400/10 text-emerald-600 ring-emerald-400/30";
   const fld = (label: string, node: ReactNode) => (<div><label className={uiLabel}>{label}</label>{node}</div>);
-  const errBox = (list: string[]) => list.length === 0 ? null : (<div className="space-y-2 rounded-xl border border-rose-500 bg-rose-50 p-4 text-rose-600"><b className="flex items-center gap-2 text-sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 shrink-0"><path d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>لطفاً فیلدهای اجباری را تکمیل کنید:</b><ul className="list-disc pr-5 text-sm space-y-1">{list.map((m, i) => <li key={i}>{m}</li>)}</ul></div>);
+  const errBox = (list: string[]) => list.length === 0 ? null : (<div className="space-y-2 rounded-xl border border-rose-500 bg-rose-50 p-4 text-rose-600"><b className="flex items-center gap-2 text-sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 shrink-0"><path d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>لطفاً خطاهای زیر را برطرف کنید:</b><ul className="list-disc pr-5 text-sm space-y-1">{list.map((m, i) => <li key={i}>{m}</li>)}</ul></div>);
   const errorList = Object.values(errors).filter((m): m is string => Boolean(m));
   const glassChip = "border-emerald-100 bg-white/85";
 
@@ -715,7 +740,10 @@ export default function CustomersPage() {
                 <div className="md:col-span-2">{fld("آدرس", (<input className={uiInput} value={form.address} onChange={e => setField("address", e.target.value)} placeholder="ولایت، ولسوالی" />))}</div>
                 <div className="md:col-span-2">{fld("توضیحات", (<textarea rows={3} className={`${uiInput} h-auto py-3 resize-none`} value={form.note} onChange={e => setField("note", e.target.value)} />))}</div>
               </div>
+              
+              {/* نمایش خطاها در اینجا */}
               {errBox(errorList)}
+              
               <div className="flex flex-wrap gap-3">
                 <button onClick={submitNew} className="flex h-[50px] flex-1 min-w-[200px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-emerald-500 via-teal-500 to-cyan-500 text-base font-black text-white shadow-lg transition-all hover:brightness-110">ثبت مشتری<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" /></svg></button>
                 <button onClick={() => { setForm(emptyForm); setErrors({}); setActiveTab("list"); }} className="flex h-[50px] px-6 cursor-pointer items-center justify-center rounded-xl border border-slate-200 text-sm font-bold text-slate-600">انصراف</button>
@@ -829,7 +857,7 @@ export default function CustomersPage() {
                         <div className="md:col-span-2">{fld("آدرس", (<input className={uiInput} value={form.address} onChange={e => setField("address", e.target.value)} />))}</div>
                         <div className="md:col-span-2">{fld("توضیحات", (<textarea rows={3} className={`${uiInput} h-auto py-3 resize-none`} value={form.note} onChange={e => setField("note", e.target.value)} />))}</div>
                       </div>
-                      <button onClick={updateCustomer} className="mt-4 flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-l from-emerald-500 to-teal-500 px-5 py-2.5 text-sm font-black text-white shadow-lg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>ذخیره</button>
+                      <button onClick={updateCustomer} className="mt-4 flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-l from-emerald-500 to-teal-500 px-5 py-2.5 text-sm font-black text-white shadow-lg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>ذخیره تغییرات</button>
                     </>
                   )}
                 </div>
