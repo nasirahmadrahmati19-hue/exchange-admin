@@ -11,7 +11,7 @@ import {
   loadTransactionsShared, 
   loadHawalasShared, 
   loadCashEntriesShared 
-} from "@/lib/defaultData";
+} from "../../lib/defaultData";
 
 // ═══════════ Types ═══════════
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
