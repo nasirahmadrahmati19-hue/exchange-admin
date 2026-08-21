@@ -77,10 +77,8 @@ function getBalanceChangesForHawala(h: Hawala, action: "register" | "settle" | "
         if (h.feePayer === "sender" && h.fee > 0) changes.push({ customerName: h.senderName, customerId: h.senderId, currency: h.feeCurrency, amount: -h.fee });
       }
     } else if (action === "settle") {
-      if (h.receiverId && h.receiverId !== CASH_BOX_ID) {
-        changes.push({ customerName: h.receiverName, customerId: h.receiverId, currency: h.currencyTo, amount: h.finalAmount });
-        if (h.feePayer === "receiver" && h.fee > 0) changes.push({ customerName: h.receiverName, customerId: h.receiverId, currency: h.feeCurrency, amount: -h.fee });
-      }
+      // پرداخت حواله به گیرنده مشتری «نقدی» است؛ موجودی حساب مشتری تغییر نمی‌کند.
+      // تسویه مالی در syncCashEntriesForHawalaSettlement انجام می‌شود.
     } else if (action === "cancel") {
       if (h.senderId && h.senderId !== CASH_BOX_ID) {
         changes.push({ customerName: h.senderName, customerId: h.senderId, currency: h.currencyFrom, amount: h.amountFrom });
@@ -159,9 +157,9 @@ function syncCashEntriesForHawalaSettlement(action: "add" | "remove", h: Hawala)
     const dateStr = h.paidAt || h.date || new Date().toISOString();
 
     if (h.receiverId && h.receiverId !== CASH_BOX_ID) {
-      // فقط واریز به حساب مشتری گیرنده
+      // گیرنده مشتری پول را نقداً از صندوق می‌گیرد؛ حساب مشتری افزایش نمی‌یابد.
       const payCode = getNextTrackingCode();
-      entries.push({ id: generateId(), trackingCode: payCode, date: dateStr, type: "customer_deposit", currency: h.currencyTo, amount: h.finalAmount, direction: "in", reason: `تسویه حواله ${h.number} از ${h.senderName}`, balanceAfter: 0, customerId: h.receiverId, customerName: h.receiverName, linkedHawalaSettleId: h.id, status: "active" });
+      entries.push({ id: generateId(), trackingCode: payCode, date: dateStr, type: "owner_withdraw", currency: h.currencyTo, amount: h.finalAmount, direction: "out", reason: `پرداخت نقدی حواله ${h.number} به ${h.receiverName}`, balanceAfter: 0, customerId: CASH_BOX_ID, customerName: CASH_BOX_NAME, linkedHawalaSettleId: h.id, status: "active" });
     }
 
     if (h.receiverId === CASH_BOX_ID) {
@@ -170,9 +168,7 @@ function syncCashEntriesForHawalaSettlement(action: "add" | "remove", h: Hawala)
     }
 
     if (h.feePayer === "receiver" && h.fee > 0) {
-      if (h.receiverId && h.receiverId !== CASH_BOX_ID) {
-        entries.push({ id: generateId(), trackingCode: getNextTrackingCode(), date: dateStr, type: "fee", currency: h.feeCurrency, amount: h.fee, direction: "out", reason: `کسر کارمزد حواله ${h.number} از حساب گیرنده`, balanceAfter: 0, customerId: h.receiverId, customerName: h.receiverName, linkedHawalaSettleId: h.id, status: "active" });
-      }
+      // مبلغ نهایی قبلاً کمیشن گیرنده را کسر کرده است؛ کمیشن فقط یک‌بار ثبت می‌شود.
       entries.push({ id: generateId(), trackingCode: getNextTrackingCode(), date: dateStr, type: "fee", currency: h.feeCurrency, amount: h.fee, direction: "in", reason: `دریافت کارمزد حواله ${h.number} از گیرنده`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedHawalaSettleId: h.id, status: "active" });
     }
   }
@@ -435,7 +431,7 @@ async function sendHawalaReceipts(params: {
   }
 }
 
-const iconPaths = { send: "M6 12 3.269 3.126A59.768 59.768 0 0 1 21.485 12 59.77 59.77 0 0 1 3.27 20.876L5.999 12Zm0 0h7.5", receive: "M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3", clock: "M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z", chevron: "m19.5 8.25-7.5 7.5-7.5-7.5", check: "M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z", x: "M6 18 18 6M6 6l12 12", xCircle: "m9.75 9.75 4.5 4.5m0-4.5-4.5 4.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z", alert: "M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z", doc: "M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z", inbox: "M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h3.218a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H6.911a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661Z", arrowLeft: "M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18", swap: "M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5", rate: "M2.25 18 9 11.25l4.306 4.306a11.95 11.95 0 0 1 5.814-5.518l2.74-1.22m0 0-5.94-2.281m5.94 2.28-2.28 5.941", info: "m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z", sun: "M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.375 3.375 0 1 1-7.5 0 3.375 3.375 0 0 1 7.5 0Z", moon: "M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z", plus: "M12 4.5v15m7.5-7.5h-15", tag: "M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z", wallet: "M21 12a2.25 2.25 0 0 0-2.25-2.25H15a3 3 0 1 1-6 0H5.25A2.25 2.25 0 0 0 3 12m18 0v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 9m18 0V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v3", trash: "M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0", undo: "M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3", more: "M12 6.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 12.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 18.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Z" };
+const iconPaths = { send: "M6 12 3.269 3.126A59.768 59.768 0 0 1 21.485 12 59.77 59.77 0 0 1 3.27 20.876L5.999 12Zm0 0h7.5", receive: "M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3", clock: "M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z", chevron: "m19.5 8.25-7.5 7.5-7.5-7.5", check: "M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z", x: "M6 18 18 6M6 6l12 12", xCircle: "m9.75 9.75 4.5 4.5m0-4.5-4.5 4.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z", alert: "M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z", doc: "M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z", inbox: "M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h3.218a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H6.911a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661Z", arrowLeft: "M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18", swap: "M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5", rate: "M2.25 18 9 11.25l4.306 4.306a11.95 11.95 0 0 1 5.814-5.518l2.74-1.22m0 0-5.94-2.281m5.94 2.28-2.28 5.941", info: "m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z", sun: "M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.375 3.375 0 1 1-7.5 0 3.375 3.375 0 0 1 7.5 0Z", moon: "M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z", plus: "M12 4.5v15m7.5-7.5h-15", tag: "M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z", wallet: "M21 12a2.25 2.25 0 0 0-2.25-2.25H15a3 3 0 1 1-6 0H5.25A2.25 2.25 0 0 0 3 12m18 0v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 9m18 0V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v3", trash: "M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0", undo: "M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3", edit: "M16.862 4.487 19.5 7.125M16.862 4.487 5.25 16.099 4.5 19.5l3.401-.75L19.513 6.638a1.875 1.875 0 0 0-2.651-2.151Z", share: "M7.5 12h9m-9 0 3-3m-3 3 3 3M12 3.75A8.25 8.25 0 1 1 3.75 12 8.25 8.25 0 0 1 12 3.75Z", eye: "M2.25 12s3.5-6 9.75-6 9.75 6 9.75 6-3.5 6-9.75 6-9.75-6-9.75-6Zm9.75 2.25a2.25 2.25 0 1 0 0-4.5 2.25 2.25 0 0 0 0 4.5Z", more: "M12 6.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 12.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 18.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Z" };
 type IconName = keyof typeof iconPaths;
 const Ic = memo(function Ic({ n, className = "h-5 w-5" }: { n: IconName; className?: string }) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true"><path d={iconPaths[n]} /></svg>; });
 
@@ -467,6 +463,8 @@ export default function HawalaPage() {
   const [cancelReason, setCancelReason] = useState("");
   const [toast, setToast] = useState("");
   const [openActionId, setOpenActionId] = useState<string | null>(null);
+  const [detailTarget, setDetailTarget] = useState<Hawala | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => { try { const saved = window.localStorage.getItem("hawala-theme"); if (saved === "dark" || saved === "light") setTheme(saved); } catch {} }, []);
   useEffect(() => { try { window.localStorage.setItem("hawala-theme", theme); } catch {} }, [theme]);
@@ -545,6 +543,16 @@ export default function HawalaPage() {
       if (rateMode === "same") rateLabel = "بدون تبدیل";
       if (rateMode === "afn" && afnForeign) rateLabel = afnRateLabel(afnForeign, txRate);
       if (rateMode === "direct" && directCounter) rateLabel = directRateLabel(directBaseValue, directCounter, txRate);
+      if (editingId) {
+        const existing = hawalas.find(x => x.id === editingId);
+        if (existing) {
+          const updated: Hawala = { ...existing, type: form.type, province: form.province, district: form.province === "هرات" ? form.district : form.province, destinationText, senderName, senderPhone: form.senderPhone, senderTelegram: form.senderTelegram, senderId: sender?.id, receiverName, receiverTazkira: form.receiverTazkira, receiverPhone: form.receiverPhone, receiverAddress: form.receiverAddress, receiverId: receiver?.id, note: form.note, balance: form.balance };
+          setHawalas(prev => prev.map(x => x.id === editingId ? updated : x));
+          setEditingId(null); setForm(emptyForm); setErrors({}); setPreviewOpen(false); setActiveTab(existing.status === "paid" || existing.status === "cancelled" ? "history" : "current");
+          showToast("✅ اطلاعات حواله ویرایش شد.");
+          return;
+        }
+      }
       const trackingNumber = consumeTrackingCode();
       const newHawala: Hawala = { id: generateId(), number: trackingNumber, date: nowDate.toISOString(), time: "", type: form.type, destinationCountry: "افغانستان", province: form.province, district: form.province === "هرات" ? form.district : form.province, destinationText, currencyFrom: form.currencyFrom, currencyTo: form.currencyTo, amountFrom, rate: txRate, rateLabel, rateBase: rateMode === "direct" ? directBaseValue : undefined, fee: feeValue, feeCurrency: form.feeCurrency, feePayer: form.feePayer, finalAmount, balance: form.balance, note: form.note, profit: feeValue, profitCurrency: form.feeCurrency, senderId: sender?.id, senderName, senderPhone: form.senderPhone, senderTelegram: form.senderTelegram, receiverId: receiver?.id, receiverName, receiverTazkira: form.receiverTazkira, receiverPhone: form.receiverPhone, receiverAddress: form.receiverAddress, status: "pending" as HawalaStatus };
       
@@ -566,9 +574,27 @@ export default function HawalaPage() {
       
       showToast("✅ حواله ثبت شد و رسید ارسال شد");
     } catch (err) { console.error("Register error:", err); showToast("خطا در ثبت حواله"); }
-  }, [form, rateMode, rateValue, afnForeign, directCounter, directBaseValue, feeValue, amountFrom, destinationText, customers, showToast, finalAmount]);
+  }, [form, rateMode, rateValue, afnForeign, directCounter, directBaseValue, feeValue, amountFrom, destinationText, customers, showToast, finalAmount, editingId, hawalas]);
 
-  const resetForm = useCallback(() => { setForm(emptyForm); setErrors({}); showToast("فورم پاک شد."); }, [showToast]);
+  const openDetails = useCallback((item: Hawala) => { setDetailTarget(item); setOpenActionId(null); }, []);
+
+  const shareHawala = useCallback(async (item: Hawala) => {
+    const text = `حواله ${item.number}\nحواله‌دهنده: ${item.senderName}\nحواله‌گیرنده: ${item.receiverName}\nمبلغ: ${fmt(item.finalAmount)} ${labels[item.currencyTo]}\nکمیشن: ${fmt(item.fee)} ${labels[item.feeCurrency]}\nمقصد: ${item.destinationText}\nآدرس گیرنده: ${item.receiverAddress || "-"}\nیادداشت: ${item.note || "-"}`;
+    try {
+      if (navigator.share) await navigator.share({ title: `حواله ${item.number}`, text });
+      else { await navigator.clipboard.writeText(text); showToast("متن حواله کپی شد."); }
+    } catch {}
+    setOpenActionId(null);
+  }, [showToast]);
+
+  const editHawala = useCallback((item: Hawala) => {
+    setEditingId(item.id);
+    setForm({ type: item.type, currencyFrom: item.currencyFrom, currencyTo: item.currencyTo, senderId: item.senderId || "", senderName: item.senderName, senderPhone: item.senderPhone || "", senderTelegram: item.senderTelegram || "", amountFrom: String(item.amountFrom), rate: String(item.rate || ""), fee: String(item.fee || ""), feeCurrency: item.feeCurrency, feePayer: item.feePayer, balance: item.balance || "", province: item.province, district: item.district, receiverId: item.receiverId || "", receiverName: item.receiverName, receiverTazkira: item.receiverTazkira || "", receiverPhone: item.receiverPhone || "", receiverAddress: item.receiverAddress || "", note: item.note || "" });
+    setErrors({}); setDetailTarget(null); setOpenActionId(null); setActiveTab("new");
+    showToast("حواله برای ویرایش باز شد. اطلاعات مالی پس از ثبت مجدد با همان سند به‌روزرسانی می‌شود.");
+  }, [showToast]);
+
+  const resetForm = useCallback(() => { setForm(emptyForm); setErrors({}); setEditingId(null); showToast("فورم پاک شد."); }, [showToast]);
   const markAsSent = useCallback((item: Hawala) => { setHawalas(prev => prev.map(h => h.id === item.id ? { ...h, status: "sent" as HawalaStatus } : h)); showToast("وضعیت حواله به ارسال‌شده تغییر کرد."); }, [showToast]);
   const openSettlement = useCallback((item: Hawala) => { setSettleTarget(item); setPaidAmount(String(item.finalAmount)); setPaidBy(""); }, []);
 
@@ -579,11 +605,7 @@ export default function HawalaPage() {
     if (!Number.isFinite(amountPaid) || amountPaid <= 0) { showToast("مبلغ پرداخت‌شده معتبر نیست."); return; }
     try {
       const paidHawala = { ...settleTarget, status: "paid" as HawalaStatus };
-      let updatedCustomers = customers;
-      if (paidHawala.receiverId && paidHawala.receiverId !== CASH_BOX_ID) {
-        updatedCustomers = applyBalanceChanges(customers, getBalanceChangesForHawala(paidHawala, "settle"));
-        setCustomers(updatedCustomers);
-      }
+      const updatedCustomers = customers;
       setHawalas(prev => prev.map(item => item.id === settleTarget.id ? { ...item, status: "paid" as HawalaStatus, paidAt: new Date().toISOString(), paidBy, paidAmount: amountPaid } : item));
       syncCashEntriesForHawalaSettlement("add", paidHawala);
       
@@ -691,7 +713,7 @@ export default function HawalaPage() {
     const isPending = item.status === "pending", isSent = item.status === "sent", isPaid = item.status === "paid", isCancelled = item.status === "cancelled", isOpen = openActionId === item.id;
     const btn = "flex w-full items-center gap-2 px-3 py-2 text-right text-xs font-bold transition";
     const btnBase = dk ? "text-slate-200 hover:bg-slate-700/60" : "text-slate-700 hover:bg-slate-100";
-    return (<div className="relative action-dropdown flex justify-center"><button onClick={(e) => { e.stopPropagation(); setOpenActionId(isOpen ? null : item.id); }} className={`grid h-8 w-8 place-items-center rounded-lg border transition-all duration-150 active:scale-90 cursor-pointer ${dk ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-200 text-slate-500 hover:bg-slate-100"}`} title="عملیات"><Ic n="more" className="h-4 w-4" /></button>{isOpen && (<div className={`absolute left-1/2 -translate-x-1/2 top-full z-50 mt-1.5 w-44 overflow-hidden rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>{!isInHistory && (<>{isPending && (<button onClick={() => { markAsSent(item); setOpenActionId(null); }} className={`${btn} ${btnBase} ${dk ? "text-sky-300 hover:bg-sky-400/15" : "text-sky-600 hover:bg-sky-50"}`}><Ic n="send" className="h-3.5 w-3.5" /> ارسال حواله</button>)}{(isPending || isSent) && (<><button onClick={() => { openSettlement(item); setOpenActionId(null); }} className={`${btn} ${btnBase} ${dk ? "text-emerald-300 hover:bg-emerald-400/15" : "text-emerald-600 hover:bg-emerald-50"}`}><Ic n="check" className="h-3.5 w-3.5" /> تسویه حواله</button><button onClick={() => { openCancel(item); setOpenActionId(null); }} className={`${btn} ${btnBase} ${dk ? "text-amber-300 hover:bg-amber-400/15" : "text-amber-600 hover:bg-amber-50"}`}><Ic n="xCircle" className="h-3.5 w-3.5" /> ابطال حواله</button></>)}</>)}{isInHistory && (<>{isCancelled && (<button onClick={() => { restoreToSent(item); setOpenActionId(null); }} className={`${btn} ${btnBase} ${dk ? "text-sky-300 hover:bg-sky-400/15" : "text-sky-600 hover:bg-sky-50"}`}><Ic n="undo" className="h-3.5 w-3.5" /> برگشت به ارسال</button>)}{isPaid && (<button onClick={() => { openCancel(item); setOpenActionId(null); }} className={`${btn} ${btnBase} ${dk ? "text-amber-300 hover:bg-amber-400/15" : "text-amber-600 hover:bg-amber-50"}`}><Ic n="xCircle" className="h-3.5 w-3.5" /> ابطال حواله</button>)}</>)}<div className={`my-1 h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} /><button onClick={() => { deleteHawala(item); setOpenActionId(null); }} className={`${btn} ${dk ? "text-rose-300 hover:bg-rose-400/15" : "text-rose-500 hover:bg-rose-50"}`}><Ic n="trash" className="h-3.5 w-3.5" /> حذف حواله</button></div>)}</div>);
+    return (<div className="relative action-dropdown flex justify-center"><button onClick={(e) => { e.stopPropagation(); setOpenActionId(isOpen ? null : item.id); }} className={`grid h-8 w-8 place-items-center rounded-lg border transition-all duration-150 active:scale-90 cursor-pointer ${dk ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-200 text-slate-500 hover:bg-slate-100"}`} title="عملیات"><Ic n="more" className="h-4 w-4" /></button>{isOpen && (<div className={`absolute left-1/2 -translate-x-1/2 top-full z-50 mt-1.5 w-48 overflow-hidden rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}><button onClick={() => openDetails(item)} className={`${btn} ${btnBase}`}><Ic n="eye" className="h-3.5 w-3.5" /> نمایش</button><button onClick={() => editHawala(item)} className={`${btn} ${btnBase}`}><Ic n="edit" className="h-3.5 w-3.5" /> ویرایش</button><button onClick={() => shareHawala(item)} className={`${btn} ${btnBase}`}><Ic n="share" className="h-3.5 w-3.5" /> اشتراک‌گذاری</button><div className={`my-1 h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />{!isInHistory && (<>{isPending && (<button onClick={() => { markAsSent(item); setOpenActionId(null); }} className={`${btn} ${btnBase} ${dk ? "text-sky-300 hover:bg-sky-400/15" : "text-sky-600 hover:bg-sky-50"}`}><Ic n="send" className="h-3.5 w-3.5" /> ارسال حواله</button>)}{(isPending || isSent) && (<><button onClick={() => { openSettlement(item); setOpenActionId(null); }} className={`${btn} ${btnBase} ${dk ? "text-emerald-300 hover:bg-emerald-400/15" : "text-emerald-600 hover:bg-emerald-50"}`}><Ic n="check" className="h-3.5 w-3.5" /> تسویه حواله</button><button onClick={() => { openCancel(item); setOpenActionId(null); }} className={`${btn} ${btnBase} ${dk ? "text-amber-300 hover:bg-amber-400/15" : "text-amber-600 hover:bg-amber-50"}`}><Ic n="xCircle" className="h-3.5 w-3.5" /> ابطال حواله</button></>)}</>)}{isInHistory && (<>{isCancelled && (<button onClick={() => { restoreToSent(item); setOpenActionId(null); }} className={`${btn} ${btnBase} ${dk ? "text-sky-300 hover:bg-sky-400/15" : "text-sky-600 hover:bg-sky-50"}`}><Ic n="undo" className="h-3.5 w-3.5" /> برگشت به ارسال</button>)}{isPaid && (<button onClick={() => { openCancel(item); setOpenActionId(null); }} className={`${btn} ${btnBase} ${dk ? "text-amber-300 hover:bg-amber-400/15" : "text-amber-600 hover:bg-amber-50"}`}><Ic n="xCircle" className="h-3.5 w-3.5" /> ابطال حواله</button>)}</>)}<div className={`my-1 h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} /><button onClick={() => { deleteHawala(item); setOpenActionId(null); }} className={`${btn} ${dk ? "text-rose-300 hover:bg-rose-400/15" : "text-rose-500 hover:bg-rose-50"}`}><Ic n="trash" className="h-3.5 w-3.5" /> حذف حواله</button></div>)}</div>);
   });
 
   const errorList = Object.values(errors).filter((msg): msg is string => Boolean(msg));
@@ -808,6 +830,23 @@ export default function HawalaPage() {
           )}
         </div>
       </div>
+
+      {detailTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => setDetailTarget(null)}>
+          <div className={`hw-up w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl md:rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={(e) => e.stopPropagation()}>
+            <div className={`flex items-center justify-between border-b px-4 md:px-5 py-3 md:py-4 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}><b className={heading}>جزئیات حواله {detailTarget.number}</b><button onClick={() => setDetailTarget(null)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400"><Ic n="x" className="h-4 w-4" /></button></div>
+            <div className="grid gap-3 p-4 md:p-6 sm:grid-cols-2 text-sm">
+              <div><span className={subText}>حواله‌دهنده: </span><b>{detailTarget.senderName}</b></div><div><span className={subText}>حواله‌گیرنده: </span><b>{detailTarget.receiverName}</b></div>
+              <div><span className={subText}>شماره تماس گیرنده: </span><b>{detailTarget.receiverPhone || "-"}</b></div><div><span className={subText}>تذکره گیرنده: </span><b>{detailTarget.receiverTazkira || "-"}</b></div>
+              <div className="sm:col-span-2"><span className={subText}>آدرس حواله‌گیرنده: </span><b>{detailTarget.receiverAddress || "-"}</b></div>
+              <div><span className={subText}>مبلغ نهایی: </span><b>{fmt(detailTarget.finalAmount)} {labels[detailTarget.currencyTo]}</b></div><div><span className={subText}>کمیشن: </span><b>{fmt(detailTarget.fee)} {labels[detailTarget.feeCurrency]}</b></div>
+              <div><span className={subText}>مقصد: </span><b>{detailTarget.destinationText}</b></div><div><span className={subText}>وضعیت: </span><b>{statusLabels[detailTarget.status]}</b></div>
+              <div className="sm:col-span-2 rounded-xl border p-3"><div className={`mb-1 text-xs font-black ${subText}`}>یادداشت</div><div className="whitespace-pre-wrap font-bold">{detailTarget.note || "یادداشتی ثبت نشده است."}</div></div>
+            </div>
+            <div className="flex flex-wrap gap-2 px-4 pb-4 md:px-6 md:pb-6"><button onClick={() => editHawala(detailTarget)} className="rounded-xl border px-4 py-2 text-sm font-bold">ویرایش</button><button onClick={() => shareHawala(detailTarget)} className="rounded-xl border px-4 py-2 text-sm font-bold">اشتراک‌گذاری</button><button onClick={() => setDetailTarget(null)} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white">بستن</button></div>
+          </div>
+        </div>
+      )}
 
       {previewOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => setPreviewOpen(false)}>
