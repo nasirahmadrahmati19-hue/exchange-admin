@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useMemo, useState, useRef, useCallback, type ReactNode } from "react";
-import { initTrackingSystem } from "../lib/trackingCode";
-import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY, loadCustomersShared, loadTransactionsShared, loadHawalasShared, loadCashEntriesShared } from "../lib/defaultData";
+// ✅ استفاده از مسیر مطلق @ که در Next.js همیشه به ریشه پروژه اشاره می‌کند و از خطای Module Not Found جلوگیری می‌کند
+import { initTrackingSystem } from "@/lib/trackingCode";
+import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY, loadCustomersShared, loadTransactionsShared, loadHawalasShared, loadCashEntriesShared } from "@/lib/defaultData";
 
 // ═══════════ Types ═══════════
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
