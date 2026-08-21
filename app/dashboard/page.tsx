@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
-// ✅ مسیر نسبی استاندارد برای فایل‌های داخل app/dashboard
+// ✅ اصلاح قطعی مسیر: چون فایل در app/dashboard/lib/defaultData.ts است، مسیر صحیح ./lib/defaultData می‌باشد
 import { 
   CUSTOMERS_KEY, 
   TRANSACTIONS_KEY, 
@@ -11,7 +11,7 @@ import {
   loadTransactionsShared, 
   loadHawalasShared, 
   loadCashEntriesShared 
-} from "../../lib/defaultData";
+} from "./lib/defaultData";
 
 // ═══════════ Types ═══════════
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
@@ -67,7 +67,6 @@ export default function DashboardPage() {
   const [entries, setEntries] = useState<CashEntry[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [hawalas, setHawalas] = useState<Hawala[]>([]);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   // 1. Load initial data
   useEffect(() => {
@@ -76,7 +75,6 @@ export default function DashboardPage() {
       setEntries(loadCashEntriesShared() as CashEntry[]);
       setTransactions(loadTransactionsShared() as Transaction[]);
       setHawalas(loadHawalasShared() as Hawala[]);
-      setLastUpdated(new Date());
     } catch (err) { console.error("Load error:", err); }
     setMounted(true);
   }, []);
@@ -89,7 +87,6 @@ export default function DashboardPage() {
         setEntries(loadCashEntriesShared() as CashEntry[]);
         setTransactions(loadTransactionsShared() as Transaction[]);
         setHawalas(loadHawalasShared() as Hawala[]);
-        setLastUpdated(new Date());
       } catch {}
     };
     window.addEventListener("storage", (e) => {
@@ -221,7 +218,7 @@ export default function DashboardPage() {
     );
   }
 
-  // ═══════════ UI Styles (Light Mode Only) ═══════════
+  // ═══════════ UI Styles (Light Mode Only - فشرده و بهینه) ═══════════
   const heading = "text-slate-900";
   const subText = "text-slate-500";
   const glassChip = "border-emerald-100 bg-white/85";
