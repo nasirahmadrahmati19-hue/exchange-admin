@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
-// ✅ اگر خطا داد، این خط را به "../../lib/defaultData" یا "../../../lib/defaultData" تغییر دهید
+// ✅ مسیر نسبی استاندارد برای فایل‌های داخل app/dashboard
 import { 
   CUSTOMERS_KEY, 
   TRANSACTIONS_KEY, 
