@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
-// ✅ مسیر نسبی استاندارد برای فایل‌های داخل app/dashboard
+
+// ✅ این خط را دقیقاً به این شکل جایگزین کنید (از @ استفاده می‌کند)
 import { 
   CUSTOMERS_KEY, 
   TRANSACTIONS_KEY, 
-  HAWALAS_KEY, 
   CASH_KEY, 
   loadCustomersShared, 
   loadTransactionsShared, 
