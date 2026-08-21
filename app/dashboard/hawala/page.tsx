@@ -26,6 +26,8 @@ const CASH_BOX_CUSTOMER: Customer = { id: CASH_BOX_ID, name: CASH_BOX_NAME, phon
 
 const EXCHANGE_ACCOUNT_ID = "EXCHANGE_ACCOUNT";
 const EXCHANGE_ACCOUNT_NAME = "حساب صرافی";
+const EXCHANGE_ACCOUNT_CUSTOMER: Customer = { id: EXCHANGE_ACCOUNT_ID, name: EXCHANGE_ACCOUNT_NAME, phone: "", tazkira: "", address: "", note: "", telegram: "", telegramChatId: "", registeredAt: "", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
+const isInternalAccountId = (id?: string) => id === CASH_BOX_ID || id === EXCHANGE_ACCOUNT_ID;
 
 const hasTelegram = (c: Customer): boolean => Boolean(c.telegramChatId || c.telegram);
 
@@ -68,11 +70,25 @@ function computeCashBoxBalances(cashEntries: any[]): Record<Currency, number> {
   return balances;
 }
 
+function computeExchangeAccountBalances(cashEntries: any[]): Record<Currency, number> {
+  const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+  if (!Array.isArray(cashEntries)) return balances;
+  for (const ce of cashEntries) {
+    if (ce.status === "voided") continue;
+    if (ce.customerId !== EXCHANGE_ACCOUNT_ID) continue;
+    const cur = ce.currency as Currency;
+    if (!isCurrency(cur)) continue;
+    const amount = Number(ce.amount || 0);
+    balances[cur] += ce.direction === "in" ? amount : -amount;
+  }
+  return balances;
+}
+
 function getBalanceChangesForHawala(h: Hawala, action: "register" | "settle" | "cancel"): BalanceChange[] {
   const changes: BalanceChange[] = [];
   try {
     if (action === "register") {
-      if (h.senderId && h.senderId !== CASH_BOX_ID) {
+      if (h.senderId && !isInternalAccountId(h.senderId)) {
         changes.push({ customerName: h.senderName, customerId: h.senderId, currency: h.currencyFrom, amount: -h.amountFrom });
         if (h.feePayer === "sender" && h.fee > 0) changes.push({ customerName: h.senderName, customerId: h.senderId, currency: h.feeCurrency, amount: -h.fee });
       }
@@ -80,11 +96,11 @@ function getBalanceChangesForHawala(h: Hawala, action: "register" | "settle" | "
       // پرداخت حواله به گیرنده مشتری «نقدی» است؛ موجودی حساب مشتری تغییر نمی‌کند.
       // تسویه مالی در syncCashEntriesForHawalaSettlement انجام می‌شود.
     } else if (action === "cancel") {
-      if (h.senderId && h.senderId !== CASH_BOX_ID) {
+      if (h.senderId && !isInternalAccountId(h.senderId)) {
         changes.push({ customerName: h.senderName, customerId: h.senderId, currency: h.currencyFrom, amount: h.amountFrom });
         if (h.feePayer === "sender" && h.fee > 0) changes.push({ customerName: h.senderName, customerId: h.senderId, currency: h.feeCurrency, amount: h.fee });
       }
-      if (h.status === "paid" && h.receiverId && h.receiverId !== CASH_BOX_ID) {
+      if (h.status === "paid" && h.receiverId && !isInternalAccountId(h.receiverId)) {
         changes.push({ customerName: h.receiverName, customerId: h.receiverId, currency: h.currencyTo, amount: -h.finalAmount });
         if (h.feePayer === "receiver" && h.fee > 0) changes.push({ customerName: h.receiverName, customerId: h.receiverId, currency: h.feeCurrency, amount: h.fee });
       }
@@ -123,14 +139,20 @@ function syncCashEntriesForHawala(action: "add" | "remove", h: Hawala | null, ol
   if (action === "add" && h) {
     const dateStr = h.date || new Date().toISOString();
 
-    if (h.senderId && h.senderId !== CASH_BOX_ID) {
-      // فقط کسر از حساب مشتری
+    if (h.senderId && h.senderId !== CASH_BOX_ID && h.senderId !== EXCHANGE_ACCOUNT_ID) {
+      // مشتری واقعی: مبلغ از حساب مشتری کم می‌شود.
       const outCode = getNextTrackingCode();
       entries.push({ id: generateId(), trackingCode: outCode, date: dateStr, type: "customer_withdraw", currency: h.currencyFrom, amount: h.amountFrom, direction: "out", reason: `ارسال حواله ${h.number} - ${h.senderName} به ${h.receiverName}`, balanceAfter: 0, customerId: h.senderId, customerName: h.senderName, customerPhone: h.senderPhone, linkedHawalaId: h.id, status: "active" });
-      
       if (h.fee > 0 && h.feePayer === "sender") {
-        const feeCode = `TR-${getCurrentShamsiYear()}-${String(getTrackingNumberValue(outCode) + 1).padStart(5, "0")}`;
-        entries.push({ id: generateId(), trackingCode: feeCode, date: dateStr, type: "fee", currency: h.feeCurrency, amount: h.fee, direction: "out", reason: `کارمزد حواله ${h.number}`, balanceAfter: 0, customerId: h.senderId, customerName: h.senderName, linkedHawalaId: h.id, status: "active" });
+        entries.push({ id: generateId(), trackingCode: getNextTrackingCode(), date: dateStr, type: "fee", currency: h.feeCurrency, amount: h.fee, direction: "out", reason: `کارمزد حواله ${h.number}`, balanceAfter: 0, customerId: h.senderId, customerName: h.senderName, linkedHawalaId: h.id, status: "active" });
+      }
+    }
+
+    if (h.senderId === EXCHANGE_ACCOUNT_ID) {
+      // حساب صرافی: ارسال حواله از سرمایه/حساب صرافی کم می‌شود.
+      entries.push({ id: generateId(), trackingCode: getNextTrackingCode(), date: dateStr, type: "owner_withdraw", currency: h.currencyFrom, amount: h.amountFrom, direction: "out", reason: `ارسال حواله ${h.number} از حساب صرافی به ${h.receiverName}`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedHawalaId: h.id, status: "active" });
+      if (h.fee > 0 && h.feePayer === "sender") {
+        entries.push({ id: generateId(), trackingCode: getNextTrackingCode(), date: dateStr, type: "fee", currency: h.feeCurrency, amount: h.fee, direction: "out", reason: `کارمزد حواله ${h.number} از حساب صرافی`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedHawalaId: h.id, status: "active" });
       }
     }
 
@@ -156,10 +178,15 @@ function syncCashEntriesForHawalaSettlement(action: "add" | "remove", h: Hawala)
   if (action === "add" && h) {
     const dateStr = h.paidAt || h.date || new Date().toISOString();
 
-    if (h.receiverId && h.receiverId !== CASH_BOX_ID) {
-      // گیرنده مشتری پول را نقداً از صندوق می‌گیرد؛ حساب مشتری افزایش نمی‌یابد.
+    if (h.receiverId && h.receiverId !== CASH_BOX_ID && h.receiverId !== EXCHANGE_ACCOUNT_ID) {
+      // گیرنده مشتری واقعی: پول نقد از صندوق پرداخت می‌شود و حساب مشتری افزایش نمی‌یابد.
       const payCode = getNextTrackingCode();
       entries.push({ id: generateId(), trackingCode: payCode, date: dateStr, type: "owner_withdraw", currency: h.currencyTo, amount: h.finalAmount, direction: "out", reason: `پرداخت نقدی حواله ${h.number} به ${h.receiverName}`, balanceAfter: 0, customerId: CASH_BOX_ID, customerName: CASH_BOX_NAME, linkedHawalaSettleId: h.id, status: "active" });
+    }
+
+    if (h.receiverId === EXCHANGE_ACCOUNT_ID) {
+      // گیرنده حساب صرافی: مبلغ حواله به حساب صرافی اضافه می‌شود، نه صندوق.
+      entries.push({ id: generateId(), trackingCode: getNextTrackingCode(), date: dateStr, type: "owner_deposit", currency: h.currencyTo, amount: h.finalAmount, direction: "in", reason: `دریافت حواله ${h.number} به حساب صرافی از ${h.senderName}`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedHawalaSettleId: h.id, status: "active" });
     }
 
     if (h.receiverId === CASH_BOX_ID) {
@@ -486,8 +513,10 @@ export default function HawalaPage() {
   useEffect(() => { if (!anyDropdownOpen) return; const handler = (e: MouseEvent) => { const t = e.target as Node; if (showSenderList && senderListRef.current && !senderListRef.current.contains(t)) setShowSenderList(false); if (showReceiverList && receiverListRef.current && !receiverListRef.current.contains(t)) setShowReceiverList(false); }; const timer = setTimeout(() => document.addEventListener("mousedown", handler), 0); return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); }; }, [anyDropdownOpen, showSenderList, showReceiverList]);
 
   const cashBoxBalances = useMemo(() => { try { return computeCashBoxBalances(cashEntries); } catch { return { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; } }, [cashEntries]);
-  const filteredSenderList = useMemo(() => { const cashBoxOption = CASH_BOX_CUSTOMER; if (!senderFilter) return [cashBoxOption, ...customers]; const q = normalizeDigits(senderFilter.trim()).toLowerCase(); const filtered = customers.filter(c => c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))); if (CASH_BOX_NAME.includes(q)) return [cashBoxOption, ...filtered]; return filtered; }, [customers, senderFilter]);
-  const filteredReceiverList = useMemo(() => { const cashBoxOption = CASH_BOX_CUSTOMER; if (!receiverFilter) return [cashBoxOption, ...customers]; const q = normalizeDigits(receiverFilter.trim()).toLowerCase(); const filtered = customers.filter(c => c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))); if (CASH_BOX_NAME.includes(q)) return [cashBoxOption, ...filtered]; return filtered; }, [customers, receiverFilter]);
+  const exchangeAccountBalances = useMemo(() => { try { return computeExchangeAccountBalances(cashEntries); } catch { return { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; } }, [cashEntries]);
+  const availableCustomers = useMemo(() => customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID), [customers]);
+  const filteredSenderList = useMemo(() => { const options = [EXCHANGE_ACCOUNT_CUSTOMER, ...availableCustomers]; if (!senderFilter) return options; const q = normalizeDigits(senderFilter.trim()).toLowerCase(); return options.filter(c => c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))); }, [availableCustomers, senderFilter]);
+  const filteredReceiverList = useMemo(() => { const options = [EXCHANGE_ACCOUNT_CUSTOMER, ...availableCustomers]; if (!receiverFilter) return options; const q = normalizeDigits(receiverFilter.trim()).toLowerCase(); return options.filter(c => c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))); }, [availableCustomers, receiverFilter]);
 
   const rateMode = getRateMode(form.currencyFrom, form.currencyTo);
   const afnForeign = getAfnForeign(form.currencyFrom, form.currencyTo);
@@ -514,8 +543,10 @@ export default function HawalaPage() {
 
   const isSenderCashBox = form.senderId === CASH_BOX_ID || form.senderName.trim() === CASH_BOX_NAME;
   const isReceiverCashBox = form.receiverId === CASH_BOX_ID || form.receiverName.trim() === CASH_BOX_NAME;
-  const selectedSender = useMemo(() => { if (isSenderCashBox) return CASH_BOX_CUSTOMER; return customers.find(c => c.id === form.senderId) || customers.find(c => c.name === form.senderName.trim()) || null; }, [customers, form.senderId, form.senderName, isSenderCashBox]);
-  const selectedReceiver = useMemo(() => { if (isReceiverCashBox) return CASH_BOX_CUSTOMER; return customers.find(c => c.id === form.receiverId) || customers.find(c => c.name === form.receiverName.trim()) || null; }, [customers, form.receiverId, form.receiverName, isReceiverCashBox]);
+  const isSenderExchangeAccount = form.senderId === EXCHANGE_ACCOUNT_ID || form.senderName.trim() === EXCHANGE_ACCOUNT_NAME;
+  const isReceiverExchangeAccount = form.receiverId === EXCHANGE_ACCOUNT_ID || form.receiverName.trim() === EXCHANGE_ACCOUNT_NAME;
+  const selectedSender = useMemo(() => { if (isSenderCashBox) return CASH_BOX_CUSTOMER; if (isSenderExchangeAccount) return EXCHANGE_ACCOUNT_CUSTOMER; return customers.find(c => c.id === form.senderId) || customers.find(c => c.name === form.senderName.trim()) || null; }, [customers, form.senderId, form.senderName, isSenderCashBox, isSenderExchangeAccount]);
+  const selectedReceiver = useMemo(() => { if (isReceiverCashBox) return CASH_BOX_CUSTOMER; if (isReceiverExchangeAccount) return EXCHANGE_ACCOUNT_CUSTOMER; return customers.find(c => c.id === form.receiverId) || customers.find(c => c.name === form.receiverName.trim()) || null; }, [customers, form.receiverId, form.receiverName, isReceiverCashBox, isReceiverExchangeAccount]);
 
   const matchesSearch = (item: Hawala, query: string) => { const q = normalizeDigits(query).trim().toLowerCase(); if (!q) return true; const fields = [item.senderName, item.receiverName, item.number, item.senderPhone, item.receiverPhone, item.receiverTazkira]; return fields.some(f => f && normalizeDigits(String(f)).toLowerCase().includes(q)); };
   const matchesAmount = (item: Hawala, query: string) => { const raw = normalizeDigits(query).replace(/[,،\s]/g, ""); if (!raw) return true; const queryNumber = Number(raw); const values = [item.amountFrom, item.finalAmount, item.paidAmount]; if (!Number.isNaN(queryNumber)) return values.some(v => typeof v === "number" && (v === queryNumber || String(v).includes(raw))); return values.some(v => String(v ?? "").includes(raw)); };
@@ -536,8 +567,10 @@ export default function HawalaPage() {
       const senderName = form.senderName.trim(), receiverName = form.receiverName.trim();
       const isSenderCash = form.senderId === CASH_BOX_ID || senderName === CASH_BOX_NAME;
       const isReceiverCash = form.receiverId === CASH_BOX_ID || receiverName === CASH_BOX_NAME;
-      const sender = isSenderCash ? CASH_BOX_CUSTOMER : customers.find(c => c.id === form.senderId) || customers.find(c => c.name === senderName) || null;
-      const receiver = isReceiverCash ? CASH_BOX_CUSTOMER : customers.find(c => c.id === form.receiverId) || customers.find(c => c.name === receiverName) || null;
+      const isSenderExchange = form.senderId === EXCHANGE_ACCOUNT_ID || senderName === EXCHANGE_ACCOUNT_NAME;
+      const isReceiverExchange = form.receiverId === EXCHANGE_ACCOUNT_ID || receiverName === EXCHANGE_ACCOUNT_NAME;
+      const sender = isSenderCash ? CASH_BOX_CUSTOMER : isSenderExchange ? EXCHANGE_ACCOUNT_CUSTOMER : customers.find(c => c.id === form.senderId) || customers.find(c => c.name === senderName) || null;
+      const receiver = isReceiverCash ? CASH_BOX_CUSTOMER : isReceiverExchange ? EXCHANGE_ACCOUNT_CUSTOMER : customers.find(c => c.id === form.receiverId) || customers.find(c => c.name === receiverName) || null;
       let rateLabel = "";
       const txRate = rateMode === "same" ? 1 : rateValue;
       if (rateMode === "same") rateLabel = "بدون تبدیل";
@@ -557,7 +590,7 @@ export default function HawalaPage() {
       const newHawala: Hawala = { id: generateId(), number: trackingNumber, date: nowDate.toISOString(), time: "", type: form.type, destinationCountry: "افغانستان", province: form.province, district: form.province === "هرات" ? form.district : form.province, destinationText, currencyFrom: form.currencyFrom, currencyTo: form.currencyTo, amountFrom, rate: txRate, rateLabel, rateBase: rateMode === "direct" ? directBaseValue : undefined, fee: feeValue, feeCurrency: form.feeCurrency, feePayer: form.feePayer, finalAmount, balance: form.balance, note: form.note, profit: feeValue, profitCurrency: form.feeCurrency, senderId: sender?.id, senderName, senderPhone: form.senderPhone, senderTelegram: form.senderTelegram, receiverId: receiver?.id, receiverName, receiverTazkira: form.receiverTazkira, receiverPhone: form.receiverPhone, receiverAddress: form.receiverAddress, status: "pending" as HawalaStatus };
       
       let updatedCustomers = customers;
-      if (sender && sender.id !== CASH_BOX_ID) {
+      if (sender && !isInternalAccountId(sender.id)) {
         updatedCustomers = applyBalanceChanges(customers, getBalanceChangesForHawala(newHawala, "register"));
         setCustomers(updatedCustomers);
       }
@@ -626,7 +659,7 @@ export default function HawalaPage() {
     if (!cancelReason.trim()) { showToast("دلیل لغو حواله را بنویسید."); return; }
     try {
       let updatedCustomers = customers;
-      if (cancelTarget.senderId && cancelTarget.senderId !== CASH_BOX_ID) {
+      if (cancelTarget.senderId && !isInternalAccountId(cancelTarget.senderId)) {
         updatedCustomers = applyBalanceChanges(customers, getBalanceChangesForHawala(cancelTarget, "cancel"));
         setCustomers(updatedCustomers);
       }
@@ -647,11 +680,11 @@ export default function HawalaPage() {
 
   const restoreToSent = useCallback((item: Hawala) => {
     try {
-      if (item.senderId && item.senderId !== CASH_BOX_ID) {
+      if (item.senderId && !isInternalAccountId(item.senderId)) {
         const reverseChanges: BalanceChange[] = [];
         reverseChanges.push({ customerName: item.senderName, customerId: item.senderId, currency: item.currencyFrom, amount: -item.amountFrom });
         if (item.feePayer === "sender" && item.fee > 0) reverseChanges.push({ customerName: item.senderName, customerId: item.senderId, currency: item.feeCurrency, amount: -item.fee });
-        if (item.status === "cancelled" && item.receiverId && item.paidAmount && item.receiverId !== CASH_BOX_ID) { reverseChanges.push({ customerName: item.receiverName, customerId: item.receiverId, currency: item.currencyTo, amount: item.finalAmount }); if (item.feePayer === "receiver" && item.fee > 0) reverseChanges.push({ customerName: item.receiverName, customerId: item.receiverId, currency: item.feeCurrency, amount: item.fee }); }
+        if (item.status === "cancelled" && item.receiverId && item.paidAmount && !isInternalAccountId(item.receiverId)) { reverseChanges.push({ customerName: item.receiverName, customerId: item.receiverId, currency: item.currencyTo, amount: item.finalAmount }); if (item.feePayer === "receiver" && item.fee > 0) reverseChanges.push({ customerName: item.receiverName, customerId: item.receiverId, currency: item.feeCurrency, amount: item.fee }); }
         setCustomers(prev => applyBalanceChanges(prev, reverseChanges));
       }
       syncCashEntriesForHawala("add", item);
@@ -666,8 +699,8 @@ export default function HawalaPage() {
     if (!window.confirm(msg)) return;
     try {
       const changes: BalanceChange[] = [];
-      if (item.status === "pending" || item.status === "sent") { if (item.senderId && item.senderId !== CASH_BOX_ID) { changes.push({ customerName: item.senderName, customerId: item.senderId, currency: item.currencyFrom, amount: item.amountFrom }); if (item.feePayer === "sender" && item.fee > 0) changes.push({ customerName: item.senderName, customerId: item.senderId, currency: item.feeCurrency, amount: item.fee }); } }
-      else if (item.status === "paid") { if (item.senderId && item.senderId !== CASH_BOX_ID) { changes.push({ customerName: item.senderName, customerId: item.senderId, currency: item.currencyFrom, amount: item.amountFrom }); if (item.feePayer === "sender" && item.fee > 0) changes.push({ customerName: item.senderName, customerId: item.senderId, currency: item.feeCurrency, amount: item.fee }); } if (item.receiverId && item.receiverId !== CASH_BOX_ID) { changes.push({ customerName: item.receiverName, customerId: item.receiverId, currency: item.currencyTo, amount: -item.finalAmount }); if (item.feePayer === "receiver" && item.fee > 0) changes.push({ customerName: item.receiverName, customerId: item.receiverId, currency: item.feeCurrency, amount: item.fee }); } }
+      if (item.status === "pending" || item.status === "sent") { if (item.senderId && !isInternalAccountId(item.senderId)) { changes.push({ customerName: item.senderName, customerId: item.senderId, currency: item.currencyFrom, amount: item.amountFrom }); if (item.feePayer === "sender" && item.fee > 0) changes.push({ customerName: item.senderName, customerId: item.senderId, currency: item.feeCurrency, amount: item.fee }); } }
+      else if (item.status === "paid") { if (item.senderId && !isInternalAccountId(item.senderId)) { changes.push({ customerName: item.senderName, customerId: item.senderId, currency: item.currencyFrom, amount: item.amountFrom }); if (item.feePayer === "sender" && item.fee > 0) changes.push({ customerName: item.senderName, customerId: item.senderId, currency: item.feeCurrency, amount: item.fee }); } if (item.receiverId && !isInternalAccountId(item.receiverId)) { changes.push({ customerName: item.receiverName, customerId: item.receiverId, currency: item.currencyTo, amount: -item.finalAmount }); if (item.feePayer === "receiver" && item.fee > 0) changes.push({ customerName: item.receiverName, customerId: item.receiverId, currency: item.feeCurrency, amount: item.fee }); } }
       if (changes.length > 0) setCustomers(prev => applyBalanceChanges(prev, changes));
       if (item.status !== "cancelled") { syncCashEntriesForHawala("remove", null, item.id); syncCashEntriesForHawalaSettlement("remove", item); }
       setHawalas(prev => prev.filter(h => h.id !== item.id));
@@ -702,8 +735,9 @@ export default function HawalaPage() {
 
   const CustomerBalanceCard = memo(({ customer, color, isCashBox }: { customer: Customer | null; color: "blue" | "orange" | "emerald"; isCashBox?: boolean }) => {
     if (!customer) return null;
-    const balances = isCashBox ? cashBoxBalances : customer.balances;
-    const title = isCashBox ? "💰 موجودی فیزیکی صندوق" : `موجودی حساب ${customer.name}`;
+    const isExchange = customer.id === EXCHANGE_ACCOUNT_ID;
+    const balances = isCashBox ? cashBoxBalances : isExchange ? exchangeAccountBalances : customer.balances;
+    const title = isCashBox ? "💰 موجودی فیزیکی صندوق" : isExchange ? "💼 موجودی حساب صرافی" : `موجودی حساب ${customer.name}`;
     const colors = { blue: { border: dk ? "border-blue-400/30 bg-blue-400/10" : "border-blue-200 bg-blue-50", text: dk ? "text-blue-300" : "text-blue-700", icon: dk ? "text-blue-300" : "text-blue-600" }, orange: { border: dk ? "border-orange-400/30 bg-orange-400/10" : "border-orange-200 bg-orange-50", text: dk ? "text-orange-300" : "text-orange-700", icon: dk ? "text-orange-300" : "text-orange-600" }, emerald: { border: dk ? "border-emerald-400/30 bg-emerald-400/10" : "border-emerald-200 bg-emerald-50", text: dk ? "text-emerald-300" : "text-emerald-700", icon: dk ? "text-emerald-300" : "text-emerald-600" } };
     const c = colors[color];
     return (<div className={`rounded-xl border p-3 ${c.border}`}><div className="flex items-center gap-2 mb-2"><Ic n="wallet" className={`h-4 w-4 ${c.icon}`} /><b className={`text-xs font-black ${c.text}`}>{title}</b></div><div className="grid grid-cols-3 md:grid-cols-5 gap-2 text-[10px] font-bold">{currencies.map(cur => { const bal = balances[cur] || 0; const isDebt = bal < 0, isCredit = bal > 0; return (<div key={cur} className={`rounded-lg px-2 py-1.5 ${dk ? "bg-slate-900/50" : "bg-white"}`}><div className={subText}>{labels[cur]}</div><div className={`font-black tabular-nums ${isDebt ? "text-rose-500" : isCredit ? (dk ? "text-emerald-300" : "text-emerald-600") : dk ? "text-slate-400" : "text-slate-500"}`}>{fmt(bal)}</div><div className="min-h-[12px] mt-0.5">{isCashBox ? (<>{isDebt && <div className="text-[8px] font-black text-rose-500">⚠️ کسری صندوق</div>}{isCredit && <div className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>✅ موجودی نقدی</div>}{bal === 0 && <div className={`text-[8px] font-bold ${subText}`}>⚪ خالی</div>}</>) : (<>{isDebt && <div className="text-[8px] font-black text-rose-500">قرض از صرافی</div>}{isCredit && <div className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>طلب از صرافی</div>}{bal === 0 && <div className={`text-[8px] font-bold ${subText}`}>بدون بدهی</div>}</>)}</div></div>); })}</div></div>);
@@ -750,7 +784,7 @@ export default function HawalaPage() {
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-600"}`}><Ic n="send" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-blue-300" : "text-blue-700"}`}>معلومات حواله‌دهنده و حواله</b></div>
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-3 mb-4">
-                  {fld("نام حواله‌دهنده *", (<div className="relative" ref={senderListRef}><input value={form.senderName} onChange={e => { const val = e.target.value; setField("senderName", val); setSenderFilter(val); if (!showSenderList) setShowSenderList(true); if (val.trim() === CASH_BOX_NAME) { setField("senderId", CASH_BOX_ID); setField("senderPhone", ""); setField("senderTelegram", ""); } else { const customer = customers.find(c => c.name === val); if (customer) { setField("senderId", customer.id); setField("senderPhone", customer.phone || ""); setField("senderTelegram", customer.telegram || ""); } else { setField("senderId", ""); setField("senderPhone", ""); setField("senderTelegram", ""); } } }} placeholder="انتخاب از لیست یا نوشتن نام جدید…" className={`${uiInput} pl-12 ${errors.senderName ? errInput : ""}`} autoComplete="off" /><button type="button" onClick={(e) => { e.stopPropagation(); setShowSenderList(!showSenderList); }} className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition ${dk ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}><Ic n="chevron" className={`h-4 w-4 transition-transform ${showSenderList ? "rotate-180" : ""}`} /></button>{showSenderList && (<div className={`hw-menu absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>{filteredSenderList.length === 0 ? (<div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>) : (filteredSenderList.map((c, idx) => (<button key={c.id} type="button" onClick={() => { setField("senderId", c.id); setField("senderName", c.name); setField("senderPhone", c.phone || ""); setField("senderTelegram", c.telegram || ""); setSenderFilter(""); setShowSenderList(false); setErrors(p => ({ ...p, senderName: undefined })); }} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-blue-400/15 hover:text-blue-300" : "text-slate-700 hover:bg-blue-50 hover:text-blue-600"}`}><span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-blue-500 to-cyan-500`}>{idx + 1}</span><span className="flex-1 truncate flex items-center gap-1.5">{c.name}{hasTelegram(c) && <span title="دارای چت آیدی تلگرام">📱</span>}</span>{c.phone && <span className={`text-[10px] ${subText}`} dir="ltr">{c.phone}</span>}</button>)))}<div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} /><div className={`px-3 py-2 text-[10px] text-center ${subText}`}>نام جدید در لیست ذخیره نمی‌شود</div></div>)}</div>))}
+                  {fld("نام حواله‌دهنده *", (<div className="relative" ref={senderListRef}><input value={form.senderName} onChange={e => { const val = e.target.value; setField("senderName", val); setSenderFilter(val); if (!showSenderList) setShowSenderList(true); if (val.trim() === CASH_BOX_NAME) { setField("senderId", CASH_BOX_ID); setField("senderPhone", ""); setField("senderTelegram", ""); } else if (val.trim() === EXCHANGE_ACCOUNT_NAME) { setField("senderId", EXCHANGE_ACCOUNT_ID); setField("senderPhone", ""); setField("senderTelegram", ""); } else { const customer = customers.find(c => c.name === val); if (customer) { setField("senderId", customer.id); setField("senderPhone", customer.phone || ""); setField("senderTelegram", customer.telegram || ""); } else { setField("senderId", ""); setField("senderPhone", ""); setField("senderTelegram", ""); } } }} placeholder="انتخاب از لیست یا نوشتن نام جدید…" className={`${uiInput} pl-12 ${errors.senderName ? errInput : ""}`} autoComplete="off" /><button type="button" onClick={(e) => { e.stopPropagation(); setShowSenderList(!showSenderList); }} className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition ${dk ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}><Ic n="chevron" className={`h-4 w-4 transition-transform ${showSenderList ? "rotate-180" : ""}`} /></button>{showSenderList && (<div className={`hw-menu absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>{filteredSenderList.length === 0 ? (<div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>) : (filteredSenderList.map((c, idx) => (<button key={c.id} type="button" onClick={() => { setField("senderId", c.id); setField("senderName", c.name); setField("senderPhone", c.phone || ""); setField("senderTelegram", c.telegram || ""); setSenderFilter(""); setShowSenderList(false); setErrors(p => ({ ...p, senderName: undefined })); }} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-blue-400/15 hover:text-blue-300" : "text-slate-700 hover:bg-blue-50 hover:text-blue-600"}`}><span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-blue-500 to-cyan-500`}>{idx + 1}</span><span className="flex-1 truncate flex items-center gap-1.5">{c.name}{hasTelegram(c) && <span title="دارای چت آیدی تلگرام">📱</span>}</span>{c.phone && <span className={`text-[10px] ${subText}`} dir="ltr">{c.phone}</span>}</button>)))}<div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} /><div className={`px-3 py-2 text-[10px] text-center ${subText}`}>نام جدید در لیست ذخیره نمی‌شود</div></div>)}</div>))}
                   {fld("کد پیگیری", (<div className="relative"><input readOnly dir="ltr" value={nextHawalaNumber} className={`${uiInput} ${roInput} pl-16 text-left tabular-nums font-black text-[14px]`} /><span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 px-2 py-1 text-[9px] font-black text-white">TR</span></div>))}
                   {fld("تاریخ (شمسی)", (<input readOnly value={currentDateTime} className={`${uiInput} ${roInput}`} />))}
                 </div>
@@ -791,7 +825,7 @@ export default function HawalaPage() {
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="receive" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>معلومات حواله‌گیرنده</b></div>
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {fld("نام حواله‌گیرنده *", (<div className="relative" ref={receiverListRef}><input value={form.receiverName} onChange={e => { const val = e.target.value; setField("receiverName", val); setReceiverFilter(val); if (!showReceiverList) setShowReceiverList(true); if (val.trim() === CASH_BOX_NAME) { setField("receiverId", CASH_BOX_ID); setField("receiverTazkira", ""); setField("receiverPhone", ""); setField("receiverAddress", ""); } else { const customer = customers.find(c => c.name === val); if (customer) { setField("receiverId", customer.id); setField("receiverTazkira", customer.tazkira || ""); setField("receiverPhone", customer.phone || ""); setField("receiverAddress", customer.address || ""); } else { setField("receiverId", ""); setField("receiverTazkira", ""); setField("receiverPhone", ""); setField("receiverAddress", ""); } } }} placeholder="انتخاب از لیست یا نوشتن نام جدید…" className={`${uiInput} pl-12 ${errors.receiverName ? errInput : ""}`} autoComplete="off" /><button type="button" onClick={(e) => { e.stopPropagation(); setShowReceiverList(!showReceiverList); }} className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition ${dk ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}><Ic n="chevron" className={`h-4 w-4 transition-transform ${showReceiverList ? "rotate-180" : ""}`} /></button>{showReceiverList && (<div className={`hw-menu absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>{filteredReceiverList.length === 0 ? (<div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>) : (filteredReceiverList.map((c, idx) => (<button key={c.id} type="button" onClick={() => { setField("receiverId", c.id); setField("receiverName", c.name); setField("receiverTazkira", c.tazkira || ""); setField("receiverPhone", c.phone || ""); setField("receiverAddress", c.address || ""); setReceiverFilter(""); setShowReceiverList(false); setErrors(p => ({ ...p, receiverName: undefined })); }} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-amber-400/15 hover:text-amber-300" : "text-slate-700 hover:bg-amber-50 hover:text-amber-600"}`}><span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-amber-500 to-orange-500`}>{idx + 1}</span><span className="flex-1 truncate flex items-center gap-1.5">{c.name}{hasTelegram(c) && <span title="دارای چت آیدی تلگرام">📱</span>}</span>{c.phone && <span className={`text-[10px] ${subText}`} dir="ltr">{c.phone}</span>}</button>)))}<div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} /><div className={`px-3 py-2 text-[10px] text-center ${subText}`}>نام جدید در لیست ذخیره نمی‌شود</div></div>)}</div>))}
+                  {fld("نام حواله‌گیرنده *", (<div className="relative" ref={receiverListRef}><input value={form.receiverName} onChange={e => { const val = e.target.value; setField("receiverName", val); setReceiverFilter(val); if (!showReceiverList) setShowReceiverList(true); if (val.trim() === CASH_BOX_NAME) { setField("receiverId", CASH_BOX_ID); setField("receiverTazkira", ""); setField("receiverPhone", ""); setField("receiverAddress", ""); } else if (val.trim() === EXCHANGE_ACCOUNT_NAME) { setField("receiverId", EXCHANGE_ACCOUNT_ID); setField("receiverTazkira", ""); setField("receiverPhone", ""); setField("receiverAddress", ""); } else { const customer = customers.find(c => c.name === val); if (customer) { setField("receiverId", customer.id); setField("receiverTazkira", customer.tazkira || ""); setField("receiverPhone", customer.phone || ""); setField("receiverAddress", customer.address || ""); } else { setField("receiverId", ""); setField("receiverTazkira", ""); setField("receiverPhone", ""); setField("receiverAddress", ""); } } }} placeholder="انتخاب از لیست یا نوشتن نام جدید…" className={`${uiInput} pl-12 ${errors.receiverName ? errInput : ""}`} autoComplete="off" /><button type="button" onClick={(e) => { e.stopPropagation(); setShowReceiverList(!showReceiverList); }} className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition ${dk ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}><Ic n="chevron" className={`h-4 w-4 transition-transform ${showReceiverList ? "rotate-180" : ""}`} /></button>{showReceiverList && (<div className={`hw-menu absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>{filteredReceiverList.length === 0 ? (<div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>) : (filteredReceiverList.map((c, idx) => (<button key={c.id} type="button" onClick={() => { setField("receiverId", c.id); setField("receiverName", c.name); setField("receiverTazkira", c.tazkira || ""); setField("receiverPhone", c.phone || ""); setField("receiverAddress", c.address || ""); setReceiverFilter(""); setShowReceiverList(false); setErrors(p => ({ ...p, receiverName: undefined })); }} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-amber-400/15 hover:text-amber-300" : "text-slate-700 hover:bg-amber-50 hover:text-amber-600"}`}><span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-amber-500 to-orange-500`}>{idx + 1}</span><span className="flex-1 truncate flex items-center gap-1.5">{c.name}{hasTelegram(c) && <span title="دارای چت آیدی تلگرام">📱</span>}</span>{c.phone && <span className={`text-[10px] ${subText}`} dir="ltr">{c.phone}</span>}</button>)))}<div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} /><div className={`px-3 py-2 text-[10px] text-center ${subText}`}>نام جدید در لیست ذخیره نمی‌شود</div></div>)}</div>))}
                   {fld("شماره تذکره *", (<input className={`${uiInput} ${errors.receiverTazkira ? errInput : ""}`} value={form.receiverTazkira} onChange={e => setField("receiverTazkira", e.target.value)} placeholder="شماره تذکره" />))}
                   {fld("شماره تماس *", (<input className={`${uiInput} ${errors.receiverPhone ? errInput : ""}`} value={form.receiverPhone} onChange={e => setField("receiverPhone", e.target.value)} placeholder="07xxxxxxxx" />))}
                   {fld("آدرس", (<input className={`${uiInput} sm:col-span-2 lg:col-span-3`} value={form.receiverAddress} onChange={e => setField("receiverAddress", e.target.value)} placeholder="اختیاری" />))}
