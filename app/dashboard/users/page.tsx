@@ -18,7 +18,7 @@ const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
 const labels: Record<Currency, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
 const entryTypeLabels: Record<CashEntryType, string> = { customer_deposit: "واریز مشتری", customer_withdraw: "برداشت مشتری", owner_deposit: "واریز مالک", owner_withdraw: "برداشت مالک", adjustment: "اصلاح صندوق", fee: "کارمزد", commission_withdraw: "برداشت کارمزد", loan_given: "قرض داده‌شده", loan_received: "دریافت قرض" };
 const currencyColors: Record<Currency, string> = { AFN: "text-emerald-700", USD: "text-sky-700", EUR: "text-blue-700", IRR: "text-amber-700", PKR: "text-rose-700" };
-const currencyGradients: Record<Currency, string> = { AFN: "from-emerald-500 to-teal-400", USD: "from-sky-500 to-cyan-400", EUR: "from-blue-600 to-blue-400", IRR: "from-amber-500 to-orange-400", PKR: "from-rose-500 to-pink-400" }; // ✅ رفع خطا: اضافه شد
+const currencyGradients: Record<Currency, string> = { AFN: "from-emerald-500 to-teal-400", USD: "from-sky-500 to-cyan-400", EUR: "from-blue-600 to-blue-400", IRR: "from-amber-500 to-orange-400", PKR: "from-rose-500 to-pink-400" };
 const txLabels: Record<TxType, string> = { exchange: "تبادل ارز", transfer: "انتقال", convert: "تبدیل ارز", hawala: "حواله", deposit: "واریز", withdraw: "برداشت", fee: "کارمزد", correction: "اصلاح" };
 const txColors: Record<TxType, string> = { exchange: "bg-sky-100 text-sky-700", transfer: "bg-violet-100 text-violet-700", convert: "bg-purple-100 text-purple-700", hawala: "bg-blue-100 text-blue-700", deposit: "bg-emerald-100 text-emerald-700", withdraw: "bg-rose-100 text-rose-700", fee: "bg-amber-100 text-amber-700", correction: "bg-orange-100 text-orange-700" };
 const CASH_BOX_ID = "CASH_BOX";
@@ -456,22 +456,58 @@ export default function CustomersPage() {
     showToast(`"${c.name}" حذف شد.`);
   };
 
+  // ✅ اصلاح حیاتی: اعتبارسنجی دقیق با پیام‌های خطای مشخص
   const validateForm = () => {
     const errs: FormErrors = {};
     if (!form.name.trim()) errs.name = "نام ضروری است.";
-    if (!form.phone.trim()) errs.phone = "تماس ضروری است.";
-    const currentId = selectedCustomer?.id;
-    if (customers.find(c => c.phone === form.phone.trim() && c.id !== EXCHANGE_ACCOUNT_ID && c.id !== currentId)) errs.phone = "تکراری است.";
-    if (form.tazkira.trim() && customers.find(c => c.tazkira === form.tazkira.trim() && c.id !== EXCHANGE_ACCOUNT_ID && c.id !== currentId)) errs.tazkira = "تکراری است.";
+    if (!form.phone.trim()) errs.phone = "شماره تماس ضروری است.";
+    
+    const trimmedPhone = form.phone.trim();
+    if (trimmedPhone && customers.some(c => c.phone === trimmedPhone && c.id !== EXCHANGE_ACCOUNT_ID && c.id !== selectedCustomer?.id)) {
+      errs.phone = "این شماره تماس قبلاً ثبت شده است.";
+    }
+    
+    const trimmedTazkira = form.tazkira.trim();
+    if (trimmedTazkira && customers.some(c => c.tazkira === trimmedTazkira && c.id !== EXCHANGE_ACCOUNT_ID && c.id !== selectedCustomer?.id)) {
+      errs.tazkira = "این شماره تذکره قبلاً ثبت شده است.";
+    }
+    
     return errs;
   };
 
+  // ✅ اصلاح حیاتی: مدیریت خطا و تغییر تب تضمین‌شده
   const submitNew = () => {
-    const errs = validateForm(); setErrors(errs);
-    if (Object.keys(errs).length > 0) { showToast("فیلدها را تکمیل کنید."); return; }
-    const nc: Customer = { id: generateId(), name: form.name.trim(), phone: form.phone.trim(), tazkira: form.tazkira.trim(), address: form.address.trim(), note: form.note.trim(), telegram: form.telegram.trim(), registeredAt: new Date().toISOString(), balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
-    setCustomers(p => [...p, nc]); setForm(emptyForm); setErrors({}); setActiveTab("list");
-    showToast(`"${nc.name}" ثبت شد.`);
+    const errs = validateForm(); 
+    setErrors(errs);
+    
+    if (Object.keys(errs).length > 0) { 
+      const firstError = Object.values(errs)[0];
+      showToast(`⚠️ ${firstError}`); 
+      return; 
+    }
+    
+    const nc: Customer = { 
+      id: generateId(), 
+      name: form.name.trim(), 
+      phone: form.phone.trim(), 
+      tazkira: form.tazkira.trim(), 
+      address: form.address.trim(), 
+      note: form.note.trim(), 
+      telegram: form.telegram.trim(), 
+      registeredAt: new Date().toISOString(), 
+      balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } 
+    };
+    
+    try {
+      setCustomers(prev => [...prev, nc]); 
+      setForm(emptyForm); 
+      setErrors({}); 
+      setActiveTab("list"); // تغییر قطعی تب
+      showToast(`✅ "${nc.name}" با موفقیت ثبت شد.`);
+    } catch (error) {
+      console.error("Error saving customer:", error);
+      showToast("❌ خطا در ثبت مشتری");
+    }
   };
 
   const updateCustomer = () => {
@@ -512,7 +548,7 @@ export default function CustomersPage() {
   const subText = "text-slate-500";
   const identIcon = "from-emerald-400/20 to-teal-400/10 text-emerald-600 ring-emerald-400/30";
   const fld = (label: string, node: ReactNode) => (<div><label className={uiLabel}>{label}</label>{node}</div>);
-  const errBox = (list: string[]) => list.length === 0 ? null : (<div className="space-y-2 rounded-xl border border-rose-500 bg-rose-50 p-4 text-rose-600"><b className="flex items-center gap-2 text-sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 shrink-0"><path d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>لطفاً فیلدهای اجباری را تکمیل کنید:</b><ul className="list-disc pr-5 text-sm space-y-1">{list.map((m, i) => <li key={i}>{m}</li>)}</ul></div>);
+  const errBox = (list: string[]) => list.length === 0 ? null : (<div className="space-y-2 rounded-xl border border-rose-500 bg-rose-50 p-4 text-rose-600"><b className="flex items-center gap-2 text-sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 shrink-0"><path d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>لطفاً خطاهای زیر را برطرف کنید:</b><ul className="list-disc pr-5 text-sm space-y-1">{list.map((m, i) => <li key={i}>{m}</li>)}</ul></div>);
   const errorList = Object.values(errors).filter((m): m is string => Boolean(m));
   const glassChip = "border-emerald-100 bg-white/85";
 
@@ -564,7 +600,15 @@ export default function CustomersPage() {
           {/* Tabs */}
           <div className={`cu-up flex gap-1.5 md:gap-2 rounded-xl md:rounded-2xl border p-1.5 md:p-2 shadow-sm backdrop-blur ${glassChip}`} style={{ animationDelay: "140ms" }}>
             {[{ id: "list" as const, label: "فهرست مشتریان", icon: "users" }, { id: "new" as const, label: "ثبت مشتری جدید", icon: "plus" }].map(tab => (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 md:gap-2 rounded-lg md:rounded-xl px-3 md:px-5 py-2.5 md:py-3 text-xs md:text-sm font-black transition-all duration-300 active:scale-[0.97] ${activeTab === tab.id ? "bg-gradient-to-l from-emerald-500 to-teal-500 text-white shadow-lg" : "text-slate-500 hover:bg-emerald-50 hover:text-slate-800"}`}>
+              <button 
+                key={tab.id} 
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setActiveTab(tab.id);
+                }} 
+                className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 md:gap-2 rounded-lg md:rounded-xl px-3 md:px-5 py-2.5 md:py-3 text-xs md:text-sm font-black transition-all duration-300 active:scale-[0.97] ${activeTab === tab.id ? "bg-gradient-to-l from-emerald-500 to-teal-500 text-white shadow-lg" : "text-slate-500 hover:bg-emerald-50 hover:text-slate-800"}`}
+              >
                 {tab.icon === "users" && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" /></svg>}
                 {tab.icon === "plus" && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M12 4.5v15m7.5-7.5h-15" /></svg>}
                 {tab.label}
@@ -620,17 +664,17 @@ export default function CustomersPage() {
                         ))}
                       </div>
                       <div className="flex flex-col gap-1.5 mt-3">
-                        <button onClick={() => openProfile(c.id)} className="flex items-center justify-center gap-1.5 rounded-lg border border-emerald-300 px-3 py-2 text-[11px] font-bold cursor-pointer text-emerald-600">
+                        <button type="button" onClick={() => openProfile(c.id)} className="flex items-center justify-center gap-1.5 rounded-lg border border-emerald-300 px-3 py-2 text-[11px] font-bold cursor-pointer text-emerald-600">
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
                           مشاهده
                         </button>
                         {!isCashBoxRow && !isExchRow && (
                           <>
-                            <button onClick={() => openEdit(c.id)} className="flex items-center justify-center gap-1.5 rounded-lg border border-sky-300 px-3 py-2 text-[11px] font-bold cursor-pointer text-sky-600">
+                            <button type="button" onClick={() => openEdit(c.id)} className="flex items-center justify-center gap-1.5 rounded-lg border border-sky-300 px-3 py-2 text-[11px] font-bold cursor-pointer text-sky-600">
                               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" /></svg>
                               ویرایش
                             </button>
-                            <button onClick={() => deleteCustomer(c.id)} className="flex items-center justify-center gap-1.5 rounded-lg border border-rose-300 px-3 py-2 text-[11px] font-bold cursor-pointer text-rose-600">
+                            <button type="button" onClick={() => deleteCustomer(c.id)} className="flex items-center justify-center gap-1.5 rounded-lg border border-rose-300 px-3 py-2 text-[11px] font-bold cursor-pointer text-rose-600">
                               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
                               حذف
                             </button>
@@ -680,14 +724,14 @@ export default function CustomersPage() {
                           </td>
                           <td className="px-4 py-3.5 text-center align-middle">
                             <div className="relative inline-block" ref={isOpen ? menuRef : null}>
-                              <button data-menu-toggle onClick={(e) => { e.stopPropagation(); setOpenMenuId(isOpen ? null : c.id); }} className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-black transition-all ${isOpen ? "border-emerald-400 bg-emerald-50 text-emerald-600" : "border-slate-200 bg-white text-emerald-600 hover:border-emerald-300"}`}>عملیات<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={`h-3 w-3 transition-transform ${isOpen ? "rotate-180" : ""}`}><path d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg></button>
+                              <button type="button" data-menu-toggle onClick={(e) => { e.stopPropagation(); setOpenMenuId(isOpen ? null : c.id); }} className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-black transition-all ${isOpen ? "border-emerald-400 bg-emerald-50 text-emerald-600" : "border-slate-200 bg-white text-emerald-600 hover:border-emerald-300"}`}>عملیات<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={`h-3 w-3 transition-transform ${isOpen ? "rotate-180" : ""}`}><path d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg></button>
                               {isOpen && (
                                 <ul className="cu-menu absolute left-1/2 -translate-x-1/2 top-full z-20 mt-1.5 w-36 space-y-1 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
-                                  <li><button onClick={() => openProfile(c.id)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold cursor-pointer text-slate-600 hover:bg-emerald-50"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>مشاهده</button></li>
+                                  <li><button type="button" onClick={() => openProfile(c.id)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold cursor-pointer text-slate-600 hover:bg-emerald-50"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>مشاهده</button></li>
                                   {!isCashBoxRow && !isExchRow && (<>
-                                    <li><button onClick={() => openEdit(c.id)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold cursor-pointer text-sky-600 hover:bg-sky-50"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" /></svg>ویرایش</button></li>
+                                    <li><button type="button" onClick={() => openEdit(c.id)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold cursor-pointer text-sky-600 hover:bg-sky-50"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" /></svg>ویرایش</button></li>
                                     <li className="h-px bg-slate-100" />
-                                    <li><button onClick={() => deleteCustomer(c.id)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold cursor-pointer text-rose-500 hover:bg-rose-50"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>حذف</button></li>
+                                    <li><button type="button" onClick={() => deleteCustomer(c.id)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs font-bold cursor-pointer text-rose-500 hover:bg-rose-50"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>حذف</button></li>
                                   </>)}
                                 </ul>
                               )}
@@ -716,8 +760,8 @@ export default function CustomersPage() {
               </div>
               {errBox(errorList)}
               <div className="flex flex-wrap gap-3">
-                <button onClick={submitNew} className="flex h-[50px] flex-1 min-w-[200px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-emerald-500 via-teal-500 to-cyan-500 text-base font-black text-white shadow-lg transition-all hover:brightness-110">ثبت مشتری<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" /></svg></button>
-                <button onClick={() => { setForm(emptyForm); setErrors({}); setActiveTab("list"); }} className="flex h-[50px] px-6 cursor-pointer items-center justify-center rounded-xl border border-slate-200 text-sm font-bold text-slate-600">انصراف</button>
+                <button type="button" onClick={submitNew} className="flex h-[50px] flex-1 min-w-[200px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-emerald-500 via-teal-500 to-cyan-500 text-base font-black text-white shadow-lg transition-all hover:brightness-110">ثبت مشتری<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" /></svg></button>
+                <button type="button" onClick={() => { setForm(emptyForm); setErrors({}); setActiveTab("list"); }} className="flex h-[50px] px-6 cursor-pointer items-center justify-center rounded-xl border border-slate-200 text-sm font-bold text-slate-600">انصراف</button>
               </div>
             </section>
           )}
@@ -727,7 +771,7 @@ export default function CustomersPage() {
             <section className="cu-up space-y-4 md:space-y-5">
               <div className={`relative overflow-hidden rounded-2xl border p-5 md:p-7 ${uiCard}`}>
                 <div className="relative">
-                  <button onClick={backToList} className="mb-4 flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 rotate-90"><path d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>بازگشت</button>
+                  <button type="button" onClick={backToList} className="mb-4 flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 rotate-90"><path d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>بازگشت</button>
                   <div className="flex flex-wrap items-start gap-4 md:gap-6">
                     <div className={`grid h-20 w-20 md:h-24 md:w-24 shrink-0 place-items-center rounded-2xl ${isCashBox ? "bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-500" : isExchangeAccount ? "bg-gradient-to-br from-violet-500 via-purple-500 to-fuchsia-500" : "bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-500"} text-white font-black text-3xl md:text-4xl shadow-2xl ring-4 ring-white`}>{isCashBox ? "💰" : isExchangeAccount ? "🏦" : selectedCustomer.name.charAt(0)}</div>
                     <div className="flex-1 min-w-0">
@@ -745,13 +789,13 @@ export default function CustomersPage() {
                     </div>
                     {!isCashBox && !isExchangeAccount && (
                       <div className="flex gap-2">
-                        <button onClick={() => openLoanModal("give")} className="cursor-pointer rounded-xl border border-sky-300 px-3 py-2 text-xs font-bold text-sky-600 hover:bg-sky-50">
+                        <button type="button" onClick={() => openLoanModal("give")} className="cursor-pointer rounded-xl border border-sky-300 px-3 py-2 text-xs font-bold text-sky-600 hover:bg-sky-50">
                           <span className="flex items-center gap-1.5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M12 21v-8.25M15.75 21V12.5m-7.5 8.5v-8.25m12-4.5L12 2.25 3.75 7.75" /></svg>قرض دادن</span>
                         </button>
-                        <button onClick={() => openLoanModal("receive")} className="cursor-pointer rounded-xl border border-emerald-300 px-3 py-2 text-xs font-bold text-emerald-600 hover:bg-emerald-50">
+                        <button type="button" onClick={() => openLoanModal("receive")} className="cursor-pointer rounded-xl border border-emerald-300 px-3 py-2 text-xs font-bold text-emerald-600 hover:bg-emerald-50">
                           <span className="flex items-center gap-1.5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>پرداخت قرض</span>
                         </button>
-                        <button onClick={() => deleteCustomer(selectedCustomer.id)} className="cursor-pointer rounded-xl border border-rose-300 px-3 py-2 text-xs font-bold text-rose-600">
+                        <button type="button" onClick={() => deleteCustomer(selectedCustomer.id)} className="cursor-pointer rounded-xl border border-rose-300 px-3 py-2 text-xs font-bold text-rose-600">
                           <span className="flex items-center gap-1.5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>حذف</span>
                         </button>
                       </div>
@@ -788,7 +832,7 @@ export default function CustomersPage() {
               {/* Profile Tabs */}
               <div className={`flex flex-wrap gap-1.5 rounded-xl border p-1.5 ${glassChip}`}>
                 {([{ id: "info" as const, l: "اطلاعات", i: "user" }, { id: "balances" as const, l: "موجودی", i: "wallet" }, { id: "ledger" as const, l: "روزنامچه", i: "history" }, { id: "statement" as const, l: "صورت‌حساب", i: "doc" }]).map(pt => (
-                  <button key={pt.id} onClick={() => setProfileTab(pt.id)} className={`flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-black transition-all ${profileTab === pt.id ? "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-300" : "text-slate-500 hover:bg-slate-50"}`}>
+                  <button key={pt.id} type="button" onClick={() => setProfileTab(pt.id)} className={`flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-black transition-all ${profileTab === pt.id ? "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-300" : "text-slate-500 hover:bg-slate-50"}`}>
                     {pt.i === "user" && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" /></svg>}
                     {pt.i === "wallet" && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M21 12a2.25 2.25 0 0 0-2.25-2.25H15a3 3 0 1 1-6 0H5.25A2.25 2.25 0 0 0 3 12m18 0v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 9m18 0V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v3" /></svg>}
                     {pt.i === "history" && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>}
@@ -828,7 +872,7 @@ export default function CustomersPage() {
                         <div className="md:col-span-2">{fld("آدرس", (<input className={uiInput} value={form.address} onChange={e => setField("address", e.target.value)} />))}</div>
                         <div className="md:col-span-2">{fld("توضیحات", (<textarea rows={3} className={`${uiInput} h-auto py-3 resize-none`} value={form.note} onChange={e => setField("note", e.target.value)} />))}</div>
                       </div>
-                      <button onClick={updateCustomer} className="mt-4 flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-l from-emerald-500 to-teal-500 px-5 py-2.5 text-sm font-black text-white shadow-lg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>ذخیره</button>
+                      <button type="button" onClick={updateCustomer} className="mt-4 flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-l from-emerald-500 to-teal-500 px-5 py-2.5 text-sm font-black text-white shadow-lg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>ذخیره</button>
                     </>
                   )}
                 </div>
@@ -911,7 +955,7 @@ export default function CustomersPage() {
                       <span className="grid h-8 w-8 place-items-center rounded-lg bg-emerald-100 text-emerald-600"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg></span>
                       <div><b className="text-sm font-black text-slate-900">{isCashBox ? "صورت‌حساب صندوق" : isExchangeAccount ? "صورت‌حساب حساب صرافی" : "صورت‌حساب کامل مشتری"}</b><div className="text-[10px] font-bold text-slate-500">{customerLedger.length} رویداد مالی</div></div>
                     </div>
-                    <button onClick={printStatement} className="flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-l from-emerald-500 to-teal-500 px-4 py-2 text-sm font-black text-white shadow-lg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0 1 10.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0 .229 2.523a1.125 1.125 0 0 1-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0 0 21 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 0 0-1.913-.247M6.34 18H5.25A2.25 2.25 0 0 1 3 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 0 1 1.913-.247m10.5 0a48.536 48.536 0 0 0-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5Zm-3 0h.008v.008H15V10.5Z" /></svg>چاپ صورت‌حساب</button>
+                    <button type="button" onClick={printStatement} className="flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-l from-emerald-500 to-teal-500 px-4 py-2 text-sm font-black text-white shadow-lg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0 1 10.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0 .229 2.523a1.125 1.125 0 0 1-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0 0 21 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 0 0-1.913-.247M6.34 18H5.25A2.25 2.25 0 0 1 3 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 0 1 1.913-.247m10.5 0a48.536 48.536 0 0 0-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5Zm-3 0h.008v.008H15V10.5Z" /></svg>چاپ صورت‌حساب</button>
                   </div>
                   <div className="grid gap-3 md:grid-cols-2 mb-4">
                     <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -992,11 +1036,11 @@ export default function CustomersPage() {
               <div><label className={uiLabel}>توضیحات (اختیاری)</label><input value={loanReason} onChange={e => setLoanReason(e.target.value)} placeholder={`مثلاً: ${loanModalType === "give" ? "قرض برای خرید کالا" : "بازپرداخت اقساط"}`} className={uiInput} /></div>
             </div>
             <div className="flex gap-2 mt-6">
-              <button onClick={processLoan} className={`flex h-12 flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl font-black text-white shadow-lg ${loanModalType === "give" ? "bg-gradient-to-l from-sky-500 to-cyan-500" : "bg-gradient-to-l from-emerald-500 to-teal-500"}`}>
+              <button type="button" onClick={processLoan} className={`flex h-12 flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl font-black text-white shadow-lg ${loanModalType === "give" ? "bg-gradient-to-l from-sky-500 to-cyan-500" : "bg-gradient-to-l from-emerald-500 to-teal-500"}`}>
                 {loanModalType === "give" ? "ثبت قرض" : "ثبت بازپرداخت"}
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" /></svg>
               </button>
-              <button onClick={() => setLoanModalOpen(false)} className="flex h-12 px-6 cursor-pointer items-center justify-center rounded-xl border border-slate-200 font-bold text-slate-600">انصراف</button>
+              <button type="button" onClick={() => setLoanModalOpen(false)} className="flex h-12 px-6 cursor-pointer items-center justify-center rounded-xl border border-slate-200 font-bold text-slate-600">انصراف</button>
             </div>
           </div>
         </div>
