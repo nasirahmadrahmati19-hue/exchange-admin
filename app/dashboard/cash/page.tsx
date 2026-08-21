@@ -5,7 +5,7 @@ import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY, loadCustomersSh
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type Customer = { id: string; name: string; phone?: string; tazkira?: string; address?: string; note?: string; telegram?: string; telegramChatId?: string; registeredAt: string; balances: Record<Currency, number>; };
-type CashEntryType = "customer_deposit" | "customer_withdraw" | "owner_deposit" | "owner_withdraw" | "adjustment" | "fee" | "commission_withdraw" | "loan_given" | "loan_received";
+type CashEntryType = "customer_deposit" | "customer_withdraw" | "owner_deposit" | "owner_withdraw" | "adjustment" | "fee" | "commission_withdraw" | "loan_given" | "loan_received" | "exchange_account_in" | "exchange_account_out";
 type BalanceChange = { customerId?: string; customerName: string; currency: Currency; amount: number; };
 type CashEntry = { id: string; trackingCode: string; date: string; type: CashEntryType; currency: Currency; amount: number; direction: "in" | "out"; reason: string; balanceAfter: number; customerId?: string; customerName?: string; customerPhone?: string; customerTazkira?: string; linkedExchangeId?: string; linkedHawalaId?: string; linkedHawalaSettleId?: string; customerDeleted?: boolean; status: "active" | "voided"; };
 type Transaction = { id: string; trackingCode: string; date: string; type: "exchange" | "transfer" | "convert"; fromCurrency: Currency; fromAmount: number; toCurrency: Currency; toAmount: number; rate: number; rateLabel: string; commission?: number; commissionCurrency?: Currency; commissionPayer?: "sender" | "receiver"; status: "active" | "voided"; customerId?: string; customerName?: string; senderId?: string; senderName?: string; receiverId?: string; receiverName?: string; };
@@ -24,9 +24,11 @@ const entryTypeLabels: Record<CashEntryType, string> = {
   fee: "کارمزد", 
   commission_withdraw: "برداشت کارمزد",
   loan_given: "پرداخت قرض", 
-  loan_received: "دریافت قرض" 
+  loan_received: "دریافت قرض",
+  exchange_account_in: "ورودی حساب صرافی",
+  exchange_account_out: "خروجی حساب صرافی"
 };
-const entryTypeColors: Record<CashEntryType, { light: string; dark: string }> = { customer_deposit: { light: "bg-teal-100 text-teal-700", dark: "bg-teal-400/15 text-teal-300" }, customer_withdraw: { light: "bg-orange-100 text-orange-700", dark: "bg-orange-400/15 text-orange-300" }, owner_deposit: { light: "bg-sky-100 text-sky-700", dark: "bg-sky-400/15 text-sky-300" }, owner_withdraw: { light: "bg-amber-100 text-amber-700", dark: "bg-amber-400/15 text-amber-300" }, adjustment: { light: "bg-violet-100 text-violet-700", dark: "bg-violet-400/15 text-violet-300" }, fee: { light: "bg-emerald-100 text-emerald-700", dark: "bg-emerald-400/15 text-emerald-300" }, commission_withdraw: { light: "bg-purple-100 text-purple-700", dark: "bg-purple-400/15 text-purple-300" }, loan_given: { light: "bg-rose-100 text-rose-700", dark: "bg-rose-400/15 text-rose-300" }, loan_received: { light: "bg-indigo-100 text-indigo-700", dark: "bg-indigo-400/15 text-indigo-300" } };
+const entryTypeColors: Record<CashEntryType, { light: string; dark: string }> = { customer_deposit: { light: "bg-teal-100 text-teal-700", dark: "bg-teal-400/15 text-teal-300" }, customer_withdraw: { light: "bg-orange-100 text-orange-700", dark: "bg-orange-400/15 text-orange-300" }, owner_deposit: { light: "bg-sky-100 text-sky-700", dark: "bg-sky-400/15 text-sky-300" }, owner_withdraw: { light: "bg-amber-100 text-amber-700", dark: "bg-amber-400/15 text-amber-300" }, adjustment: { light: "bg-violet-100 text-violet-700", dark: "bg-violet-400/15 text-violet-300" }, fee: { light: "bg-emerald-100 text-emerald-700", dark: "bg-emerald-400/15 text-emerald-300" }, commission_withdraw: { light: "bg-purple-100 text-purple-700", dark: "bg-purple-400/15 text-purple-300" }, loan_given: { light: "bg-rose-100 text-rose-700", dark: "bg-rose-400/15 text-rose-300" }, loan_received: { light: "bg-indigo-100 text-indigo-700", dark: "bg-indigo-400/15 text-indigo-300" }, exchange_account_in: { light: "bg-violet-100 text-violet-700", dark: "bg-violet-400/15 text-violet-300" }, exchange_account_out: { light: "bg-fuchsia-100 text-fuchsia-700", dark: "bg-fuchsia-400/15 text-fuchsia-300" } };
 const currencyColors: Record<Currency, { light: string; dark: string; gradient: string }> = { AFN: { light: "text-emerald-700", dark: "text-emerald-300", gradient: "from-emerald-500 to-teal-400" }, USD: { light: "text-sky-700", dark: "text-sky-300", gradient: "from-sky-500 to-cyan-400" }, EUR: { light: "text-blue-700", dark: "text-blue-300", gradient: "from-blue-600 to-blue-400" }, IRR: { light: "text-amber-700", dark: "text-amber-300", gradient: "from-amber-500 to-orange-400" }, PKR: { light: "text-rose-700", dark: "text-rose-300", gradient: "from-rose-500 to-pink-400" } };
 
 const CASH_BOX_ID = "CASH_BOX";
@@ -56,7 +58,13 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: CashE
     if (entry.status === "voided" || entry.currency !== currency) continue;
     
     if (customerId === CASH_BOX_ID) {
-      // ✅ قرض دادن پول را از صندوق خارج می‌کند (کاهش)، دریافت قرض پول را برمی‌گرداند (افزایش)
+      // تبدیل ارز بین مشتری و حساب صرافی، معامله حسابداری است و نباید
+      // هیچ اثری روی موجودی فیزیکی صندوق داشته باشد.
+      if (entry.type === "exchange_account_in" || entry.type === "exchange_account_out") {
+        continue;
+      }
+
+      // قرض دادن پول را از صندوق خارج می‌کند (کاهش)، دریافت قرض پول را برمی‌گرداند (افزایش)
       if (entry.type === "loan_given") {
         balance -= entry.amount;
       } else if (entry.type === "loan_received") {
@@ -67,11 +75,14 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: CashE
       }
     } 
     else if (customerId === EXCHANGE_ACCOUNT_ID) {
-      // ✅ طبق درخواست دقیق شما: قرض دادن از موجودی حساب صرافی کم می‌شود و دریافت قرض به آن اضافه می‌شود
+      // حساب صرافی علاوه بر سرمایه مالک و قرض‌ها، اثر تبدیل ارز
+      // با مشتری را نیز مستقیماً از Ledger دریافت می‌کند.
       if (entry.type === "owner_deposit") balance += entry.amount;
       else if (entry.type === "owner_withdraw") balance -= entry.amount;
-      else if (entry.type === "loan_given") balance -= entry.amount; // صرافی قرض داده، موجودی حساب صرافی کاهش می‌یابد
-      else if (entry.type === "loan_received") balance += entry.amount; // مشتری قرض را پس داده، موجودی حساب صرافی افزایش می‌یابد
+      else if (entry.type === "exchange_account_in") balance += entry.amount;
+      else if (entry.type === "exchange_account_out") balance -= entry.amount;
+      else if (entry.type === "loan_given") balance -= entry.amount;
+      else if (entry.type === "loan_received") balance += entry.amount;
     } 
     else {
       if (entry.customerId === customerId) {
