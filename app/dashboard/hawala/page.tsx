@@ -1,4 +1,5 @@
 "use client";
+
 import { useEffect, useMemo, useState, useRef, useCallback, memo, type ReactNode, type ChangeEvent } from "react";
 import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem, getTrackingNumberValue } from "../lib/trackingCode";
 import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY, loadCustomersShared, loadTransactionsShared, loadHawalasShared, loadCashEntriesShared } from "../lib/defaultData";
@@ -59,256 +60,151 @@ const sortByHawalaNumber = (items: Hawala[], order: "asc" | "desc") => [...items
 
 // ═══════════ Telegram Functions ═══════════
 function formatShamsiDateTime(date: Date): string {
-try {
-const parts = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", { year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
-const g = (t: string) => parts.find(p => p.type === t)?.value || "0";
-const y = g("year"), m = g("month"), d = g("day");
-const h = date.getHours(), min = String(date.getMinutes()).padStart(2, "0");
-const ampm = h >= 12 ? "PM" : "AM"; const h12 = h % 12 || 12;
-return `${y}/${m}/${d} ${h12}:${min} ${ampm}`;
-} catch { return "-"; }
+  try {
+    const parts = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", { year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
+    const g = (t: string) => parts.find(p => p.type === t)?.value || "0";
+    const y = g("year"), m = g("month"), d = g("day");
+    const h = date.getHours(), min = String(date.getMinutes()).padStart(2, "0");
+    const ampm = h >= 12 ? "PM" : "AM"; const h12 = h % 12 || 12;
+    return `${y}/${m}/${d} ${h12}:${min} ${ampm}`;
+  } catch { return "-"; }
 }
 
 function numberToPersianWords(num: number): string {
-if (!Number.isFinite(num) || num === 0) return "صفر";
-const ones = ["", "یک", "دو", "سه", "چهار", "پنج", "شش", "هفت", "هشت", "نه"];
-const teens = ["ده", "یازده", "دوازده", "سیزده", "چهارده", "پانزده", "شانزده", "هفده", "هجده", "نوزده"];
-const tens = ["", "", "بیست", "سی", "چهل", "پنجاه", "شصت", "هفتاد", "هشتاد", "نود"];
-const hundreds = ["", "یکصد", "دوصد", "سیصد", "چهارصد", "پنجصد", "ششصد", "هفتصد", "هشتصد", "نهصد"];
-const scales = ["", "هزار", "میلیون", "میلیارد", "تریلیون"];
-function threeDigits(n: number): string {
-if (n === 0) return "";
-const h = Math.floor(n / 100); const rem = n % 100;
-const t = Math.floor(rem / 10); const o = rem % 10;
-let r = hundreds[h];
-if (rem >= 10 && rem <= 19) { if (r) r += " و "; r += teens[rem - 10]; }
-else { if (t > 0) { if (r) r += " و "; r += tens[t]; } if (o > 0) { if (r) r += " و "; r += ones[o]; } }
-return r;
-}
-const parts: string[] = []; let si = 0; let n = Math.floor(Math.abs(num));
-while (n > 0 && si < scales.length) {
-const chunk = n % 1000;
-if (chunk > 0) { const cw = threeDigits(chunk); if (si > 0) parts.unshift(`${cw} ${scales[si]}`); else parts.unshift(cw); }
-n = Math.floor(n / 1000); si++;
-}
-return parts.join(" و ");
+  if (!Number.isFinite(num) || num === 0) return "صفر";
+  const ones = ["", "یک", "دو", "سه", "چهار", "پنج", "شش", "هفت", "هشت", "نه"];
+  const teens = ["ده", "یازده", "دوازده", "سیزده", "چهارده", "پانزده", "شانزده", "هفده", "هجده", "نوزده"];
+  const tens = ["", "", "بیست", "سی", "چهل", "پنجاه", "شصت", "هفتاد", "هشتاد", "نود"];
+  const hundreds = ["", "یکصد", "دوصد", "سیصد", "چهارصد", "پنجصد", "ششصد", "هفتصد", "هشتصد", "نهصد"];
+  const scales = ["", "هزار", "میلیون", "میلیارد", "تریلیون"];
+  function threeDigits(n: number): string {
+    if (n === 0) return "";
+    const h = Math.floor(n / 100); const rem = n % 100;
+    const t = Math.floor(rem / 10); const o = rem % 10;
+    let r = hundreds[h];
+    if (rem >= 10 && rem <= 19) { if (r) r += " و "; r += teens[rem - 10]; }
+    else { if (t > 0) { if (r) r += " و "; r += tens[t]; } if (o > 0) { if (r) r += " و "; r += ones[o]; } }
+    return r;
+  }
+  const parts: string[] = []; let si = 0; let n = Math.floor(Math.abs(num));
+  while (n > 0 && si < scales.length) {
+    const chunk = n % 1000;
+    if (chunk > 0) { const cw = threeDigits(chunk); if (si > 0) parts.unshift(`${cw} ${scales[si]}`); else parts.unshift(cw); }
+    n = Math.floor(n / 1000); si++;
+  }
+  return parts.join(" و ");
 }
 
 async function sendTelegramMessage(botToken: string, chatId: string, text: string): Promise<boolean> {
-if (!botToken || !chatId) return false;
-try {
-const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-method: "POST", headers: { "Content-Type": "application/json" },
-body: JSON.stringify({ chat_id: chatId, text: text }),
-});
-const data = await res.json(); return data.ok === true;
-} catch { return false; }
+  if (!botToken || !chatId) return false;
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: chatId, text: text }) });
+    const data = await res.json(); return data.ok === true;
+  } catch { return false; }
 }
 
 function getTelegramSettings() {
-try { const r = localStorage.getItem("fx-settings"); if (!r) return { enabled: false, botToken: "", chatId: "", notifyNewHawala: true, notifySettlement: true, notifyVoid: true };
-const s = JSON.parse(r); return {
-enabled: s.telegram?.enabled || false,
-botToken: s.telegram?.botToken || "",
-chatId: s.telegram?.chatId || "",
-notifyNewHawala: s.telegram?.notifyNewHawala !== false,
-notifySettlement: s.telegram?.notifySettlement !== false,
-notifyVoid: s.telegram?.notifyVoid !== false,
-};
-} catch { return { enabled: false, botToken: "", chatId: "", notifyNewHawala: true, notifySettlement: true, notifyVoid: true }; }
+  try { const r = localStorage.getItem("fx-settings"); if (!r) return { enabled: false, botToken: "", chatId: "", notifyNewHawala: true, notifySettlement: true, notifyVoid: true };
+    const s = JSON.parse(r); return { enabled: s.telegram?.enabled || false, botToken: s.telegram?.botToken || "", chatId: s.telegram?.chatId || "", notifyNewHawala: s.telegram?.notifyNewHawala !== false, notifySettlement: s.telegram?.notifySettlement !== false, notifyVoid: s.telegram?.notifyVoid !== false };
+  } catch { return { enabled: false, botToken: "", chatId: "", notifyNewHawala: true, notifySettlement: true, notifyVoid: true }; }
 }
 
 function getCustomerChatId(customerId: string | undefined, customers: Customer[]): string {
-if (!customerId || customerId === CASH_BOX_ID) return "";
-try {
-const c = customers.find(x => x.id === customerId);
-if (!c) return "";
-return c.telegramChatId || c.telegram || "";
-} catch { return ""; }
+  if (!customerId || customerId === CASH_BOX_ID) return "";
+  try { const c = customers.find(x => x.id === customerId); return c ? (c.telegramChatId || c.telegram || "") : ""; } catch { return ""; }
 }
 
-function buildHawalaReceiptText(params: {
-docType: "receipt" | "withdraw";
-date: Date;
-trackingCode: string;
-description: string;
-amount: number;
-currency: string;
-customerName: string;
-balances: Record<string, number>;
-}): string {
-const isWithdraw = params.docType === "withdraw";
-const title = isWithdraw ? "🔴 سند برد" : "🟢 سند رسید";
-const dateStr = formatShamsiDateTime(params.date);
-const amountWords = numberToPersianWords(params.amount);
-const fmtAmount = params.amount.toLocaleString("en-US");
-let text = `${title}\n\n`;
-text += `🗓 تاریخ: ${dateStr}\n\n`;
-text += `🛅 پیگیری: ${params.trackingCode}\n\n`;
-text += `👤 مشتری: ${params.customerName}\n\n`;
-text += `📑 شرح: ${params.description}\n\n`;
-text += `💰 مبلغ: ${fmtAmount} ${params.currency}\n`;
-text += `📝 به حروف: ${amountWords}\n\n`;
-text += `-------------بیلانس فعلی شما--------------\n`;
-const curLabels: Record<string, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
-for (const [cur, bal] of Object.entries(params.balances)) {
-const label = curLabels[cur] || cur;
-const status = bal > 0 ? "طلب" : bal < 0 ? "قرض" : "";
-const fb = Math.abs(bal).toLocaleString("en-US");
-text += `${label}: ${fb} ${status}\n`;
-}
-text += `\n🏦 صرافی برادران نورزاد — هرات`;
-return text;
+function buildHawalaReceiptText(params: { docType: "receipt" | "withdraw"; date: Date; trackingCode: string; description: string; amount: number; currency: string; customerName: string; balances: Record<string, number>; }): string {
+  const isWithdraw = params.docType === "withdraw";
+  const title = isWithdraw ? "🔴 سند برد" : "🟢 سند رسید";
+  const dateStr = formatShamsiDateTime(params.date);
+  const amountWords = numberToPersianWords(params.amount);
+  const fmtAmount = params.amount.toLocaleString("en-US");
+  let text = `${title}\n\n🗓 تاریخ: ${dateStr}\n\n🛅 پیگیری: ${params.trackingCode}\n\n👤 مشتری: ${params.customerName}\n\n📑 شرح: ${params.description}\n\n`;
+  if (isWithdraw) text += `💰 پرداخت: ${fmtAmount} ${params.currency}\n`;
+  else text += `💵 دریافت: ${fmtAmount} ${params.currency}\n`;
+  text += `📝 به حروف: ${amountWords}\n\n-------------بیلانس فعلی شما--------------\n`;
+  const curLabels: Record<string, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
+  for (const [cur, bal] of Object.entries(params.balances)) {
+    const label = curLabels[cur] || cur;
+    const status = bal > 0 ? "طلب" : bal < 0 ? "قرض" : "";
+    text += `${label}: ${Math.abs(bal).toLocaleString("en-US")} ${status}\n`;
+  }
+  text += `\n🏦 صرافی برادران نورزاد — هرات`;
+  return text;
 }
 
-function buildCancelNoticeText(params: {
-hawala: Hawala;
-customerName: string;
-role: "sender" | "receiver";
-balances: Record<string, number>;
-cancelReason: string;
-date: Date;
-}): string {
-const { hawala, customerName, role, balances, cancelReason, date } = params;
-const dateStr = formatShamsiDateTime(date);
-
-let text = `📬 اطلاعیه ابطال حواله\n\n`;
-text += `🗓 تاریخ: ${dateStr}\n\n`;
-text += `🛅 پیگیری: ${hawala.number}\n\n`;
-text += `👤 مشتری: ${customerName}\n\n`;
-
-if (role === "sender") {
-text += `📑 شرح: حواله ابطال شد — مبلغ به حساب شما برگشت داده شد\n\n`;
-text += `💰 مبلغ برگشتی: ${fmt(hawala.amountFrom)} ${labels[hawala.currencyFrom]}\n`;
-text += `📝 به حروف: ${numberToPersianWords(hawala.amountFrom)}\n\n`;
-} else {
-if (hawala.status === "paid") {
-text += `📑 شرح: حواله ابطال شد — مبلغ از حساب شما کسر گردید\n\n`;
-text += `💰 مبلغ کسرشده: ${fmt(hawala.finalAmount)} ${labels[hawala.currencyTo]}\n`;
-text += `📝 به حروف: ${numberToPersianWords(hawala.finalAmount)}\n\n`;
-} else {
-text += `📑 شرح: حواله ابطال شد — این حواله به شما پرداخت نخواهد شد\n\n`;
-text += `💰 مبلغ حواله: ${fmt(hawala.finalAmount)} ${labels[hawala.currencyTo]}\n`;
-text += `📝 به حروف: ${numberToPersianWords(hawala.finalAmount)}\n\n`;
-}
+function buildCancelNoticeText(params: { hawala: Hawala; customerName: string; role: "sender" | "receiver"; balances: Record<string, number>; cancelReason: string; date: Date; }): string {
+  const { hawala, customerName, role, balances, cancelReason, date } = params;
+  const dateStr = formatShamsiDateTime(date);
+  let text = `📬 اطلاعیه ابطال حواله\n\n🗓 تاریخ: ${dateStr}\n\n🛅 پیگیری: ${hawala.number}\n\n👤 مشتری: ${customerName}\n\n`;
+  if (role === "sender") {
+    text += `📑 شرح: حواله ابطال شد — مبلغ به حساب شما برگشت داده شد\n\n💰 مبلغ برگشتی: ${fmt(hawala.amountFrom)} ${labels[hawala.currencyFrom]}\n📝 به حروف: ${numberToPersianWords(hawala.amountFrom)}\n\n`;
+  } else {
+    if (hawala.status === "paid") {
+      text += `📑 شرح: حواله ابطال شد — مبلغ از حساب شما کسر گردید\n\n💰 مبلغ کسرشده: ${fmt(hawala.finalAmount)} ${labels[hawala.currencyTo]}\n📝 به حروف: ${numberToPersianWords(hawala.finalAmount)}\n\n`;
+    } else {
+      text += `📑 شرح: حواله ابطال شد — این حواله به شما پرداخت نخواهد شد\n\n💰 مبلغ حواله: ${fmt(hawala.finalAmount)} ${labels[hawala.currencyTo]}\n📝 به حروف: ${numberToPersianWords(hawala.finalAmount)}\n\n`;
+    }
+  }
+  if (cancelReason) text += `📝 دلیل ابطال: ${cancelReason}\n\n`;
+  text += `-------------بیلانس فعلی شما--------------\n`;
+  const curLabels: Record<string, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
+  for (const [cur, bal] of Object.entries(balances)) {
+    const label = curLabels[cur] || cur;
+    const status = bal > 0 ? "طلب" : bal < 0 ? "قرض" : "";
+    text += `${label}: ${Math.abs(bal).toLocaleString("en-US")} ${status}\n`;
+  }
+  text += `\n🏦 صرافی برادران نورزاد — هرات`;
+  return text;
 }
 
-if (cancelReason) text += `📝 دلیل ابطال: ${cancelReason}\n\n`;
+async function sendHawalaReceipts(params: { hawala: Hawala; action: "register" | "settle" | "cancel"; customers: Customer[]; }) {
+  const settings = getTelegramSettings();
+  if (!settings.enabled || !settings.botToken) return;
+  const { action, hawala, customers } = params;
+  if (action === "register" && !settings.notifyNewHawala) return;
+  if (action === "settle" && !settings.notifySettlement) return;
+  if (action === "cancel" && !settings.notifyVoid) return;
 
-text += `-------------بیلانس فعلی شما--------------\n`;
-const curLabels: Record<string, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
-for (const [cur, bal] of Object.entries(balances)) {
-const label = curLabels[cur] || cur;
-const status = bal > 0 ? "طلب" : bal < 0 ? "قرض" : "";
-const fb = Math.abs(bal).toLocaleString("en-US");
-text += `${label}: ${fb} ${status}\n`;
-}
-text += `\n🏦 صرافی برادران نورزاد — هرات`;
-return text;
-}
+  const receipts: { chatId: string; text: string; target: string }[] = [];
+  const now = new Date();
+  const getBalances = (customerId: string | undefined): Record<string, number> => {
+    const balances: Record<string, number> = {};
+    for (const cur of currencies) balances[cur] = 0;
+    if (!customerId || customerId === CASH_BOX_ID) return balances;
+    const c = customers.find(x => x.id === customerId);
+    if (!c) return balances;
+    for (const cur of currencies) balances[cur] = c.balances[cur] || 0;
+    return balances;
+  };
+  const isRealCustomer = (id: string | undefined): boolean => Boolean(id && id !== CASH_BOX_ID);
 
-async function sendHawalaReceipts(params: {
-hawala: Hawala;
-action: "register" | "settle" | "cancel";
-customers: Customer[];
-}) {
-const settings = getTelegramSettings();
-if (!settings.enabled || !settings.botToken) return;
+  if (action === "register" && isRealCustomer(hawala.senderId)) {
+    const chatId = getCustomerChatId(hawala.senderId, customers);
+    if (chatId) receipts.push({ chatId, text: buildHawalaReceiptText({ docType: "withdraw", date: now, trackingCode: hawala.number, description: `ارسال حواله به ${hawala.receiverName} — ${hawala.destinationText}`, amount: hawala.amountFrom, currency: labels[hawala.currencyFrom], customerName: hawala.senderName, balances: getBalances(hawala.senderId) }), target: "sender" });
+  }
+  if (action === "settle" && isRealCustomer(hawala.receiverId)) {
+    const chatId = getCustomerChatId(hawala.receiverId, customers);
+    if (chatId) receipts.push({ chatId, text: buildHawalaReceiptText({ docType: "receipt", date: now, trackingCode: hawala.number, description: `تسویه حواله از ${hawala.senderName} — ${hawala.destinationText}`, amount: hawala.finalAmount, currency: labels[hawala.currencyTo], customerName: hawala.receiverName, balances: getBalances(hawala.receiverId) }), target: "receiver" });
+  }
+  if (action === "cancel") {
+    if (isRealCustomer(hawala.senderId)) {
+      const chatId = getCustomerChatId(hawala.senderId, customers);
+      if (chatId) receipts.push({ chatId, text: buildCancelNoticeText({ hawala, customerName: hawala.senderName, role: "sender", balances: getBalances(hawala.senderId), cancelReason: hawala.cancelReason || "", date: now }), target: "sender-cancel" });
+    }
+    if (isRealCustomer(hawala.receiverId)) {
+      const chatId = getCustomerChatId(hawala.receiverId, customers);
+      if (chatId) receipts.push({ chatId, text: buildCancelNoticeText({ hawala, customerName: hawala.receiverName, role: "receiver", balances: getBalances(hawala.receiverId), cancelReason: hawala.cancelReason || "", date: now }), target: "receiver-cancel" });
+    }
+  }
 
-const { action, hawala, customers } = params;
-if (action === "register" && !settings.notifyNewHawala) return;
-if (action === "settle" && !settings.notifySettlement) return;
-if (action === "cancel" && !settings.notifyVoid) return;
-
-const receipts: { chatId: string; text: string; target: string }[] = [];
-const now = new Date();
-
-const getBalances = (customerId: string | undefined): Record<string, number> => {
-const balances: Record<string, number> = {};
-for (const cur of currencies) balances[cur] = 0;
-if (!customerId || customerId === CASH_BOX_ID) return balances;
-const c = customers.find(x => x.id === customerId);
-if (!c) return balances;
-for (const cur of currencies) balances[cur] = c.balances[cur] || 0;
-return balances;
-};
-const isRealCustomer = (id: string | undefined): boolean => Boolean(id && id !== CASH_BOX_ID);
-
-if (action === "register") {
-if (isRealCustomer(hawala.senderId)) {
-const chatId = getCustomerChatId(hawala.senderId, customers);
-if (chatId) {
-const text = buildHawalaReceiptText({
-docType: "withdraw",
-date: now,
-trackingCode: hawala.number,
-description: `ارسال حواله به ${hawala.receiverName} — ${hawala.destinationText}`,
-amount: hawala.amountFrom,
-currency: labels[hawala.currencyFrom],
-customerName: hawala.senderName,
-balances: getBalances(hawala.senderId),
-});
-receipts.push({ chatId, text, target: "sender" });
-}
-}
-}
-
-if (action === "settle") {
-if (isRealCustomer(hawala.receiverId)) {
-const chatId = getCustomerChatId(hawala.receiverId, customers);
-if (chatId) {
-const text = buildHawalaReceiptText({
-docType: "receipt",
-date: now,
-trackingCode: hawala.number,
-description: `تسویه حواله از ${hawala.senderName} — ${hawala.destinationText}`,
-amount: hawala.finalAmount,
-currency: labels[hawala.currencyTo],
-customerName: hawala.receiverName,
-balances: getBalances(hawala.receiverId),
-});
-receipts.push({ chatId, text, target: "receiver" });
-}
-}
-}
-
-if (action === "cancel") {
-if (isRealCustomer(hawala.senderId)) {
-const chatId = getCustomerChatId(hawala.senderId, customers);
-if (chatId) {
-const text = buildCancelNoticeText({
-hawala,
-customerName: hawala.senderName,
-role: "sender",
-balances: getBalances(hawala.senderId),
-cancelReason: hawala.cancelReason || "",
-date: now,
-});
-receipts.push({ chatId, text, target: "sender-cancel" });
-}
-}
-if (isRealCustomer(hawala.receiverId)) {
-const chatId = getCustomerChatId(hawala.receiverId, customers);
-if (chatId) {
-const text = buildCancelNoticeText({
-hawala,
-customerName: hawala.receiverName,
-role: "receiver",
-balances: getBalances(hawala.receiverId),
-cancelReason: hawala.cancelReason || "",
-date: now,
-});
-receipts.push({ chatId, text, target: "receiver-cancel" });
-}
-}
-}
-
-const sentToChatIds = new Set<string>();
-for (const r of receipts) {
-if (sentToChatIds.has(r.chatId)) continue;
-await sendTelegramMessage(settings.botToken, r.chatId, r.text);
-sentToChatIds.add(r.chatId);
-}
+  const sentToChatIds = new Set<string>();
+  for (const r of receipts) {
+    if (sentToChatIds.has(r.chatId)) continue;
+    await sendTelegramMessage(settings.botToken, r.chatId, r.text);
+    sentToChatIds.add(r.chatId);
+  }
 }
 
 // ═══════════ Icons ═══════════
@@ -318,573 +214,460 @@ const Ic = memo(function Ic({ n, className = "h-5 w-5" }: { n: IconName; classNa
 
 // ═══════════ Main Component ═══════════
 export default function HawalaPage() {
-const [mounted, setMounted] = useState(false);
-const [customers, setCustomers] = useState<Customer[]>([]);
-const [transactions, setTransactions] = useState<any[]>([]);
-const [hawalas, setHawalas] = useState<Hawala[]>([]);
-const [cashEntries, setCashEntries] = useState<any[]>([]);
-const [lastNames, setLastNames] = useState<LastNames>({ senderName: "", receiverName: "" });
-const [activeTab, setActiveTab] = useState<"new" | "current" | "history">("new");
-const [form, setForm] = useState<FormState>(emptyForm);
-const [errors, setErrors] = useState<FormErrors>({});
-const [previewOpen, setPreviewOpen] = useState(false);
-const [showSenderList, setShowSenderList] = useState(false);
-const [senderFilter, setSenderFilter] = useState("");
-const senderListRef = useRef<HTMLDivElement>(null);
-const [showReceiverList, setShowReceiverList] = useState(false);
-const [receiverFilter, setReceiverFilter] = useState("");
-const receiverListRef = useRef<HTMLDivElement>(null);
-const [nameSearch, setNameSearch] = useState("");
-const [amountSearch, setAmountSearch] = useState("");
-const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
-const [settleTarget, setSettleTarget] = useState<Hawala | null>(null);
-const [cancelTarget, setCancelTarget] = useState<Hawala | null>(null);
-const [paidBy, setPaidBy] = useState("");
-const [paidAmount, setPaidAmount] = useState("");
-const [cancelReason, setCancelReason] = useState("");
-const [toast, setToast] = useState("");
-const [openActionId, setOpenActionId] = useState<string | null>(null);
-const [detailTarget, setDetailTarget] = useState<Hawala | null>(null);
-const [editingId, setEditingId] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [hawalas, setHawalas] = useState<Hawala[]>([]);
+  const [cashEntries, setCashEntries] = useState<any[]>([]);
+  const [lastNames, setLastNames] = useState<LastNames>({ senderName: "", receiverName: "" });
+  const [activeTab, setActiveTab] = useState<"new" | "current" | "history">("new");
+  const [form, setForm] = useState<FormState>(emptyForm);
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [showSenderList, setShowSenderList] = useState(false);
+  const [senderFilter, setSenderFilter] = useState("");
+  const senderListRef = useRef<HTMLDivElement>(null);
+  const [showReceiverList, setShowReceiverList] = useState(false);
+  const [receiverFilter, setReceiverFilter] = useState("");
+  const receiverListRef = useRef<HTMLDivElement>(null);
+  const [nameSearch, setNameSearch] = useState("");
+  const [amountSearch, setAmountSearch] = useState("");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [settleTarget, setSettleTarget] = useState<Hawala | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<Hawala | null>(null);
+  const [paidBy, setPaidBy] = useState("");
+  const [paidAmount, setPaidAmount] = useState("");
+  const [cancelReason, setCancelReason] = useState("");
+  const [toast, setToast] = useState("");
+  const [openActionId, setOpenActionId] = useState<string | null>(null);
+  const [detailTarget, setDetailTarget] = useState<Hawala | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
-// Load data
-useEffect(() => {
-try {
-setCustomers(loadCustomersShared() as Customer[]);
-setTransactions(loadTransactionsShared());
-setHawalas(loadHawalasShared() as Hawala[]);
-setCashEntries(loadCashEntriesShared());
-initTrackingSystem();
-} catch (err) { console.error("Load error:", err); }
-setMounted(true);
-}, []);
+  // Load data
+  useEffect(() => {
+    try {
+      setCustomers(loadCustomersShared() as Customer[]);
+      setTransactions(loadTransactionsShared());
+      setHawalas(loadHawalasShared() as Hawala[]);
+      setCashEntries(loadCashEntriesShared());
+      initTrackingSystem();
+    } catch (err) { console.error("Load error:", err); }
+    setMounted(true);
+  }, []);
 
-// Storage sync
-useEffect(() => {
-const handleStorage = (e: StorageEvent) => {
-try {
-if (e.key === CUSTOMERS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setCustomers(p); }
-if (e.key === HAWALAS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setHawalas(p); }
-if (e.key === TRANSACTIONS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setTransactions(p); }
-if (e.key === CASH_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setCashEntries(p); }
-} catch {}
-};
-window.addEventListener("storage", handleStorage);
-return () => window.removeEventListener("storage", handleStorage);
-}, []);
+  // Storage sync
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      try {
+        if (e.key === CUSTOMERS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setCustomers(p); }
+        if (e.key === HAWALAS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setHawalas(p); }
+        if (e.key === TRANSACTIONS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setTransactions(p); }
+        if (e.key === CASH_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setCashEntries(p); }
+      } catch {}
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
 
-// Focus + db:updated sync
-useEffect(() => {
-const handleSync = () => {
-try {
-setCustomers(loadCustomersShared() as Customer[]);
-setHawalas(loadHawalasShared() as Hawala[]);
-setTransactions(loadTransactionsShared());
-setCashEntries(loadCashEntriesShared());
-} catch {}
-};
-window.addEventListener("focus", handleSync);
-window.addEventListener("db:updated", handleSync);
-return () => { window.removeEventListener("focus", handleSync); window.removeEventListener("db:updated", handleSync); };
-}, []);
+  // Focus + db:updated sync
+  useEffect(() => {
+    const handleSync = () => {
+      try {
+        setCustomers(loadCustomersShared() as Customer[]);
+        setHawalas(loadHawalasShared() as Hawala[]);
+        setTransactions(loadTransactionsShared());
+        setCashEntries(loadCashEntriesShared());
+      } catch {}
+    };
+    window.addEventListener("focus", handleSync);
+    window.addEventListener("db:updated", handleSync);
+    return () => { window.removeEventListener("focus", handleSync); window.removeEventListener("db:updated", handleSync); };
+  }, []);
 
-useEffect(() => { if (!openActionId) return; const handler = (e: MouseEvent) => { const target = e.target as HTMLElement; if (!target.closest('.action-dropdown')) setOpenActionId(null); }; document.addEventListener("mousedown", handler); return () => document.removeEventListener("mousedown", handler); }, [openActionId]);
-
-const [now, setNow] = useState<Date | null>(null);
-useEffect(() => { setNow(new Date()); const timer = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(timer); }, []);
-const currentDateTime = now ? formatDateTime(now) : "";
-
-useEffect(() => { try { localStorage.setItem("hawalaLastNames", JSON.stringify(lastNames)); } catch {} }, [lastNames]);
-useEffect(() => { try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); window.dispatchEvent(new Event("db:updated")); } catch {} }, [customers]);
-useEffect(() => { try { localStorage.setItem(HAWALAS_KEY, JSON.stringify(hawalas)); window.dispatchEvent(new Event("db:updated")); } catch {} }, [hawalas]);
-
-const anyDropdownOpen = showSenderList || showReceiverList;
-useEffect(() => { if (!anyDropdownOpen) return; const handler = (e: MouseEvent) => { const t = e.target as Node; if (showSenderList && senderListRef.current && !senderListRef.current.contains(t)) setShowSenderList(false); if (showReceiverList && receiverListRef.current && !receiverListRef.current.contains(t)) setShowReceiverList(false); }; const timer = setTimeout(() => document.addEventListener("mousedown", handler), 0); return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); }; }, [anyDropdownOpen, showSenderList, showReceiverList]);
-
-const availableCustomers = useMemo(() => customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID), [customers]);
-const filteredSenderList = useMemo(() => { const options = [EXCHANGE_ACCOUNT_CUSTOMER, ...availableCustomers]; if (!senderFilter) return options; const q = normalizeDigits(senderFilter.trim()).toLowerCase(); return options.filter(c => c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))); }, [availableCustomers, senderFilter]);
-const filteredReceiverList = useMemo(() => { const options = [EXCHANGE_ACCOUNT_CUSTOMER, ...availableCustomers]; if (!receiverFilter) return options; const q = normalizeDigits(receiverFilter.trim()).toLowerCase(); return options.filter(c => c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))); }, [availableCustomers, receiverFilter]);
-
-const rateMode = getRateMode(form.currencyFrom, form.currencyTo);
-const afnForeign = getAfnForeign(form.currencyFrom, form.currencyTo);
-const directBaseValue = rateMode === "direct" ? getSafeDirectBase(form.currencyFrom, form.currencyFrom, form.currencyTo) : form.currencyFrom;
-const directCounter = rateMode === "direct" ? getDirectCounter(directBaseValue, form.currencyFrom, form.currencyTo) : null;
-const [directBase, setDirectBase] = useState<Currency>("USD");
-useEffect(() => { if (rateMode === "direct" && directBase !== directBaseValue) setDirectBase(directBaseValue); }, [rateMode, directBase, directBaseValue]);
-useEffect(() => { setForm(prev => ({ ...prev, rate: "" })); }, [rateMode, afnForeign, directBaseValue, directCounter]);
-
-const amountFrom = parseAmount(form.amountFrom);
-const rateValue = parseAmount(form.rate);
-const feeValue = parseAmount(form.fee);
-const convertedAmount = useMemo(() => { try { if (!amountFrom) return 0; if (rateMode === "same") return amountFrom; if (!rateValue) return 0; if (rateMode === "afn") return convertAfnRate(amountFrom, form.currencyFrom, form.currencyTo, rateValue); if (rateMode === "direct" && directCounter) return convertDirectRate(amountFrom, form.currencyFrom, form.currencyTo, directBaseValue, rateValue); return 0; } catch { return 0; } }, [amountFrom, rateValue, rateMode, form.currencyFrom, form.currencyTo, directCounter, directBaseValue]);
-const finalAmount = useMemo(() => { if (form.feePayer === "receiver") return Math.max(0, convertedAmount - feeValue); return Math.max(0, convertedAmount); }, [convertedAmount, feeValue, form.feePayer]);
-
-const nextHawalaNumber = getNextTrackingCode();
-const isHerat = form.province === "هرات";
-const destinationText = formatDestination(form.province, form.district);
-const totalCount = hawalas.length;
-const pendingCount = hawalas.filter(item => item.status === "pending").length;
-const sentCount = hawalas.filter(item => item.status === "sent").length;
-const paidCount = hawalas.filter(item => item.status === "paid").length;
-const cancelledCount = hawalas.filter(item => item.status === "cancelled").length;
-
-const isSenderCashBox = form.senderId === CASH_BOX_ID || form.senderName.trim() === CASH_BOX_NAME;
-const isReceiverCashBox = form.receiverId === CASH_BOX_ID || form.receiverName.trim() === CASH_BOX_NAME;
-const isSenderExchangeAccount = form.senderId === EXCHANGE_ACCOUNT_ID || form.senderName.trim() === EXCHANGE_ACCOUNT_NAME;
-const isReceiverExchangeAccount = form.receiverId === EXCHANGE_ACCOUNT_ID || form.receiverName.trim() === EXCHANGE_ACCOUNT_NAME;
-const selectedSender = useMemo(() => { if (isSenderCashBox) return CASH_BOX_CUSTOMER; if (isSenderExchangeAccount) return EXCHANGE_ACCOUNT_CUSTOMER; return customers.find(c => c.id === form.senderId) || customers.find(c => c.name === form.senderName.trim()) || null; }, [customers, form.senderId, form.senderName, isSenderCashBox, isSenderExchangeAccount]);
-const selectedReceiver = useMemo(() => { if (isReceiverCashBox) return CASH_BOX_CUSTOMER; if (isReceiverExchangeAccount) return EXCHANGE_ACCOUNT_CUSTOMER; return customers.find(c => c.id === form.receiverId) || customers.find(c => c.name === form.receiverName.trim()) || null; }, [customers, form.receiverId, form.receiverName, isReceiverCashBox, isReceiverExchangeAccount]);
-
-const matchesSearch = (item: Hawala, query: string) => { const q = normalizeDigits(query).trim().toLowerCase(); if (!q) return true; const fields = [item.senderName, item.receiverName, item.number, item.senderPhone, item.receiverPhone, item.receiverTazkira]; return fields.some(f => f && normalizeDigits(String(f)).toLowerCase().includes(q)); };
-const matchesAmount = (item: Hawala, query: string) => { const raw = normalizeDigits(query).replace(/[,،\s]/g, ""); if (!raw) return true; const queryNumber = Number(raw); const values = [item.amountFrom, item.finalAmount, item.paidAmount]; if (!Number.isNaN(queryNumber)) return values.some(v => typeof v === "number" && (v === queryNumber || String(v).includes(raw))); return values.some(v => String(v ?? "").includes(raw)); };
-const currentHawalas = useMemo(() => { try { let filtered = hawalas.filter(item => item.status === "pending" || item.status === "sent"); if (nameSearch) filtered = filtered.filter(item => matchesSearch(item, nameSearch)); if (amountSearch) filtered = filtered.filter(item => matchesAmount(item, amountSearch)); return sortByHawalaNumber(filtered, sortOrder); } catch { return []; } }, [hawalas, nameSearch, amountSearch, sortOrder]);
-const historyHawalas = useMemo(() => { try { let filtered = hawalas.filter(item => item.status === "paid" || item.status === "cancelled"); if (nameSearch) filtered = filtered.filter(item => matchesSearch(item, nameSearch)); if (amountSearch) filtered = filtered.filter(item => matchesAmount(item, amountSearch)); return sortByHawalaNumber(filtered, sortOrder); } catch { return []; } }, [hawalas, nameSearch, amountSearch, sortOrder]);
-
-const showToast = useCallback((message: string) => { setToast(message); setTimeout(() => setToast(""), 3500); }, []);
-const setField = useCallback((field: keyof FormState, value: string) => { setForm(prev => ({ ...prev, [field]: value })); setErrors(prev => ({ ...prev, [field]: undefined })); }, []);
-const handleProvinceChange = (event: ChangeEvent<HTMLSelectElement>) => { const np = event.target.value; setForm(prev => ({ ...prev, province: np, district: np === "هرات" ? "گلران" : np })); setErrors(prev => ({ ...prev, province: undefined })); };
-
-const validateForm = useCallback(() => { const errs: FormErrors = {}; if (!form.type.trim()) errs.type = "نوع حواله را انتخاب کنید."; if (!form.senderName.trim()) errs.senderName = "نام حواله‌دهنده ضروری است."; if (!form.senderPhone.trim()) errs.senderPhone = "شماره تماس حواله‌دهنده ضروری است."; if (!form.receiverName.trim()) errs.receiverName = "نام حواله‌گیرنده ضروری است."; if (!form.receiverTazkira.trim()) errs.receiverTazkira = "شماره تذکره حواله‌گیرنده ضروری است."; if (!form.receiverPhone.trim()) errs.receiverPhone = "شماره تماس حواله‌گیرنده ضروری است."; if (!form.amountFrom.trim() || amountFrom <= 0) errs.amountFrom = "مبلغ حواله ضروری است."; if (feeValue < 0) errs.fee = "کمیشن نمی‌تواند منفی باشد."; if (amountFrom > 0 && feeValue >= convertedAmount) errs.fee = "کمیشن نمی‌تواند بیشتر یا برابر مبلغ تبدیل‌شده باشد."; if (!form.province.trim()) errs.province = "ولایت مقصد ضروری است."; if (rateMode !== "same") { if (!rateValue) errs.rate = rateMode === "afn" ? "نرخ در برابر افغانی خالی است." : "نرخ مستقیم خالی است."; if (rateMode === "direct" && !directCounter) errs.rate = "مبنای نرخ مستقیم معتبر نیست."; } if (amountFrom > 0 && rateMode !== "same" && !convertedAmount) errs.rate = "مبلغ تبدیل محاسبه نشد؛ لطفاً نرخ را بررسی کنید."; return errs; }, [form, amountFrom, feeValue, convertedAmount, rateMode, rateValue, directCounter]);
-
-const handleRegisterClick = useCallback(() => { const errs = validateForm(); setErrors(errs); if (Object.keys(errs).length > 0) { showToast("لطفاً فیلدهای ضروری را خانه‌پری کنید."); return; } setPreviewOpen(true); }, [validateForm, showToast]);
-
-const confirmRegister = useCallback(async () => {
-try {
-const nowDate = new Date();
-const senderName = form.senderName.trim(), receiverName = form.receiverName.trim();
-const isSenderCash = form.senderId === CASH_BOX_ID || senderName === CASH_BOX_NAME;
-const isReceiverCash = form.receiverId === CASH_BOX_ID || receiverName === CASH_BOX_NAME;
-const isSenderExchange = form.senderId === EXCHANGE_ACCOUNT_ID || senderName === EXCHANGE_ACCOUNT_NAME;
-const isReceiverExchange = form.receiverId === EXCHANGE_ACCOUNT_ID || receiverName === EXCHANGE_ACCOUNT_NAME;
-const sender = isSenderCash ? CASH_BOX_CUSTOMER : isSenderExchange ? EXCHANGE_ACCOUNT_CUSTOMER : customers.find(c => c.id === form.senderId) || customers.find(c => c.name === senderName) || null;
-const receiver = isReceiverCash ? CASH_BOX_CUSTOMER : isReceiverExchange ? EXCHANGE_ACCOUNT_CUSTOMER : customers.find(c => c.id === form.receiverId) || customers.find(c => c.name === receiverName) || null;
-let rateLabel = "";
-const txRate = rateMode === "same" ? 1 : rateValue;
-if (rateMode === "same") rateLabel = "بدون تبدیل";
-if (rateMode === "afn" && afnForeign) rateLabel = afnRateLabel(afnForeign, txRate);
-if (rateMode === "direct" && directCounter) rateLabel = directRateLabel(directBaseValue, directCounter, txRate);
-
-  if (editingId) {
-    const existing = hawalas.find(x => x.id === editingId);
-    if (existing) {
-      const updated: Hawala = { ...existing, type: form.type, province: form.province, district: form.province === "هرات" ? form.district : form.province, destinationText, senderName, senderPhone: form.senderPhone, senderTelegram: form.senderTelegram, senderId: sender?.id, receiverName, receiverTazkira: form.receiverTazkira, receiverPhone: form.receiverPhone, receiverAddress: form.receiverAddress, receiverId: receiver?.id, note: form.note, balance: form.balance };
-      setHawalas(prev => prev.map(x => x.id === editingId ? updated : x));
-      setEditingId(null); setForm(emptyForm); setErrors({}); setPreviewOpen(false); setActiveTab(existing.status === "paid" || existing.status === "cancelled" ? "history" : "current");
-      showToast("✅ اطلاعات حواله ویرایش شد.");
-      return;
-    }
-  }
+  useEffect(() => { if (!openActionId) return; const handler = (e: MouseEvent) => { const target = e.target as HTMLElement; if (!target.closest('.action-dropdown')) setOpenActionId(null); }; document.addEventListener("mousedown", handler); return () => document.removeEventListener("mousedown", handler); }, [openActionId]);
   
-  const trackingNumber = consumeTrackingCode();
-  const newHawala: Hawala = { id: generateId(), number: trackingNumber, date: nowDate.toISOString(), time: "", type: form.type, destinationCountry: "افغانستان", province: form.province, district: form.province === "هرات" ? form.district : form.province, destinationText, currencyFrom: form.currencyFrom, currencyTo: form.currencyTo, amountFrom, rate: txRate, rateLabel, rateBase: rateMode === "direct" ? directBaseValue : undefined, fee: feeValue, feeCurrency: form.feeCurrency, feePayer: form.feePayer, finalAmount, balance: form.balance, note: form.note, profit: feeValue, profitCurrency: form.feeCurrency, senderId: sender?.id, senderName, senderPhone: form.senderPhone, senderTelegram: form.senderTelegram, receiverId: receiver?.id, receiverName, receiverTazkira: form.receiverTazkira, receiverPhone: form.receiverPhone, receiverAddress: form.receiverAddress, status: "pending" as HawalaStatus };
-  
-  setHawalas(prev => [newHawala, ...prev]);
-  setLastNames({ senderName, receiverName });
-  setForm(emptyForm); setErrors({}); setPreviewOpen(false); setActiveTab("current");
-  
-  await sendHawalaReceipts({
-    hawala: newHawala,
-    action: "register",
-    customers: customers,
+  const [now, setNow] = useState<Date | null>(null);
+  useEffect(() => { setNow(new Date()); const timer = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(timer); }, []);
+  const currentDateTime = now ? formatDateTime(now) : "";
+
+  useEffect(() => { try { localStorage.setItem("hawalaLastNames", JSON.stringify(lastNames)); } catch {} }, [lastNames]);
+  useEffect(() => { try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); window.dispatchEvent(new Event("db:updated")); } catch {} }, [customers]);
+  useEffect(() => { try { localStorage.setItem(HAWALAS_KEY, JSON.stringify(hawalas)); window.dispatchEvent(new Event("db:updated")); } catch {} }, [hawalas]);
+
+  const anyDropdownOpen = showSenderList || showReceiverList;
+  useEffect(() => { if (!anyDropdownOpen) return; const handler = (e: MouseEvent) => { const t = e.target as Node; if (showSenderList && senderListRef.current && !senderListRef.current.contains(t)) setShowSenderList(false); if (showReceiverList && receiverListRef.current && !receiverListRef.current.contains(t)) setShowReceiverList(false); }; const timer = setTimeout(() => document.addEventListener("mousedown", handler), 0); return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); }; }, [anyDropdownOpen, showSenderList, showReceiverList]);
+
+  const availableCustomers = useMemo(() => customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID), [customers]);
+  const filteredSenderList = useMemo(() => { const options = [EXCHANGE_ACCOUNT_CUSTOMER, ...availableCustomers]; if (!senderFilter) return options; const q = normalizeDigits(senderFilter.trim()).toLowerCase(); return options.filter(c => c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))); }, [availableCustomers, senderFilter]);
+  const filteredReceiverList = useMemo(() => { const options = [EXCHANGE_ACCOUNT_CUSTOMER, ...availableCustomers]; if (!receiverFilter) return options; const q = normalizeDigits(receiverFilter.trim()).toLowerCase(); return options.filter(c => c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))); }, [availableCustomers, receiverFilter]);
+
+  const rateMode = getRateMode(form.currencyFrom, form.currencyTo);
+  const afnForeign = getAfnForeign(form.currencyFrom, form.currencyTo);
+  const directBaseValue = rateMode === "direct" ? getSafeDirectBase(form.currencyFrom, form.currencyFrom, form.currencyTo) : form.currencyFrom;
+  const directCounter = rateMode === "direct" ? getDirectCounter(directBaseValue, form.currencyFrom, form.currencyTo) : null;
+  const [directBase, setDirectBase] = useState<Currency>("USD");
+  useEffect(() => { if (rateMode === "direct" && directBase !== directBaseValue) setDirectBase(directBaseValue); }, [rateMode, directBase, directBaseValue]);
+  useEffect(() => { setForm(prev => ({ ...prev, rate: "" })); }, [rateMode, afnForeign, directBaseValue, directCounter]);
+
+  const amountFrom = parseAmount(form.amountFrom);
+  const rateValue = parseAmount(form.rate);
+  const feeValue = parseAmount(form.fee);
+  const convertedAmount = useMemo(() => { try { if (!amountFrom) return 0; if (rateMode === "same") return amountFrom; if (!rateValue) return 0; if (rateMode === "afn") return convertAfnRate(amountFrom, form.currencyFrom, form.currencyTo, rateValue); if (rateMode === "direct" && directCounter) return convertDirectRate(amountFrom, form.currencyFrom, form.currencyTo, directBaseValue, rateValue); return 0; } catch { return 0; } }, [amountFrom, rateValue, rateMode, form.currencyFrom, form.currencyTo, directCounter, directBaseValue]);
+  const finalAmount = useMemo(() => { if (form.feePayer === "receiver") return Math.max(0, convertedAmount - feeValue); return Math.max(0, convertedAmount); }, [convertedAmount, feeValue, form.feePayer]);
+
+  const nextHawalaNumber = getNextTrackingCode();
+  const isHerat = form.province === "هرات";
+  const destinationText = formatDestination(form.province, form.district);
+  const totalCount = hawalas.length;
+  const pendingCount = hawalas.filter(item => item.status === "pending").length;
+  const sentCount = hawalas.filter(item => item.status === "sent").length;
+  const paidCount = hawalas.filter(item => item.status === "paid").length;
+  const cancelledCount = hawalas.filter(item => item.status === "cancelled").length;
+
+  const isSenderCashBox = form.senderId === CASH_BOX_ID || form.senderName.trim() === CASH_BOX_NAME;
+  const isReceiverCashBox = form.receiverId === CASH_BOX_ID || form.receiverName.trim() === CASH_BOX_NAME;
+  const isSenderExchangeAccount = form.senderId === EXCHANGE_ACCOUNT_ID || form.senderName.trim() === EXCHANGE_ACCOUNT_NAME;
+  const isReceiverExchangeAccount = form.receiverId === EXCHANGE_ACCOUNT_ID || form.receiverName.trim() === EXCHANGE_ACCOUNT_NAME;
+  const selectedSender = useMemo(() => { if (isSenderCashBox) return CASH_BOX_CUSTOMER; if (isSenderExchangeAccount) return EXCHANGE_ACCOUNT_CUSTOMER; return customers.find(c => c.id === form.senderId) || customers.find(c => c.name === form.senderName.trim()) || null; }, [customers, form.senderId, form.senderName, isSenderCashBox, isSenderExchangeAccount]);
+  const selectedReceiver = useMemo(() => { if (isReceiverCashBox) return CASH_BOX_CUSTOMER; if (isReceiverExchangeAccount) return EXCHANGE_ACCOUNT_CUSTOMER; return customers.find(c => c.id === form.receiverId) || customers.find(c => c.name === form.receiverName.trim()) || null; }, [customers, form.receiverId, form.receiverName, isReceiverCashBox, isReceiverExchangeAccount]);
+
+  const matchesSearch = (item: Hawala, query: string) => { const q = normalizeDigits(query).trim().toLowerCase(); if (!q) return true; const fields = [item.senderName, item.receiverName, item.number, item.senderPhone, item.receiverPhone, item.receiverTazkira]; return fields.some(f => f && normalizeDigits(String(f)).toLowerCase().includes(q)); };
+  const matchesAmount = (item: Hawala, query: string) => { const raw = normalizeDigits(query).replace(/[,،\s]/g, ""); if (!raw) return true; const queryNumber = Number(raw); const values = [item.amountFrom, item.finalAmount, item.paidAmount]; if (!Number.isNaN(queryNumber)) return values.some(v => typeof v === "number" && (v === queryNumber || String(v).includes(raw))); return values.some(v => String(v ?? "").includes(raw)); };
+  const currentHawalas = useMemo(() => { try { let filtered = hawalas.filter(item => item.status === "pending" || item.status === "sent"); if (nameSearch) filtered = filtered.filter(item => matchesSearch(item, nameSearch)); if (amountSearch) filtered = filtered.filter(item => matchesAmount(item, amountSearch)); return sortByHawalaNumber(filtered, sortOrder); } catch { return []; } }, [hawalas, nameSearch, amountSearch, sortOrder]);
+  const historyHawalas = useMemo(() => { try { let filtered = hawalas.filter(item => item.status === "paid" || item.status === "cancelled"); if (nameSearch) filtered = filtered.filter(item => matchesSearch(item, nameSearch)); if (amountSearch) filtered = filtered.filter(item => matchesAmount(item, amountSearch)); return sortByHawalaNumber(filtered, sortOrder); } catch { return []; } }, [hawalas, nameSearch, amountSearch, sortOrder]);
+
+  const showToast = useCallback((message: string) => { setToast(message); setTimeout(() => setToast(""), 3500); }, []);
+  const setField = useCallback((field: keyof FormState, value: string) => { setForm(prev => ({ ...prev, [field]: value })); setErrors(prev => ({ ...prev, [field]: undefined })); }, []);
+  const handleProvinceChange = (event: ChangeEvent<HTMLSelectElement>) => { const np = event.target.value; setForm(prev => ({ ...prev, province: np, district: np === "هرات" ? "گلران" : np })); setErrors(prev => ({ ...prev, province: undefined })); };
+
+  const validateForm = useCallback(() => { const errs: FormErrors = {}; if (!form.type.trim()) errs.type = "نوع حواله را انتخاب کنید."; if (!form.senderName.trim()) errs.senderName = "نام حواله‌دهنده ضروری است."; if (!form.senderPhone.trim()) errs.senderPhone = "شماره تماس حواله‌دهنده ضروری است."; if (!form.receiverName.trim()) errs.receiverName = "نام حواله‌گیرنده ضروری است."; if (!form.receiverTazkira.trim()) errs.receiverTazkira = "شماره تذکره حواله‌گیرنده ضروری است."; if (!form.receiverPhone.trim()) errs.receiverPhone = "شماره تماس حواله‌گیرنده ضروری است."; if (!form.amountFrom.trim() || amountFrom <= 0) errs.amountFrom = "مبلغ حواله ضروری است."; if (feeValue < 0) errs.fee = "کمیشن نمی‌تواند منفی باشد."; if (amountFrom > 0 && feeValue >= convertedAmount) errs.fee = "کمیشن نمی‌تواند بیشتر یا برابر مبلغ تبدیل‌شده باشد."; if (!form.province.trim()) errs.province = "ولایت مقصد ضروری است."; if (rateMode !== "same") { if (!rateValue) errs.rate = rateMode === "afn" ? "نرخ در برابر افغانی خالی است." : "نرخ مستقیم خالی است."; if (rateMode === "direct" && !directCounter) errs.rate = "مبنای نرخ مستقیم معتبر نیست."; } if (amountFrom > 0 && rateMode !== "same" && !convertedAmount) errs.rate = "مبلغ تبدیل محاسبه نشد؛ لطفاً نرخ را بررسی کنید."; return errs; }, [form, amountFrom, feeValue, convertedAmount, rateMode, rateValue, directCounter]);
+
+  const handleRegisterClick = useCallback(() => { const errs = validateForm(); setErrors(errs); if (Object.keys(errs).length > 0) { showToast("لطفاً فیلدهای ضروری را خانه‌پری کنید."); return; } setPreviewOpen(true); }, [validateForm, showToast]);
+
+  const confirmRegister = useCallback(async () => {
+    try {
+      const nowDate = new Date();
+      const senderName = form.senderName.trim(), receiverName = form.receiverName.trim();
+      const isSenderCash = form.senderId === CASH_BOX_ID || senderName === CASH_BOX_NAME;
+      const isReceiverCash = form.receiverId === CASH_BOX_ID || receiverName === CASH_BOX_NAME;
+      const isSenderExchange = form.senderId === EXCHANGE_ACCOUNT_ID || senderName === EXCHANGE_ACCOUNT_NAME;
+      const isReceiverExchange = form.receiverId === EXCHANGE_ACCOUNT_ID || receiverName === EXCHANGE_ACCOUNT_NAME;
+      const sender = isSenderCash ? CASH_BOX_CUSTOMER : isSenderExchange ? EXCHANGE_ACCOUNT_CUSTOMER : customers.find(c => c.id === form.senderId) || customers.find(c => c.name === senderName) || null;
+      const receiver = isReceiverCash ? CASH_BOX_CUSTOMER : isReceiverExchange ? EXCHANGE_ACCOUNT_CUSTOMER : customers.find(c => c.id === form.receiverId) || customers.find(c => c.name === receiverName) || null;
+      let rateLabel = "";
+      const txRate = rateMode === "same" ? 1 : rateValue;
+      if (rateMode === "same") rateLabel = "بدون تبدیل";
+      if (rateMode === "afn" && afnForeign) rateLabel = afnRateLabel(afnForeign, txRate);
+      if (rateMode === "direct" && directCounter) rateLabel = directRateLabel(directBaseValue, directCounter, txRate);
+      
+      if (editingId) {
+        const existing = hawalas.find(x => x.id === editingId);
+        if (existing) {
+          const updated: Hawala = { ...existing, type: form.type, province: form.province, district: form.province === "هرات" ? form.district : form.province, destinationText, senderName, senderPhone: form.senderPhone, senderTelegram: form.senderTelegram, senderId: sender?.id, receiverName, receiverTazkira: form.receiverTazkira, receiverPhone: form.receiverPhone, receiverAddress: form.receiverAddress, receiverId: receiver?.id, note: form.note, balance: form.balance };
+          setHawalas(prev => prev.map(x => x.id === editingId ? updated : x));
+          setEditingId(null); setForm(emptyForm); setErrors({}); setPreviewOpen(false); setActiveTab(existing.status === "paid" || existing.status === "cancelled" ? "history" : "current");
+          showToast("✅ اطلاعات حواله ویرایش شد.");
+          return;
+        }
+      }
+      
+      const trackingNumber = consumeTrackingCode();
+      const newHawala: Hawala = { id: generateId(), number: trackingNumber, date: nowDate.toISOString(), time: "", type: form.type, destinationCountry: "افغانستان", province: form.province, district: form.province === "هرات" ? form.district : form.province, destinationText, currencyFrom: form.currencyFrom, currencyTo: form.currencyTo, amountFrom, rate: txRate, rateLabel, rateBase: rateMode === "direct" ? directBaseValue : undefined, fee: feeValue, feeCurrency: form.feeCurrency, feePayer: form.feePayer, finalAmount, balance: form.balance, note: form.note, profit: feeValue, profitCurrency: form.feeCurrency, senderId: sender?.id, senderName, senderPhone: form.senderPhone, senderTelegram: form.senderTelegram, receiverId: receiver?.id, receiverName, receiverTazkira: form.receiverTazkira, receiverPhone: form.receiverPhone, receiverAddress: form.receiverAddress, status: "pending" as HawalaStatus };
+      
+      setHawalas(prev => [newHawala, ...prev]);
+      setLastNames({ senderName, receiverName });
+      setForm(emptyForm); setErrors({}); setPreviewOpen(false); setActiveTab("current");
+      
+      await sendHawalaReceipts({ hawala: newHawala, action: "register", customers: customers });
+      showToast("✅ حواله ثبت شد و رسید ارسال شد");
+    } catch (err) { console.error("Register error:", err); showToast("خطا در ثبت حواله"); }
+  }, [form, rateMode, rateValue, afnForeign, directCounter, directBaseValue, feeValue, amountFrom, destinationText, customers, showToast, finalAmount, editingId, hawalas]);
+
+  const openDetails = useCallback((item: Hawala) => { setDetailTarget(item); setOpenActionId(null); }, []);
+  const shareHawala = useCallback(async (item: Hawala) => {
+    const text = `حواله ${item.number}\nحواله‌دهنده: ${item.senderName}\nحواله‌گیرنده: ${item.receiverName}\nمبلغ: ${fmt(item.finalAmount)} ${labels[item.currencyTo]}\nکمیشن: ${fmt(item.fee)} ${labels[item.feeCurrency]}\nمقصد: ${item.destinationText}\nآدرس گیرنده: ${item.receiverAddress || "-"}\nیادداشت: ${item.note || "-"}`;
+    try { if (navigator.share) await navigator.share({ title: `حواله ${item.number}`, text }); else { await navigator.clipboard.writeText(text); showToast("متن حواله کپی شد."); } } catch {}
+    setOpenActionId(null);
+  }, [showToast]);
+
+  const editHawala = useCallback((item: Hawala) => {
+    setEditingId(item.id);
+    setForm({ type: item.type, currencyFrom: item.currencyFrom, currencyTo: item.currencyTo, senderId: item.senderId || "", senderName: item.senderName, senderPhone: item.senderPhone || "", senderTelegram: item.senderTelegram || "", amountFrom: String(item.amountFrom), rate: String(item.rate || ""), fee: String(item.fee || ""), feeCurrency: item.feeCurrency, feePayer: item.feePayer, balance: item.balance || "", province: item.province, district: item.district, receiverId: item.receiverId || "", receiverName: item.receiverName, receiverTazkira: item.receiverTazkira || "", receiverPhone: item.receiverPhone || "", receiverAddress: item.receiverAddress || "", note: item.note || "" });
+    setErrors({}); setDetailTarget(null); setOpenActionId(null); setActiveTab("new");
+    showToast("حواله برای ویرایش باز شد.");
+  }, [showToast]);
+
+  const resetForm = useCallback(() => { setForm(emptyForm); setErrors({}); setEditingId(null); showToast("فورم پاک شد."); }, [showToast]);
+  const markAsSent = useCallback((item: Hawala) => { setHawalas(prev => prev.map(h => h.id === item.id ? { ...h, status: "sent" as HawalaStatus } : h)); showToast("وضعیت حواله به ارسال‌شده تغییر کرد."); }, [showToast]);
+  const openSettlement = useCallback((item: Hawala) => { setSettleTarget(item); setPaidAmount(String(item.finalAmount)); setPaidBy(""); }, []);
+
+  const confirmSettlement = useCallback(async () => {
+    if (!settleTarget) return;
+    if (!paidBy.trim()) { showToast("نام پرداخت‌کننده را بنویسید."); return; }
+    const amountPaid = Number(paidAmount || settleTarget.finalAmount);
+    if (!Number.isFinite(amountPaid) || amountPaid <= 0) { showToast("مبلغ پرداخت‌شده معتبر نیست."); return; }
+    try {
+      const paidHawala = { ...settleTarget, status: "paid" as HawalaStatus, paidAt: new Date().toISOString(), paidBy, paidAmount: amountPaid };
+      setHawalas(prev => prev.map(item => item.id === settleTarget.id ? paidHawala : item));
+      await sendHawalaReceipts({ hawala: paidHawala, action: "settle", customers: customers });
+      setSettleTarget(null);
+      showToast("✅ حواله تسویه شد و رسید ارسال شد");
+    } catch (err) { console.error("Settle error:", err); showToast("خطا در تسویه حواله"); }
+  }, [settleTarget, paidBy, paidAmount, customers, showToast]);
+
+  const openCancel = useCallback((item: Hawala) => { setCancelTarget(item); setCancelReason(""); }, []);
+  const confirmCancel = useCallback(async () => {
+    if (!cancelTarget) return;
+    if (!cancelReason.trim()) { showToast("دلیل لغو حواله را بنویسید."); return; }
+    try {
+      setHawalas(prev => prev.map(item => item.id === cancelTarget.id ? { ...item, status: "cancelled" as HawalaStatus, cancelReason } : item));
+      await sendHawalaReceipts({ hawala: cancelTarget, action: "cancel", customers: customers });
+      setCancelTarget(null);
+      showToast("✅ حواله ابطال شد و اطلاعیه ارسال شد");
+    } catch (err) { console.error("Cancel error:", err); showToast("خطا در ابطال حواله"); }
+  }, [cancelTarget, cancelReason, customers, showToast]);
+
+  const restoreToSent = useCallback((item: Hawala) => {
+    try {
+      setHawalas(prev => prev.map(h => h.id === item.id ? { ...h, status: "sent" as HawalaStatus, paidAt: undefined, paidBy: undefined, paidAmount: undefined, cancelReason: undefined } : h));
+      showToast("حواله به وضعیت ارسال‌شده برگشت و به تب جاری منتقل شد.");
+    } catch (err) { console.error("Restore error:", err); showToast("خطا در برگشت حواله"); }
+  }, [showToast]);
+
+  const deleteHawala = useCallback((item: Hawala) => {
+    const msg = `آیا از حذف کامل حواله ${item.number} مطمئن هستید؟\n\nاین عملیات قابل بازگشت نیست و حواله از سیستم پاک می‌شود.`;
+    if (!window.confirm(msg)) return;
+    try {
+      setHawalas(prev => prev.filter(h => h.id !== item.id));
+      showToast(`حواله ${item.number} حذف شد.`);
+    } catch (err) { console.error("Delete error:", err); showToast("خطا در حذف حواله"); }
+  }, [showToast]);
+
+  if (!mounted) return (<div className="min-h-screen flex items-center justify-center"><div className="text-center"><div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-slate-300 border-t-blue-500" /><p className="mt-4 text-slate-500">در حال بارگذاری...</p></div></div>);
+
+  // ═══════════ UI Styles (Light Only) ═══════════
+  const heading = "text-slate-900";
+  const subText = "text-slate-500";
+  const glassChip = "border-sky-100 bg-white/85";
+  const uiCard = `rounded-2xl border backdrop-blur transition-colors duration-300 border-sky-100 bg-white/95 shadow-[0_16px_40px_-28px_rgba(2,132,199,0.35)]`;
+  const inputShell = `rounded-xl border text-sm font-medium shadow-sm outline-none transition-all duration-200 focus:ring-4 border-slate-200 bg-white text-slate-800 placeholder:text-slate-400 hover:border-sky-400 focus:border-sky-500 focus:ring-sky-500/10`;
+  const uiInput = `h-12 w-full px-3.5 ${inputShell}`;
+  const errInput = "border-rose-500 bg-rose-50 ring-rose-500/20";
+  const roInput = "cursor-default bg-slate-100 text-slate-500 hover:border-slate-200 focus:border-slate-200 focus:ring-0";
+  const uiLabel = `mb-1.5 block text-[11px] font-black tracking-wide text-slate-500`;
+  const rateChip = `flex h-12 items-center whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-bold text-slate-700 shadow-sm`;
+  const chevPos = `pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400`;
+  const identHwIcon = "from-blue-400/20 to-cyan-400/10 text-blue-600 ring-blue-400/30";
+  const cBlue = { wrap: "border-blue-300 bg-blue-50", icon: "bg-blue-100 text-blue-600", title: "text-blue-700", badge: "bg-blue-100 text-blue-700" };
+  const cAmber = { wrap: "border-amber-300 bg-amber-50", icon: "bg-amber-100 text-amber-600", title: "text-amber-700", badge: "bg-amber-100 text-amber-700" };
+  const cEmerald = { wrap: "border-emerald-300 bg-emerald-50", icon: "bg-emerald-100 text-emerald-600", title: "text-emerald-700", badge: "bg-emerald-100 text-emerald-700" };
+
+  const fld = (label: string, node: ReactNode, cls = "") => (<div className={cls}><label className={uiLabel}>{label}</label>{node}</div>);
+  const sel = (value: string, onCh: (v: string) => void, opts: string[][], cls = "") => (<div className="relative"><select value={value} onChange={(e) => onCh(e.target.value)} className={`${uiInput} cursor-pointer appearance-none pl-9 ${cls}`}>{opts.map((o) => (<option key={o[0]} value={o[0]}>{o[1]}</option>))}</select><span className={chevPos}><Ic n="chevron" className="h-4 w-4" /></span></div>);
+  const errBox = (list: string[]) => list.length === 0 ? null : (<div className="space-y-2 rounded-xl border border-rose-500 bg-rose-50 p-4 text-rose-600"><b className="flex items-center gap-2 text-sm"><Ic n="alert" className="h-5 w-5 shrink-0" />لطفاً فیلدهای اجباری را تکمیل کنید:</b><ul className="list-disc pr-5 text-sm space-y-1">{list.map((msg, i) => (<li key={i}>{msg}</li>))}</ul></div>);
+  const sameBox = (txt: string) => (<div className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-100 p-4 text-sm font-bold text-slate-600"><Ic n="info" className="h-5 w-5 shrink-0 opacity-70 mt-0.5" /><span className="leading-6">{txt}</span></div>);
+  const rateBox = (c: { wrap: string; icon: string; title: string }, title: string, formContent: ReactNode, badges: ReactNode) => (<div className={`space-y-4 rounded-2xl border p-4 transition-colors md:p-5 ${c.wrap}`}><div className="flex items-center gap-2.5"><span className={`grid h-9 w-9 place-items-center rounded-xl ${c.icon}`}><Ic n="rate" className="h-4 w-4" /></span><b className={`text-sm font-black ${c.title}`}>{title}</b></div>{formContent}<div className="flex flex-wrap items-center gap-2.5">{badges}</div></div>);
+  const pill = (cls: string, txt: string, check = false) => !txt ? null : (<span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black ${cls}`}>{check && <Ic n="check" className="h-3.5 w-3.5" />}{txt}</span>);
+
+  const CustomerBalanceCard = memo(({ customer, color, isCashBox }: { customer: Customer | null; color: "blue" | "orange" | "emerald"; isCashBox?: boolean }) => {
+    if (!customer) return null;
+    const isExchange = customer.id === EXCHANGE_ACCOUNT_ID;
+    const balances = customer.balances;
+    const title = isCashBox ? "💰 موجودی فیزیکی صندوق" : isExchange ? "💼 موجودی حساب صرافی" : `موجودی حساب ${customer.name}`;
+    const colors = { blue: { border: "border-blue-200 bg-blue-50", text: "text-blue-700", icon: "text-blue-600" }, orange: { border: "border-orange-200 bg-orange-50", text: "text-orange-700", icon: "text-orange-600" }, emerald: { border: "border-emerald-200 bg-emerald-50", text: "text-emerald-700", icon: "text-emerald-600" } };
+    const c = colors[color];
+    return (<div className={`rounded-xl border p-3 ${c.border}`}><div className="flex items-center gap-2 mb-2"><Ic n="wallet" className={`h-4 w-4 ${c.icon}`} /><b className={`text-xs font-black ${c.text}`}>{title}</b></div><div className="grid grid-cols-3 md:grid-cols-5 gap-2 text-[10px] font-bold">{currencies.map(cur => { const bal = balances[cur] || 0; const isDebt = bal < 0, isCredit = bal > 0; return (<div key={cur} className={`rounded-lg bg-white px-2 py-1.5`}><div className={subText}>{labels[cur]}</div><div className={`font-black tabular-nums ${isDebt ? "text-rose-500" : isCredit ? "text-emerald-600" : "text-slate-500"}`}>{fmt(bal)}</div><div className="min-h-[12px] mt-0.5">{isCashBox ? (<>{isDebt && <div className="text-[8px] font-black text-rose-500">⚠️ کسری صندوق</div>}{isCredit && <div className="text-[8px] font-black text-emerald-600">✅ موجودی نقدی</div>}{bal === 0 && <div className="text-[8px] font-bold text-slate-500">⚪ خالی</div>}</>) : (<>{isDebt && <div className="text-[8px] font-black text-rose-500">قرض از صرافی</div>}{isCredit && <div className="text-[8px] font-black text-emerald-600">طلب از صرافی</div>}{bal === 0 && <div className="text-[8px] font-bold text-slate-500">بدون بدهی</div>}</>)}</div></div>); })}</div></div>);
   });
-  
-  showToast("✅ حواله ثبت شد و رسید ارسال شد");
-} catch (err) { console.error("Register error:", err); showToast("خطا در ثبت حواله"); }
 
-}, [form, rateMode, rateValue, afnForeign, directCounter, directBaseValue, feeValue, amountFrom, destinationText, customers, showToast, finalAmount, editingId, hawalas]);
-
-const openDetails = useCallback((item: Hawala) => { setDetailTarget(item); setOpenActionId(null); }, []);
-
-const shareHawala = useCallback(async (item: Hawala) => {
-const text = `حواله ${item.number}\nحواله‌دهنده: ${item.senderName}\nحواله‌گیرنده: ${item.receiverName}\nمبلغ: ${fmt(item.finalAmount)} ${labels[item.currencyTo]}\nکمیشن: ${fmt(item.fee)} ${labels[item.feeCurrency]}\nمقصد: ${item.destinationText}\nآدرس گیرنده: ${item.receiverAddress || "-"}\nیادداشت: ${item.note || "-"}`;
-try {
-if (navigator.share) await navigator.share({ title: `حواله ${item.number}`, text });
-else { await navigator.clipboard.writeText(text); showToast("متن حواله کپی شد."); }
-} catch {}
-setOpenActionId(null);
-}, [showToast]);
-
-const editHawala = useCallback((item: Hawala) => {
-setEditingId(item.id);
-setForm({ type: item.type, currencyFrom: item.currencyFrom, currencyTo: item.currencyTo, senderId: item.senderId || "", senderName: item.senderName, senderPhone: item.senderPhone || "", senderTelegram: item.senderTelegram || "", amountFrom: String(item.amountFrom), rate: String(item.rate || ""), fee: String(item.fee || ""), feeCurrency: item.feeCurrency, feePayer: item.feePayer, balance: item.balance || "", province: item.province, district: item.district, receiverId: item.receiverId || "", receiverName: item.receiverName, receiverTazkira: item.receiverTazkira || "", receiverPhone: item.receiverPhone || "", receiverAddress: item.receiverAddress || "", note: item.note || "" });
-setErrors({}); setDetailTarget(null); setOpenActionId(null); setActiveTab("new");
-showToast("حواله برای ویرایش باز شد.");
-}, [showToast]);
-
-const resetForm = useCallback(() => { setForm(emptyForm); setErrors({}); setEditingId(null); showToast("فورم پاک شد."); }, [showToast]);
-const markAsSent = useCallback((item: Hawala) => { setHawalas(prev => prev.map(h => h.id === item.id ? { ...h, status: "sent" as HawalaStatus } : h)); showToast("وضعیت حواله به ارسال‌شده تغییر کرد."); }, [showToast]);
-const openSettlement = useCallback((item: Hawala) => { setSettleTarget(item); setPaidAmount(String(item.finalAmount)); setPaidBy(""); }, []);
-
-const confirmSettlement = useCallback(async () => {
-if (!settleTarget) return;
-if (!paidBy.trim()) { showToast("نام پرداخت‌کننده را بنویسید."); return; }
-const amountPaid = Number(paidAmount || settleTarget.finalAmount);
-if (!Number.isFinite(amountPaid) || amountPaid <= 0) { showToast("مبلغ پرداخت‌شده معتبر نیست."); return; }
-try {
-const paidHawala = { ...settleTarget, status: "paid" as HawalaStatus, paidAt: new Date().toISOString(), paidBy, paidAmount: amountPaid };
-setHawalas(prev => prev.map(item => item.id === settleTarget.id ? paidHawala : item));
-
-  await sendHawalaReceipts({
-    hawala: paidHawala,
-    action: "settle",
-    customers: customers,
+  const ActionButtons = memo(function ActionButtons({ item, isInHistory }: { item: Hawala; isInHistory: boolean }) {
+    const isPending = item.status === "pending", isSent = item.status === "sent", isPaid = item.status === "paid", isCancelled = item.status === "cancelled", isOpen = openActionId === item.id;
+    const btn = "flex w-full items-center gap-2 px-3 py-2 text-right text-xs font-bold transition";
+    const btnBase = "text-slate-700 hover:bg-slate-100";
+    return (<div className="relative action-dropdown flex justify-center"><button onClick={(e) => { e.stopPropagation(); setOpenActionId(isOpen ? null : item.id); }} className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 text-slate-500 transition-all duration-150 active:scale-90 cursor-pointer hover:bg-slate-100" title="عملیات"><Ic n="more" className="h-4 w-4" /></button>{isOpen && (<div className="absolute left-1/2 -translate-x-1/2 top-full z-50 mt-1.5 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl"><button onClick={() => openDetails(item)} className={`${btn} ${btnBase}`}><Ic n="eye" className="h-3.5 w-3.5" /> نمایش</button><button onClick={() => editHawala(item)} className={`${btn} ${btnBase}`}><Ic n="edit" className="h-3.5 w-3.5" /> ویرایش</button><button onClick={() => shareHawala(item)} className={`${btn} ${btnBase}`}><Ic n="share" className="h-3.5 w-3.5" /> اشتراک‌گذاری</button><div className="my-1 h-px bg-slate-100" />{!isInHistory && (<>{isPending && (<button onClick={() => { markAsSent(item); setOpenActionId(null); }} className={`${btn} ${btnBase} text-sky-600 hover:bg-sky-50`}><Ic n="send" className="h-3.5 w-3.5" /> ارسال حواله</button>)}{(isPending || isSent) && (<><button onClick={() => { openSettlement(item); setOpenActionId(null); }} className={`${btn} ${btnBase} text-emerald-600 hover:bg-emerald-50`}><Ic n="check" className="h-3.5 w-3.5" /> تسویه حواله</button><button onClick={() => { openCancel(item); setOpenActionId(null); }} className={`${btn} ${btnBase} text-amber-600 hover:bg-amber-50`}><Ic n="xCircle" className="h-3.5 w-3.5" /> ابطال حواله</button></>)}</>)}{isInHistory && (<>{isCancelled && (<button onClick={() => { restoreToSent(item); setOpenActionId(null); }} className={`${btn} ${btnBase} text-sky-600 hover:bg-sky-50`}><Ic n="undo" className="h-3.5 w-3.5" /> برگشت به ارسال</button>)}{isPaid && (<button onClick={() => { openCancel(item); setOpenActionId(null); }} className={`${btn} ${btnBase} text-amber-600 hover:bg-amber-50`}><Ic n="xCircle" className="h-3.5 w-3.5" /> ابطال حواله</button>)}</>)}<div className="my-1 h-px bg-slate-100" /><button onClick={() => { deleteHawala(item); setOpenActionId(null); }} className={`${btn} text-rose-500 hover:bg-rose-50`}><Ic n="trash" className="h-3.5 w-3.5" /> حذف حواله</button></div>)}</div>);
   });
-  
-  setSettleTarget(null);
-  showToast("✅ حواله تسویه شد و رسید ارسال شد");
-} catch (err) { console.error("Settle error:", err); showToast("خطا در تسویه حواله"); }
 
-}, [settleTarget, paidBy, paidAmount, customers, showToast]);
+  const errorList = Object.values(errors).filter((msg): msg is string => Boolean(msg));
+  const tabs = [{ id: "new" as const, label: "ثبت حواله جدید", icon: "plus" as IconName }, { id: "current" as const, label: "حواله‌های جاری", icon: "clock" as IconName, count: currentHawalas.length }, { id: "history" as const, label: "تاریخچه حواله‌ها", icon: "doc" as IconName, count: historyHawalas.length }];
+  const tableMaxHeight = "max-h-[672px]";
 
-const openCancel = useCallback((item: Hawala) => { setCancelTarget(item); setCancelReason(""); }, []);
-const confirmCancel = useCallback(async () => {
-if (!cancelTarget) return;
-if (!cancelReason.trim()) { showToast("دلیل لغو حواله را بنویسید."); return; }
-try {
-setHawalas(prev => prev.map(item => item.id === cancelTarget.id ? { ...item, status: "cancelled" as HawalaStatus, cancelReason } : item));
+  return (
+    <div dir="rtl">
+      <style>{`@import url("https://fonts.googleapis.com/css2?family=Lalezar&family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap");.hw-font{font-family:"Vazirmatn","Segoe UI",Tahoma,sans-serif}.hw-display{font-family:"Lalezar","Vazirmatn",Tahoma,sans-serif;letter-spacing:.01em}@keyframes hwUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}.hw-up{animation:hwUp .5s cubic-bezier(.22,.8,.35,1) both}details>summary{list-style:none}details>summary::-webkit-details-marker{display:none}::selection{background:rgba(59,130,246,.25)}`}</style>
+      <div className="hw-font relative min-h-screen overflow-x-hidden antialiased transition-colors duration-500 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 text-slate-800">
+        <div className="fixed inset-x-0 top-0 z-30 h-1 bg-gradient-to-l from-blue-500 via-cyan-500 to-emerald-500" />
+        <div className="relative z-10 mx-auto w-full max-w-7xl space-y-4 md:space-y-6 px-3 pb-16 pt-5 md:px-8 md:pt-9">
+          <header className="hw-up flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 md:gap-3.5 min-w-0">
+              <div className="relative grid h-11 w-11 md:h-14 md:w-14 shrink-0 place-items-center rounded-xl md:rounded-2xl bg-gradient-to-br from-blue-500 via-cyan-500 to-emerald-400 text-white shadow-lg shadow-blue-500/30 ring-1 ring-white/30"><Ic n="send" className="h-5 w-5 md:h-6 md:w-6" /><span className="absolute -bottom-1 -left-1 md:-bottom-1.5 md:-left-1.5 grid h-4 min-w-4 md:h-5 md:min-w-5 place-items-center rounded-full bg-gradient-to-br from-amber-400 to-orange-400 px-1 text-[7px] md:text-[8px] font-black text-white ring-2 ring-[#eff6ff]">TR</span></div>
+              <div className="min-w-0"><h1 className={`hw-display text-2xl md:text-4xl leading-none ${heading}`}>حواله‌جات</h1><p className={`mt-1 text-[10px] md:text-xs font-bold ${subText}`}>ثبت، پیگیری و تسویه حواله‌ها</p></div>
+            </div>
+            <div className="flex items-center gap-1.5 md:gap-2.5">
+              <div className={`hidden sm:flex items-center gap-2 rounded-xl border px-3 py-2 shadow-sm backdrop-blur ${glassChip}`}><span className="relative flex h-2.5 w-2.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-70" /><span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" /></span><span dir="ltr" className="text-xs font-bold tabular-nums text-slate-700">{currentDateTime || "--:--"}</span></div>
+            </div>
+          </header>
+          <div className="hw-up grid grid-cols-2 md:grid-cols-4 gap-3" style={{ animationDelay: "70ms" }}>
+            {[{ label: "تعداد حواله‌ها", value: totalCount, color: "text-blue-600" }, { label: "در انتظار / ارسال", value: pendingCount + sentCount, color: "text-amber-600" }, { label: "پرداخت‌شده", value: paidCount, color: "text-emerald-600" }, { label: "ابطال‌شده", value: cancelledCount, color: "text-rose-600" }].map((stat, i) => (<div key={i} className="rounded-xl border border-slate-200 bg-white p-3 text-center"><div className={`text-xl font-black tabular-nums ${stat.color}`}>{stat.value}</div><div className="text-[10px] font-bold mt-1 text-slate-500">{stat.label}</div></div>))}
+          </div>
+          <div className={`hw-up flex gap-1.5 md:gap-2 rounded-xl md:rounded-2xl border p-1.5 md:p-2 shadow-sm backdrop-blur ${glassChip}`} style={{ animationDelay: "140ms" }}>
+            {tabs.map(tab => (<button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 md:gap-2 rounded-lg md:rounded-xl px-3 md:px-5 py-2.5 md:py-3 text-xs md:text-sm font-black transition-all duration-300 active:scale-[0.97] ${activeTab === tab.id ? "bg-gradient-to-l from-blue-500 via-cyan-500 to-emerald-500 text-white shadow-lg" : "text-slate-500 hover:bg-blue-50 hover:text-slate-800"}`}><Ic n={tab.icon} className="h-4 w-4" /><span>{tab.label}</span>{tab.count !== undefined && tab.count > 0 && <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-black ${activeTab === tab.id ? "bg-white/30 text-white" : "bg-slate-200 text-slate-600"}`}>{tab.count}</span>}</button>))}
+          </div>
 
-  await sendHawalaReceipts({
-    hawala: cancelTarget,
-    action: "cancel",
-    customers: customers,
-  });
-  
-  setCancelTarget(null);
-  showToast("✅ حواله ابطال شد و اطلاعیه ارسال شد");
-} catch (err) { console.error("Cancel error:", err); showToast("خطا در ابطال حواله"); }
-
-}, [cancelTarget, cancelReason, customers, showToast]);
-
-const restoreToSent = useCallback((item: Hawala) => {
-try {
-setHawalas(prev => prev.map(h => h.id === item.id ? { ...h, status: "sent" as HawalaStatus, paidAt: undefined, paidBy: undefined, paidAmount: undefined, cancelReason: undefined } : h));
-showToast("حواله به وضعیت ارسال‌شده برگشت و به تب جاری منتقل شد.");
-} catch (err) { console.error("Restore error:", err); showToast("خطا در برگشت حواله"); }
-}, [showToast]);
-
-const deleteHawala = useCallback((item: Hawala) => {
-const msg = `آیا از حذف کامل حواله ${item.number} مطمئن هستید؟\n\nاین عملیات قابل بازگشت نیست و حواله از سیستم پاک می‌شود.`;
-if (!window.confirm(msg)) return;
-try {
-setHawalas(prev => prev.filter(h => h.id !== item.id));
-showToast(`حواله ${item.number} حذف شد.`);
-} catch (err) { console.error("Delete error:", err); showToast("خطا در حذف حواله"); }
-}, [showToast]);
-
-if (!mounted) return (<div className="min-h-screen flex items-center justify-center"><div className="text-center"><div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-slate-300 border-t-blue-500" /><p className="mt-4 text-slate-500">در حال بارگذاری...</p></div></div>);
-
-// ═══════════ UI Styles (Light Only) ═══════════
-const heading = "text-slate-900";
-const subText = "text-slate-500";
-const glassChip = "border-sky-100 bg-white/85";
-const uiCard = `rounded-2xl border backdrop-blur transition-colors duration-300 border-sky-100 bg-white/95 shadow-[0_16px_40px_-28px_rgba(2,132,199,0.35)]`;
-const inputShell = `rounded-xl border text-sm font-medium shadow-sm outline-none transition-all duration-200 focus:ring-4 border-slate-200 bg-white text-slate-800 placeholder:text-slate-400 hover:border-sky-400 focus:border-sky-500 focus:ring-sky-500/10`;
-const uiInput = `h-12 w-full px-3.5 ${inputShell}`;
-const errInput = "border-rose-500 bg-rose-50 ring-rose-500/20";
-const roInput = "cursor-default bg-slate-100 text-slate-500 hover:border-slate-200 focus:border-slate-200 focus:ring-0";
-const uiLabel = `mb-1.5 block text-[11px] font-black tracking-wide text-slate-500`;
-const rateChip = `flex h-12 items-center whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-bold text-slate-700 shadow-sm`;
-const chevPos = `pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400`;
-const identHwIcon = "from-blue-400/20 to-cyan-400/10 text-blue-600 ring-blue-400/30";
-const cBlue = { wrap: "border-blue-300 bg-blue-50", icon: "bg-blue-100 text-blue-600", title: "text-blue-700", badge: "bg-blue-100 text-blue-700" };
-const cAmber = { wrap: "border-amber-300 bg-amber-50", icon: "bg-amber-100 text-amber-600", title: "text-amber-700", badge: "bg-amber-100 text-amber-700" };
-const cEmerald = { wrap: "border-emerald-300 bg-emerald-50", icon: "bg-emerald-100 text-emerald-600", title: "text-emerald-700", badge: "bg-emerald-100 text-emerald-700" };
-
-const fld = (label: string, node: ReactNode, cls = "") => (<div className={cls}><label className={uiLabel}>{label}</label>{node}</div>);
-const sel = (value: string, onCh: (v: string) => void, opts: string[][], cls = "") => (<div className="relative"><select value={value} onChange={(e) => onCh(e.target.value)} className={`${uiInput} cursor-pointer appearance-none pl-9 ${cls}`}>{opts.map((o) => (<option key={o[0]} value={o[0]}>{o[1]}</option>))}</select><span className={chevPos}><Ic n="chevron" className="h-4 w-4" /></span></div>);
-const errBox = (list: string[]) => list.length === 0 ? null : (<div className="space-y-2 rounded-xl border border-rose-500 bg-rose-50 p-4 text-rose-600"><b className="flex items-center gap-2 text-sm"><Ic n="alert" className="h-5 w-5 shrink-0" />لطفاً فیلدهای اجباری را تکمیل کنید:</b><ul className="list-disc pr-5 text-sm space-y-1">{list.map((msg, i) => (<li key={i}>{msg}</li>))}</ul></div>);
-const sameBox = (txt: string) => (<div className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-100 p-4 text-sm font-bold text-slate-600"><Ic n="info" className="h-5 w-5 shrink-0 opacity-70 mt-0.5" /><span className="leading-6">{txt}</span></div>);
-const rateBox = (c: { wrap: string; icon: string; title: string }, title: string, formContent: ReactNode, badges: ReactNode) => (<div className={`space-y-4 rounded-2xl border p-4 transition-colors md:p-5 ${c.wrap}`}><div className="flex items-center gap-2.5"><span className={`grid h-9 w-9 place-items-center rounded-xl ${c.icon}`}><Ic n="rate" className="h-4 w-4" /></span><b className={`text-sm font-black ${c.title}`}>{title}</b></div>{formContent}<div className="flex flex-wrap items-center gap-2.5">{badges}</div></div>);
-const pill = (cls: string, txt: string, check = false) => !txt ? null : (<span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black ${cls}`}>{check && <Ic n="check" className="h-3.5 w-3.5" />}{txt}</span>);
-
-const CustomerBalanceCard = memo(({ customer, color, isCashBox }: { customer: Customer | null; color: "blue" | "orange" | "emerald"; isCashBox?: boolean }) => {
-if (!customer) return null;
-const isExchange = customer.id === EXCHANGE_ACCOUNT_ID;
-const balances = customer.balances;
-const title = isCashBox ? "💰 موجودی فیزیکی صندوق" : isExchange ? "💼 موجودی حساب صرافی" : `موجودی حساب ${customer.name}`;
-const colors = { blue: { border: "border-blue-200 bg-blue-50", text: "text-blue-700", icon: "text-blue-600" }, orange: { border: "border-orange-200 bg-orange-50", text: "text-orange-700", icon: "text-orange-600" }, emerald: { border: "border-emerald-200 bg-emerald-50", text: "text-emerald-700", icon: "text-emerald-600" } };
-const c = colors[color];
-return (<div className={`rounded-xl border p-3 ${c.border}`}><div className="flex items-center gap-2 mb-2"><Ic n="wallet" className={`h-4 w-4 ${c.icon}`} /><b className={`text-xs font-black ${c.text}`}>{title}</b></div><div className="grid grid-cols-3 md:grid-cols-5 gap-2 text-[10px] font-bold">{currencies.map(cur => { const bal = balances[cur] || 0; const isDebt = bal < 0, isCredit = bal > 0; return (<div key={cur} className={`rounded-lg bg-white px-2 py-1.5`}><div className={subText}>{labels[cur]}</div><div className={`font-black tabular-nums ${isDebt ? "text-rose-500" : isCredit ? "text-emerald-600" : "text-slate-500"}`}>{fmt(bal)}</div><div className="min-h-[12px] mt-0.5">{isCashBox ? (<>{isDebt && <div className="text-[8px] font-black text-rose-500">⚠️ کسری صندوق</div>}{isCredit && <div className="text-[8px] font-black text-emerald-600">✅ موجودی نقدی</div>}{bal === 0 && <div className="text-[8px] font-bold text-slate-500">⚪ خالی</div>}</>) : (<>{isDebt && <div className="text-[8px] font-black text-rose-500">قرض از صرافی</div>}{isCredit && <div className="text-[8px] font-black text-emerald-600">طلب از صرافی</div>}{bal === 0 && <div className="text-[8px] font-bold text-slate-500">بدون بدهی</div>}</>)}</div></div>); })}</div></div>);
-});
-
-const ActionButtons = memo(function ActionButtons({ item, isInHistory }: { item: Hawala; isInHistory: boolean }) {
-const isPending = item.status === "pending", isSent = item.status === "sent", isPaid = item.status === "paid", isCancelled = item.status === "cancelled", isOpen = openActionId === item.id;
-const btn = "flex w-full items-center gap-2 px-3 py-2 text-right text-xs font-bold transition";
-const btnBase = "text-slate-700 hover:bg-slate-100";
-return (<div className="relative action-dropdown flex justify-center"><button onClick={(e) => { e.stopPropagation(); setOpenActionId(isOpen ? null : item.id); }} className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 text-slate-500 transition-all duration-150 active:scale-90 cursor-pointer hover:bg-slate-100" title="عملیات"><Ic n="more" className="h-4 w-4" /></button>{isOpen && (<div className="absolute left-1/2 -translate-x-1/2 top-full z-50 mt-1.5 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl"><button onClick={() => openDetails(item)} className={`${btn} ${btnBase}`}><Ic n="eye" className="h-3.5 w-3.5" /> نمایش</button><button onClick={() => editHawala(item)} className={`${btn} ${btnBase}`}><Ic n="edit" className="h-3.5 w-3.5" /> ویرایش</button><button onClick={() => shareHawala(item)} className={`${btn} ${btnBase}`}><Ic n="share" className="h-3.5 w-3.5" /> اشتراک‌گذاری</button><div className="my-1 h-px bg-slate-100" />{!isInHistory && (<>{isPending && (<button onClick={() => { markAsSent(item); setOpenActionId(null); }} className={`${btn} ${btnBase} text-sky-600 hover:bg-sky-50`}><Ic n="send" className="h-3.5 w-3.5" /> ارسال حواله</button>)}{(isPending || isSent) && (<><button onClick={() => { openSettlement(item); setOpenActionId(null); }} className={`${btn} ${btnBase} text-emerald-600 hover:bg-emerald-50`}><Ic n="check" className="h-3.5 w-3.5" /> تسویه حواله</button><button onClick={() => { openCancel(item); setOpenActionId(null); }} className={`${btn} ${btnBase} text-amber-600 hover:bg-amber-50`}><Ic n="xCircle" className="h-3.5 w-3.5" /> ابطال حواله</button></>)}</>)}{isInHistory && (<>{isCancelled && (<button onClick={() => { restoreToSent(item); setOpenActionId(null); }} className={`${btn} ${btnBase} text-sky-600 hover:bg-sky-50`}><Ic n="undo" className="h-3.5 w-3.5" /> برگشت به ارسال</button>)}{isPaid && (<button onClick={() => { openCancel(item); setOpenActionId(null); }} className={`${btn} ${btnBase} text-amber-600 hover:bg-amber-50`}><Ic n="xCircle" className="h-3.5 w-3.5" /> ابطال حواله</button>)}</>)}<div className="my-1 h-px bg-slate-100" /><button onClick={() => { deleteHawala(item); setOpenActionId(null); }} className={`${btn} text-rose-500 hover:bg-rose-50`}><Ic n="trash" className="h-3.5 w-3.5" /> حذف حواله</button></div>)}</div>);
-});
-
-const errorList = Object.values(errors).filter((msg): msg is string => Boolean(msg));
-const tabs = [{ id: "new" as const, label: "ثبت حواله جدید", icon: "plus" as IconName }, { id: "current" as const, label: "حواله‌های جاری", icon: "clock" as IconName, count: currentHawalas.length }, { id: "history" as const, label: "تاریخچه حواله‌ها", icon: "doc" as IconName, count: historyHawalas.length }];
-const tableMaxHeight = "max-h-[672px]";
-
-return (
-<div dir="rtl">
-<style>{`@import url("https://fonts.googleapis.com/css2?family=Lalezar&family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap)");.hw-font{font-family:"Vazirmatn","Segoe UI",Tahoma,sans-serif}.hw-display{font-family:"Lalezar","Vazirmatn",Tahoma,sans-serif;letter-spacing:.01em}@keyframes hwUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}.hw-up{animation:hwUp .5s cubic-bezier(.22,.8,.35,1) both}details>summary{list-style:none}details>summary::-webkit-details-marker{display:none}::selection{background:rgba(59,130,246,.25)}`}</style>
-<div className="hw-font relative min-h-screen overflow-x-hidden antialiased transition-colors duration-500 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 text-slate-800">
-<div className="fixed inset-x-0 top-0 z-30 h-1 bg-gradient-to-l from-blue-500 via-cyan-500 to-emerald-500" />
-<div className="relative z-10 mx-auto w-full max-w-7xl space-y-4 md:space-y-6 px-3 pb-16 pt-5 md:px-8 md:pt-9">
-<header className="hw-up flex flex-wrap items-center justify-between gap-3">
-<div className="flex items-center gap-2.5 md:gap-3.5 min-w-0">
-<div className="relative grid h-11 w-11 md:h-14 md:w-14 shrink-0 place-items-center rounded-xl md:rounded-2xl bg-gradient-to-br from-blue-500 via-cyan-500 to-emerald-400 text-white shadow-lg shadow-blue-500/30 ring-1 ring-white/30"><Ic n="send" className="h-5 w-5 md:h-6 md:w-6" /><span className="absolute -bottom-1 -left-1 md:-bottom-1.5 md:-left-1.5 grid h-4 min-w-4 md:h-5 md:min-w-5 place-items-center rounded-full bg-gradient-to-br from-amber-400 to-orange-400 px-1 text-[7px] md:text-[8px] font-black text-white ring-2 ring-[#eff6ff]">TR</span></div>
-<div className="min-w-0"><h1 className={`hw-display text-2xl md:text-4xl leading-none ${heading}`}>حواله‌جات</h1><p className={`mt-1 text-[10px] md:text-xs font-bold ${subText}`}>ثبت، پیگیری و تسویه حواله‌ها</p></div>
-</div>
-<div className="flex items-center gap-1.5 md:gap-2.5">
-<div className={`hidden sm:flex items-center gap-2 rounded-xl border px-3 py-2 shadow-sm backdrop-blur ${glassChip}`}><span className="relative flex h-2.5 w-2.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-70" /><span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" /></span><span dir="ltr" className="text-xs font-bold tabular-nums text-slate-700">{currentDateTime || "--:--"}</span></div>
-</div>
-</header>
-<div className="hw-up grid grid-cols-2 md:grid-cols-4 gap-3" style={{ animationDelay: "70ms" }}>
-{[{ label: "تعداد حواله‌ها", value: totalCount, color: "text-blue-600" }, { label: "در انتظار / ارسال", value: pendingCount + sentCount, color: "text-amber-600" }, { label: "پرداخت‌شده", value: paidCount, color: "text-emerald-600" }, { label: "ابطال‌شده", value: cancelledCount, color: "text-rose-600" }].map((stat, i) => (<div key={i} className="rounded-xl border border-slate-200 bg-white p-3 text-center"><div className={`text-xl font-black tabular-nums ${stat.color}`}>{stat.value}</div><div className="text-[10px] font-bold mt-1 text-slate-500">{stat.label}</div></div>))}
-</div>
-<div className={`hw-up flex gap-1.5 md:gap-2 rounded-xl md:rounded-2xl border p-1.5 md:p-2 shadow-sm backdrop-blur ${glassChip}`} style={{ animationDelay: "140ms" }}>
-{tabs.map(tab => (<button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 md:gap-2 rounded-lg md:rounded-xl px-3 md:px-5 py-2.5 md:py-3 text-xs md:text-sm font-black transition-all duration-300 active:scale-[0.97] ${activeTab === tab.id ? "bg-gradient-to-l from-blue-500 via-cyan-500 to-emerald-500 text-white shadow-lg" : "text-slate-500 hover:bg-blue-50 hover:text-slate-800"}`}><Ic n={tab.icon} className="h-4 w-4" /><span>{tab.label}</span>{tab.count !== undefined && tab.count > 0 && <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-black ${activeTab === tab.id ? "bg-white/30 text-white" : "bg-slate-200 text-slate-600"}`}>{tab.count}</span>}</button>))}
-</div>
-
-      {activeTab === "new" && (
-        <section className={`hw-up space-y-4 md:space-y-5 p-4 md:p-7 ${uiCard}`}>
-          <div className="flex flex-wrap items-center gap-3"><span className={`grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identHwIcon}`}><Ic n="send" className="h-5 w-5" /></span><div className="flex-1 min-w-0"><h2 className={`hw-display text-xl md:text-2xl leading-none ${heading}`}>ثبت حواله جدید</h2><p className={`mt-1 text-[11px] font-bold ${subText}`}>معلومات حواله‌دهنده، مقصد و حواله‌گیرنده</p></div></div>
-          <div className="grid gap-3 md:grid-cols-2"><CustomerBalanceCard customer={selectedSender} color="blue" isCashBox={isSenderCashBox} /><CustomerBalanceCard customer={selectedReceiver} color="orange" isCashBox={isReceiverCashBox} /></div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <div className="flex items-center gap-2.5 mb-4"><span className="grid h-9 w-9 place-items-center rounded-xl bg-blue-100 text-blue-600"><Ic n="send" className="h-4 w-4" /></span><b className="text-sm font-black text-blue-700">معلومات حواله‌دهنده و حواله</b></div>
-            <div className="grid gap-3 md:gap-4 sm:grid-cols-3 mb-4">
-              {fld("نام حواله‌دهنده *", (
-                <div className="relative" ref={senderListRef}>
-                  <input value={form.senderName} onChange={e => {
-                    const val = e.target.value;
-                    setField("senderName", val);
-                    setSenderFilter(val);
-                    if (!showSenderList) setShowSenderList(true);
-                    if (val.trim() === CASH_BOX_NAME) {
-                      setField("senderId", CASH_BOX_ID); setField("senderPhone", ""); setField("senderTelegram", "");
-                    } else if (val.trim() === EXCHANGE_ACCOUNT_NAME) {
-                      setField("senderId", EXCHANGE_ACCOUNT_ID); setField("senderPhone", ""); setField("senderTelegram", "");
-                    } else {
-                      const customer = customers.find(c => c.name === val);
-                      if (customer) {
-                        setField("senderId", customer.id); setField("senderPhone", customer.phone || ""); setField("senderTelegram", customer.telegram || "");
-                      } else {
-                        setField("senderId", ""); setField("senderPhone", ""); setField("senderTelegram", "");
-                      }
-                    }
-                  }} placeholder="انتخاب از لیست یا نوشتن نام جدید…" className={`${uiInput} pl-12 ${errors.senderName ? errInput : ""}`} autoComplete="off" />
-                  <button type="button" onClick={e => { e.stopPropagation(); setShowSenderList(!showSenderList); }} className="absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition text-slate-400 hover:text-slate-600 hover:bg-slate-100">
-                    <Ic n="chevron" className={`h-4 w-4 transition-transform ${showSenderList ? "rotate-180" : ""}`} />
-                  </button>
-                  {showSenderList && (
-                    <div className="hw-menu absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
-                      {filteredSenderList.length === 0 ? (
-                        <div className="px-4 py-3 text-xs text-center text-slate-500">مشتری‌ای یافت نشد</div>
-                      ) : (
-                        filteredSenderList.map((c, idx) => (
-                          <button key={c.id} type="button" onClick={() => {
-                            setField("senderId", c.id); setField("senderName", c.name); setField("senderPhone", c.phone || ""); setField("senderTelegram", c.telegram || "");
-                            setSenderFilter(""); setShowSenderList(false); setErrors(p => ({ ...p, senderName: undefined }));
-                          }} className="flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition text-slate-700 hover:bg-blue-50 hover:text-blue-600">
-                            <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-blue-500 to-cyan-500">{idx + 1}</span>
-                            <span className="flex-1 truncate flex items-center gap-1.5">{c.name}{hasTelegram(c) && <span title="دارای چت آیدی تلگرام">📱</span>}</span>
-                            {c.phone && <span className="text-[10px] text-slate-500" dir="ltr">{c.phone}</span>}
-                          </button>
-                        ))
-                      )}
-                      <div className="h-px bg-slate-100" />
-                      <div className="px-3 py-2 text-[10px] text-center text-slate-500">نام جدید در لیست ذخیره نمی‌شود</div>
-                    </div>
-                  )}
+          {activeTab === "new" && (
+            <section className={`hw-up space-y-4 md:space-y-5 p-4 md:p-7 ${uiCard}`}>
+              <div className="flex flex-wrap items-center gap-3"><span className={`grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identHwIcon}`}><Ic n="send" className="h-5 w-5" /></span><div className="flex-1 min-w-0"><h2 className={`hw-display text-xl md:text-2xl leading-none ${heading}`}>ثبت حواله جدید</h2><p className={`mt-1 text-[11px] font-bold ${subText}`}>معلومات حواله‌دهنده، مقصد و حواله‌گیرنده</p></div></div>
+              <div className="grid gap-3 md:grid-cols-2"><CustomerBalanceCard customer={selectedSender} color="blue" isCashBox={isSenderCashBox} /><CustomerBalanceCard customer={selectedReceiver} color="orange" isCashBox={isReceiverCashBox} /></div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-center gap-2.5 mb-4"><span className="grid h-9 w-9 place-items-center rounded-xl bg-blue-100 text-blue-600"><Ic n="send" className="h-4 w-4" /></span><b className="text-sm font-black text-blue-700">معلومات حواله‌دهنده و حواله</b></div>
+                <div className="grid gap-3 md:gap-4 sm:grid-cols-3 mb-4">
+                  {fld("نام حواله‌دهنده *", (<div className="relative" ref={senderListRef}><input value={form.senderName} onChange={e => { const val = e.target.value; setField("senderName", val); setSenderFilter(val); if (!showSenderList) setShowSenderList(true); if (val.trim() === CASH_BOX_NAME) { setField("senderId", CASH_BOX_ID); setField("senderPhone", ""); setField("senderTelegram", ""); } else if (val.trim() === EXCHANGE_ACCOUNT_NAME) { setField("senderId", EXCHANGE_ACCOUNT_ID); setField("senderPhone", ""); setField("senderTelegram", ""); } else { const customer = customers.find(c => c.name === val); if (customer) { setField("senderId", customer.id); setField("senderPhone", customer.phone || ""); setField("senderTelegram", customer.telegram || ""); } else { setField("senderId", ""); setField("senderPhone", ""); setField("senderTelegram", ""); } } }} placeholder="انتخاب از لیست یا نوشتن نام جدید…" className={`${uiInput} pl-12 ${errors.senderName ? errInput : ""}`} autoComplete="off" /><button type="button" onClick={(e) => { e.stopPropagation(); setShowSenderList(!showSenderList); }} className="absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition text-slate-400 hover:text-slate-600 hover:bg-slate-100"><Ic n="chevron" className={`h-4 w-4 transition-transform ${showSenderList ? "rotate-180" : ""}`} /></button>{showSenderList && (<div className="hw-menu absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">{filteredSenderList.length === 0 ? (<div className="px-4 py-3 text-xs text-center text-slate-500">مشتری‌ای یافت نشد</div>) : (filteredSenderList.map((c, idx) => (<button key={c.id} type="button" onClick={() => { setField("senderId", c.id); setField("senderName", c.name); setField("senderPhone", c.phone || ""); setField("senderTelegram", c.telegram || ""); setSenderFilter(""); setShowSenderList(false); setErrors(p => ({ ...p, senderName: undefined })); }} className="flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition text-slate-700 hover:bg-blue-50 hover:text-blue-600"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-blue-500 to-cyan-500">{idx + 1}</span><span className="flex-1 truncate flex items-center gap-1.5">{c.name}{hasTelegram(c) && <span title="دارای چت آیدی تلگرام">📱</span>}</span>{c.phone && <span className="text-[10px] text-slate-500" dir="ltr">{c.phone}</span></button>)))}<div className="h-px bg-slate-100" /><div className="px-3 py-2 text-[10px] text-center text-slate-500">نام جدید در لیست ذخیره نمی‌شود</div></div>)}</div>))}
+                  {fld("کد پیگیری", (<div className="relative"><input readOnly dir="ltr" value={nextHawalaNumber} className={`${uiInput} ${roInput} pl-16 text-left tabular-nums font-black text-[14px]`} /><span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 px-2 py-1 text-[9px] font-black text-white">TR</span></div>))}
+                  {fld("تاریخ (شمسی)", (<input readOnly value={currentDateTime} className={`${uiInput} ${roInput}`} />))}
                 </div>
-              ))}
-              {fld("کد پیگیری", (<div className="relative"><input readOnly dir="ltr" value={nextHawalaNumber} className={`${uiInput} ${roInput} pl-16 text-left tabular-nums font-black text-[14px]`} /><span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 px-2 py-1 text-[9px] font-black text-white">TR</span></div>))}
-              {fld("تاریخ (شمسی)", (<input readOnly value={currentDateTime} className={`${uiInput} ${roInput}`} />))}
-            </div>
-            <div className="grid gap-3 md:gap-4 sm:grid-cols-2 mb-4">
-              {fld("شماره تماس حواله‌دهنده *", (<input className={`${uiInput} ${errors.senderPhone ? errInput : ""}`} value={form.senderPhone} onChange={e => setField("senderPhone", e.target.value)} placeholder="07xxxxxxxx" />))}
-              {fld("چت آی‌دی تلگرام", (<input className={uiInput} value={form.senderTelegram} onChange={e => setField("senderTelegram", e.target.value)} placeholder="@example یا شماره" />))}
-            </div>
-            <div className="grid gap-3 md:gap-4 sm:grid-cols-3 mb-4">
-              {fld("نوع حواله *", sel(form.type, (v) => setField("type", v), [["", "انتخاب کنید"], ["send", "ارسال"], ["receive", "دریافت"]], errors.type ? errInput : ""))}
-              {fld("ارز مبدا *", sel(form.currencyFrom, (v) => setField("currencyFrom", v), currencies.map(c => [c, labels[c]])))}
-              {fld("ارز مقصد *", sel(form.currencyTo, (v) => setField("currencyTo", v), currencies.map(c => [c, labels[c]])))}
-            </div>
-            <div className="grid gap-3 md:gap-4 sm:grid-cols-3 mb-4">
-              {fld("مبلغ حواله *", (<input type="text" inputMode="decimal" dir="ltr" className={`${uiInput} text-left tabular-nums ${errors.amountFrom ? errInput : ""}`} value={form.amountFrom} onChange={e => setField("amountFrom", toNumericText(e.target.value))} placeholder="مثلاً 10000" />))}
-              {fld("کمیشن حواله", (<input type="text" inputMode="decimal" dir="ltr" className={`${uiInput} text-left tabular-nums ${errors.fee ? errInput : ""}`} value={form.fee} onChange={e => setField("fee", toNumericText(e.target.value))} placeholder="مثلاً 200" />))}
-              {fld("مبلغ نهایی", (<input readOnly value={`${fmt(finalAmount)} ${labels[form.currencyTo]}`} className={`${uiInput} ${roInput} text-left tabular-nums`} />))}
-            </div>
-            <div className="grid gap-3 md:gap-4 sm:grid-cols-2">{fld("باقی مانده حساب مشتری", (<input className={uiInput} value={form.balance} onChange={e => setField("balance", e.target.value)} placeholder="اختیاری" />))}</div>
-          </div>
-          {rateMode === "same" && (<div>{sameBox("ارز مبدا و مقصد یکسان است؛ مبلغ نهایی برابر مبلغ حواله خواهد بود.")}</div>)}
-          {rateMode === "afn" && afnForeign && (<div>{rateBox(cBlue, "نرخ دستی در برابر افغانی", (<div><label className={uiLabel}>نرخ</label><div className="flex flex-wrap items-center gap-2.5"><span className={rateChip}>{rateUnits[afnForeign]} {labels[afnForeign]} =</span><input type="text" inputMode="decimal" dir="ltr" value={form.rate} onChange={(e) => setField("rate", toNumericText(e.target.value))} placeholder="0" className={`h-12 w-32 md:w-44 px-3 text-left text-sm font-bold tabular-nums ${inputShell} ${errors.rate ? errInput : ""}`} /><span className={rateChip}>{labels.AFN}</span></div></div>), (<>{pill(cBlue.badge, rateValue > 0 ? `نرخ ثبت‌شده: ${afnRateLabel(afnForeign, rateValue)}` : "", true)}{pill(cEmerald.badge, convertedAmount > 0 ? `نتیجه: ${fmt(convertedAmount)} ${labels[form.currencyTo]}` : "")}</>))}</div>)}
-          {rateMode === "direct" && (<div>{rateBox(cAmber, "نرخ مستقیم جفت‌ارز", (<div className="grid items-end gap-3 md:gap-4 md:grid-cols-2">{fld("مبنای نرخ", sel(directBaseValue, (v) => setDirectBase(v as Currency), [[form.currencyFrom, labels[form.currencyFrom]], [form.currencyTo, labels[form.currencyTo]]]))}<div><label className={uiLabel}>نرخ مستقیم</label><div className="flex flex-wrap items-center gap-2"><span className={rateChip}>{rateUnits[directBaseValue]} {labels[directBaseValue]} =</span><input type="text" inputMode="decimal" dir="ltr" value={form.rate} onChange={(e) => setField("rate", toNumericText(e.target.value))} placeholder="0" className={`h-12 w-28 md:w-40 px-3 text-left text-sm font-bold tabular-nums ${inputShell} ${errors.rate ? errInput : ""}`} /><span className={rateChip}>{directCounter ? labels[directCounter] : ""}</span></div></div></div>), (<>{pill(cAmber.badge, rateValue > 0 && directCounter ? `نرخ ثبت‌شده: ${directRateLabel(directBaseValue, directCounter, rateValue)}` : "", true)}{pill(cEmerald.badge, convertedAmount > 0 ? `نتیجه: ${fmt(convertedAmount)} ${labels[form.currencyTo]}` : "")}</>))}</div>)}
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <div className="flex items-center gap-2.5 mb-4"><span className="grid h-9 w-9 place-items-center rounded-xl bg-amber-100 text-amber-600"><Ic n="rate" className="h-4 w-4" /></span><b className="text-sm font-black text-amber-700">کارمزد</b></div>
-            <div className="grid gap-3 md:gap-4 sm:grid-cols-2">
-              {fld("کارمزد از حساب", (<div className="flex rounded-xl border border-slate-200 bg-white p-1"><button type="button" onClick={() => setField("feePayer", "sender")} className={`flex-1 rounded-lg px-3 py-2 text-xs font-black transition-all ${form.feePayer === "sender" ? "bg-sky-500 text-white shadow" : "text-slate-500 hover:text-slate-700"}`}>حواله‌دهنده</button><button type="button" onClick={() => setField("feePayer", "receiver")} className={`flex-1 rounded-lg px-3 py-2 text-xs font-black transition-all ${form.feePayer === "receiver" ? "bg-sky-500 text-white shadow" : "text-slate-500 hover:text-slate-700"}`}>حواله‌گیرنده</button></div>))}
-              {fld("ارز کارمزد", (<div className="relative"><select value={form.feeCurrency} onChange={(e) => setField("feeCurrency", e.target.value)} className={`${uiInput} cursor-pointer appearance-none pl-9`}>{currencies.map((c) => (<option key={c} value={c}>{labels[c]}</option>))}</select><span className={chevPos}><Ic n="chevron" className="h-4 w-4" /></span></div>))}
-            </div>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <div className="flex items-center gap-2.5 mb-4"><span className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-100 text-emerald-600"><Ic n="doc" className="h-4 w-4" /></span><b className="text-sm font-black text-emerald-700">معلومات مقصد</b></div>
-            <div className="grid gap-3 md:gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {fld("ولایت مقصد *", sel(form.province, handleProvinceChange as any, provinces.map(p => [p, p]), errors.province ? errInput : ""))}
-              {fld("ولسوالی مقصد", isHerat ? sel(form.district, (v) => setField("district", v), heratDistricts.map(d => [d, d])) : (<input readOnly value={form.province} className={`${uiInput} ${roInput}`} />))}
-              {fld("مقصد نهایی", (<input readOnly value={destinationText} className={`${uiInput} ${roInput}`} />))}
-            </div>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <div className="flex items-center gap-2.5 mb-4"><span className="grid h-9 w-9 place-items-center rounded-xl bg-amber-100 text-amber-600"><Ic n="receive" className="h-4 w-4" /></span><b className="text-sm font-black text-amber-700">معلومات حواله‌گیرنده</b></div>
-            <div className="grid gap-3 md:gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {fld("نام حواله‌گیرنده *", (
-                <div className="relative" ref={receiverListRef}>
-                  <input value={form.receiverName} onChange={e => {
-                    const val = e.target.value;
-                    setField("receiverName", val);
-                    setReceiverFilter(val);
-                    if (!showReceiverList) setShowReceiverList(true);
-                    if (val.trim() === CASH_BOX_NAME) {
-                      setField("receiverId", CASH_BOX_ID); setField("receiverPhone", ""); setField("receiverTazkira", "");
-                    } else if (val.trim() === EXCHANGE_ACCOUNT_NAME) {
-                      setField("receiverId", EXCHANGE_ACCOUNT_ID); setField("receiverPhone", ""); setField("receiverTazkira", "");
-                    } else {
-                      const customer = customers.find(c => c.name === val);
-                      if (customer) {
-                        setField("receiverId", customer.id); setField("receiverPhone", customer.tazkira || ""); setField("receiverTazkira", customer.phone || "");
-                      } else {
-                        setField("receiverId", ""); setField("receiverPhone", ""); setField("receiverTazkira", "");
-                      }
-                    }
-                  }} placeholder="انتخاب از لیست یا نوشتن نام جدید…" className={`${uiInput} pl-12 ${errors.receiverName ? errInput : ""}`} autoComplete="off" />
-                  <button type="button" onClick={e => { e.stopPropagation(); setShowReceiverList(!showReceiverList); }} className="absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition text-slate-400 hover:text-slate-600 hover:bg-slate-100">
-                    <Ic n="chevron" className={`h-4 w-4 transition-transform ${showReceiverList ? "rotate-180" : ""}`} />
-                  </button>
-                  {showReceiverList && (
-                    <div className="hw-menu absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
-                      {filteredReceiverList.length === 0 ? (
-                        <div className="px-4 py-3 text-xs text-center text-slate-500">مشتری‌ای یافت نشد</div>
-                      ) : (
-                        filteredReceiverList.map((c, idx) => (
-                          <button key={c.id} type="button" onClick={() => {
-                            setField("receiverId", c.id); setField("receiverName", c.name); setField("receiverPhone", c.phone || ""); setField("receiverTazkira", c.telegram || "");
-                            setReceiverFilter(""); setShowReceiverList(false); setErrors(p => ({ ...p, receiverName: undefined }));
-                          }} className="flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition text-slate-700 hover:bg-amber-50 hover:text-amber-600">
-                            <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-amber-500 to-orange-500">{idx + 1}</span>
-                            <span className="flex-1 truncate flex items-center gap-1.5">{c.name}{hasTelegram(c) && <span title="دارای چت آیدی تلگرام">📱</span>}</span>
-                            {c.phone && <span className="text-[10px] text-slate-500" dir="ltr">{c.phone}</span>}
-                          </button>
-                        ))
-                      )}
-                      <div className="h-px bg-slate-100" />
-                      <div className="px-3 py-2 text-[10px] text-center text-slate-500">نام جدید در لیست ذخیره نمی‌شود</div>
-                    </div>
-                  )}
+                <div className="grid gap-3 md:gap-4 sm:grid-cols-2 mb-4">
+                  {fld("شماره تماس حواله‌دهنده *", (<input className={`${uiInput} ${errors.senderPhone ? errInput : ""}`} value={form.senderPhone} onChange={e => setField("senderPhone", e.target.value)} placeholder="07xxxxxxxx" />))}
+                  {fld("چت آی‌دی تلگرام", (<input className={uiInput} value={form.senderTelegram} onChange={e => setField("senderTelegram", e.target.value)} placeholder="@example یا شماره" />))}
                 </div>
-              ))}
-              {fld("شماره تذکره *", (<input className={`${uiInput} ${errors.receiverTazkira ? errInput : ""}`} value={form.receiverTazkira} onChange={e => setField("receiverTazkira", e.target.value)} placeholder="شماره تذکره" />))}
-              {fld("شماره تماس *", (<input className={`${uiInput} ${errors.receiverPhone ? errInput : ""}`} value={form.receiverPhone} onChange={e => setField("receiverPhone", e.target.value)} placeholder="07xxxxxxxx" />))}
-              {fld("آدرس", (<input className={`${uiInput} sm:col-span-2 lg:col-span-3`} value={form.receiverAddress} onChange={e => setField("receiverAddress", e.target.value)} placeholder="اختیاری" />))}
+                <div className="grid gap-3 md:gap-4 sm:grid-cols-3 mb-4">
+                  {fld("نوع حواله *", sel(form.type, (v) => setField("type", v), [["", "انتخاب کنید"], ["send", "ارسال"], ["receive", "دریافت"]], errors.type ? errInput : ""))}
+                  {fld("ارز مبدا *", sel(form.currencyFrom, (v) => setField("currencyFrom", v), currencies.map(c => [c, labels[c]])))}
+                  {fld("ارز مقصد *", sel(form.currencyTo, (v) => setField("currencyTo", v), currencies.map(c => [c, labels[c]])))}
+                </div>
+                <div className="grid gap-3 md:gap-4 sm:grid-cols-3 mb-4">
+                  {fld("مبلغ حواله *", (<input type="text" inputMode="decimal" dir="ltr" className={`${uiInput} text-left tabular-nums ${errors.amountFrom ? errInput : ""}`} value={form.amountFrom} onChange={e => setField("amountFrom", toNumericText(e.target.value))} placeholder="مثلاً 10000" />))}
+                  {fld("کمیشن حواله", (<input type="text" inputMode="decimal" dir="ltr" className={`${uiInput} text-left tabular-nums ${errors.fee ? errInput : ""}`} value={form.fee} onChange={e => setField("fee", toNumericText(e.target.value))} placeholder="مثلاً 200" />))}
+                  {fld("مبلغ نهایی", (<input readOnly value={`${fmt(finalAmount)} ${labels[form.currencyTo]}`} className={`${uiInput} ${roInput} text-left tabular-nums`} />))}
+                </div>
+                <div className="grid gap-3 md:gap-4 sm:grid-cols-2">{fld("باقی مانده حساب مشتری", (<input className={uiInput} value={form.balance} onChange={e => setField("balance", e.target.value)} placeholder="اختیاری" />))}</div>
+              </div>
+              {rateMode === "same" && (<div>{sameBox("ارز مبدا و مقصد یکسان است؛ مبلغ نهایی برابر مبلغ حواله خواهد بود.")}</div>)}
+              {rateMode === "afn" && afnForeign && (<div>{rateBox(cBlue, "نرخ دستی در برابر افغانی", (<div><label className={uiLabel}>نرخ</label><div className="flex flex-wrap items-center gap-2.5"><span className={rateChip}>{rateUnits[afnForeign]} {labels[afnForeign]} =</span><input type="text" inputMode="decimal" dir="ltr" value={form.rate} onChange={(e) => setField("rate", toNumericText(e.target.value))} placeholder="0" className={`h-12 w-32 md:w-44 px-3 text-left text-sm font-bold tabular-nums ${inputShell} ${errors.rate ? errInput : ""}`} /><span className={rateChip}>{labels.AFN}</span></div></div>), (<>{pill(cBlue.badge, rateValue > 0 ? `نرخ ثبت‌شده: ${afnRateLabel(afnForeign, rateValue)}` : "", true)}{pill(cEmerald.badge, convertedAmount > 0 ? `نتیجه: ${fmt(convertedAmount)} ${labels[form.currencyTo]}` : "")}</>))}</div>)}
+              {rateMode === "direct" && (<div>{rateBox(cAmber, "نرخ مستقیم جفت‌ارز", (<div className="grid items-end gap-3 md:gap-4 md:grid-cols-2">{fld("مبنای نرخ", sel(directBaseValue, (v) => setDirectBase(v as Currency), [[form.currencyFrom, labels[form.currencyFrom]], [form.currencyTo, labels[form.currencyTo]]]))}<div><label className={uiLabel}>نرخ مستقیم</label><div className="flex flex-wrap items-center gap-2"><span className={rateChip}>{rateUnits[directBaseValue]} {labels[directBaseValue]} =</span><input type="text" inputMode="decimal" dir="ltr" value={form.rate} onChange={(e) => setField("rate", toNumericText(e.target.value))} placeholder="0" className={`h-12 w-28 md:w-40 px-3 text-left text-sm font-bold tabular-nums ${inputShell} ${errors.rate ? errInput : ""}`} /><span className={rateChip}>{directCounter ? labels[directCounter] : ""}</span></div></div></div>), (<>{pill(cAmber.badge, rateValue > 0 && directCounter ? `نرخ ثبت‌شده: ${directRateLabel(directBaseValue, directCounter, rateValue)}` : "", true)}{pill(cEmerald.badge, convertedAmount > 0 ? `نتیجه: ${fmt(convertedAmount)} ${labels[form.currencyTo]}` : "")}</>))}</div>)}
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-center gap-2.5 mb-4"><span className="grid h-9 w-9 place-items-center rounded-xl bg-amber-100 text-amber-600"><Ic n="rate" className="h-4 w-4" /></span><b className="text-sm font-black text-amber-700">کارمزد</b></div>
+                <div className="grid gap-3 md:gap-4 sm:grid-cols-2">
+                  {fld("کارمزد از حساب", (<div className="flex rounded-xl border border-slate-200 bg-white p-1"><button type="button" onClick={() => setField("feePayer", "sender")} className={`flex-1 rounded-lg px-3 py-2 text-xs font-black transition-all ${form.feePayer === "sender" ? "bg-sky-500 text-white shadow" : "text-slate-500 hover:text-slate-700"}`}>حواله‌دهنده</button><button type="button" onClick={() => setField("feePayer", "receiver")} className={`flex-1 rounded-lg px-3 py-2 text-xs font-black transition-all ${form.feePayer === "receiver" ? "bg-sky-500 text-white shadow" : "text-slate-500 hover:text-slate-700"}`}>حواله‌گیرنده</button></div>))}
+                  {fld("ارز کارمزد", (<div className="relative"><select value={form.feeCurrency} onChange={(e) => setField("feeCurrency", e.target.value)} className={`${uiInput} cursor-pointer appearance-none pl-9`}>{currencies.map((c) => (<option key={c} value={c}>{labels[c]}</option>))}</select><span className={chevPos}><Ic n="chevron" className="h-4 w-4" /></span></div>))}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-center gap-2.5 mb-4"><span className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-100 text-emerald-600"><Ic n="doc" className="h-4 w-4" /></span><b className="text-sm font-black text-emerald-700">معلومات مقصد</b></div>
+                <div className="grid gap-3 md:gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {fld("ولایت مقصد *", sel(form.province, handleProvinceChange as any, provinces.map(p => [p, p]), errors.province ? errInput : ""))}
+                  {fld("ولسوالی مقصد", isHerat ? sel(form.district, (v) => setField("district", v), heratDistricts.map(d => [d, d])) : (<input readOnly value={form.province} className={`${uiInput} ${roInput}`} />))}
+                  {fld("مقصد نهایی", (<input readOnly value={destinationText} className={`${uiInput} ${roInput}`} />))}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-center gap-2.5 mb-4"><span className="grid h-9 w-9 place-items-center rounded-xl bg-amber-100 text-amber-600"><Ic n="receive" className="h-4 w-4" /></span><b className="text-sm font-black text-amber-700">معلومات حواله‌گیرنده</b></div>
+                <div className="grid gap-3 md:gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {fld("نام حواله‌گیرنده *", (<div className="relative" ref={receiverListRef}><input value={form.receiverName} onChange={e => { const val = e.target.value; setField("receiverName", val); setReceiverFilter(val); if (!showReceiverList) setShowReceiverList(true); if (val.trim() === CASH_BOX_NAME) { setField("receiverId", CASH_BOX_ID); setField("receiverTazkira", ""); setField("receiverPhone", ""); setField("receiverAddress", ""); } else if (val.trim() === EXCHANGE_ACCOUNT_NAME) { setField("receiverId", EXCHANGE_ACCOUNT_ID); setField("receiverTazkira", ""); setField("receiverPhone", ""); setField("receiverAddress", ""); } else { const customer = customers.find(c => c.name === val); if (customer) { setField("receiverId", customer.id); setField("receiverTazkira", customer.tazkira || ""); setField("receiverPhone", customer.phone || ""); setField("receiverAddress", customer.address || ""); } else { setField("receiverId", ""); setField("receiverTazkira", ""); setField("receiverPhone", ""); setField("receiverAddress", ""); } } }} placeholder="انتخاب از لیست یا نوشتن نام جدید…" className={`${uiInput} pl-12 ${errors.receiverName ? errInput : ""}`} autoComplete="off" /><button type="button" onClick={(e) => { e.stopPropagation(); setShowReceiverList(!showReceiverList); }} className="absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition text-slate-400 hover:text-slate-600 hover:bg-slate-100"><Ic n="chevron" className={`h-4 w-4 transition-transform ${showReceiverList ? "rotate-180" : ""}`} /></button>{showReceiverList && (<div className="hw-menu absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">{filteredReceiverList.length === 0 ? (<div className="px-4 py-3 text-xs text-center text-slate-500">مشتری‌ای یافت نشد</div>) : (filteredReceiverList.map((c, idx) => (<button key={c.id} type="button" onClick={() => { setField("receiverId", c.id); setField("receiverName", c.name); setField("receiverTazkira", c.tazkira || ""); setField("receiverPhone", c.phone || ""); setField("receiverAddress", c.address || ""); setReceiverFilter(""); setShowReceiverList(false); setErrors(p => ({ ...p, receiverName: undefined })); }} className="flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition text-slate-700 hover:bg-amber-50 hover:text-amber-600"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-amber-500 to-orange-500">{idx + 1}</span><span className="flex-1 truncate flex items-center gap-1.5">{c.name}{hasTelegram(c) && <span title="دارای چت آیدی تلگرام">📱</span>}</span>{c.phone && <span className="text-[10px] text-slate-500" dir="ltr">{c.phone}</span></button>)))}<div className="h-px bg-slate-100" /><div className="px-3 py-2 text-[10px] text-center text-slate-500">نام جدید در لیست ذخیره نمی‌شود</div></div>)}</div>))}
+                  {fld("شماره تذکره *", (<input className={`${uiInput} ${errors.receiverTazkira ? errInput : ""}`} value={form.receiverTazkira} onChange={e => setField("receiverTazkira", e.target.value)} placeholder="شماره تذکره" />))}
+                  {fld("شماره تماس *", (<input className={`${uiInput} ${errors.receiverPhone ? errInput : ""}`} value={form.receiverPhone} onChange={e => setField("receiverPhone", e.target.value)} placeholder="07xxxxxxxx" />))}
+                  {fld("آدرس", (<input className={`${uiInput} sm:col-span-2 lg:col-span-3`} value={form.receiverAddress} onChange={e => setField("receiverAddress", e.target.value)} placeholder="اختیاری" />))}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-center gap-2.5 mb-4"><span className="grid h-9 w-9 place-items-center rounded-xl bg-slate-100 text-slate-600"><Ic n="info" className="h-4 w-4" /></span><b className="text-sm font-black text-slate-700">یادداشت</b></div>
+                <textarea rows={4} value={form.note} onChange={e => setField("note", e.target.value)} placeholder="یادداشت اختیاری..." className={`${uiInput} h-auto py-3 resize-none`} />
+              </div>
+              {errBox(errorList)}
+              <div className="flex flex-wrap gap-3">
+                <button onClick={handleRegisterClick} className="group flex h-[50px] md:h-[52px] flex-1 min-w-[200px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-blue-500 via-cyan-500 to-emerald-500 text-base font-black text-white shadow-lg transition-all duration-300 hover:shadow-xl hover:brightness-110 active:scale-[0.985]">ثبت حواله<Ic n="arrowLeft" className="h-5 w-5 transition-transform group-hover:-translate-x-1" /></button>
+                <button onClick={resetForm} className="flex h-[50px] md:h-[52px] px-6 cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 transition-all active:scale-95 hover:bg-slate-50">پاک کردن فورم</button>
+              </div>
+            </section>
+          )}
+
+          {activeTab === "current" && (
+            <section className={`hw-up Overflow-hidden ${uiCard}`}>
+              <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6"><span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identHwIcon}`}><Ic n="clock" className="h-5 w-5" /></span><div className="flex-1 min-w-0"><h2 className={`hw-display text-xl md:text-2xl leading-none ${heading}`}>حواله‌های جاری</h2><p className={`mt-1 text-[11px] font-bold ${subText}`}>حواله‌های در انتظار و ارسال‌شده</p></div></div>
+              <div className="px-4 md:px-7 pb-4 space-y-4">
+                <div className="flex flex-wrap gap-3"><input value={nameSearch} onChange={e => setNameSearch(e.target.value)} placeholder="نام، کد پیگیری، تلفن یا تذکره…" className={`${uiInput} flex-1 min-w-[200px]`} /><input value={amountSearch} onChange={e => setAmountSearch(e.target.value)} placeholder="جستجو بر اساس مبلغ…" inputMode="numeric" className={`${uiInput} flex-1 min-w-[150px]`} /><select value={sortOrder} onChange={e => setSortOrder(e.target.value as "asc" | "desc")} className={`${uiInput} w-auto min-w-[180px] cursor-pointer appearance-none pl-9`}><option value="asc">قدیمی‌ترین در اول</option><option value="desc">جدیدترین در اول</option></select></div>
+                {currentHawalas.length === 0 ? (<div className="flex flex-col items-center gap-3 px-6 py-12 text-slate-400"><span className="grid h-14 w-14 place-items-center rounded-2xl border border-dashed border-slate-300 bg-slate-50"><Ic n="inbox" className="h-6 w-6 opacity-70" /></span><p className="text-sm font-black text-center">هیچ حواله جاری وجود ندارد.</p></div>) : (<div className="overflow-x-auto"><div className={`${tableMaxHeight} overflow-y-auto`}><table className="w-full min-w-[1000px] text-sm"><thead className="sticky top-0 z-10"><tr className="border-y border-slate-100 bg-slate-50">{["شماره", "کد پیگیری", "تاریخ", "حواله‌دهنده", "حواله‌گیرنده", "مبلغ نهایی", "کارمزد", "پرداخت‌کننده", "مقصد", "وضعیت", "عملیات"].map((h) => (<th key={h} className="px-4 py-3 text-center text-[11px] font-black text-slate-400">{h}</th>))}</tr></thead><tbody className="divide-y divide-slate-100">{currentHawalas.map((item, index) => (<tr key={item.id} className="transition-colors hover:bg-blue-50/70"><td className="px-4 py-3.5 text-center"><span className="grid h-8 w-8 place-items-center rounded-lg text-[11px] font-black tabular-nums bg-slate-100 text-slate-500">{index + 1}</span></td><td className="px-4 py-3.5 text-center"><span className="inline-flex items-center gap-1 rounded-lg border border-sky-300 bg-sky-50 px-2.5 py-1.5 text-[11px] font-black tabular-nums text-sky-700" dir="ltr"><Ic n="tag" className="h-3 w-3" />{item.number}</span></td><td className="whitespace-nowrap px-4 py-3.5 text-center text-xs tabular-nums text-slate-500"><span dir="ltr">{dateLabel(item.date)}</span></td><td className="px-4 py-3.5 text-center text-[13px] font-bold text-slate-700">{item.senderName}</td><td className="px-4 py-3.5 text-center text-[13px] font-bold text-slate-700">{item.receiverName}</td><td className="px-4 py-3.5 text-center"><div className="text-[13px] font-black tabular-nums">{fmt(item.finalAmount)}</div><div className="text-[10px] font-bold text-slate-500">{labels[item.currencyTo]}</div></td><td className="px-4 py-3.5 text-center text-xs font-bold tabular-nums">{fmt(item.fee)} {labels[item.feeCurrency]}</td><td className="px-4 py-3.5 text-center"><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${item.feePayer === "sender" ? "bg-sky-100 text-sky-700" : "bg-amber-100 text-amber-700"}`}>{item.feePayer === "sender" ? "از فرستنده" : "از گیرنده"}</span></td><td className="px-4 py-3.5 text-center text-xs text-slate-500">{item.destinationText}</td><td className="px-4 py-3.5 text-center"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${statusColors[item.status]}`}>{statusLabels[item.status]}</span></td><td className="px-4 py-3.5 text-center"><ActionButtons item={item} isInHistory={false} /></td></tr>))}</tbody></table></div></div>)}
+              </div>
+            </section>
+          )}
+
+          {activeTab === "history" && (
+            <section className={`hw-up Overflow-hidden ${uiCard}`}>
+              <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6"><span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identHwIcon}`}><Ic n="doc" className="h-5 w-5" /></span><div className="flex-1 min-w-0"><h2 className={`hw-display text-xl md:text-2xl leading-none ${heading}`}>تاریخچه حواله‌ها</h2><p className={`mt-1 text-[11px] font-bold ${subText}`}>حواله‌های پرداخت‌شده و ابطال‌شده</p></div></div>
+              <div className="px-4 md:px-7 pb-4 space-y-4">
+                <div className="flex flex-wrap gap-3"><input value={nameSearch} onChange={e => setNameSearch(e.target.value)} placeholder="نام، کد پیگیری، تلفن یا تذکره…" className={`${uiInput} flex-1 min-w-[200px]`} /><input value={amountSearch} onChange={e => setAmountSearch(e.target.value)} placeholder="جستجو بر اساس مبلغ…" inputMode="numeric" className={`${uiInput} flex-1 min-w-[150px]`} /><select value={sortOrder} onChange={e => setSortOrder(e.target.value as "asc" | "desc")} className={`${uiInput} w-auto min-w-[180px] cursor-pointer appearance-none pl-9`}><option value="asc">قدیمی‌ترین در اول</option><option value="desc">جدیدترین در اول</option></select></div>
+                {historyHawalas.length === 0 ? (<div className="flex flex-col items-center gap-3 px-6 py-12 text-slate-400"><span className="grid h-14 w-14 place-items-center rounded-2xl border border-dashed border-slate-300 bg-slate-50"><Ic n="inbox" className="h-6 w-6 opacity-70" /></span><p className="text-sm font-black text-center">هیچ حواله‌ای در تاریخچه وجود ندارد.</p></div>) : (<div className="overflow-x-auto"><div className={`${tableMaxHeight} overflow-y-auto`}><table className="w-full min-w-[1000px] text-sm"><thead className="sticky top-0 z-10"><tr className="border-y border-slate-100 bg-slate-50">{["شماره", "کد پیگیری", "تاریخ", "حواله‌دهنده", "حواله‌گیرنده", "مبلغ نهایی", "کارمزد", "پرداخت‌کننده", "مقصد", "وضعیت", "عملیات"].map((h) => (<th key={h} className="px-4 py-3 text-center text-[11px] font-black text-slate-400">{h}</th>))}</tr></thead><tbody className="divide-y divide-slate-100">{historyHawalas.map((item, index) => (<tr key={item.id} className="transition-colors hover:bg-blue-50/70"><td className="px-4 py-3.5 text-center"><span className="grid h-8 w-8 place-items-center rounded-lg text-[11px] font-black tabular-nums bg-slate-100 text-slate-500">{index + 1}</span></td><td className="px-4 py-3.5 text-center"><span className="inline-flex items-center gap-1 rounded-lg border border-sky-300 bg-sky-50 px-2.5 py-1.5 text-[11px] font-black tabular-nums text-sky-700" dir="ltr"><Ic n="tag" className="h-3 w-3" />{item.number}</span></td><td className="whitespace-nowrap px-4 py-3.5 text-center text-xs tabular-nums text-slate-500"><span dir="ltr">{dateLabel(item.date)}</span></td><td className="px-4 py-3.5 text-center text-[13px] font-bold text-slate-700">{item.senderName}</td><td className="px-4 py-3.5 text-center text-[13px] font-bold text-slate-700">{item.receiverName}</td><td className="px-4 py-3.5 text-center"><div className="text-[13px] font-black tabular-nums">{fmt(item.finalAmount)}</div><div className="text-[10px] font-bold text-slate-500">{labels[item.currencyTo]}</div></td><td className="px-4 py-3.5 text-center text-xs font-bold tabular-nums">{fmt(item.fee)} {labels[item.feeCurrency]}</td><td className="px-4 py-3.5 text-center"><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${item.feePayer === "sender" ? "bg-sky-100 text-sky-700" : "bg-amber-100 text-amber-700"}`}>{item.feePayer === "sender" ? "از فرستنده" : "از گیرنده"}</span></td><td className="px-4 py-3.5 text-center text-xs text-slate-500">{item.destinationText}</td><td className="px-4 py-3.5 text-center"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${statusColors[item.status]}`}>{statusLabels[item.status]}</span></td><td className="px-4 py-3.5 text-center"><ActionButtons item={item} isInHistory={true} /></td></tr>))}</tbody></table></div></div>)}
+              </div>
+            </section>
+          )}
+        </div>
+      </div>
+
+      {detailTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => setDetailTarget(null)}>
+          <div className="hw-up w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl md:rounded-2xl border border-slate-200 bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 md:px-5 py-3 md:py-4"><b className={heading}>جزئیات حواله {detailTarget.number}</b><button onClick={() => setDetailTarget(null)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400"><Ic n="x" className="h-4 w-4" /></button></div>
+            <div className="grid gap-3 p-4 md:p-6 sm:grid-cols-2 text-sm">
+              <div><span className={subText}>حواله‌دهنده: </span><b>{detailTarget.senderName}</b></div><div><span className={subText}>حواله‌گیرنده: </span><b>{detailTarget.receiverName}</b></div>
+              <div><span className={subText}>شماره تماس گیرنده: </span><b>{detailTarget.receiverPhone || "-"}</b></div><div><span className={subText}>تذکره گیرنده: </span><b>{detailTarget.receiverTazkira || "-"}</b></div>
+              <div className="sm:col-span-2"><span className={subText}>آدرس حواله‌گیرنده: </span><b>{detailTarget.receiverAddress || "-"}</b></div>
+              <div><span className={subText}>مبلغ نهایی: </span><b>{fmt(detailTarget.finalAmount)} {labels[detailTarget.currencyTo]}</b></div><div><span className={subText}>کمیشن: </span><b>{fmt(detailTarget.fee)} {labels[detailTarget.feeCurrency]}</b></div>
+              <div><span className={subText}>مقصد: </span><b>{detailTarget.destinationText}</b></div><div><span className={subText}>وضعیت: </span><b>{statusLabels[detailTarget.status]}</b></div>
+              <div className="sm:col-span-2 rounded-xl border border-slate-200 p-3"><div className="mb-1 text-xs font-black text-slate-500">یادداشت</div><div className="whitespace-pre-wrap font-bold">{detailTarget.note || "یادداشتی ثبت نشده است."}</div></div>
+            </div>
+            <div className="flex flex-wrap gap-2 px-4 pb-4 md:px-6 md:pb-6"><button onClick={() => editHawala(detailTarget)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold">ویرایش</button><button onClick={() => shareHawala(detailTarget)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold">اشتراک‌گذاری</button><button onClick={() => setDetailTarget(null)} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white">بستن</button></div>
+          </div>
+        </div>
+      )}
+
+      {previewOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => setPreviewOpen(false)}>
+          <div className="hw-up w-full max-w-2xl overflow-hidden rounded-xl md:rounded-2xl border border-slate-200 bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 md:px-5 py-3 md:py-4"><b className="flex items-center gap-2 text-sm text-slate-800"><span className="grid h-8 w-8 place-items-center rounded-lg bg-blue-100 text-blue-600"><Ic n="doc" className="h-4 w-4" /></span>جزئیات حواله قبل از ثبت</b><button onClick={() => setPreviewOpen(false)} className="grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-all duration-300 hover:bg-slate-100 hover:text-slate-700 hover:rotate-90"><Ic n="x" className="h-4 w-4" /></button></div>
+            <div className="max-h-[75vh] overflow-y-auto px-4 md:px-5 py-4 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-300 bg-sky-50 p-3"><div><div className="text-[10px] font-bold text-slate-500">کد پیگیری</div><span className="inline-flex items-center gap-1.5 text-[14px] font-black tabular-nums text-sky-700" dir="ltr"><Ic n="tag" className="h-4 w-4" />{nextHawalaNumber}</span></div><div className="text-left"><div className="text-[10px] font-bold text-slate-500">تاریخ ثبت</div><div className="text-[13px] font-black tabular-nums text-slate-700">{currentDateTime}</div></div></div>
+              <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-4"><div className="flex items-center gap-2 mb-3"><Ic n="send" className="h-4 w-4 text-blue-600" /><b className="text-sm font-black text-blue-700">مشخصات حواله‌دهنده</b></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm"><div><span className={subText}>نام: </span><b className="text-slate-800">{form.senderName}</b>{selectedSender && selectedSender.id !== CASH_BOX_ID && <span className="mr-2 text-[10px] font-black text-emerald-600">✅ مشتری ثبت‌شده</span>}{isSenderCashBox && <span className="mr-2 text-[10px] font-black text-sky-600">💰 صندوق</span>}{!selectedSender && !isSenderCashBox && form.senderName && <span className="mr-2 text-[10px] font-black text-amber-600">⚠️ غیر مشتری (نقدی)</span>}</div><div><span className={subText}>تلفن: </span><b dir="ltr" className="text-slate-800">{form.senderPhone}</b></div>{form.senderTelegram && <div><span className={subText}>تلگرام: </span><b dir="ltr" className="text-slate-800">{form.senderTelegram}</b></div>}</div></div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="flex items-center gap-2 mb-3"><Ic n="swap" className="h-4 w-4 text-emerald-600" /><b className="text-sm font-black text-emerald-700">جزئیات حواله و مبلغ</b></div><div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm"><div><span className={subText}>نوع: </span><b>{form.type === "send" ? "ارسال" : "دریافت"}</b></div><div><span className={subText}>مبلغ اولیه: </span><b>{fmt(amountFrom)} {labels[form.currencyFrom]}</b></div>{rateMode !== "same" && <div><span className={subText}>نرخ: </span><b dir="ltr">{form.rate}</b></div>}<div><span className={subText}>کارمزد: </span><b>{fmt(feeValue)} {labels[form.feeCurrency]}</b></div><div><span className={subText}>پرداخت‌کننده کارمزد: </span><b>{form.feePayer === "sender" ? "حواله‌دهنده" : "حواله‌گیرنده"}</b></div><div className="col-span-2 sm:col-span-3 mt-2 pt-2 border-t border-dashed border-slate-300"><span className={subText}>مبلغ نهایی قابل پرداخت: </span><b className="text-lg text-emerald-700">{fmt(finalAmount)} {labels[form.currencyTo]}</b></div></div></div>
+              <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4"><div className="flex items-center gap-2 mb-3"><Ic n="receive" className="h-4 w-4 text-amber-600" /><b className="text-sm font-black text-amber-700">مشخصات حواله‌گیرنده و مقصد</b></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm"><div><span className={subText}>نام: </span><b>{form.receiverName}</b>{selectedReceiver && selectedReceiver.id !== CASH_BOX_ID && <span className="mr-2 text-[10px] font-black text-emerald-600">✅ مشتری ثبت‌شده</span>}{isReceiverCashBox && <span className="mr-2 text-[10px] font-black text-sky-600">💰 صندوق</span>}{!selectedReceiver && !isReceiverCashBox && form.receiverName && <span className="mr-2 text-[10px] font-black text-amber-600">⚠️ غیر مشتری (نقدی)</span>}</div><div><span className={subText}>تذکره: </span><b dir="ltr">{form.receiverTazkira}</b></div><div><span className={subText}>تلفن: </span><b dir="ltr">{form.receiverPhone}</b></div><div><span className={subText}>مقصد: </span><b>{destinationText}</b></div>{form.receiverAddress && <div className="col-span-1 sm:col-span-2"><span className={subText}>آدرس: </span><b>{form.receiverAddress}</b></div>}</div></div>
+              {form.note && (<div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="flex items-center gap-2 mb-2"><Ic n="info" className="h-4 w-4 text-slate-500" /><b className="text-sm font-black text-slate-600">یادداشت</b></div><p className="text-sm text-slate-600">{form.note}</p></div>)}
+              <div className={`rounded-xl border p-4 ${isSenderCashBox ? "border-sky-200 bg-sky-50" : !selectedSender ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-slate-50"}`}>
+                <div className="flex items-center gap-2 mb-2">
+                  <Ic n="info" className={`h-4 w-4 ${isSenderCashBox ? "text-sky-600" : !selectedSender ? "text-amber-600" : "text-slate-500"}`} />
+                  <b className={`text-sm font-black ${isSenderCashBox ? "text-sky-600" : !selectedSender ? "text-amber-600" : "text-slate-600"}`}>{isSenderCashBox ? "💰 اطلاعیه صندوق" : "⚠️ اطلاعیه مهم"}</b>
+                </div>
+                <p className="text-sm text-slate-600">
+                  {isSenderCashBox ? `حواله‌دهنده "صندوق" انتخاب شده است. مبلغ ${fmt(amountFrom)} ${labels[form.currencyFrom]} از موجودی فیزیکی صندوق کسر خواهد شد. این تراکنش به نام صندوق ثبت می‌شود و تغییری در حساب مشتریان ایجاد نمی‌کند.` : !selectedSender ? `حواله‌دهنده (${form.senderName}) در لیست مشتریان ثبت نشده است. این حواله به صورت نقدی پردازش می‌شود و فقط کارمزد در سیستم ثبت خواهد شد. هیچ تغییری در موجودی حساب‌های مشتریان ایجاد نخواهد شد.` : `حواله‌دهنده مشتری ثبت‌شده است. مبلغ ${fmt(amountFrom)} ${labels[form.currencyFrom]} از حساب وی کسر خواهد شد.`}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-3 pt-2"><button onClick={() => { confirmRegister(); }} className="flex h-[48px] flex-1 min-w-[180px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-emerald-500 to-teal-500 text-sm font-black text-white shadow-lg transition-all hover:brightness-110 active:scale-[0.98]">ثبت نهایی حواله<Ic n="check" className="h-4 w-4" /></button><button onClick={() => setPreviewOpen(false)} className="flex h-[48px] px-6 cursor-pointer items-center justify-center rounded-xl border border-slate-200 text-sm font-bold text-slate-600 transition-all active:scale-95 hover:bg-slate-50">انصراف</button></div>
             </div>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <div className="flex items-center gap-2.5 mb-4"><span className="grid h-9 w-9 place-items-center rounded-xl bg-slate-100 text-slate-600"><Ic n="info" className="h-4 w-4" /></span><b className="text-sm font-black text-slate-700">یادداشت</b></div>
-            <textarea rows={4} value={form.note} onChange={e => setField("note", e.target.value)} placeholder="یادداشت اختیاری..." className={`${uiInput} h-auto py-3 resize-none`} />
-          </div>
-          {errBox(errorList)}
-          <div className="flex flex-wrap gap-3">
-            <button onClick={handleRegisterClick} className="group flex h-[50px] md:h-[52px] flex-1 min-w-[200px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-blue-500 via-cyan-500 to-emerald-500 text-base font-black text-white shadow-lg transition-all duration-300 hover:shadow-xl hover:brightness-110 active:scale-[0.985]">ثبت حواله<Ic n="arrowLeft" className="h-5 w-5 transition-transform group-hover:-translate-x-1" /></button>
-            <button onClick={resetForm} className="flex h-[50px] md:h-[52px] px-6 cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 transition-all active:scale-95 hover:bg-slate-50">پاک کردن فورم</button>
-          </div>
-        </section>
-      )}
-
-      {activeTab === "current" && (
-        <section className={`hw-up Overflow-hidden ${uiCard}`}>
-          <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6"><span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identHwIcon}`}><Ic n="clock" className="h-5 w-5" /></span><div className="flex-1 min-w-0"><h2 className={`hw-display text-xl md:text-2xl leading-none ${heading}`}>حواله‌های جاری</h2><p className={`mt-1 text-[11px] font-bold ${subText}`}>حواله‌های در انتظار و ارسال‌شده</p></div></div>
-          <div className="px-4 md:px-7 pb-4 space-y-4">
-            <div className="flex flex-wrap gap-3"><input value={nameSearch} onChange={e => setNameSearch(e.target.value)} placeholder="نام، کد پیگیری، تلفن یا تذکره…" className={`${uiInput} flex-1 min-w-[200px]`} /><input value={amountSearch} onChange={e => setAmountSearch(e.target.value)} placeholder="جستجو بر اساس مبلغ…" inputMode="numeric" className={`${uiInput} flex-1 min-w-[150px]`} /><select value={sortOrder} onChange={e => setSortOrder(e.target.value as "asc" | "desc")} className={`${uiInput} w-auto min-w-[180px] cursor-pointer appearance-none pl-9`}><option value="asc">قدیمی‌ترین در اول</option><option value="desc">جدیدترین در اول</option></select></div>
-            {currentHawalas.length === 0 ? (<div className="flex flex-col items-center gap-3 px-6 py-12 text-slate-400"><span className="grid h-14 w-14 place-items-center rounded-2xl border border-dashed border-slate-300 bg-slate-50"><Ic n="inbox" className="h-6 w-6 opacity-70" /></span><p className="text-sm font-black text-center">هیچ حواله جاری وجود ندارد.</p></div>) : (<div className="overflow-x-auto"><div className={`${tableMaxHeight} overflow-y-auto`}><table className="w-full min-w-[1000px] text-sm"><thead className="sticky top-0 z-10"><tr className="border-y border-slate-100 bg-slate-50">{["شماره", "کد پیگیری", "تاریخ", "حواله‌دهنده", "حواله‌گیرنده", "مبلغ نهایی", "کارمزد", "پرداخت‌کننده", "مقصد", "وضعیت", "عملیات"].map((h) => (<th key={h} className="px-4 py-3 text-center text-[11px] font-black text-slate-400">{h}</th>))}</tr></thead><tbody className="divide-y divide-slate-100">{currentHawalas.map((item, index) => (<tr key={item.id} className="transition-colors hover:bg-blue-50/70"><td className="px-4 py-3.5 text-center"><span className="grid h-8 w-8 place-items-center rounded-lg text-[11px] font-black tabular-nums bg-slate-100 text-slate-500">{index + 1}</span></td><td className="px-4 py-3.5 text-center"><span className="inline-flex items-center gap-1 rounded-lg border border-sky-300 bg-sky-50 px-2.5 py-1.5 text-[11px] font-black tabular-nums text-sky-700" dir="ltr"><Ic n="tag" className="h-3 w-3" />{item.number}</span></td><td className="whitespace-nowrap px-4 py-3.5 text-center text-xs tabular-nums text-slate-500"><span dir="ltr">{dateLabel(item.date)}</span></td><td className="px-4 py-3.5 text-center text-[13px] font-bold text-slate-700">{item.senderName}</td><td className="px-4 py-3.5 text-center text-[13px] font-bold text-slate-700">{item.receiverName}</td><td className="px-4 py-3.5 text-center"><div className="text-[13px] font-black tabular-nums">{fmt(item.finalAmount)}</div><div className="text-[10px] font-bold text-slate-500">{labels[item.currencyTo]}</div></td><td className="px-4 py-3.5 text-center text-xs font-bold tabular-nums">{fmt(item.fee)} {labels[item.feeCurrency]}</td><td className="px-4 py-3.5 text-center"><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${item.feePayer === "sender" ? "bg-sky-100 text-sky-700" : "bg-amber-100 text-amber-700"}`}>{item.feePayer === "sender" ? "از فرستنده" : "از گیرنده"}</span></td><td className="px-4 py-3.5 text-center text-xs text-slate-500">{item.destinationText}</td><td className="px-4 py-3.5 text-center"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${statusColors[item.status]}`}>{statusLabels[item.status]}</span></td><td className="px-4 py-3.5 text-center"><ActionButtons item={item} isInHistory={false} /></td></tr>))}</tbody></table></div></div>)}
-          </div>
-        </section>
-      )}
-
-      {activeTab === "history" && (
-        <section className={`hw-up Overflow-hidden ${uiCard}`}>
-          <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6"><span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identHwIcon}`}><Ic n="doc" className="h-5 w-5" /></span><div className="flex-1 min-w-0"><h2 className={`hw-display text-xl md:text-2xl leading-none ${heading}`}>تاریخچه حواله‌ها</h2><p className={`mt-1 text-[11px] font-bold ${subText}`}>حواله‌های پرداخت‌شده و ابطال‌شده</p></div></div>
-          <div className="px-4 md:px-7 pb-4 space-y-4">
-            <div className="flex flex-wrap gap-3"><input value={nameSearch} onChange={e => setNameSearch(e.target.value)} placeholder="نام، کد پیگیری، تلفن یا تذکره…" className={`${uiInput} flex-1 min-w-[200px]`} /><input value={amountSearch} onChange={e => setAmountSearch(e.target.value)} placeholder="جستجو بر اساس مبلغ…" inputMode="numeric" className={`${uiInput} flex-1 min-w-[150px]`} /><select value={sortOrder} onChange={e => setSortOrder(e.target.value as "asc" | "desc")} className={`${uiInput} w-auto min-w-[180px] cursor-pointer appearance-none pl-9`}><option value="asc">قدیمی‌ترین در اول</option><option value="desc">جدیدترین در اول</option></select></div>
-            {historyHawalas.length === 0 ? (<div className="flex flex-col items-center gap-3 px-6 py-12 text-slate-400"><span className="grid h-14 w-14 place-items-center rounded-2xl border border-dashed border-slate-300 bg-slate-50"><Ic n="inbox" className="h-6 w-6 opacity-70" /></span><p className="text-sm font-black text-center">هیچ حواله‌ای در تاریخچه وجود ندارد.</p></div>) : (<div className="overflow-x-auto"><div className={`${tableMaxHeight} overflow-y-auto`}><table className="w-full min-w-[1000px] text-sm"><thead className="sticky top-0 z-10"><tr className="border-y border-slate-100 bg-slate-50">{["شماره", "کد پیگیری", "تاریخ", "حواله‌دهنده", "حواله‌گیرنده", "مبلغ نهایی", "کارمزد", "پرداخت‌کننده", "مقصد", "وضعیت", "عملیات"].map((h) => (<th key={h} className="px-4 py-3 text-center text-[11px] font-black text-slate-400">{h}</th>))}</tr></thead><tbody className="divide-y divide-slate-100">{historyHawalas.map((item, index) => (<tr key={item.id} className="transition-colors hover:bg-blue-50/70"><td className="px-4 py-3.5 text-center"><span className="grid h-8 w-8 place-items-center rounded-lg text-[11px] font-black tabular-nums bg-slate-100 text-slate-500">{index + 1}</span></td><td className="px-4 py-3.5 text-center"><span className="inline-flex items-center gap-1 rounded-lg border border-sky-300 bg-sky-50 px-2.5 py-1.5 text-[11px] font-black tabular-nums text-sky-700" dir="ltr"><Ic n="tag" className="h-3 w-3" />{item.number}</span></td><td className="whitespace-nowrap px-4 py-3.5 text-center text-xs tabular-nums text-slate-500"><span dir="ltr">{dateLabel(item.date)}</span></td><td className="px-4 py-3.5 text-center text-[13px] font-bold text-slate-700">{item.senderName}</td><td className="px-4 py-3.5 text-center text-[13px] font-bold text-slate-700">{item.receiverName}</td><td className="px-4 py-3.5 text-center"><div className="text-[13px] font-black tabular-nums">{fmt(item.finalAmount)}</div><div className="text-[10px] font-bold text-slate-500">{labels[item.currencyTo]}</div></td><td className="px-4 py-3.5 text-center text-xs font-bold tabular-nums">{fmt(item.fee)} {labels[item.feeCurrency]}</td><td className="px-4 py-3.5 text-center"><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${item.feePayer === "sender" ? "bg-sky-100 text-sky-700" : "bg-amber-100 text-amber-700"}`}>{item.feePayer === "sender" ? "از فرستنده" : "از گیرنده"}</span></td><td className="px-4 py-3.5 text-center text-xs text-slate-500">{item.destinationText}</td><td className="px-4 py-3.5 text-center"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${statusColors[item.status]}`}>{statusLabels[item.status]}</span></td><td className="px-4 py-3.5 text-center"><ActionButtons item={item} isInHistory={true} /></td></tr>))}</tbody></table></div></div>)}
-          </div>
-        </section>
-      )}
-    </div>
-  </div>
-
-  {detailTarget && (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => setDetailTarget(null)}>
-      <div className="hw-up w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl md:rounded-2xl border border-slate-200 bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 md:px-5 py-3 md:py-4"><b className={heading}>جزئیات حواله {detailTarget.number}</b><button onClick={() => setDetailTarget(null)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400"><Ic n="x" className="h-4 w-4" /></button></div>
-        <div className="grid gap-3 p-4 md:p-6 sm:grid-cols-2 text-sm">
-          <div><span className={subText}>حواله‌دهنده: </span><b>{detailTarget.senderName}</b></div><div><span className={subText}>حواله‌گیرنده: </span><b>{detailTarget.receiverName}</b></div>
-          <div><span className={subText}>شماره تماس گیرنده: </span><b>{detailTarget.receiverPhone || "-"}</b></div><div><span className={subText}>تذکره گیرنده: </span><b>{detailTarget.receiverTazkira || "-"}</b></div>
-          <div className="sm:col-span-2"><span className={subText}>آدرس حواله‌گیرنده: </span><b>{detailTarget.receiverAddress || "-"}</b></div>
-          <div><span className={subText}>مبلغ نهایی: </span><b>{fmt(detailTarget.finalAmount)} {labels[detailTarget.currencyTo]}</b></div><div><span className={subText}>کمیشن: </span><b>{fmt(detailTarget.fee)} {labels[detailTarget.feeCurrency]}</b></div>
-          <div><span className={subText}>مقصد: </span><b>{detailTarget.destinationText}</b></div><div><span className={subText}>وضعیت: </span><b>{statusLabels[detailTarget.status]}</b></div>
-          <div className="sm:col-span-2 rounded-xl border border-slate-200 p-3"><div className="mb-1 text-xs font-black text-slate-500">یادداشت</div><div className="whitespace-pre-wrap font-bold">{detailTarget.note || "یادداشتی ثبت نشده است."}</div></div>
         </div>
-        <div className="flex flex-wrap gap-2 px-4 pb-4 md:px-6 md:pb-6"><button onClick={() => editHawala(detailTarget)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold">ویرایش</button><button onClick={() => shareHawala(detailTarget)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold">اشتراک‌گذاری</button><button onClick={() => setDetailTarget(null)} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white">بستن</button></div>
-      </div>
-    </div>
-  )}
+      )}
 
-  {previewOpen && (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => setPreviewOpen(false)}>
-      <div className="hw-up w-full max-w-2xl overflow-hidden rounded-xl md:rounded-2xl border border-slate-200 bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 md:px-5 py-3 md:py-4"><b className="flex items-center gap-2 text-sm text-slate-800"><span className="grid h-8 w-8 place-items-center rounded-lg bg-blue-100 text-blue-600"><Ic n="doc" className="h-4 w-4" /></span>جزئیات حواله قبل از ثبت</b><button onClick={() => setPreviewOpen(false)} className="grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-all duration-300 hover:bg-slate-100 hover:text-slate-700 hover:rotate-90"><Ic n="x" className="h-4 w-4" /></button></div>
-        <div className="max-h-[75vh] overflow-y-auto px-4 md:px-5 py-4 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-300 bg-sky-50 p-3"><div><div className="text-[10px] font-bold text-slate-500">کد پیگیری</div><span className="inline-flex items-center gap-1.5 text-[14px] font-black tabular-nums text-sky-700" dir="ltr"><Ic n="tag" className="h-4 w-4" />{nextHawalaNumber}</span></div><div className="text-left"><div className="text-[10px] font-bold text-slate-500">تاریخ ثبت</div><div className="text-[13px] font-black tabular-nums text-slate-700">{currentDateTime}</div></div></div>
-          <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-4"><div className="flex items-center gap-2 mb-3"><Ic n="send" className="h-4 w-4 text-blue-600" /><b className="text-sm font-black text-blue-700">مشخصات حواله‌دهنده</b></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm"><div><span className={subText}>نام: </span><b className="text-slate-800">{form.senderName}</b>{selectedSender && selectedSender.id !== CASH_BOX_ID && <span className="mr-2 text-[10px] font-black text-emerald-600">✅ مشتری ثبت‌شده</span>}{isSenderCashBox && <span className="mr-2 text-[10px] font-black text-sky-600">💰 صندوق</span>}{!selectedSender && !isSenderCashBox && form.senderName && <span className="mr-2 text-[10px] font-black text-amber-600">⚠️ غیر مشتری (نقدی)</span>}</div><div><span className={subText}>تلفن: </span><b dir="ltr" className="text-slate-800">{form.senderPhone}</b></div>{form.senderTelegram && <div><span className={subText}>تلگرام: </span><b dir="ltr" className="text-slate-800">{form.senderTelegram}</b></div>}</div></div>
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="flex items-center gap-2 mb-3"><Ic n="swap" className="h-4 w-4 text-emerald-600" /><b className="text-sm font-black text-emerald-700">جزئیات حواله و مبلغ</b></div><div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm"><div><span className={subText}>نوع: </span><b>{form.type === "send" ? "ارسال" : "دریافت"}</b></div><div><span className={subText}>مبلغ اولیه: </span><b>{fmt(amountFrom)} {labels[form.currencyFrom]}</b></div>{rateMode !== "same" && <div><span className={subText}>نرخ: </span><b dir="ltr">{form.rate}</b></div>}<div><span className={subText}>کارمزد: </span><b>{fmt(feeValue)} {labels[form.feeCurrency]}</b></div><div><span className={subText}>پرداخت‌کننده کارمزد: </span><b>{form.feePayer === "sender" ? "حواله‌دهنده" : "حواله‌گیرنده"}</b></div><div className="col-span-2 sm:col-span-3 mt-2 pt-2 border-t border-dashed border-slate-300"><span className={subText}>مبلغ نهایی قابل پرداخت: </span><b className="text-lg text-emerald-700">{fmt(finalAmount)} {labels[form.currencyTo]}</b></div></div></div>
-          <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4"><div className="flex items-center gap-2 mb-3"><Ic n="receive" className="h-4 w-4 text-amber-600" /><b className="text-sm font-black text-amber-700">مشخصات حواله‌گیرنده و مقصد</b></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm"><div><span className={subText}>نام: </span><b>{form.receiverName}</b>{selectedReceiver && selectedReceiver.id !== CASH_BOX_ID && <span className="mr-2 text-[10px] font-black text-emerald-600">✅ مشتری ثبت‌شده</span>}{isReceiverCashBox && <span className="mr-2 text-[10px] font-black text-sky-600">💰 صندوق</span>}{!selectedReceiver && !isReceiverCashBox && form.receiverName && <span className="mr-2 text-[10px] font-black text-amber-600">⚠️ غیر مشتری (نقدی)</span>}</div><div><span className={subText}>تذکره: </span><b dir="ltr">{form.receiverTazkira}</b></div><div><span className={subText}>تلفن: </span><b dir="ltr">{form.receiverPhone}</b></div><div><span className={subText}>مقصد: </span><b>{destinationText}</b></div>{form.receiverAddress && <div className="col-span-1 sm:col-span-2"><span className={subText}>آدرس: </span><b>{form.receiverAddress}</b></div>}</div></div>
-          {form.note && (<div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="flex items-center gap-2 mb-2"><Ic n="info" className="h-4 w-4 text-slate-500" /><b className="text-sm font-black text-slate-600">یادداشت</b></div><p className="text-sm text-slate-600">{form.note}</p></div>)}
-          <div className={`rounded-xl border p-4 ${isSenderCashBox ? "border-sky-200 bg-sky-50" : !selectedSender ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-slate-50"}`}>
-            <div className="flex items-center gap-2 mb-2">
-              <Ic n="info" className={`h-4 w-4 ${isSenderCashBox ? "text-sky-600" : !selectedSender ? "text-amber-600" : "text-slate-500"}`} />
-              <b className={`text-sm font-black ${isSenderCashBox ? "text-sky-600" : !selectedSender ? "text-amber-600" : "text-slate-600"}`}>{isSenderCashBox ? "💰 اطلاعیه صندوق" : "⚠️ اطلاعیه مهم"}</b>
+      {settleTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => setSettleTarget(null)}>
+          <div className="hw-up w-full max-w-lg overflow-hidden rounded-xl md:rounded-2xl border border-slate-200 bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 md:px-5 py-3 md:py-4"><b className="text-sm text-slate-800">تسویه حواله {settleTarget.number}</b><button onClick={() => setSettleTarget(null)} className="grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-700 hover:rotate-90"><Ic n="x" className="h-4 w-4" /></button></div>
+            <div className="px-4 md:px-5 py-4 space-y-4">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="grid grid-cols-2 gap-3 text-sm"><div><span className={subText}>گیرنده: </span><b>{settleTarget.receiverName}</b>{settleTarget.receiverId && settleTarget.receiverId !== CASH_BOX_ID && customers.find(c => c.id === settleTarget.receiverId) && <span className="mr-2 text-[10px] font-black text-emerald-600">✅ مشتری</span>}{settleTarget.receiverId === CASH_BOX_ID && <span className="mr-2 text-[10px] font-black text-sky-600">💰 صندوق</span>}</div><div><span className={subText}>مبلغ نهایی: </span><b className="text-emerald-700">{fmt(settleTarget.finalAmount)} {labels[settleTarget.currencyTo]}</b></div></div></div>
+              <div className="grid gap-3 sm:grid-cols-2"><div><label className={uiLabel}>نام پرداخت‌کننده</label><input value={paidBy} onChange={e => setPaidBy(e.target.value)} placeholder="مثلاً صندوقکار" className={uiInput} /></div><div><label className={uiLabel}>مبلغ پرداخت‌شده</label><input type="text" inputMode="decimal" dir="ltr" value={paidAmount} onChange={e => setPaidAmount(toNumericText(e.target.value))} className={`${uiInput} text-left tabular-nums`} /></div></div>
+              <div className="flex flex-wrap gap-3"><button onClick={confirmSettlement} className="flex h-[48px] flex-1 min-w-[150px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-emerald-500 to-teal-500 text-sm font-black text-white shadow-lg transition-all hover:brightness-110 active:scale-[0.98]">تأیید پرداخت<Ic n="check" className="h-4 w-4" /></button><button onClick={() => setSettleTarget(null)} className="flex h-[48px] px-6 cursor-pointer items-center justify-center rounded-xl border border-slate-200 text-sm font-bold text-slate-600 transition-all active:scale-95 hover:bg-slate-50">انصراف</button></div>
             </div>
-            <p className="text-sm text-slate-600">
-              {isSenderCashBox ? `حواله‌دهنده "صندوق" انتخاب شده است. مبلغ ${fmt(amountFrom)} ${labels[form.currencyFrom]} از موجودی فیزیکی صندوق کسر خواهد شد. این تراکنش به نام صندوق ثبت می‌شود و تغییری در حساب مشتریان ایجاد نمی‌کند.` : !selectedSender ? `حواله‌دهنده (${form.senderName}) در لیست مشتریان ثبت نشده است. این حواله به صورت نقدی پردازش می‌شود و فقط کارمزد در سیستم ثبت خواهد شد. هیچ تغییری در موجودی حساب‌های مشتریان ایجاد نخواهد شد.` : `حواله‌دهنده مشتری ثبت‌شده است. مبلغ ${fmt(amountFrom)} ${labels[form.currencyFrom]} از حساب وی کسر خواهد شد.`}
-            </p>
           </div>
-          <div className="flex flex-wrap gap-3 pt-2"><button onClick={() => { confirmRegister(); }} className="flex h-[48px] flex-1 min-w-[180px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-emerald-500 to-teal-500 text-sm font-black text-white shadow-lg transition-all hover:brightness-110 active:scale-[0.98]">ثبت نهایی حواله<Ic n="check" className="h-4 w-4" /></button><button onClick={() => setPreviewOpen(false)} className="flex h-[48px] px-6 cursor-pointer items-center justify-center rounded-xl border border-slate-200 text-sm font-bold text-slate-600 transition-all active:scale-95 hover:bg-slate-50">انصراف</button></div>
         </div>
-      </div>
-    </div>
-  )}
+      )}
 
-  {settleTarget && (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => setSettleTarget(null)}>
-      <div className="hw-up w-full max-w-lg overflow-hidden rounded-xl md:rounded-2xl border border-slate-200 bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 md:px-5 py-3 md:py-4"><b className="text-sm text-slate-800">تسویه حواله {settleTarget.number}</b><button onClick={() => setSettleTarget(null)} className="grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-700 hover:rotate-90"><Ic n="x" className="h-4 w-4" /></button></div>
-        <div className="px-4 md:px-5 py-4 space-y-4">
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="grid grid-cols-2 gap-3 text-sm"><div><span className={subText}>گیرنده: </span><b>{settleTarget.receiverName}</b>{settleTarget.receiverId && settleTarget.receiverId !== CASH_BOX_ID && customers.find(c => c.id === settleTarget.receiverId) && <span className="mr-2 text-[10px] font-black text-emerald-600">✅ مشتری</span>}{settleTarget.receiverId === CASH_BOX_ID && <span className="mr-2 text-[10px] font-black text-sky-600">💰 صندوق</span>}</div><div><span className={subText}>مبلغ نهایی: </span><b className="text-emerald-700">{fmt(settleTarget.finalAmount)} {labels[settleTarget.currencyTo]}</b></div></div></div>
-          <div className="grid gap-3 sm:grid-cols-2"><div><label className={uiLabel}>نام پرداخت‌کننده</label><input value={paidBy} onChange={e => setPaidBy(e.target.value)} placeholder="مثلاً صندوقکار" className={uiInput} /></div><div><label className={uiLabel}>مبلغ پرداخت‌شده</label><input type="text" inputMode="decimal" dir="ltr" value={paidAmount} onChange={e => setPaidAmount(toNumericText(e.target.value))} className={`${uiInput} text-left tabular-nums`} /></div></div>
-          <div className="flex flex-wrap gap-3"><button onClick={confirmSettlement} className="flex h-[48px] flex-1 min-w-[150px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-emerald-500 to-teal-500 text-sm font-black text-white shadow-lg transition-all hover:brightness-110 active:scale-[0.98]">تأیید پرداخت<Ic n="check" className="h-4 w-4" /></button><button onClick={() => setSettleTarget(null)} className="flex h-[48px] px-6 cursor-pointer items-center justify-center rounded-xl border border-slate-200 text-sm font-bold text-slate-600 transition-all active:scale-95 hover:bg-slate-50">انصراف</button></div>
+      {cancelTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => setCancelTarget(null)}>
+          <div className="hw-up w-full max-w-lg overflow-hidden rounded-xl md:rounded-2xl border border-slate-200 bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 md:px-5 py-3 md:py-4"><b className="text-sm text-slate-800">لغو حواله {cancelTarget.number}</b><button onClick={() => setCancelTarget(null)} className="grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-700 hover:rotate-90"><Ic n="x" className="h-4 w-4" /></button></div>
+            <div className="px-4 md:px-5 py-4 space-y-4">
+              <div><label className={uiLabel}>دلیل لغو حواله</label><textarea rows={4} value={cancelReason} onChange={e => setCancelReason(e.target.value)} placeholder="دلیل لغو را بنویسید..." className={`${uiInput} h-auto py-3 resize-none`} /></div>
+              <div className="flex flex-wrap gap-3"><button onClick={confirmCancel} className="flex h-[48px] flex-1 min-w-[150px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-rose-500 to-red-500 text-sm font-black text-white shadow-lg transition-all hover:brightness-110 active:scale-[0.98]">لغو حواله<Ic n="xCircle" className="h-4 w-4" /></button><button onClick={() => setCancelTarget(null)} className="flex h-[48px] px-6 cursor-pointer items-center justify-center rounded-xl border border-slate-200 text-sm font-bold text-slate-600 transition-all active:scale-95 hover:bg-slate-50">انصراف</button></div>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
+
+      {toast && (<div className="fixed bottom-6 left-6 z-[99] rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white shadow-lg">{toast}</div>)}
     </div>
-  )}
-
-  {cancelTarget && (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => setCancelTarget(null)}>
-      <div className="hw-up w-full max-w-lg overflow-hidden rounded-xl md:rounded-2xl border border-slate-200 bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 md:px-5 py-3 md:py-4"><b className="text-sm text-slate-800">لغو حواله {cancelTarget.number}</b><button onClick={() => setCancelTarget(null)} className="grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-700 hover:rotate-90"><Ic n="x" className="h-4 w-4" /></button></div>
-        <div className="px-4 md:px-5 py-4 space-y-4">
-          <div><label className={uiLabel}>دلیل لغو حواله</label><textarea rows={4} value={cancelReason} onChange={e => setCancelReason(e.target.value)} placeholder="دلیل لغو را بنویسید..." className={`${uiInput} h-auto py-3 resize-none`} /></div>
-          <div className="flex flex-wrap gap-3"><button onClick={confirmCancel} className="flex h-[48px] flex-1 min-w-[150px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-rose-500 to-red-500 text-sm font-black text-white shadow-lg transition-all hover:brightness-110 active:scale-[0.98]">لغو حواله<Ic n="xCircle" className="h-4 w-4" /></button><button onClick={() => setCancelTarget(null)} className="flex h-[48px] px-6 cursor-pointer items-center justify-center rounded-xl border border-slate-200 text-sm font-bold text-slate-600 transition-all active:scale-95 hover:bg-slate-50">انصراف</button></div>
-        </div>
-      </div>
-    </div>
-  )}
-
-  {toast && (<div className="fixed bottom-6 left-6 z-[99] rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white shadow-lg">{toast}</div>)}
-</div>
-
-);
+  );
 }
