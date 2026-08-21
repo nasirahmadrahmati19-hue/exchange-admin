@@ -369,15 +369,103 @@ function syncCashEntriesForConvert(action: "add" | "remove" | "replace", tx: Tra
   let entries = loadCashEntries();
   const targetId = oldTxId || tx?.id;
   if (targetId) entries = entries.filter((e: any) => e.linkedConvertId !== targetId);
+
   if ((action === "add" || action === "replace") && tx) {
     const dateStr = tx.date || new Date().toISOString();
     const isAccount = tx.customerId === EXCHANGE_ACCOUNT_ID;
     const newEntries: any[] = [];
-    newEntries.push({ id: newId(), trackingCode: `${tx.trackingCode}-OUT`, date: dateStr, type: isAccount ? "owner_withdraw" : "customer_withdraw", currency: tx.fromCurrency, amount: tx.fromAmount, direction: "out", reason: isAccount ? `تبدیل ارز - برداشت از حساب صرافی` : `تبدیل ارز - برداشت از حساب مشتری`, balanceAfter: 0, customerId: isAccount ? EXCHANGE_ACCOUNT_ID : tx.customerId, customerName: isAccount ? EXCHANGE_ACCOUNT_NAME : tx.customerName, linkedConvertId: tx.id, status: "active" });
-    newEntries.push({ id: newId(), trackingCode: `${tx.trackingCode}-IN`, date: dateStr, type: isAccount ? "owner_deposit" : "customer_deposit", currency: tx.toCurrency, amount: tx.toAmount, direction: "in", reason: isAccount ? `تبدیل ارز - واریز به حساب صرافی` : `تبدیل ارز - واریز به حساب مشتری`, balanceAfter: 0, customerId: isAccount ? EXCHANGE_ACCOUNT_ID : tx.customerId, customerName: isAccount ? EXCHANGE_ACCOUNT_NAME : tx.customerName, linkedConvertId: tx.id, status: "active" });
-    if (tx.commission && tx.commission > 0 && tx.commissionCurrency) newEntries.push({ id: newId(), trackingCode: `${tx.trackingCode}-FEE`, date: dateStr, type: "fee", currency: tx.commissionCurrency, amount: tx.commission, direction: "in", reason: `تبدیل ارز - کارمزد صرافی`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedConvertId: tx.id, status: "active" });
+
+    if (isAccount) {
+      // تبدیل مستقیم داخل حساب صرافی: فقط حساب صرافی تغییر می‌کند.
+      newEntries.push({
+        id: newId(),
+        trackingCode: `${tx.trackingCode}-OUT`,
+        date: dateStr,
+        type: "owner_withdraw",
+        currency: tx.fromCurrency,
+        amount: tx.fromAmount,
+        direction: "out",
+        reason: `تبدیل ارز - برداشت از حساب صرافی`,
+        balanceAfter: 0,
+        customerId: EXCHANGE_ACCOUNT_ID,
+        customerName: EXCHANGE_ACCOUNT_NAME,
+        linkedConvertId: tx.id,
+        status: "active"
+      });
+      newEntries.push({
+        id: newId(),
+        trackingCode: `${tx.trackingCode}-IN`,
+        date: dateStr,
+        type: "owner_deposit",
+        currency: tx.toCurrency,
+        amount: tx.toAmount,
+        direction: "in",
+        reason: `تبدیل ارز - واریز به حساب صرافی`,
+        balanceAfter: 0,
+        customerId: EXCHANGE_ACCOUNT_ID,
+        customerName: EXCHANGE_ACCOUNT_NAME,
+        linkedConvertId: tx.id,
+        status: "active"
+      });
+    } else {
+      // تبدیل ارز مشتری با حساب صرافی:
+      // صندوق فیزیکی کاملاً بدون تغییر می‌ماند.
+      // ارز دریافتی مشتری به حساب صرافی اضافه و ارز پرداختی از حساب صرافی کم می‌شود.
+      newEntries.push({
+        id: newId(),
+        trackingCode: `${tx.trackingCode}-EX-IN`,
+        date: dateStr,
+        type: "exchange_account_in",
+        currency: tx.fromCurrency,
+        amount: tx.fromAmount,
+        direction: "in",
+        reason: `تبدیل ارز - دریافت ${labels[tx.fromCurrency]} توسط حساب صرافی از مشتری`,
+        balanceAfter: 0,
+        customerId: EXCHANGE_ACCOUNT_ID,
+        customerName: EXCHANGE_ACCOUNT_NAME,
+        linkedConvertId: tx.id,
+        status: "active"
+      });
+      newEntries.push({
+        id: newId(),
+        trackingCode: `${tx.trackingCode}-EX-OUT`,
+        date: dateStr,
+        type: "exchange_account_out",
+        currency: tx.toCurrency,
+        amount: tx.toAmount,
+        direction: "out",
+        reason: `تبدیل ارز - پرداخت ${labels[tx.toCurrency]} از حساب صرافی به مشتری`,
+        balanceAfter: 0,
+        customerId: EXCHANGE_ACCOUNT_ID,
+        customerName: EXCHANGE_ACCOUNT_NAME,
+        linkedConvertId: tx.id,
+        status: "active"
+      });
+    }
+
+    // کارمزد کاملاً جدا از حساب صرافی و صندوق فیزیکی ثبت می‌شود.
+    // فقط برای محاسبه «کارمزد قابل برداشت» استفاده می‌شود.
+    if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
+      newEntries.push({
+        id: newId(),
+        trackingCode: `${tx.trackingCode}-FEE`,
+        date: dateStr,
+        type: "fee",
+        currency: tx.commissionCurrency,
+        amount: tx.commission,
+        direction: "in",
+        reason: `تبدیل ارز - کارمزد صرافی`,
+        balanceAfter: 0,
+        customerId: EXCHANGE_ACCOUNT_ID,
+        customerName: EXCHANGE_ACCOUNT_NAME,
+        linkedConvertId: tx.id,
+        status: "active"
+      });
+    }
+
     entries = [...entries, ...newEntries];
   }
+
   entries = recomputeCashBalances(entries);
   saveCashEntries(entries);
 }
