@@ -135,6 +135,8 @@ function getExchangeAccountBalances(entries: any[]): Record<Currency, number> {
     if (!currencies.includes(cur)) continue;
     if (entry.type === "owner_deposit") balances[cur] += Number(entry.amount || 0);
     else if (entry.type === "owner_withdraw") balances[cur] -= Number(entry.amount || 0);
+    else if (entry.type === "exchange_account_in") balances[cur] += Number(entry.amount || 0);
+    else if (entry.type === "exchange_account_out") balances[cur] -= Number(entry.amount || 0);
     else if (entry.type === "loan_given") balances[cur] -= Number(entry.amount || 0);
     else if (entry.type === "loan_received") balances[cur] += Number(entry.amount || 0);
   }
@@ -247,7 +249,7 @@ function syncCashEntriesForExchange(action: "add" | "remove" | "replace", tx: Tr
         id: newId(),
         trackingCode: `${tx.trackingCode}-EX-IN`,
         date: dateStr,
-        type: "owner_deposit",
+        type: "exchange_account_in",
         currency: tx.fromCurrency,
         amount: tx.fromAmount,
         direction: "in",
@@ -262,7 +264,7 @@ function syncCashEntriesForExchange(action: "add" | "remove" | "replace", tx: Tr
         id: newId(),
         trackingCode: `${tx.trackingCode}-EX-OUT`,
         date: dateStr,
-        type: "owner_withdraw",
+        type: "exchange_account_out",
         currency: tx.toCurrency,
         amount: tx.toAmount,
         direction: "out",
