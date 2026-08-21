@@ -70,17 +70,48 @@ function computeCashBoxBalances(cashEntries: any[]): Record<Currency, number> {
   return balances;
 }
 
+// موجودی حساب صرافی باید دقیقاً با منطق تب صندوق محاسبه شود.
+// منبع حقیقت CASH_KEY است و تشخیص حساب صرافی بر اساس نوع عملیات انجام می‌شود،
+// نه customerId؛ چون واریز/برداشت مالک و قرض‌ها ممکن است customerId نداشته باشند.
 function computeExchangeAccountBalances(cashEntries: any[]): Record<Currency, number> {
   const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
   if (!Array.isArray(cashEntries)) return balances;
+
   for (const ce of cashEntries) {
-    if (ce.status === "voided") continue;
-    if (ce.customerId !== EXCHANGE_ACCOUNT_ID) continue;
+    if (!ce || ce.status === "voided") continue;
     const cur = ce.currency as Currency;
     if (!isCurrency(cur)) continue;
+
     const amount = Number(ce.amount || 0);
-    balances[cur] += ce.direction === "in" ? amount : -amount;
+    if (!Number.isFinite(amount) || amount === 0) continue;
+
+    let delta = 0;
+    switch (ce.type) {
+      case "owner_deposit":
+        // واریز مالک به صرافی → افزایش سرمایه صرافی
+        delta = amount;
+        break;
+      case "owner_withdraw":
+        // برداشت مالک از صرافی → کاهش سرمایه صرافی
+        delta = -amount;
+        break;
+      case "loan_given":
+        // صرافی قرض داده → از حساب صرافی کم می‌شود
+        delta = -amount;
+        break;
+      case "loan_received":
+        // قرض برگشت داده شد → به حساب صرافی اضافه می‌شود
+        delta = amount;
+        break;
+      default:
+        // customer_deposit/customer_withdraw/fee و عملیات صندوق فیزیکی
+        // موجودی حساب صرافی را مستقیماً تغییر نمی‌دهند.
+        delta = 0;
+    }
+
+    balances[cur] += delta;
   }
+
   return balances;
 }
 
