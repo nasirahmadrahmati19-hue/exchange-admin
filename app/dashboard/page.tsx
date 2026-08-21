@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY, loadCustomersShared, loadTransactionsShared, loadHawalasShared, loadCashEntriesShared } from "@/lib/defaultData";
 // ✅ اصلاح مسیر: از app/dashboard به ریشه پروژه (../../lib/defaultData)
 import { 
   CUSTOMERS_KEY, 
