@@ -226,31 +226,113 @@ return balances;
 }
 function isExchangeAccountName(name: string | undefined): boolean { return name?.trim() === EXCHANGE_ACCOUNT_NAME; }
 function syncCashEntriesForExchange(action: "add" | "remove" | "replace", tx: Transaction | null, oldTxId?: string) {
+  // یک رکورد معامله باید تمام اثر مالی خود را با همان linkedExchangeId داشته باشد تا
+  // در ویرایش/لغو دقیقاً همان اثر برگردانده شود و دوباره‌ثبت نشود.
   let entries = loadCashEntries();
   const targetId = oldTxId || tx?.id;
   if (targetId) entries = entries.filter((e: any) => e.linkedExchangeId !== targetId);
+
   if ((action === "add" || action === "replace") && tx) {
     const dateStr = tx.date || new Date().toISOString();
-    const isAccount = tx.customerId === EXCHANGE_ACCOUNT_ID;
+    const isExchangeAccount = tx.customerId === EXCHANGE_ACCOUNT_ID || tx.customerName === EXCHANGE_ACCOUNT_NAME;
     const newEntries: any[] = [];
 
-    if (isAccount) {
-      // حساب صرافی سرمایه داخلی است؛ اثر آن در Ledger حساب صرافی ثبت می‌شود.
-      // چون CASH_KEY منبع مشترک صندوق است، این عملیات نیز باید اثر واقعی صندوق را حفظ کند.
-      newEntries.push({ id: newId(), trackingCode: `${tx.trackingCode}-IN`, date: dateStr, type: "owner_deposit", currency: tx.fromCurrency, amount: tx.fromAmount, direction: "in", reason: `تبادل ارز - افزایش حساب صرافی`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedExchangeId: tx.id, status: "active" });
-      newEntries.push({ id: newId(), trackingCode: `${tx.trackingCode}-OUT`, date: dateStr, type: "owner_withdraw", currency: tx.toCurrency, amount: tx.toAmount, direction: "out", reason: `تبادل ارز - کاهش حساب صرافی`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedExchangeId: tx.id, status: "active" });
+    if (isExchangeAccount) {
+      // حساب صرافی طرف واقعی معامله است.
+      // ارز دریافتی از مشتری به حساب صرافی اضافه می‌شود و ارز پرداختی از آن کم می‌شود.
+      // owner_deposit / owner_withdraw همان انواع Ledger هستند که تب صندوق برای
+      // محاسبه EXCHANGE_ACCOUNT استفاده می‌کند. این رکوردها هم‌زمان در CASH_KEY ذخیره
+      // می‌شوند تا موجودی فیزیکی صندوق نیز مطابق جریان واقعی نقدی تغییر کند.
+      newEntries.push({
+        id: newId(),
+        trackingCode: `${tx.trackingCode}-EX-IN`,
+        date: dateStr,
+        type: "owner_deposit",
+        currency: tx.fromCurrency,
+        amount: tx.fromAmount,
+        direction: "in",
+        reason: "تبادل ارز - دریافت ارز توسط حساب صرافی",
+        balanceAfter: 0,
+        customerId: EXCHANGE_ACCOUNT_ID,
+        customerName: EXCHANGE_ACCOUNT_NAME,
+        linkedExchangeId: tx.id,
+        status: "active"
+      });
+      newEntries.push({
+        id: newId(),
+        trackingCode: `${tx.trackingCode}-EX-OUT`,
+        date: dateStr,
+        type: "owner_withdraw",
+        currency: tx.toCurrency,
+        amount: tx.toAmount,
+        direction: "out",
+        reason: "تبادل ارز - پرداخت ارز توسط حساب صرافی",
+        balanceAfter: 0,
+        customerId: EXCHANGE_ACCOUNT_ID,
+        customerName: EXCHANGE_ACCOUNT_NAME,
+        linkedExchangeId: tx.id,
+        status: "active"
+      });
     } else {
-      // در حساب مشتری: ارز دریافتی از مشتری از موجودی او کم می‌شود و ارز پرداختی به او اضافه می‌شود؛
-      // در صندوق فیزیکی جهت‌ها برعکس است. همین دو سند هم‌زمان هر دو Ledger را هماهنگ می‌کنند.
-      newEntries.push({ id: newId(), trackingCode: `${tx.trackingCode}-IN`, date: dateStr, type: "customer_withdraw", currency: tx.fromCurrency, amount: tx.fromAmount, direction: "in", reason: `تبادل ارز - دریافت نقدی از مشتری`, balanceAfter: 0, customerId: tx.customerId, customerName: tx.customerName, customerPhone: tx.customerPhone, linkedExchangeId: tx.id, status: "active" });
-      newEntries.push({ id: newId(), trackingCode: `${tx.trackingCode}-OUT`, date: dateStr, type: "customer_deposit", currency: tx.toCurrency, amount: tx.toAmount, direction: "out", reason: `تبادل ارز - پرداخت نقدی به مشتری`, balanceAfter: 0, customerId: tx.customerId, customerName: tx.customerName, customerPhone: tx.customerPhone, linkedExchangeId: tx.id, status: "active" });
+      // مشتری واقعی: ارز دریافتی از مشتری وارد صندوق می‌شود و ارز پرداختی از صندوق
+      // خارج می‌شود. موجودی مشتری در applyBalanceChanges به‌صورت جداگانه تغییر می‌کند.
+      newEntries.push({
+        id: newId(),
+        trackingCode: `${tx.trackingCode}-IN`,
+        date: dateStr,
+        type: "customer_withdraw",
+        currency: tx.fromCurrency,
+        amount: tx.fromAmount,
+        direction: "in",
+        reason: "تبادل ارز - دریافت نقدی از مشتری",
+        balanceAfter: 0,
+        customerId: tx.customerId,
+        customerName: tx.customerName,
+        customerPhone: tx.customerPhone,
+        linkedExchangeId: tx.id,
+        status: "active"
+      });
+      newEntries.push({
+        id: newId(),
+        trackingCode: `${tx.trackingCode}-OUT`,
+        date: dateStr,
+        type: "customer_deposit",
+        currency: tx.toCurrency,
+        amount: tx.toAmount,
+        direction: "out",
+        reason: "تبادل ارز - پرداخت نقدی به مشتری",
+        balanceAfter: 0,
+        customerId: tx.customerId,
+        customerName: tx.customerName,
+        customerPhone: tx.customerPhone,
+        linkedExchangeId: tx.id,
+        status: "active"
+      });
     }
+
+    // کمیشن فقط یک بار در Ledger صندوق ثبت می‌شود؛ تابع getExchangeAccountBalances
+    // آن را جزو سرمایه حساب صرافی حساب نمی‌کند و بنابراین با موجودی حساب صرافی قاطی نمی‌شود.
     if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
-      // کمیشن درآمد صرافی است؛ فقط یک بار به عنوان ورودی صندوق ثبت می‌شود.
-      newEntries.push({ id: newId(), trackingCode: `${tx.trackingCode}-FEE`, date: dateStr, type: "fee", currency: tx.commissionCurrency, amount: tx.commission, direction: "in", reason: `تبادل ارز - کارمزد صرافی`, balanceAfter: 0, customerId: tx.customerId === EXCHANGE_ACCOUNT_ID ? EXCHANGE_ACCOUNT_ID : tx.customerId, customerName: tx.customerId === EXCHANGE_ACCOUNT_ID ? EXCHANGE_ACCOUNT_NAME : tx.customerName, linkedExchangeId: tx.id, status: "active" });
+      newEntries.push({
+        id: newId(),
+        trackingCode: `${tx.trackingCode}-FEE`,
+        date: dateStr,
+        type: "fee",
+        currency: tx.commissionCurrency,
+        amount: tx.commission,
+        direction: "in",
+        reason: "تبادل ارز - کارمزد صرافی",
+        balanceAfter: 0,
+        customerId: isExchangeAccount ? EXCHANGE_ACCOUNT_ID : tx.customerId,
+        customerName: isExchangeAccount ? EXCHANGE_ACCOUNT_NAME : tx.customerName,
+        linkedExchangeId: tx.id,
+        status: "active"
+      });
     }
+
     entries = [...entries, ...newEntries];
   }
+
   entries = recomputeCashBalances(entries);
   saveCashEntries(entries);
 }
