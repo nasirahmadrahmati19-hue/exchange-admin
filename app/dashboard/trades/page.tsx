@@ -376,7 +376,7 @@ function syncCashEntriesForConvert(action: "add" | "remove" | "replace", tx: Tra
     const newEntries: any[] = [];
 
     if (isAccount) {
-      // تبدیل مستقیم داخل حساب صرافی: فقط حساب صرافی تغییر می‌کند.
+      // تبدیل مستقیم داخل حساب صرافی؛ صندوق فیزیکی درگیر نمی‌شود.
       newEntries.push({
         id: newId(),
         trackingCode: `${tx.trackingCode}-OUT`,
@@ -385,7 +385,7 @@ function syncCashEntriesForConvert(action: "add" | "remove" | "replace", tx: Tra
         currency: tx.fromCurrency,
         amount: tx.fromAmount,
         direction: "out",
-        reason: `تبدیل ارز - برداشت از حساب صرافی`,
+        reason: "تبدیل ارز - برداشت از حساب صرافی",
         balanceAfter: 0,
         customerId: EXCHANGE_ACCOUNT_ID,
         customerName: EXCHANGE_ACCOUNT_NAME,
@@ -400,7 +400,7 @@ function syncCashEntriesForConvert(action: "add" | "remove" | "replace", tx: Tra
         currency: tx.toCurrency,
         amount: tx.toAmount,
         direction: "in",
-        reason: `تبدیل ارز - واریز به حساب صرافی`,
+        reason: "تبدیل ارز - واریز به حساب صرافی",
         balanceAfter: 0,
         customerId: EXCHANGE_ACCOUNT_ID,
         customerName: EXCHANGE_ACCOUNT_NAME,
@@ -408,9 +408,8 @@ function syncCashEntriesForConvert(action: "add" | "remove" | "replace", tx: Tra
         status: "active"
       });
     } else {
-      // تبدیل ارز مشتری با حساب صرافی:
-      // صندوق فیزیکی کاملاً بدون تغییر می‌ماند.
-      // ارز دریافتی مشتری به حساب صرافی اضافه و ارز پرداختی از حساب صرافی کم می‌شود.
+      // مشتری واقعی: تبدیل فقط بین حساب مشتری و حساب صرافی است.
+      // هیچ customer_deposit/customer_withdraw برای صندوق فیزیکی ثبت نمی‌شود.
       newEntries.push({
         id: newId(),
         trackingCode: `${tx.trackingCode}-EX-IN`,
@@ -419,7 +418,7 @@ function syncCashEntriesForConvert(action: "add" | "remove" | "replace", tx: Tra
         currency: tx.fromCurrency,
         amount: tx.fromAmount,
         direction: "in",
-        reason: `تبدیل ارز - دریافت ${labels[tx.fromCurrency]} توسط حساب صرافی از مشتری`,
+        reason: "تبدیل ارز - دریافت ارز از مشتری توسط حساب صرافی",
         balanceAfter: 0,
         customerId: EXCHANGE_ACCOUNT_ID,
         customerName: EXCHANGE_ACCOUNT_NAME,
@@ -434,7 +433,7 @@ function syncCashEntriesForConvert(action: "add" | "remove" | "replace", tx: Tra
         currency: tx.toCurrency,
         amount: tx.toAmount,
         direction: "out",
-        reason: `تبدیل ارز - پرداخت ${labels[tx.toCurrency]} از حساب صرافی به مشتری`,
+        reason: "تبدیل ارز - پرداخت ارز از حساب صرافی به مشتری",
         balanceAfter: 0,
         customerId: EXCHANGE_ACCOUNT_ID,
         customerName: EXCHANGE_ACCOUNT_NAME,
@@ -443,8 +442,8 @@ function syncCashEntriesForConvert(action: "add" | "remove" | "replace", tx: Tra
       });
     }
 
-    // کارمزد کاملاً جدا از حساب صرافی و صندوق فیزیکی ثبت می‌شود.
-    // فقط برای محاسبه «کارمزد قابل برداشت» استفاده می‌شود.
+    // کارمزد کاملاً جدا است و فقط برای «کارمزد قابل برداشت» ثبت می‌شود.
+    // به موجودی حساب صرافی و موجودی فیزیکی صندوق اضافه نمی‌شود.
     if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
       newEntries.push({
         id: newId(),
@@ -454,7 +453,7 @@ function syncCashEntriesForConvert(action: "add" | "remove" | "replace", tx: Tra
         currency: tx.commissionCurrency,
         amount: tx.commission,
         direction: "in",
-        reason: `تبدیل ارز - کارمزد صرافی`,
+        reason: "تبدیل ارز - کارمزد قابل برداشت",
         balanceAfter: 0,
         customerId: EXCHANGE_ACCOUNT_ID,
         customerName: EXCHANGE_ACCOUNT_NAME,
