@@ -1,7 +1,7 @@
 "use client";
 
-import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY, loadCustomersShared, loadTransactionsShared, loadHawalasShared, loadCashEntriesShared } from "@/lib/defaultData";
-// ✅ اصلاح مسیر: از app/dashboard به ریشه پروژه (../../lib/defaultData)
+import { useEffect, useState, useMemo, useCallback } from "react";
+// ✅ اگر خطا داد، این خط را به "../../lib/defaultData" یا "../../../lib/defaultData" تغییر دهید
 import { 
   CUSTOMERS_KEY, 
   TRANSACTIONS_KEY, 
@@ -11,7 +11,7 @@ import {
   loadTransactionsShared, 
   loadHawalasShared, 
   loadCashEntriesShared 
-} from "../../lib/defaultData";
+} from "@/lib/defaultData";
 
 // ═══════════ Types ═══════════
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
@@ -115,7 +115,6 @@ export default function DashboardPage() {
 
   // ═══════════ Computed Values (Single Source of Truth) ═══════════
   
-  // محاسبه موجودی فیزیکی صندوق فقط از روی اسناد نقدی
   const physicalCashBalances = useMemo(() => {
     const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const entry of entries) {
@@ -127,7 +126,6 @@ export default function DashboardPage() {
     return balances;
   }, [entries]);
 
-  // خواندن مستقیم از c.balances (منبع واحد حقیقت)
   const customerDeposits = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
@@ -152,7 +150,6 @@ export default function DashboardPage() {
     return totals;
   }, [customers]);
 
-  // خواندن مستقیم موجودی حساب صرافی از آرایه مشتریان
   const exchangeBalance = useMemo(() => {
     const exch = customers.find(c => c.id === EXCHANGE_ACCOUNT_ID);
     return exch ? exch.balances : { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
