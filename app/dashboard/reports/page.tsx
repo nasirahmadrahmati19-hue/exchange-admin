@@ -1,4 +1,4 @@
-کود تب گزارش "use client";
+"use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { initTrackingSystem } from "../lib/trackingCode";
