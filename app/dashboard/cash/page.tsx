@@ -51,7 +51,6 @@ function formatShamsiDate(d: Date) { const s = shamsiParts(d); return `${s.year}
 function shortDateLabel(s: string) { try { const d = new Date(s); return Number.isNaN(d.getTime()) ? "-" : formatShamsiDate(d); } catch (e) { return "-"; } }
 function timeLabel(s: string) { try { const d = new Date(s); if (Number.isNaN(d.getTime())) return "-"; const pad = (n: number) => String(n).padStart(2, "0"); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; } catch (e) { return "-"; } }
 
-// ✅ تابع حیاتی: محاسبه موجودی فقط و فقط از روی Ledger (منبع واحد حقیقت)
 function getLedgerBalance(customerId: string, currency: Currency, entries: CashEntry[]): number {
   let balance = 0;
   for (const entry of entries) {
@@ -110,7 +109,9 @@ function recomputeCashBalances(entries: CashEntry[]): CashEntry[] {
   return sorted.map(e => {
     if (e.status === "voided") return { ...e, balanceAfter: bals[e.currency] || 0 };
     if (e.currency && bals[e.currency] !== undefined) {
-      bals[e.currency] += e.direction === "in" ? (e.amount || 0) : -(e.amount || 0);
+      if (e.type !== "exchange_account_in" && e.type !== "exchange_account_out") {
+        bals[e.currency] += e.direction === "in" ? (e.amount || 0) : -(e.amount || 0);
+      }
     }
     return { ...e, balanceAfter: bals[e.currency] || 0 };
   });
@@ -210,7 +211,6 @@ function getCustomerChatId(customerId: string | undefined, customers: Customer[]
   try { const c = customers.find(x => x.id === customerId); return c ? (c.telegramChatId || c.telegram || "") : ""; } catch { return ""; }
 }
 
-// ✅ اصلاح ۱: تغییر "پیگیری" به "کد پیگیری"
 function buildCashReceiptText(params: { entry: CashEntry; customerName: string; balances: Record<string, number>; date: Date; }): string {
   const { entry, customerName, balances, date } = params;
   const dateStr = formatShamsiDateTime(date);
@@ -230,7 +230,6 @@ function buildCashReceiptText(params: { entry: CashEntry; customerName: string; 
   return text;
 }
 
-// ✅ اصلاح ۱: تغییر "پیگیری" به "کد پیگیری"
 function buildCashVoidNoticeText(params: { entry: CashEntry; customerName: string; balances: Record<string, number>; date: Date; }): string {
   const { entry, customerName, balances, date } = params;
   const dateStr = formatShamsiDateTime(date);
@@ -248,7 +247,6 @@ function buildCashVoidNoticeText(params: { entry: CashEntry; customerName: strin
   return text;
 }
 
-// ✅ اصلاح ۲: دریافت بیلانس دقیق از آرایه customers که قبلاً به‌روزرسانی شده است
 async function sendCashReceipts(params: { entry: CashEntry; action: "register" | "void"; customers: Customer[]; }) {
   const settings = getTelegramSettings();
   if (!settings.enabled || !settings.botToken || !settings.notifyCash) return;
@@ -479,16 +477,13 @@ export default function CashPage() {
     if (!form.reason.trim()) errs.reason = "دلیل / شرح ضروری است.";
     if (isCustomerType && !form.customerName.trim()) errs.customerName = "انتخاب مشتری ضروری است.";
     
-    if (form.type === "customer_withdraw" && form.customerId && form.customerId !== CASH_BOX_ID && form.customerId !== EXCHANGE_ACCOUNT_ID) {
-      const currentBal = getLedgerBalance(form.customerId, form.currency, entries);
-      if (amount > currentBal) errs.amount = `موجودی کافی نیست. موجودی فعلی: ${fmt(currentBal)} ${labels[form.currency]}`;
-    }
+    // ✅ حذف محدودیت موجودی برای اجازه برداشت بیشتر و ثبت به عنوان بدهی
     if (form.type === "commission_withdraw") {
       const avail = availableCommission[form.currency] || 0;
       if (amount > avail) errs.amount = `کارمزد کافی نیست. قابل برداشت: ${fmt(avail)} ${labels[form.currency]}`;
     }
     return errs;
-  }, [form, isCustomerType, entries, availableCommission]);
+  }, [form, isCustomerType, availableCommission]);
 
   const cancelEdit = useCallback(() => { setEditingEntryId(null); setForm(emptyForm); setErrors({}); }, []);
 
@@ -872,7 +867,7 @@ export default function CashPage() {
                 ) : (
                   <div className="overflow-x-auto cs-scroll">
                     <table className="w-full min-w-[1200px] text-sm">
-                      <thead><tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>{["شماره", "کد پیگیری", "تاریخ", "نوع عملیات", "مشتری", "تماس", "تذکره", "شرح", "ارز", "دریافت", "پرداخت", "مانده", "عملیات"].map(h => (<th key={h} className="px-3 py-3 text-center text-[10px] font-black text-slate-400 whitespace-nowrap">{h}</th>))}</tr></thead>
+                      <thead><tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>{["شماره", "کد پیگیری", "تاریخ", "نوع عملیات", "مشتری", "شرح", "ارز", "دریافت", "پرداخت", "مانده", "عملیات"].map(h => (<th key={h} className="px-3 py-3 text-center text-[10px] font-black text-slate-400 whitespace-nowrap">{h}</th>))}</tr></thead>
                       <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
                         {filteredEntries.map((e, idx) => {
                           const isIn = e.direction === "in"; const isOwner = e.type === "owner_deposit" || e.type === "owner_withdraw";
@@ -894,8 +889,6 @@ export default function CashPage() {
                               <td className={`whitespace-nowrap px-3 py-3 text-center text-[11px] tabular-nums ${dk ? "text-slate-400" : "text-slate-500"} ${voidStrike}`}><div dir="ltr">{shortDateLabel(e.date)}</div><div dir="ltr" className={`text-[9px] ${subText}`}>{timeLabel(e.date)}</div></td>
                               <td className="px-3 py-3 text-center"><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black whitespace-nowrap ${entryTypeColors[e.type][dk ? "dark" : "light"]} ${voidStrike}`}>{entryTypeLabels[e.type]}</span></td>
                               <td className={`px-3 py-3 text-center text-[12px] font-bold whitespace-nowrap ${dk ? "text-slate-200" : "text-slate-700"} ${voidStrike}`}>{isOwner ? <span className={dk ? "text-amber-300" : "text-amber-700"}>👤 مالک</span> : isAdjust ? <span className={subText}>سیستم</span> : isFee ? <span className={subText}>سیستم</span> : isCommW ? <span className={dk ? "text-purple-300" : "text-purple-700"}>💎 کارمزد</span> : (e.customerName || "—")}</td>
-                              <td className={`px-3 py-3 text-center text-[11px] tabular-nums whitespace-nowrap ${dk ? "text-slate-300" : "text-slate-600"} ${voidStrike}`} dir="ltr">{e.customerPhone || "—"}</td>
-                              <td className={`px-3 py-3 text-center text-[11px] tabular-nums whitespace-nowrap ${dk ? "text-slate-300" : "text-slate-600"} ${voidStrike}`} dir="ltr">{e.customerTazkira || "—"}</td>
                               <td className={`px-3 py-3 text-center text-[11px] max-w-[180px] truncate ${dk ? "text-slate-300" : "text-slate-600"} ${voidStrike}`}>{e.reason || "—"}</td>
                               <td className={`px-3 py-3 text-center text-[11px] font-black whitespace-nowrap ${currencyColors[e.currency][dk ? "dark" : "light"]} ${voidStrike}`}>{labels[e.currency]}</td>
                               <td className={`px-3 py-3 text-center text-[12px] font-black tabular-nums whitespace-nowrap ${isIn ? "text-emerald-500" : ""} ${voidStrike}`}>{isIn ? fmt(e.amount) : ""}</td>
