@@ -7,7 +7,6 @@ type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type RateMode = "same" | "afn" | "direct";
 type DealType = "buy" | "sell";
 type CommissionPayer = "sender" | "receiver";
-
 type Customer = { id: string; name: string; phone?: string; telegram?: string; telegramChatId?: string; balances: Record<Currency, number>; };
 type Transaction = {
   id: string; trackingCode: string; type: "exchange" | "transfer" | "convert"; dealType?: DealType; date: string;
@@ -24,12 +23,10 @@ type BalanceChange = { customerId?: string; customerName: string; currency: Curr
 const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
 const labels: Record<Currency, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
 const rateUnits: Record<Currency, number> = { AFN: 1, USD: 1, EUR: 1, IRR: 1000, PKR: 1000 };
-
 const CASH_BOX_ID = "CASH_BOX";
 const CASH_BOX_NAME = "صندوق";
 const EXCHANGE_ACCOUNT_ID = "EXCHANGE_ACCOUNT";
 const EXCHANGE_ACCOUNT_NAME = "حساب صرافی";
-
 const EXCHANGE_ACCOUNT_CUSTOMER: Customer = { id: EXCHANGE_ACCOUNT_ID, name: EXCHANGE_ACCOUNT_NAME, phone: "", telegram: "", telegramChatId: "", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
 const CASH_BOX_CUSTOMER: Customer = { id: CASH_BOX_ID, name: CASH_BOX_NAME, phone: "", telegram: "", telegramChatId: "", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
 
@@ -150,6 +147,37 @@ function convertDirectRate(amount: number, from: Currency, to: Currency, base: C
 const afnRateLabel = (foreign: Currency, rate: number) => `${fmt(rateUnits[foreign])} ${labels[foreign]} = ${fmt(rate)} ${labels.AFN}`;
 const directRateLabel = (base: Currency, counter: Currency, rate: number) => `${fmt(rateUnits[base])} ${labels[base]} = ${fmt(rate)} ${labels[counter]}`;
 
+// ✅ توابع جدید برای ارسال رسید تلگرام
+function getTelegramSettings() {
+  try {
+    const r = localStorage.getItem("fx-settings");
+    if (!r) return { enabled: false, botToken: "", chatId: "" };
+    const s = JSON.parse(r);
+    return {
+      enabled: s.telegram?.enabled || false,
+      botToken: s.telegram?.botToken || "",
+      chatId: s.telegram?.chatId || ""
+    };
+  } catch {
+    return { enabled: false, botToken: "", chatId: "" };
+  }
+}
+
+async function sendTelegramMessage(botToken: string, chatId: string, text: string): Promise<boolean> {
+  if (!botToken || !chatId) return false;
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text: text }),
+    });
+    const data = await res.json();
+    return data.ok === true;
+  } catch {
+    return false;
+  }
+}
+
 function getExchangeAccountBalances(entries: any[]): Record<Currency, number> {
   const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
   if (!Array.isArray(entries)) return balances;
@@ -235,7 +263,6 @@ function recomputeCashBalances(entries: any[]): any[] {
   return sorted.map(e => {
     if (e.status === "voided") return { ...e, balanceAfter: bals[e.currency] || 0 };
     if (e.currency && bals[e.currency] !== undefined) {
-      // ✅ اصلاح: تراکنش‌های حساب صرافی نباید موجودی فیزیکی صندوق را تغییر دهند
       if (e.type !== "exchange_account_in" && e.type !== "exchange_account_out") {
         bals[e.currency] += e.direction === "in" ? (e.amount || 0) : -(e.amount || 0);
       }
@@ -247,10 +274,6 @@ function recomputeCashBalances(entries: any[]): any[] {
 function computeCashBoxBalances(cashEntries: any[]): Record<Currency, number> {
   const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
   if (!Array.isArray(cashEntries)) return balances;
-
-  // همان فرمول تب صندوق/حساب مشتریان: تمام اسناد فعال صندوق بر اساس جهت
-  // دریافت/پرداخت محاسبه می‌شوند؛ بنابراین معاملات تبادل ارز، حواله، انتقال،
-  // تبدیل ارز، واریز/برداشت و اسناد حساب صرافی همگی روی موجودی صندوق مشترک اثر دارند.
   for (const ce of cashEntries) {
     if (!ce || ce.status === "voided") continue;
     const cur = ce.currency as Currency;
@@ -266,65 +289,22 @@ function syncCashEntriesForExchange(action: "add" | "remove" | "replace", tx: Tr
   let entries = loadCashEntries();
   const targetId = oldTxId || tx?.id;
   if (targetId) entries = entries.filter((e: any) => e.linkedExchangeId !== targetId);
-
   if ((action === "add" || action === "replace") && tx) {
     const dateStr = tx.date || new Date().toISOString();
     const newEntries: any[] = [];
-
-    // ✅ اصلاح: در تمام حالت‌ها، طرف مقابل معامله "حساب صرافی" است.
     newEntries.push({
-      id: newId(),
-      trackingCode: `${tx.trackingCode}-EX-IN`,
-      date: dateStr,
-      type: "exchange_account_in",
-      currency: tx.fromCurrency,
-      amount: tx.fromAmount,
-      direction: "in",
-      reason: "تبادل ارز - دریافت ارز توسط حساب صرافی",
-      balanceAfter: 0,
-      customerId: EXCHANGE_ACCOUNT_ID,
-      customerName: EXCHANGE_ACCOUNT_NAME,
-      linkedExchangeId: tx.id,
-      status: "active"
+      id: newId(), trackingCode: `${tx.trackingCode}-EX-IN`, date: dateStr, type: "exchange_account_in", currency: tx.fromCurrency, amount: tx.fromAmount, direction: "in", reason: "تبادل ارز - دریافت ارز توسط حساب صرافی", balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedExchangeId: tx.id, status: "active"
     });
     newEntries.push({
-      id: newId(),
-      trackingCode: `${tx.trackingCode}-EX-OUT`,
-      date: dateStr,
-      type: "exchange_account_out",
-      currency: tx.toCurrency,
-      amount: tx.toAmount,
-      direction: "out",
-      reason: "تبادل ارز - پرداخت ارز توسط حساب صرافی",
-      balanceAfter: 0,
-      customerId: EXCHANGE_ACCOUNT_ID,
-      customerName: EXCHANGE_ACCOUNT_NAME,
-      linkedExchangeId: tx.id,
-      status: "active"
+      id: newId(), trackingCode: `${tx.trackingCode}-EX-OUT`, date: dateStr, type: "exchange_account_out", currency: tx.toCurrency, amount: tx.toAmount, direction: "out", reason: "تبادل ارز - پرداخت ارز توسط حساب صرافی", balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedExchangeId: tx.id, status: "active"
     });
-
-    // ✅ اصلاح: کارمزد به عنوان درآمد مستقیم حساب صرافی ثبت می‌شود
     if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
       newEntries.push({
-        id: newId(),
-        trackingCode: `${tx.trackingCode}-FEE`,
-        date: dateStr,
-        type: "exchange_account_in",
-        currency: tx.commissionCurrency,
-        amount: tx.commission,
-        direction: "in",
-        reason: "تبادل ارز - کارمزد دریافتی صرافی",
-        balanceAfter: 0,
-        customerId: EXCHANGE_ACCOUNT_ID,
-        customerName: EXCHANGE_ACCOUNT_NAME,
-        linkedExchangeId: tx.id,
-        status: "active"
+        id: newId(), trackingCode: `${tx.trackingCode}-FEE`, date: dateStr, type: "exchange_account_in", currency: tx.commissionCurrency, amount: tx.commission, direction: "in", reason: "تبادل ارز - کارمزد دریافتی صرافی", balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedExchangeId: tx.id, status: "active"
       });
     }
-
     entries = [...entries, ...newEntries];
   }
-
   entries = recomputeCashBalances(entries);
   saveCashEntries(entries);
 }
@@ -338,7 +318,6 @@ function syncCashEntriesForTransfer(action: "add" | "remove" | "replace", tx: Tr
     const senderAccount = tx.senderId === EXCHANGE_ACCOUNT_ID;
     const receiverAccount = tx.receiverId === EXCHANGE_ACCOUNT_ID;
     const newEntries: any[] = [];
-
     if (senderAccount) {
       newEntries.push({ id: newId(), trackingCode: `${tx.trackingCode}-S-OUT`, date: dateStr, type: "owner_withdraw", currency: tx.fromCurrency, amount: tx.fromAmount, direction: "out", reason: `انتقال - برداشت از حساب صرافی به ${tx.receiverName || "مشتری"}`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedTransferId: tx.id, status: "active" });
     } else if (receiverAccount) {
@@ -357,97 +336,22 @@ function syncCashEntriesForConvert(action: "add" | "remove" | "replace", tx: Tra
   let entries = loadCashEntries();
   const targetId = oldTxId || tx?.id;
   if (targetId) entries = entries.filter((e: any) => e.linkedConvertId !== targetId);
-
   if ((action === "add" || action === "replace") && tx) {
     const dateStr = tx.date || new Date().toISOString();
     const isAccount = tx.customerId === EXCHANGE_ACCOUNT_ID;
     const newEntries: any[] = [];
-
     if (isAccount) {
-      newEntries.push({
-        id: newId(),
-        trackingCode: `${tx.trackingCode}-OUT`,
-        date: dateStr,
-        type: "owner_withdraw",
-        currency: tx.fromCurrency,
-        amount: tx.fromAmount,
-        direction: "out",
-        reason: `تبدیل ارز - برداشت از حساب صرافی`,
-        balanceAfter: 0,
-        customerId: EXCHANGE_ACCOUNT_ID,
-        customerName: EXCHANGE_ACCOUNT_NAME,
-        linkedConvertId: tx.id,
-        status: "active"
-      });
-      newEntries.push({
-        id: newId(),
-        trackingCode: `${tx.trackingCode}-IN`,
-        date: dateStr,
-        type: "owner_deposit",
-        currency: tx.toCurrency,
-        amount: tx.toAmount,
-        direction: "in",
-        reason: `تبدیل ارز - واریز به حساب صرافی`,
-        balanceAfter: 0,
-        customerId: EXCHANGE_ACCOUNT_ID,
-        customerName: EXCHANGE_ACCOUNT_NAME,
-        linkedConvertId: tx.id,
-        status: "active"
-      });
+      newEntries.push({ id: newId(), trackingCode: `${tx.trackingCode}-OUT`, date: dateStr, type: "owner_withdraw", currency: tx.fromCurrency, amount: tx.fromAmount, direction: "out", reason: `تبدیل ارز - برداشت از حساب صرافی`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedConvertId: tx.id, status: "active" });
+      newEntries.push({ id: newId(), trackingCode: `${tx.trackingCode}-IN`, date: dateStr, type: "owner_deposit", currency: tx.toCurrency, amount: tx.toAmount, direction: "in", reason: `تبدیل ارز - واریز به حساب صرافی`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedConvertId: tx.id, status: "active" });
     } else {
-      newEntries.push({
-        id: newId(),
-        trackingCode: `${tx.trackingCode}-EX-IN`,
-        date: dateStr,
-        type: "exchange_account_in",
-        currency: tx.fromCurrency,
-        amount: tx.fromAmount,
-        direction: "in",
-        reason: `تبدیل ارز - دریافت ${labels[tx.fromCurrency]} توسط حساب صرافی از مشتری`,
-        balanceAfter: 0,
-        customerId: EXCHANGE_ACCOUNT_ID,
-        customerName: EXCHANGE_ACCOUNT_NAME,
-        linkedConvertId: tx.id,
-        status: "active"
-      });
-      newEntries.push({
-        id: newId(),
-        trackingCode: `${tx.trackingCode}-EX-OUT`,
-        date: dateStr,
-        type: "exchange_account_out",
-        currency: tx.toCurrency,
-        amount: tx.toAmount,
-        direction: "out",
-        reason: `تبدیل ارز - پرداخت ${labels[tx.toCurrency]} از حساب صرافی به مشتری`,
-        balanceAfter: 0,
-        customerId: EXCHANGE_ACCOUNT_ID,
-        customerName: EXCHANGE_ACCOUNT_NAME,
-        linkedConvertId: tx.id,
-        status: "active"
-      });
+      newEntries.push({ id: newId(), trackingCode: `${tx.trackingCode}-EX-IN`, date: dateStr, type: "exchange_account_in", currency: tx.fromCurrency, amount: tx.fromAmount, direction: "in", reason: `تبدیل ارز - دریافت ${labels[tx.fromCurrency]} توسط حساب صرافی از مشتری`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedConvertId: tx.id, status: "active" });
+      newEntries.push({ id: newId(), trackingCode: `${tx.trackingCode}-EX-OUT`, date: dateStr, type: "exchange_account_out", currency: tx.toCurrency, amount: tx.toAmount, direction: "out", reason: `تبدیل ارز - پرداخت ${labels[tx.toCurrency]} از حساب صرافی به مشتری`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedConvertId: tx.id, status: "active" });
     }
-
     if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
-      newEntries.push({
-        id: newId(),
-        trackingCode: `${tx.trackingCode}-FEE`,
-        date: dateStr,
-        type: "exchange_account_in",
-        currency: tx.commissionCurrency,
-        amount: tx.commission,
-        direction: "in",
-        reason: `تبدیل ارز - کارمزد صرافی`,
-        balanceAfter: 0,
-        customerId: EXCHANGE_ACCOUNT_ID,
-        customerName: EXCHANGE_ACCOUNT_NAME,
-        linkedConvertId: tx.id,
-        status: "active"
-      });
+      newEntries.push({ id: newId(), trackingCode: `${tx.trackingCode}-FEE`, date: dateStr, type: "exchange_account_in", currency: tx.commissionCurrency, amount: tx.commission, direction: "in", reason: `تبدیل ارز - کارمزد صرافی`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedConvertId: tx.id, status: "active" });
     }
-
     entries = [...entries, ...newEntries];
   }
-
   entries = recomputeCashBalances(entries);
   saveCashEntries(entries);
 }
@@ -509,9 +413,11 @@ export default function CurrencyExchangePage() {
   const [hawalas, setHawalas] = useState<any[]>(() => {
     try { return loadHawalasShared(); } catch { return []; }
   });
+
   useEffect(() => { try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); } catch {} }, [customers]);
   useEffect(() => { try { window.localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(transactions)); } catch {} }, [transactions]);
   useEffect(() => { try { initTrackingSystem(); } catch {} }, []);
+  
   useEffect(() => {
     const handleStorage = (e: StorageEvent) => {
       try {
@@ -524,6 +430,7 @@ export default function CurrencyExchangePage() {
     window.addEventListener("storage", handleStorage);
     return () => window.removeEventListener("storage", handleStorage);
   }, []);
+
   useEffect(() => {
     const handleFocus = () => {
       try {
@@ -536,6 +443,7 @@ export default function CurrencyExchangePage() {
     window.addEventListener("focus", handleFocus);
     return () => window.removeEventListener("focus", handleFocus);
   }, []);
+
   const [tab, setTab] = useState<"exchange" | "transfer" | "convert">("exchange");
   const [now, setNow] = useState<Date | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
@@ -554,6 +462,7 @@ export default function CurrencyExchangePage() {
   const [convertFilter, setConvertFilter] = useState("");
   const convertListRef = useRef<HTMLDivElement>(null);
   const [openActionId, setOpenActionId] = useState<string | null>(null);
+
   useEffect(() => {
     if (!openActionId) return;
     const handler = (e: MouseEvent) => {
@@ -563,15 +472,19 @@ export default function CurrencyExchangePage() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [openActionId]);
+
   useEffect(() => { try { const s = window.localStorage.getItem("fx-theme"); if (s === "dark" || s === "light") setTheme(s); } catch {} }, []);
   useEffect(() => { try { window.localStorage.setItem("fx-theme", theme); } catch {} }, [theme]);
   const dk = theme === "dark";
+
   useEffect(() => { setNow(new Date()); const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t); }, []);
   const currentDateTime = now ? formatDateTime(now) : "";
+
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [editingExchangeId, setEditingExchangeId] = useState<string | null>(null);
   const [editingTransferId, setEditingTransferId] = useState<string | null>(null);
   const [editingConvertId, setEditingConvertId] = useState<string | null>(null);
+  
   const [search, setSearch] = useState("");
   const [customer, setCustomer] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -588,6 +501,7 @@ export default function CurrencyExchangePage() {
   const [rate, setRate] = useState("");
   const [exchangeDirectBase, setExchangeDirectBase] = useState<Currency>("USD");
   const [exchangeErrors, setExchangeErrors] = useState<ExchangeFormErrors>({});
+  
   const [sender, setSender] = useState("");
   const [receiver, setReceiver] = useState("");
   const [senderPhone, setSenderPhone] = useState("");
@@ -605,6 +519,7 @@ export default function CurrencyExchangePage() {
   const [transferCommissionCurrency, setTransferCommissionCurrency] = useState<Currency>("AFN");
   const [transferDescription, setTransferDescription] = useState("");
   const [transferErrors, setTransferErrors] = useState<TransferFormErrors>({});
+  
   const [convertCustomer, setConvertCustomer] = useState("");
   const [convertCustomerPhone, setConvertCustomerPhone] = useState("");
   const [convertCustomerTelegram, setConvertCustomerTelegram] = useState("");
@@ -618,26 +533,31 @@ export default function CurrencyExchangePage() {
   const [convertDescription, setConvertDescription] = useState("");
   const [convertErrors, setConvertErrors] = useState<ConvertFormErrors>({});
   const [convertedAmount, setConvertedAmount] = useState("");
+
   const cashBoxBalances = useMemo(() => computeCashBoxBalances(cashEntries), [cashEntries]);
   const exchangeAccountBalances = useMemo(() => getExchangeAccountBalances(cashEntries), [cashEntries]);
+
   const exchangeMode = getRateMode(receivedCurrency, paidCurrency);
   const exchangeForeign = getAfnForeign(receivedCurrency, paidCurrency);
   const exchangeDirectBaseValue = exchangeMode === "direct" ? getSafeDirectBase(exchangeDirectBase, receivedCurrency, paidCurrency) : receivedCurrency;
   const exchangeDirectCounter = exchangeMode === "direct" ? getDirectCounter(exchangeDirectBaseValue, receivedCurrency, paidCurrency) : null;
   useEffect(() => { if (exchangeMode === "direct" && exchangeDirectBase !== exchangeDirectBaseValue) setExchangeDirectBase(exchangeDirectBaseValue); }, [exchangeMode, exchangeDirectBase, exchangeDirectBaseValue]);
   useEffect(() => { setRate(""); }, [exchangeMode, exchangeForeign, exchangeDirectBaseValue, exchangeDirectCounter]);
+
   const transferMode = getRateMode(senderCurrency, receiverCurrency);
   const transferForeign = getAfnForeign(senderCurrency, receiverCurrency);
   const transferDirectBaseValue = transferMode === "direct" ? getSafeDirectBase(transferDirectBase, senderCurrency, receiverCurrency) : senderCurrency;
   const transferDirectCounter = transferMode === "direct" ? getDirectCounter(transferDirectBaseValue, senderCurrency, receiverCurrency) : null;
   useEffect(() => { if (transferMode === "direct" && transferDirectBase !== transferDirectBaseValue) setTransferDirectBase(transferDirectBaseValue); }, [transferMode, transferDirectBase, transferDirectBaseValue]);
   useEffect(() => { setTransferRate(""); }, [transferMode, transferForeign, transferDirectBaseValue, transferDirectCounter]);
+
   const convertMode = getRateMode(convertFromCurrency, convertToCurrency);
   const convertForeign = getAfnForeign(convertFromCurrency, convertToCurrency);
   const convertDirectBaseValue = convertMode === "direct" ? getSafeDirectBase(convertDirectBase, convertFromCurrency, convertToCurrency) : convertFromCurrency;
   const convertDirectCounter = convertMode === "direct" ? getDirectCounter(convertDirectBaseValue, convertFromCurrency, convertToCurrency) : null;
   useEffect(() => { if (convertMode === "direct" && convertDirectBase !== convertDirectBaseValue) setConvertDirectBase(convertDirectBaseValue); }, [convertMode, convertDirectBase, convertDirectBaseValue]);
   useEffect(() => { setConvertRate(""); }, [convertMode, convertForeign, convertDirectBaseValue, convertDirectCounter]);
+
   useEffect(() => {
     const a = parseAmount(receivedAmount);
     if (!a) { setPaidAmount(""); return; }
@@ -649,6 +569,7 @@ export default function CurrencyExchangePage() {
     if (exchangeMode === "direct" && exchangeDirectCounter) res = convertDirectRate(a, receivedCurrency, paidCurrency, exchangeDirectBaseValue, r);
     setPaidAmount(res ? fmt(res) : "");
   }, [receivedAmount, receivedCurrency, paidCurrency, rate, exchangeMode, exchangeDirectBaseValue, exchangeDirectCounter]);
+
   useEffect(() => {
     const a = parseAmount(senderAmount);
     if (!a) { setReceiverAmount(""); return; }
@@ -660,6 +581,7 @@ export default function CurrencyExchangePage() {
     if (transferMode === "direct" && transferDirectCounter) res = convertDirectRate(a, senderCurrency, receiverCurrency, transferDirectBaseValue, r);
     setReceiverAmount(res ? fmt(res) : "");
   }, [senderAmount, senderCurrency, receiverCurrency, transferRate, transferMode, transferDirectBaseValue, transferDirectCounter]);
+
   useEffect(() => {
     const a = parseAmount(convertAmount);
     if (!a) { setConvertedAmount(""); return; }
@@ -671,6 +593,7 @@ export default function CurrencyExchangePage() {
     if (convertMode === "direct" && convertDirectCounter) res = convertDirectRate(a, convertFromCurrency, convertToCurrency, convertDirectBaseValue, r);
     setConvertedAmount(res ? fmt(res) : "");
   }, [convertAmount, convertFromCurrency, convertToCurrency, convertRate, convertMode, convertDirectBaseValue, convertDirectCounter]);
+
   const anyDropdownOpen = showCustomerList || showSenderList || showReceiverList || showConvertList;
   useEffect(() => {
     if (!anyDropdownOpen) return;
@@ -684,44 +607,54 @@ export default function CurrencyExchangePage() {
     const timer = setTimeout(() => document.addEventListener("mousedown", handler), 0);
     return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); };
   }, [anyDropdownOpen, showCustomerList, showSenderList, showReceiverList, showConvertList]);
+
   const filteredCustomerList = useMemo(() => { const q = normalizeDigits(customerFilter.trim()).toLowerCase(); const normal = customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID).filter(c => !q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))); return [EXCHANGE_ACCOUNT_CUSTOMER, ...normal].filter(c => !q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))); }, [customers, customerFilter]);
   const filteredSenderList = useMemo(() => { const q = normalizeDigits(senderFilter.trim()).toLowerCase(); const normal = customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID).filter(c => !q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))); return [EXCHANGE_ACCOUNT_CUSTOMER, ...normal].filter(c => !q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))); }, [customers, senderFilter]);
   const filteredReceiverList = useMemo(() => { const q = normalizeDigits(receiverFilter.trim()).toLowerCase(); const normal = customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID).filter(c => !q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))); return [EXCHANGE_ACCOUNT_CUSTOMER, ...normal].filter(c => !q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))); }, [customers, receiverFilter]);
   const filteredConvertList = useMemo(() => { const q = normalizeDigits(convertFilter.trim()).toLowerCase(); const normal = customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID).filter(c => !q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))); return [EXCHANGE_ACCOUNT_CUSTOMER, ...normal].filter(c => !q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))); }, [customers, convertFilter]);
+
   const isCustomerExchangeAccount = customer === EXCHANGE_ACCOUNT_NAME;
   const isSenderExchangeAccount = sender === EXCHANGE_ACCOUNT_NAME;
   const isReceiverExchangeAccount = receiver === EXCHANGE_ACCOUNT_NAME;
   const isConvertCustomerExchangeAccount = convertCustomer === EXCHANGE_ACCOUNT_NAME;
+
   const selectedCustomer = useMemo(() => {
     if (isCustomerExchangeAccount) return EXCHANGE_ACCOUNT_CUSTOMER;
     return customers.find(c => c.name === customer) || null;
   }, [customers, customer, isCustomerExchangeAccount]);
+
   const selectedSender = useMemo(() => {
     if (isSenderExchangeAccount) return EXCHANGE_ACCOUNT_CUSTOMER;
     return customers.find(c => c.name === sender) || null;
   }, [customers, sender, isSenderExchangeAccount]);
+
   const selectedReceiver = useMemo(() => {
     if (isReceiverExchangeAccount) return EXCHANGE_ACCOUNT_CUSTOMER;
     return customers.find(c => c.name === receiver) || null;
   }, [customers, receiver, isReceiverExchangeAccount]);
+
   const selectedConvertCustomer = useMemo(() => {
     if (isConvertCustomerExchangeAccount) return EXCHANGE_ACCOUNT_CUSTOMER;
     return customers.find(c => c.name === convertCustomer) || null;
   }, [customers, convertCustomer, isConvertCustomerExchangeAccount]);
+
   const resetExchangeForm = useCallback(() => {
     setCustomer(""); setCustomerPhone(""); setCustomerTelegram(""); setExchangeDealType(""); setReceivedAmount(""); setPaidAmount("");
     setRate(""); setExchangeCommission(""); setExchangeCommissionPayer("sender"); setExchangeCommissionCurrency("AFN");
     setExchangeDescription(""); setExchangeErrors({}); setEditingExchangeId(null);
   }, []);
+
   const resetTransferForm = useCallback(() => {
     setSender(""); setReceiver(""); setSenderAmount(""); setReceiverAmount(""); setTransferRate(""); setCommission("");
     setTransferCommissionPayer("sender"); setTransferCommissionCurrency("AFN"); setTransferDescription(""); setTransferErrors({}); setEditingTransferId(null);
   }, []);
+
   const resetConvertForm = useCallback(() => {
     setConvertCustomer(""); setConvertCustomerPhone(""); setConvertCustomerTelegram(""); setConvertFromCurrency("AFN"); setConvertToCurrency("USD");
     setConvertAmount(""); setConvertRate(""); setConvertedAmount(""); setConvertCommission(""); setConvertCommissionCurrency("AFN");
     setConvertDescription(""); setConvertErrors({}); setEditingConvertId(null);
   }, []);
+
   const validateExchange = useCallback((): ExchangeFormErrors => {
     const e: ExchangeFormErrors = {};
     if (!exchangeDealType) e.dealType = "نوع معامله خالی است.";
@@ -736,6 +669,7 @@ export default function CurrencyExchangePage() {
     if (!exchangeCommission.trim()) e.exchangeCommission = "کارمزد خالی است.";
     return e;
   }, [exchangeDealType, customer, receivedAmount, exchangeMode, rate, exchangeDirectCounter, paidAmount, exchangeCommission]);
+
   const validateTransfer = useCallback((): TransferFormErrors => {
     const e: TransferFormErrors = {};
     if (!sender) e.sender = "فرستنده خالی است.";
@@ -748,6 +682,7 @@ export default function CurrencyExchangePage() {
     if (!commission.trim()) e.commission = "کارمزد خالی است.";
     return e;
   }, [sender, receiver, senderAmount, transferMode, transferRate, transferDirectCounter, receiverAmount, commission]);
+
   const validateConvert = useCallback((): ConvertFormErrors => {
     const e: ConvertFormErrors = {};
     if (!convertCustomer) e.customer = "مشتری خالی است.";
@@ -758,10 +693,12 @@ export default function CurrencyExchangePage() {
     if (!convertCommission.trim()) e.commission = "کارمزد خالی است.";
     return e;
   }, [convertCustomer, convertAmount, convertMode, convertRate, convertDirectCounter, convertedAmount, convertCommission]);
+
   const exchangeFromAmount = parseAmount(receivedAmount);
   const exchangeToAmount = parseAmount(paidAmount);
   const exchangeRateValue = parseAmount(rate);
   const exchangeCommissionValue = Math.max(0, parseAmount(exchangeCommission));
+
   const submitExchange = useCallback(() => {
     const errs = validateExchange();
     setExchangeErrors(errs);
@@ -790,10 +727,12 @@ export default function CurrencyExchangePage() {
     setPreviewData(tx);
     setPreviewOpen(true);
   }, [validateExchange, exchangeFromAmount, exchangeToAmount, exchangeMode, exchangeRateValue, exchangeForeign, exchangeDirectCounter, exchangeDirectBaseValue, exchangeDescription, exchangeCommissionValue, exchangeCommissionCurrency, editingExchangeId, transactions, exchangeDealType, customer, receivedCurrency, paidCurrency, exchangeCommissionPayer, customerPhone, customerTelegram, customers]);
+
   const transferFromAmount = parseAmount(senderAmount);
   const transferToAmount = parseAmount(receiverAmount);
   const transferRateValue = parseAmount(transferRate);
   const commissionValue = Math.max(0, parseAmount(commission));
+
   const submitTransfer = useCallback(() => {
     const errs = validateTransfer();
     setTransferErrors(errs);
@@ -824,10 +763,12 @@ export default function CurrencyExchangePage() {
     setPreviewData(tx);
     setPreviewOpen(true);
   }, [validateTransfer, transferFromAmount, transferToAmount, transferMode, transferRateValue, transferForeign, transferDirectCounter, transferDirectBaseValue, transferDescription, commissionValue, transferCommissionCurrency, editingTransferId, transactions, sender, receiver, senderCurrency, receiverCurrency, transferCommissionPayer, customers]);
+
   const convertFromAmount = parseAmount(convertAmount);
   const convertToAmount = parseAmount(convertedAmount);
   const convertRateValue = parseAmount(convertRate);
   const convertCommissionValue = Math.max(0, parseAmount(convertCommission));
+
   const submitConvert = useCallback(() => {
     const errs = validateConvert();
     setConvertErrors(errs);
@@ -856,9 +797,12 @@ export default function CurrencyExchangePage() {
     setPreviewData(tx);
     setPreviewOpen(true);
   }, [validateConvert, convertFromAmount, convertToAmount, convertMode, convertRateValue, convertForeign, convertDirectCounter, convertDirectBaseValue, convertDescription, convertCommissionValue, convertCommissionCurrency, editingConvertId, transactions, convertCustomer, convertFromCurrency, convertToCurrency, customers]);
-  const confirmRegister = useCallback(() => {
+
+  // ✅ تابع اصلاح‌شده برای ارسال خودکار رسید
+  const confirmRegister = useCallback(async () => {
     if (!previewData) return;
     const tx = { ...previewData, trackingCode: consumeTrackingCode() };
+
     if (editingExchangeId) {
       const oldTx = transactions.find(t => t.id === editingExchangeId);
       if (oldTx && oldTx.status !== "voided") setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForTransaction(oldTx, "reverse")));
@@ -880,24 +824,82 @@ export default function CurrencyExchangePage() {
       else if (tx.type === "transfer") syncCashEntriesForTransfer("add", tx);
       else if (tx.type === "convert") syncCashEntriesForConvert("add", tx);
     }
-    setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForTransaction(tx, "register")));
+
+    setCustomers(prev => {
+      const updated = applyBalanceChanges(prev, getBalanceChangesForTransaction(tx, "register"));
+
+      // ✅ ارسال خودکار سند رسید برای مشتری
+      try {
+        const settings = getTelegramSettings();
+        if (settings.enabled && settings.botToken) {
+          let chatId = "";
+          let customerName = "";
+
+          if (tx.type === "exchange" || tx.type === "convert") {
+            chatId = tx.customerTelegram || "";
+            customerName = tx.customerName || "";
+          } else if (tx.type === "transfer") {
+            const sender = customers.find(c => c.id === tx.senderId);
+            chatId = sender?.telegram || "";
+            customerName = tx.senderName || "";
+          }
+
+          if (chatId) {
+            let text = `🟢 سند رسید معامله\n\n`;
+            text += `🗓 تاریخ: ${formatDateTime(new Date(tx.date))}\n\n`;
+            text += `🛅 کد پیگیری: ${tx.trackingCode}\n\n`;
+            text += `👤 مشتری: ${customerName}\n\n`;
+
+            if (tx.type === "exchange") {
+              text += `📑 شرح: تبادل ارز (${tx.dealType === "buy" ? "خرید" : "فروش"})\n`;
+              text += `💰 دریافت: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]}\n`;
+              text += `💵 پرداخت: ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}\n`;
+            } else if (tx.type === "transfer") {
+              text += `📑 شرح: انتقال به ${tx.receiverName}\n`;
+              text += `💰 مبلغ انتقال: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]}\n`;
+            } else if (tx.type === "convert") {
+              text += `📑 شرح: تبدیل ارز\n`;
+              text += `💰 از: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]}\n`;
+              text += `💵 به: ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}\n`;
+            }
+
+            if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
+              text += `💎 کارمزد: ${fmt(tx.commission)} ${labels[tx.commissionCurrency]}\n`;
+            }
+
+            text += `\n🏦 صرافی برادران نورزاد — هرات`;
+
+            sendTelegramMessage(settings.botToken, chatId, text);
+          }
+        }
+      } catch (err) {
+        console.error("Error sending receipt:", err);
+      }
+
+      return updated;
+    });
+
     resetExchangeForm(); resetTransferForm(); resetConvertForm();
     setPreviewOpen(false); setPreviewData(null);
     setCashEntries(loadCashEntriesShared());
-  }, [previewData, editingExchangeId, editingTransferId, editingConvertId, transactions, resetExchangeForm, resetTransferForm, resetConvertForm]);
+  }, [previewData, editingExchangeId, editingTransferId, editingConvertId, transactions, resetExchangeForm, resetTransferForm, resetConvertForm, customers]);
+
   const customerName = useCallback((id?: string) => {
     if (id === EXCHANGE_ACCOUNT_ID) return EXCHANGE_ACCOUNT_NAME;
     return customers.find(c => c.id === id)?.name || customers.find(c => c.name === id)?.name || id || "-";
   }, [customers]);
+
   const transactionCustomerLabel = useCallback((tx: Transaction) => tx.type === "transfer" ? `${customerName(tx.senderId || tx.senderName)} - ${customerName(tx.receiverId || tx.receiverName)}` : customerName(tx.customerId || tx.customerName), [customerName]);
   const transactionTypeLabel = useCallback((tx: Transaction) => tx.type === "exchange" ? dealTypeLabel(tx.dealType) : tx.type === "convert" ? "تبدیل ارز" : "انتقال", []);
   const transactionCommissionLabel = useCallback((tx: Transaction) => tx.commission === undefined ? "-" : `${fmt(tx.commission)} ${tx.commissionCurrency ? labels[tx.commissionCurrency] : ""}`, []);
   const commissionPayerLabel = useCallback((tx: Transaction) => !tx.commissionPayer ? "-" : tx.type === "convert" ? "خود مشتری" : tx.commissionPayer === "sender" ? "فرستنده" : "گیرنده", []);
+
   const rawSearch = normalizeDigits(search.trim()).toLowerCase();
   const amountSearch = rawSearch.replace(/[,،]/g, "");
   const isSearching = amountSearch.trim().length > 0;
   const activeCount = useMemo(() => transactions.filter(t => t.status === "active").length, [transactions]);
   const voidedCount = transactions.length - activeCount;
+
   const transactionMatchesSearch = useCallback((tx: Transaction) => {
     if (!isSearching) return true;
     const names = [customerName(tx.customerId || tx.customerName), customerName(tx.senderId || tx.senderName), customerName(tx.receiverId || tx.receiverName), transactionCustomerLabel(tx), tx.trackingCode];
@@ -908,16 +910,20 @@ export default function CurrencyExchangePage() {
       return p.includes(amountSearch) || f.includes(amountSearch);
     });
   }, [isSearching, rawSearch, amountSearch, customerName, transactionCustomerLabel]);
+
   const exchangeErrorList = useMemo(() => Object.values(exchangeErrors).filter((m): m is string => Boolean(m)), [exchangeErrors]);
   const transferErrorList = useMemo(() => Object.values(transferErrors).filter((m): m is string => Boolean(m)), [transferErrors]);
   const convertErrorList = useMemo(() => Object.values(convertErrors).filter((m): m is string => Boolean(m)), [convertErrors]);
+
   const editingExchangeTransaction = useMemo(() => transactions.find(t => t.id === editingExchangeId), [transactions, editingExchangeId]);
   const editingTransferTransaction = useMemo(() => transactions.find(t => t.id === editingTransferId), [transactions, editingTransferId]);
   const editingConvertTransaction = useMemo(() => transactions.find(t => t.id === editingConvertId), [transactions, editingConvertId]);
+
   const exchangeDateDisplay = editingExchangeTransaction ? dateLabel(editingExchangeTransaction.date) : currentDateTime;
   const transferDateDisplay = editingTransferTransaction ? dateLabel(editingTransferTransaction.date) : currentDateTime;
   const convertDateDisplay = editingConvertTransaction ? dateLabel(editingConvertTransaction.date) : currentDateTime;
   const nextTrackingCode = useMemo(() => getNextTrackingCode(), []);
+
   const editTransaction = useCallback((tx: Transaction) => {
     if (tx.status === "voided") return;
     if (tx.type === "exchange") {
@@ -951,7 +957,9 @@ export default function CurrencyExchangePage() {
       setConvertErrors({});
     }
   }, []);
+
   const viewTransaction = useCallback((tx: Transaction) => setSelectedTransaction(tx), []);
+  
   const voidTransaction = useCallback((tx: Transaction) => {
     if (tx.status === "voided") return;
     if (!window.confirm("لغو شود؟")) return;
@@ -963,6 +971,7 @@ export default function CurrencyExchangePage() {
     setEditingExchangeId(null); setEditingTransferId(null); setEditingConvertId(null);
     setCashEntries(loadCashEntriesShared());
   }, []);
+
   const deleteTransaction = useCallback((tx: Transaction) => {
     if (!window.confirm(`حذف ${tx.trackingCode}؟`)) return;
     if (tx.status !== "voided") {
@@ -974,12 +983,14 @@ export default function CurrencyExchangePage() {
     setTransactions(p => p.filter(t => t.id !== tx.id));
     setCashEntries(loadCashEntriesShared());
   }, []);
+
   const printReceipt = useCallback((tx: Transaction) => {
     const w = window.open("", "_blank", "width=650,height=800");
     if (!w) return;
     w.document.write(`<html dir="rtl"><head><meta charset="utf-8"/><title>رسید</title><style>body{font-family:Tahoma;padding:24px;direction:rtl}table{width:100%;border-collapse:collapse}td,th{border:1px solid #ccc;padding:8px;text-align:right}</style></head><body><h2>رسید</h2><table><tr><th>کد</th><td>${tx.trackingCode}</td></tr><tr><th>تاریخ</th><td>${dateLabel(tx.date)}</td></tr><tr><th>مشتری</th><td>${transactionCustomerLabel(tx)}</td></tr><tr><th>دریافت</th><td>${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]}</td></tr><tr><th>پرداخت</th><td>${fmt(tx.toAmount)} ${labels[tx.toCurrency]}</td></tr><tr><th>وضعیت</th><td>${tx.status === "voided" ? "لغو" : "فعال"}</td></tr></table></body></html>`);
     w.document.close(); w.focus(); w.print();
   }, [transactionCustomerLabel]);
+
   const heading = dk ? "text-white" : "text-slate-900";
   const subText = dk ? "text-slate-500" : "text-slate-400";
   const iconMuted = dk ? "text-slate-500" : "text-slate-400";
@@ -1004,6 +1015,7 @@ export default function CurrencyExchangePage() {
   const identTrChip = dk ? "bg-orange-400/10 text-orange-300 ring-orange-400/25" : "bg-orange-100 text-orange-700 ring-orange-300/60";
   const identCvIcon = dk ? "from-violet-400/20 to-violet-400/5 text-violet-300 ring-violet-400/25" : "from-violet-400/20 to-purple-400/10 text-violet-600 ring-violet-400/30";
   const identCvChip = dk ? "bg-violet-400/10 text-violet-300 ring-violet-400/25" : "bg-violet-100 text-violet-700 ring-violet-300/60";
+
   const typeChipClass = useCallback((tx: Transaction) => {
     if (tx.type === "transfer") return dk ? "bg-orange-400/15 text-orange-300" : "bg-orange-100 text-orange-700";
     if (tx.type === "convert") return dk ? "bg-violet-400/15 text-violet-300" : "bg-violet-100 text-violet-700";
@@ -1011,6 +1023,7 @@ export default function CurrencyExchangePage() {
     if (tx.dealType === "sell") return dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-700";
     return dk ? "bg-slate-400/10 text-slate-300" : "bg-slate-100 text-slate-600";
   }, [dk]);
+
   const fld = (l: string, n: ReactNode) => (<div><label className={uiLabel}>{l}</label>{n}</div>);
   const sel = (v: string, onCh: (v: string) => void, opts: string[][], cls = "") => (
     <div className="relative">
@@ -1119,16 +1132,14 @@ export default function CurrencyExchangePage() {
       <span className={chevPos}><Ic n="chevron" className="h-4 w-4" /></span>
     </div>
   );
+
   const getSharedCustomerBalances = useCallback((customerId: string): Record<Currency, number> => {
     const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     if (!customerId || customerId === CASH_BOX_ID || customerId === EXCHANGE_ACCOUNT_ID) return balances;
-
     const add = (currency: Currency, amount: number) => {
       if (!currencies.includes(currency) || !Number.isFinite(amount)) return;
       balances[currency] += amount;
     };
-
-    // معاملات ارز / انتقال بین مشتریان / تبدیل ارز
     for (const tx of transactions) {
       if (!tx || tx.status === "voided") continue;
       if (tx.type === "exchange" && tx.customerId === customerId) {
@@ -1152,8 +1163,6 @@ export default function CurrencyExchangePage() {
         if (tx.commission && tx.commissionCurrency) add(tx.commissionCurrency, -Number(tx.commission || 0));
       }
     }
-
-    // حواله‌جات — دقیقاً مطابق دفتر حساب تب مشتریان
     for (const h of hawalas) {
       if (!h || h.status === "cancelled") continue;
       if (h.senderId === customerId) {
@@ -1165,8 +1174,6 @@ export default function CurrencyExchangePage() {
         if (h.feePayer === "receiver" && h.fee > 0 && h.feeCurrency) add(h.feeCurrency, -Number(h.fee || 0));
       }
     }
-
-    // واریز/برداشت و قرض‌های ثبت‌شده در حساب مشتری
     for (const ce of cashEntries) {
       if (!ce || ce.status === "voided" || ce.customerId !== customerId) continue;
       if (ce.linkedExchangeId || ce.linkedTransferId || ce.linkedConvertId || ce.linkedHawalaId || ce.linkedHawalaSettleId) continue;
@@ -1175,7 +1182,6 @@ export default function CurrencyExchangePage() {
       if (ce.type === "customer_deposit" || ce.type === "loan_received") add(ce.currency, amount);
       else if (ce.type === "customer_withdraw" || ce.type === "loan_given") add(ce.currency, -amount);
     }
-
     return balances;
   }, [transactions, hawalas, cashEntries]);
 
@@ -1226,6 +1232,7 @@ export default function CurrencyExchangePage() {
       </div>
     );
   });
+
   const ActionButtons = memo(function ActionButtons({ tx }: { tx: Transaction }) {
     const isVoided = tx.status === "voided";
     const isOpen = openActionId === tx.id;
@@ -1263,6 +1270,7 @@ export default function CurrencyExchangePage() {
       </div>
     );
   });
+
   const TransactionRow = memo(({ tx, index, isSearching }: { tx: Transaction; index: number; isSearching: boolean }) => {
     const ms = transactionMatchesSearch(tx);
     let rc = dk ? "hover:bg-slate-700/30" : "hover:bg-sky-50/70";
@@ -1286,7 +1294,9 @@ export default function CurrencyExchangePage() {
       </tr>
     );
   });
+
   const tableMaxHeight = "max-h-[672px]";
+
   return (
     <div dir="rtl" className={dk ? "dark" : ""}>
       <style>{`@import url("https://fonts.googleapis.com/css2?family=Lalezar&family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap");.fx-font{font-family:"Vazirmatn","Segoe UI",Tahoma,sans-serif}.fx-display{font-family:"Lalezar","Vazirmatn",Tahoma,sans-serif}.dark{color-scheme:dark}`}</style>
@@ -1319,6 +1329,7 @@ export default function CurrencyExchangePage() {
             <button onClick={() => setTab("transfer")} className={`flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-black ${tab === "transfer" ? dk ? "bg-orange-400 text-slate-950" : "bg-orange-500 text-white" : dk ? "text-slate-400" : "text-slate-500"}`}><Ic n="users" className="h-4 w-4" />بین مشتریان</button>
             <button onClick={() => setTab("convert")} className={`flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-black ${tab === "convert" ? dk ? "bg-violet-400 text-slate-950" : "bg-violet-500 text-white" : dk ? "text-slate-400" : "text-slate-500"}`}><Ic n="user" className="h-4 w-4" />تبدیل ارز</button>
           </div>
+
           {tab === "exchange" && (
             <section className={`space-y-4 p-4 md:p-7 ${uiCard}`}>
               {secHead(identExIcon, "swap", "تبادل ارز", "دریافت و پرداخت ارز", identExChip, editingExchangeId ? `ویرایش ${shortId(editingExchangeId)}` : "جدید")}
@@ -1441,6 +1452,7 @@ export default function CurrencyExchangePage() {
               </button>
             </section>
           )}
+
           {tab === "transfer" && (
             <section className={`space-y-4 p-4 md:p-7 ${uiCard}`}>
               {secHead(identTrIcon, "users", "بین مشتریان", "انتقال بین حساب‌ها", identTrChip, editingTransferId ? `ویرایش ${shortId(editingTransferId)}` : "جدید")}
@@ -1607,6 +1619,7 @@ export default function CurrencyExchangePage() {
               </button>
             </section>
           )}
+
           {tab === "convert" && (
             <section className={`space-y-4 p-4 md:p-7 ${uiCard}`}>
               {secHead(identCvIcon, "user", "تبدیل ارز", "تبدیل در حساب مشتری", identCvChip, editingConvertId ? `ویرایش ${shortId(editingConvertId)}` : "جدید")}
@@ -1729,6 +1742,7 @@ export default function CurrencyExchangePage() {
               </button>
             </section>
           )}
+
           <section className={`overflow-hidden ${uiCard}`}>
             <div className="flex flex-wrap items-center gap-3 p-4 md:p-5">
               <span className={`grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identExIcon}`}><Ic n="doc" className="h-5 w-5" /></span>
@@ -1765,6 +1779,7 @@ export default function CurrencyExchangePage() {
           </section>
         </div>
       </div>
+
       {selectedTransaction && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3" onClick={() => setSelectedTransaction(null)}>
           <div className={`w-full max-w-lg rounded-xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={e => e.stopPropagation()}>
@@ -1787,6 +1802,7 @@ export default function CurrencyExchangePage() {
           </div>
         </div>
       )}
+
       {previewOpen && previewData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 md:p-4 backdrop-blur-sm" onClick={() => { setPreviewOpen(false); setPreviewData(null); }}>
           <div className={`w-full max-w-2xl overflow-hidden rounded-xl md:rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={e => e.stopPropagation()}>
