@@ -1,4 +1,4 @@
- "use client";
+"use client";
 import { useEffect, useMemo, useState, useRef, useCallback, type ReactNode } from "react";
 import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem } from "../lib/trackingCode";
 import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY, loadCustomersShared, loadTransactionsShared, loadHawalasShared, loadCashEntriesShared } from "../lib/defaultData";
