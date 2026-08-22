@@ -247,17 +247,17 @@ function recomputeCashBalances(entries: any[]): any[] {
 function computeCashBoxBalances(cashEntries: any[]): Record<Currency, number> {
   const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
   if (!Array.isArray(cashEntries)) return balances;
+
+  // همان فرمول تب صندوق/حساب مشتریان: تمام اسناد فعال صندوق بر اساس جهت
+  // دریافت/پرداخت محاسبه می‌شوند؛ بنابراین معاملات تبادل ارز، حواله، انتقال،
+  // تبدیل ارز، واریز/برداشت و اسناد حساب صرافی همگی روی موجودی صندوق مشترک اثر دارند.
   for (const ce of cashEntries) {
-    if (ce.status === "voided") continue;
+    if (!ce || ce.status === "voided") continue;
     const cur = ce.currency as Currency;
     if (!currencies.includes(cur)) continue;
-    
-    // ✅ اصلاح: جلوگیری از تأثیر تراکنش‌های حساب صرافی بر موجودی فیزیکی صندوق
-    if (ce.type === "exchange_account_in" || ce.type === "exchange_account_out") {
-      continue;
-    }
-
-    balances[cur] += ce.direction === "in" ? (ce.amount || 0) : -(ce.amount || 0);
+    const amount = Number(ce.amount || 0);
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+    balances[cur] += ce.direction === "in" ? amount : -amount;
   }
   return balances;
 }
