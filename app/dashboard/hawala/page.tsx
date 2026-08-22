@@ -12,7 +12,6 @@ interface Hawala { id: string; number: string; date: string; time: string; type:
 interface FormState { type: string; currencyFrom: Currency; currencyTo: Currency; senderId: string; senderName: string; senderPhone: string; senderTelegram: string; amountFrom: string; rate: string; fee: string; feeCurrency: Currency; feePayer: CommissionPayer; balance: string; province: string; district: string; receiverId: string; receiverName: string; receiverTazkira: string; receiverPhone: string; receiverAddress: string; note: string; }
 interface LastNames { senderName: string; receiverName: string; }
 type FormErrors = Partial<Record<keyof FormState, string>>;
-type BalanceChange = { customerName: string; customerId?: string; currency: Currency; amount: number; };
 
 const provinces = ["هرات","ارزگان","بادغیس","بدخشان","بامیان","بغلان","بلخ","پکتیا","پکتیکا","پنجشیر","پروان","تخار","جوزجان","خوست","دایکندی","زابل","سرپل","سمنگان","فاریاب","فراه","غزنی","غور","کابل","کندهار","کاپیسا","قندوز","کنر","لغمان","لوگر","میدان وردک","ننگرهار","نیمروز","نورستان","هلمند"] as const;
 const heratDistricts = ["گلران","مرکز هرات","ادرسکن","چشت شریف","فارسی","غوریان","گذره","انجیل","کرخ","کوهسان","کشک","کشک کهنه","اوبه","پشتون زرغون","شیندند","زنده جان"] as const;
@@ -102,41 +101,6 @@ function computeExchangeBalances(entries: any[]): Record<Currency, number> {
   return balances;
 }
 
-function getBalanceChangesForHawala(h: Hawala, action: "register" | "settle" | "cancel"): BalanceChange[] {
-  const changes: BalanceChange[] = [];
-  if (action === "register" && h.senderId && !isInternalAccountId(h.senderId)) {
-    changes.push({ customerName: h.senderName, customerId: h.senderId, currency: h.currencyFrom, amount: -h.amountFrom });
-    if (h.feePayer === "sender" && h.fee > 0) changes.push({ customerName: h.senderName, customerId: h.senderId, currency: h.feeCurrency, amount: -h.fee });
-  }
-  if (action === "settle" && h.receiverId && !isInternalAccountId(h.receiverId)) {
-    changes.push({ customerName: h.receiverName, customerId: h.receiverId, currency: h.currencyTo, amount: h.finalAmount });
-    if (h.feePayer === "receiver" && h.fee > 0) changes.push({ customerName: h.receiverName, customerId: h.receiverId, currency: h.feeCurrency, amount: -h.fee });
-  }
-  if (action === "cancel") {
-    if (h.senderId && !isInternalAccountId(h.senderId)) {
-      changes.push({ customerName: h.senderName, customerId: h.senderId, currency: h.currencyFrom, amount: h.amountFrom });
-      if (h.feePayer === "sender" && h.fee > 0) changes.push({ customerName: h.senderName, customerId: h.senderId, currency: h.feeCurrency, amount: h.fee });
-    }
-    if (h.status === "paid" && h.receiverId && !isInternalAccountId(h.receiverId)) {
-      changes.push({ customerName: h.receiverName, customerId: h.receiverId, currency: h.currencyTo, amount: -h.finalAmount });
-      if (h.feePayer === "receiver" && h.fee > 0) changes.push({ customerName: h.receiverName, customerId: h.receiverId, currency: h.feeCurrency, amount: h.fee });
-    }
-  }
-  return changes;
-}
-
-function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): Customer[] {
-  try {
-    return customers.map(c => {
-      const cc = changes.filter(ch => ch.customerId && ch.customerId === c.id && ch.customerId !== CASH_BOX_ID);
-      if (cc.length === 0) return c;
-      const nb = { ...c.balances };
-      for (const ch of cc) { if (nb[ch.currency] === undefined) nb[ch.currency] = 0; nb[ch.currency] = (nb[ch.currency] || 0) + ch.amount; }
-      return { ...c, balances: nb };
-    });
-  } catch { return customers; }
-}
-
 function loadCashEntriesLocal(): any[] { if (typeof window === "undefined") return []; try { const raw = localStorage.getItem(CASH_KEY); if (!raw) return []; const parsed = JSON.parse(raw); return Array.isArray(parsed) ? parsed : []; } catch { return []; } }
 function saveCashEntriesLocal(entries: any[]) { if (typeof window === "undefined") return; try { localStorage.setItem(CASH_KEY, JSON.stringify(entries)); window.dispatchEvent(new Event("db:updated")); } catch {} }
 
@@ -156,7 +120,7 @@ function syncCashEntriesForHawala(action: "add" | "remove", h: Hawala | null, ol
     if (h.senderId && h.senderId !== CASH_BOX_ID && h.senderId !== EXCHANGE_ACCOUNT_ID) {
       entries.push({ id: generateId(), trackingCode: getNextTrackingCode(), date: dateStr, type: "customer_withdraw", currency: h.currencyFrom, amount: h.amountFrom, direction: "out", reason: `ارسال حواله ${h.number} - ${h.senderName} به ${h.receiverName}`, balanceAfter: 0, customerId: h.senderId, customerName: h.senderName, customerPhone: h.senderPhone, linkedHawalaId: h.id, status: "active" });
       if (h.fee > 0 && h.feePayer === "sender") {
-        entries.push({ id: generateId(), trackingCode: getNextTrackingCode(), date: dateStr, type: "fee", currency: h.feeCurrency, amount: h.fee, direction: "out", reason: `کارمزد حواله ${h.number}`, balanceAfter: 0, customerId: h.senderId, customerName: h.senderName, linkedHawalaId: h.id, status: "active" });
+        entries.push({ id: generateId(), trackingCode: getNextTrackingCode(), date: dateStr, type: "customer_withdraw", currency: h.feeCurrency, amount: h.fee, direction: "out", reason: `کارمزد حواله ${h.number}`, balanceAfter: 0, customerId: h.senderId, customerName: h.senderName, customerPhone: h.senderPhone, linkedHawalaId: h.id, status: "active" });
       }
     }
     if (h.senderId === EXCHANGE_ACCOUNT_ID) {
@@ -183,7 +147,7 @@ function syncCashEntriesForHawalaSettlement(action: "add" | "remove", h: Hawala)
   if (action === "add" && h) {
     const dateStr = h.paidAt || h.date || new Date().toISOString();
     if (h.receiverId && h.receiverId !== CASH_BOX_ID && h.receiverId !== EXCHANGE_ACCOUNT_ID) {
-      entries.push({ id: generateId(), trackingCode: getNextTrackingCode(), date: dateStr, type: "owner_withdraw", currency: h.currencyTo, amount: h.finalAmount, direction: "out", reason: `پرداخت نقدی حواله ${h.number} به ${h.receiverName}`, balanceAfter: 0, customerId: CASH_BOX_ID, customerName: CASH_BOX_NAME, linkedHawalaSettleId: h.id, status: "active" });
+      entries.push({ id: generateId(), trackingCode: getNextTrackingCode(), date: dateStr, type: "customer_deposit", currency: h.currencyTo, amount: h.finalAmount, direction: "in", reason: `دریافت حواله ${h.number} — پرداخت به ${h.receiverName}`, balanceAfter: 0, customerId: h.receiverId, customerName: h.receiverName, linkedHawalaSettleId: h.id, status: "active" });
     }
     if (h.receiverId === EXCHANGE_ACCOUNT_ID) {
       entries.push({ id: generateId(), trackingCode: getNextTrackingCode(), date: dateStr, type: "owner_deposit", currency: h.currencyTo, amount: h.finalAmount, direction: "in", reason: `دریافت حواله ${h.number} به حساب صرافی از ${h.senderName}`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedHawalaSettleId: h.id, status: "active" });
@@ -192,7 +156,10 @@ function syncCashEntriesForHawalaSettlement(action: "add" | "remove", h: Hawala)
       entries.push({ id: generateId(), trackingCode: getNextTrackingCode(), date: dateStr, type: "owner_deposit", currency: h.currencyTo, amount: h.finalAmount, direction: "in", reason: `دریافت حواله ${h.number} به صندوق از ${h.senderName}`, balanceAfter: 0, customerId: CASH_BOX_ID, customerName: CASH_BOX_NAME, linkedHawalaSettleId: h.id, status: "active" });
     }
     if (h.feePayer === "receiver" && h.fee > 0) {
-      entries.push({ id: generateId(), trackingCode: getNextTrackingCode(), date: dateStr, type: "fee", currency: h.feeCurrency, amount: h.fee, direction: "in", reason: `دریافت کارمزد حواله ${h.number} از گیرنده`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedHawalaSettleId: h.id, status: "active" });
+      if (h.receiverId && h.receiverId !== CASH_BOX_ID && h.receiverId !== EXCHANGE_ACCOUNT_ID) {
+        entries.push({ id: generateId(), trackingCode: getNextTrackingCode(), date: dateStr, type: "customer_withdraw", currency: h.feeCurrency, amount: h.fee, direction: "out", reason: `کارمزد حواله ${h.number} از گیرنده`, balanceAfter: 0, customerId: h.receiverId, customerName: h.receiverName, linkedHawalaSettleId: h.id, status: "active" });
+      }
+      entries.push({ id: generateId(), trackingCode: getNextTrackingCode(), date: dateStr, type: "owner_deposit", currency: h.feeCurrency, amount: h.fee, direction: "in", reason: `دریافت کارمزد حواله ${h.number} از گیرنده`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedHawalaSettleId: h.id, status: "active" });
     }
   }
   entries = recomputeCashBalancesLocal(entries);
@@ -311,10 +278,9 @@ async function sendHawalaReceipts(params: { hawala: Hawala; action: "register" |
   const getBalances = (customerId: string | undefined): Record<string, number> => {
     const balances: Record<string, number> = {};
     for (const cur of currencies) balances[cur] = 0;
-    if (!customerId || customerId === CASH_BOX_ID) return balances;
-    const c = customers.find(x => x.id === customerId);
-    if (!c) return balances;
-    for (const cur of currencies) balances[cur] = c.balances[cur] || 0;
+    if (!customerId || customerId === CASH_BOX_ID || customerId === EXCHANGE_ACCOUNT_ID) return balances;
+    const entries = loadCashEntriesLocal();
+    for (const cur of currencies) balances[cur] = getLedgerBalance(customerId, cur, entries);
     return balances;
   };
   const isRealCustomer = (id: string | undefined): boolean => Boolean(id && id !== CASH_BOX_ID);
@@ -479,17 +445,15 @@ export default function HawalaPage() {
       const trackingNumber = consumeTrackingCode();
       const newHawala: Hawala = { id: generateId(), number: trackingNumber, date: nowDate.toISOString(), time: "", type: form.type, destinationCountry: "افغانستان", province: form.province, district: form.province === "هرات" ? form.district : form.province, destinationText, currencyFrom: form.currencyFrom, currencyTo: form.currencyTo, amountFrom, rate: txRate, rateLabel, rateBase: rateMode === "direct" ? directBaseValue : undefined, fee: feeValue, feeCurrency: form.feeCurrency, feePayer: form.feePayer, finalAmount, balance: form.balance, note: form.note, profit: feeValue, profitCurrency: form.feeCurrency, senderId: sender?.id, senderName, senderPhone: form.senderPhone, senderTelegram: form.senderTelegram, receiverId: receiver?.id, receiverName, receiverTazkira: form.receiverTazkira, receiverPhone: form.receiverPhone, receiverAddress: form.receiverAddress, status: "pending" as HawalaStatus };
       
-      let updatedCustomers = customers;
-      if (sender && !isInternalAccountId(sender.id)) {
-        updatedCustomers = applyBalanceChanges(customers, getBalanceChangesForHawala(newHawala, "register"));
-        setCustomers(updatedCustomers);
-      }
       setHawalas(prev => [newHawala, ...prev]);
       syncCashEntriesForHawala("add", newHawala);
+      const freshCustomers = loadCustomersShared() as Customer[];
+      setCustomers(freshCustomers);
+      setCashEntries(loadCashEntriesLocal());
       setLastNames({ senderName, receiverName });
       setForm(emptyForm); setErrors({}); setPreviewOpen(false); setActiveTab("current");
       
-      await sendHawalaReceipts({ hawala: newHawala, action: "register", customers: updatedCustomers });
+      await sendHawalaReceipts({ hawala: newHawala, action: "register", customers: freshCustomers });
       showToast("✅ حواله ثبت شد و رسید ارسال شد");
     } catch (err) { console.error("Register error:", err); showToast("خطا در ثبت حواله"); }
   }, [form, rateMode, rateValue, afnForeign, directCounter, directBaseValue, feeValue, amountFrom, destinationText, customers, showToast, finalAmount, editingId, hawalas]);
@@ -519,13 +483,13 @@ export default function HawalaPage() {
     const amountPaid = Number(paidAmount || settleTarget.finalAmount);
     if (!Number.isFinite(amountPaid) || amountPaid <= 0) { showToast("مبلغ پرداخت‌شده معتبر نیست."); return; }
     try {
-      const paidHawala = { ...settleTarget, status: "paid" as HawalaStatus };
-      const settlementChanges = getBalanceChangesForHawala(paidHawala, "settle");
-      const updatedCustomers = applyBalanceChanges(customers, settlementChanges);
-      if (settlementChanges.length > 0) setCustomers(updatedCustomers);
-      setHawalas(prev => prev.map(item => item.id === settleTarget.id ? { ...item, status: "paid" as HawalaStatus, paidAt: new Date().toISOString(), paidBy, paidAmount: amountPaid } : item));
+      const paidHawala = { ...settleTarget, status: "paid" as HawalaStatus, paidAt: new Date().toISOString(), paidBy, paidAmount: amountPaid };
+      setHawalas(prev => prev.map(item => item.id === settleTarget.id ? paidHawala : item));
       syncCashEntriesForHawalaSettlement("add", paidHawala);
-      await sendHawalaReceipts({ hawala: paidHawala, action: "settle", customers: updatedCustomers });
+      const freshCustomers = loadCustomersShared() as Customer[];
+      setCustomers(freshCustomers);
+      setCashEntries(loadCashEntriesLocal());
+      await sendHawalaReceipts({ hawala: paidHawala, action: "settle", customers: freshCustomers });
       setSettleTarget(null);
       showToast("✅ حواله تسویه شد و رسید ارسال شد");
     } catch (err) { console.error("Settle error:", err); showToast("خطا در تسویه حواله"); }
@@ -536,15 +500,14 @@ export default function HawalaPage() {
     if (!cancelTarget) return;
     if (!cancelReason.trim()) { showToast("دلیل لغو حواله را بنویسید."); return; }
     try {
-      let updatedCustomers = customers;
-      if (cancelTarget.senderId && !isInternalAccountId(cancelTarget.senderId)) {
-        updatedCustomers = applyBalanceChanges(customers, getBalanceChangesForHawala(cancelTarget, "cancel"));
-        setCustomers(updatedCustomers);
-      }
       syncCashEntriesForHawala("remove", null, cancelTarget.id);
       syncCashEntriesForHawalaSettlement("remove", cancelTarget);
-      setHawalas(prev => prev.map(item => item.id === cancelTarget.id ? { ...item, status: "cancelled" as HawalaStatus, cancelReason } : item));
-      await sendHawalaReceipts({ hawala: cancelTarget, action: "cancel", customers: updatedCustomers });
+      const updatedHawala = { ...cancelTarget, status: "cancelled" as HawalaStatus, cancelReason };
+      setHawalas(prev => prev.map(item => item.id === cancelTarget.id ? updatedHawala : item));
+      const freshCustomers = loadCustomersShared() as Customer[];
+      setCustomers(freshCustomers);
+      setCashEntries(loadCashEntriesLocal());
+      await sendHawalaReceipts({ hawala: updatedHawala, action: "cancel", customers: freshCustomers });
       setCancelTarget(null);
       showToast("✅ حواله ابطال شد و اطلاعیه ارسال شد");
     } catch (err) { console.error("Cancel error:", err); showToast("خطا در ابطال حواله"); }
@@ -552,36 +515,28 @@ export default function HawalaPage() {
 
   const restoreToSent = useCallback((item: Hawala) => {
     try {
-      const reverseChanges: BalanceChange[] = [];
-      if (item.senderId && !isInternalAccountId(item.senderId)) {
-        reverseChanges.push({ customerName: item.senderName, customerId: item.senderId, currency: item.currencyFrom, amount: -item.amountFrom });
-        if (item.feePayer === "sender" && item.fee > 0) reverseChanges.push({ customerName: item.senderName, customerId: item.senderId, currency: item.feeCurrency, amount: -item.fee });
-      }
-      if (item.status === "cancelled" && item.receiverId && item.paidAmount && !isInternalAccountId(item.receiverId)) {
-        reverseChanges.push({ customerName: item.receiverName, customerId: item.receiverId, currency: item.currencyTo, amount: item.finalAmount });
-        if (item.feePayer === "receiver" && item.fee > 0) reverseChanges.push({ customerName: item.receiverName, customerId: item.receiverId, currency: item.feeCurrency, amount: item.fee });
-      }
-      if (reverseChanges.length > 0) setCustomers(prev => applyBalanceChanges(prev, reverseChanges));
+      // پس از لغو، اسناد مالی حواله حذف شده‌اند؛ برای برگشت به «ارسال‌شده» فقط سند کسر از فرستنده دوباره ایجاد می‌شود.
       syncCashEntriesForHawala("add", item);
-      if (item.status === "paid" || (item.status === "cancelled" && item.paidAmount)) syncCashEntriesForHawalaSettlement("add", item);
-      setHawalas(prev => prev.map(h => h.id === item.id ? { ...h, status: "sent" as HawalaStatus, paidAt: undefined, paidBy: undefined, paidAmount: undefined, cancelReason: undefined } : h));
-      showToast("حواله به وضعیت ارسال‌شده برگشت و به تب جاری منتقل شد.");
+      setCashEntries(loadCashEntriesLocal());
+      const restored: Hawala = { ...item, status: "sent" as HawalaStatus, paidAt: undefined, paidBy: undefined, paidAmount: undefined, cancelReason: undefined };
+      setHawalas(prev => prev.map(h => h.id === item.id ? restored : h));
+      setCustomers(loadCustomersShared() as Customer[]);
+      showToast("حواله به وضعیت ارسال‌شده برگشت و حساب مشتری نیز به‌روز شد.");
     } catch (err) { console.error("Restore error:", err); showToast("خطا در برگشت حواله"); }
-  }, [customers, showToast]);
+  }, [showToast]);
 
   const deleteHawala = useCallback((item: Hawala) => {
     const msg = `آیا از حذف کامل حواله ${item.number} مطمئن هستید؟\n\nاین عملیات قابل بازگشت نیست و حواله از سیستم پاک می‌شود.`;
     if (!window.confirm(msg)) return;
     try {
-      const changes: BalanceChange[] = [];
-      if (item.status === "pending" || item.status === "sent") { if (item.senderId && !isInternalAccountId(item.senderId)) { changes.push({ customerName: item.senderName, customerId: item.senderId, currency: item.currencyFrom, amount: item.amountFrom }); if (item.feePayer === "sender" && item.fee > 0) changes.push({ customerName: item.senderName, customerId: item.senderId, currency: item.feeCurrency, amount: item.fee }); } }
-      else if (item.status === "paid") { if (item.senderId && !isInternalAccountId(item.senderId)) { changes.push({ customerName: item.senderName, customerId: item.senderId, currency: item.currencyFrom, amount: item.amountFrom }); if (item.feePayer === "sender" && item.fee > 0) changes.push({ customerName: item.senderName, customerId: item.senderId, currency: item.feeCurrency, amount: item.fee }); } if (item.receiverId && !isInternalAccountId(item.receiverId)) { changes.push({ customerName: item.receiverName, customerId: item.receiverId, currency: item.currencyTo, amount: -item.finalAmount }); if (item.feePayer === "receiver" && item.fee > 0) changes.push({ customerName: item.receiverName, customerId: item.receiverId, currency: item.feeCurrency, amount: item.fee }); } }
-      if (changes.length > 0) setCustomers(prev => applyBalanceChanges(prev, changes));
-      if (item.status !== "cancelled") { syncCashEntriesForHawala("remove", null, item.id); syncCashEntriesForHawalaSettlement("remove", item); }
+      syncCashEntriesForHawala("remove", null, item.id);
+      syncCashEntriesForHawalaSettlement("remove", item);
+      setCashEntries(loadCashEntriesLocal());
+      setCustomers(loadCustomersShared() as Customer[]);
       setHawalas(prev => prev.filter(h => h.id !== item.id));
-      showToast(`حواله ${item.number} حذف شد.`);
+      showToast(`حواله ${item.number} حذف شد و حساب‌های مرتبط به‌روز شد.`);
     } catch (err) { console.error("Delete error:", err); showToast("خطا در حذف حواله"); }
-  }, [customers, showToast]);
+  }, [showToast]);
 
   if (!mounted) return (<div className="min-h-screen flex items-center justify-center"><div className="text-center"><div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-slate-300 border-t-blue-500" /><p className="mt-4 text-slate-500">در حال بارگذاری...</p></div></div>);
 
@@ -611,7 +566,11 @@ export default function HawalaPage() {
   const CustomerBalanceCard = memo(({ customer, color, isCashBox }: { customer: Customer | null; color: "blue" | "orange" | "emerald"; isCashBox?: boolean }) => {
     if (!customer) return null;
     const isExchange = customer.id === EXCHANGE_ACCOUNT_ID;
-    const balances = isCashBox ? cashBoxBalances : isExchange ? exchangeAccountBalances : customer.balances;
+    const customerLedgerBalances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+    if (!isCashBox && !isExchange) {
+      for (const cur of currencies) customerLedgerBalances[cur] = getLedgerBalance(customer.id, cur, cashEntries);
+    }
+    const balances = isCashBox ? cashBoxBalances : isExchange ? exchangeAccountBalances : customerLedgerBalances;
     const title = isCashBox ? "💰 موجودی فیزیکی صندوق" : isExchange ? "💼 موجودی حساب صرافی" : `موجودی حساب ${customer.name}`;
     const colors = { blue: { border: dk ? "border-blue-400/30 bg-blue-400/10" : "border-blue-200 bg-blue-50", text: dk ? "text-blue-300" : "text-blue-700", icon: dk ? "text-blue-300" : "text-blue-600" }, orange: { border: dk ? "border-orange-400/30 bg-orange-400/10" : "border-orange-200 bg-orange-50", text: dk ? "text-orange-300" : "text-orange-700", icon: dk ? "text-orange-300" : "text-orange-600" }, emerald: { border: dk ? "border-emerald-400/30 bg-emerald-400/10" : "border-emerald-200 bg-emerald-50", text: dk ? "text-emerald-300" : "text-emerald-700", icon: dk ? "text-emerald-300" : "text-emerald-600" } };
     const c = colors[color];
@@ -624,66 +583,6 @@ export default function HawalaPage() {
     const btnBase = dk ? "text-slate-200 hover:bg-slate-700/60" : "text-slate-700 hover:bg-slate-100";
     return (<div className="relative action-dropdown flex justify-center"><button onClick={(e) => { e.stopPropagation(); setOpenActionId(isOpen ? null : item.id); }} className={`grid h-8 w-8 place-items-center rounded-lg border transition-all duration-150 active:scale-90 cursor-pointer ${dk ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-200 text-slate-500 hover:bg-slate-100"}`} title="عملیات"><Ic n="more" className="h-4 w-4" /></button>{isOpen && (<div className={`absolute left-1/2 -translate-x-1/2 top-full z-50 mt-1.5 w-48 overflow-hidden rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}><button onClick={() => openDetails(item)} className={`${btn} ${btnBase}`}><Ic n="eye" className="h-3.5 w-3.5" /> نمایش</button><button onClick={() => editHawala(item)} className={`${btn} ${btnBase}`}><Ic n="edit" className="h-3.5 w-3.5" /> ویرایش</button><button onClick={() => shareHawala(item)} className={`${btn} ${btnBase}`}><Ic n="share" className="h-3.5 w-3.5" /> اشتراک‌گذاری</button><div className={`my-1 h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />{!isInHistory && (<>{isPending && (<button onClick={() => { markAsSent(item); setOpenActionId(null); }} className={`${btn} ${btnBase} ${dk ? "text-sky-300 hover:bg-sky-400/15" : "text-sky-600 hover:bg-sky-50"}`}><Ic n="send" className="h-3.5 w-3.5" /> ارسال حواله</button>)}{(isPending || isSent) && (<><button onClick={() => { openSettlement(item); setOpenActionId(null); }} className={`${btn} ${btnBase} ${dk ? "text-emerald-300 hover:bg-emerald-400/15" : "text-emerald-600 hover:bg-emerald-50"}`}><Ic n="check" className="h-3.5 w-3.5" /> تسویه حواله</button><button onClick={() => { openCancel(item); setOpenActionId(null); }} className={`${btn} ${btnBase} ${dk ? "text-amber-300 hover:bg-amber-400/15" : "text-amber-600 hover:bg-amber-50"}`}><Ic n="xCircle" className="h-3.5 w-3.5" /> ابطال حواله</button></>)}</>)}{isInHistory && (<>{isCancelled && (<button onClick={() => { restoreToSent(item); setOpenActionId(null); }} className={`${btn} ${btnBase} ${dk ? "text-sky-300 hover:bg-sky-400/15" : "text-sky-600 hover:bg-sky-50"}`}><Ic n="undo" className="h-3.5 w-3.5" /> برگشت به ارسال</button>)}{isPaid && (<button onClick={() => { openCancel(item); setOpenActionId(null); }} className={`${btn} ${btnBase} ${dk ? "text-amber-300 hover:bg-amber-400/15" : "text-amber-600 hover:bg-amber-50"}`}><Ic n="xCircle" className="h-3.5 w-3.5" /> ابطال حواله</button>)}</>)}<div className={`my-1 h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} /><button onClick={() => { deleteHawala(item); setOpenActionId(null); }} className={`${btn} ${dk ? "text-rose-300 hover:bg-rose-400/15" : "text-rose-500 hover:bg-rose-50"}`}><Ic n="trash" className="h-3.5 w-3.5" /> حذف حواله</button></div>)}</div>);
   });
-
-  const customerPicker = (role: "sender" | "receiver") => {
-    const isSender = role === "sender";
-    const value = isSender ? form.senderName : form.receiverName;
-    const showList = isSender ? showSenderList : showReceiverList;
-    const list = isSender ? filteredSenderList : filteredReceiverList;
-    const setShowList = isSender ? setShowSenderList : setShowReceiverList;
-    const setFilter = isSender ? setSenderFilter : setReceiverFilter;
-    const listRef = isSender ? senderListRef : receiverListRef;
-    const placeholder = "انتخاب از لیست یا نوشتن نام جدید…";
-    return (
-      <div className="relative" ref={listRef}>
-        <input
-          value={value}
-          onChange={e => {
-            const val = e.target.value;
-            if (isSender) {
-              setField("senderName", val); setSenderFilter(val);
-              if (!showSenderList) setShowSenderList(true);
-              if (val.trim() === CASH_BOX_NAME) { setField("senderId", CASH_BOX_ID); setField("senderPhone", ""); setField("senderTelegram", ""); }
-              else if (val.trim() === EXCHANGE_ACCOUNT_NAME) { setField("senderId", EXCHANGE_ACCOUNT_ID); setField("senderPhone", ""); setField("senderTelegram", ""); }
-              else { const c = customers.find(x => x.name === val); if (c) { setField("senderId", c.id); setField("senderPhone", c.phone || ""); setField("senderTelegram", c.telegram || ""); } else { setField("senderId", ""); setField("senderPhone", ""); setField("senderTelegram", ""); } }
-            } else {
-              setField("receiverName", val); setReceiverFilter(val);
-              if (!showReceiverList) setShowReceiverList(true);
-              if (val.trim() === CASH_BOX_NAME) { setField("receiverId", CASH_BOX_ID); setField("receiverTazkira", ""); setField("receiverPhone", ""); setField("receiverAddress", ""); }
-              else if (val.trim() === EXCHANGE_ACCOUNT_NAME) { setField("receiverId", EXCHANGE_ACCOUNT_ID); setField("receiverTazkira", ""); setField("receiverPhone", ""); setField("receiverAddress", ""); }
-              else { const c = customers.find(x => x.name === val); if (c) { setField("receiverId", c.id); setField("receiverTazkira", c.tazkira || ""); setField("receiverPhone", c.phone || ""); setField("receiverAddress", c.address || ""); } else { setField("receiverId", ""); setField("receiverTazkira", ""); setField("receiverPhone", ""); setField("receiverAddress", ""); } }
-            }
-          }}
-          placeholder={placeholder}
-          className={`${uiInput} pl-12 ${isSender ? (errors.senderName ? errInput : "") : (errors.receiverName ? errInput : "")}`}
-          autoComplete="off"
-        />
-        <button type="button" onClick={e => { e.stopPropagation(); setShowList(!showList); }} className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition ${dk ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}>
-          <Ic n="chevron" className={`h-4 w-4 transition-transform ${showList ? "rotate-180" : ""}`} />
-        </button>
-        {showList && (
-          <div className={`hw-menu absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
-            {list.length === 0 ? (
-              <div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>
-            ) : (
-              list.map((c, idx) => (
-                <button key={c.id} type="button" onClick={() => {
-                  if (isSender) { setField("senderId", c.id); setField("senderName", c.name); setField("senderPhone", c.phone || ""); setField("senderTelegram", c.telegram || ""); setSenderFilter(""); setShowSenderList(false); setErrors(p => ({ ...p, senderName: undefined })); }
-                  else { setField("receiverId", c.id); setField("receiverName", c.name); setField("receiverTazkira", c.tazkira || ""); setField("receiverPhone", c.phone || ""); setField("receiverAddress", c.address || ""); setReceiverFilter(""); setShowReceiverList(false); setErrors(p => ({ ...p, receiverName: undefined })); }
-                }} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${isSender ? (dk ? "text-slate-200 hover:bg-blue-400/15 hover:text-blue-300" : "text-slate-700 hover:bg-blue-50 hover:text-blue-600") : (dk ? "text-slate-200 hover:bg-amber-400/15 hover:text-amber-300" : "text-slate-700 hover:bg-amber-50 hover:text-amber-600")}`}>
-                  <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white ${isSender ? "bg-gradient-to-br from-blue-500 to-cyan-500" : "bg-gradient-to-br from-amber-500 to-orange-500"}`}>{idx + 1}</span>
-                  <span className="flex-1 truncate flex items-center gap-1.5">{c.name}{hasTelegram(c) && <span title="دارای چت آیدی تلگرام">📱</span>}</span>
-                  {c.phone && <span className={`text-[10px] ${subText}`} dir="ltr">{c.phone}</span>}
-                </button>
-              ))
-            )}
-            <div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
-            <div className={`px-3 py-2 text-[10px] text-center ${subText}`}>نام جدید در لیست ذخیره نمی‌شود</div>
-          </div>
-        )}
-      </div>
-    );
-  };
 
   const errorList = Object.values(errors).filter((msg): msg is string => Boolean(msg));
   const tabs = [{ id: "new" as const, label: "ثبت حواله جدید", icon: "plus" as IconName }, { id: "current" as const, label: "حواله‌های جاری", icon: "clock" as IconName, count: currentHawalas.length }, { id: "history" as const, label: "تاریخچه حواله‌ها", icon: "doc" as IconName, count: historyHawalas.length }];
@@ -719,7 +618,7 @@ export default function HawalaPage() {
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-600"}`}><Ic n="send" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-blue-300" : "text-blue-700"}`}>معلومات حواله‌دهنده و حواله</b></div>
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-3 mb-4">
-                  {fld("نام حواله‌دهنده *", customerPicker("sender"))}
+                  {fld("نام حواله‌دهنده *", (<div className="relative" ref={senderListRef}><input value={form.senderName} onChange={e => { const val = e.target.value; setField("senderName", val); setSenderFilter(val); if (!showSenderList) setShowSenderList(true); if (val.trim() === CASH_BOX_NAME) { setField("senderId", CASH_BOX_ID); setField("senderPhone", ""); setField("senderTelegram", ""); } else if (val.trim() === EXCHANGE_ACCOUNT_NAME) { setField("senderId", EXCHANGE_ACCOUNT_ID); setField("senderPhone", ""); setField("senderTelegram", ""); } else { const customer = customers.find(c => c.name === val); if (customer) { setField("senderId", customer.id); setField("senderPhone", customer.phone || ""); setField("senderTelegram", customer.telegram || ""); } else { setField("senderId", ""); setField("senderPhone", ""); setField("senderTelegram", ""); } } }} placeholder="انتخاب از لیست یا نوشتن نام جدید…" className={`${uiInput} pl-12 ${errors.senderName ? errInput : ""}`} autoComplete="off" /><button type="button" onClick={(e) => { e.stopPropagation(); setShowSenderList(!showSenderList); }} className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition ${dk ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}><Ic n="chevron" className={`h-4 w-4 transition-transform ${showSenderList ? "rotate-180" : ""}`} /></button>{showSenderList && (<div className={`hw-menu absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>{filteredSenderList.length === 0 ? (<div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>) : (filteredSenderList.map((c, idx) => (<button key={c.id} type="button" onClick={() => { setField("senderId", c.id); setField("senderName", c.name); setField("senderPhone", c.phone || ""); setField("senderTelegram", c.telegram || ""); setSenderFilter(""); setShowSenderList(false); setErrors(p => ({ ...p, senderName: undefined })); }} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-blue-400/15 hover:text-blue-300" : "text-slate-700 hover:bg-blue-50 hover:text-blue-600"}`}><span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-blue-500 to-cyan-500`}>{idx + 1}</span><span className="flex-1 truncate flex items-center gap-1.5">{c.name}{hasTelegram(c) && <span title="دارای چت آیدی تلگرام">📱</span>}</span>{c.phone && <span className={`text-[10px] ${subText}`} dir="ltr">{c.phone}</span>}</button>)))}<div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} /><div className={`px-3 py-2 text-[10px] text-center ${subText}`}>نام جدید در لیست ذخیره نمی‌شود</div></div>)}</div>))}
                   {fld("کد پیگیری", (<div className="relative"><input readOnly dir="ltr" value={nextHawalaNumber} className={`${uiInput} ${roInput} pl-16 text-left tabular-nums font-black text-[14px]`} /><span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 px-2 py-1 text-[9px] font-black text-white">TR</span></div>))}
                   {fld("تاریخ (شمسی)", (<input readOnly value={currentDateTime} className={`${uiInput} ${roInput}`} />))}
                 </div>
@@ -760,7 +659,7 @@ export default function HawalaPage() {
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="receive" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>معلومات حواله‌گیرنده</b></div>
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {fld("نام حواله‌گیرنده *", customerPicker("receiver"))}
+                  {fld("نام حواله‌گیرنده *", (<div className="relative" ref={receiverListRef}><input value={form.receiverName} onChange={e => { const val = e.target.value; setField("receiverName", val); setReceiverFilter(val); if (!showReceiverList) setShowReceiverList(true); if (val.trim() === CASH_BOX_NAME) { setField("receiverId", CASH_BOX_ID); setField("receiverTazkira", ""); setField("receiverPhone", ""); setField("receiverAddress", ""); } else if (val.trim() === EXCHANGE_ACCOUNT_NAME) { setField("receiverId", EXCHANGE_ACCOUNT_ID); setField("receiverTazkira", ""); setField("receiverPhone", ""); setField("receiverAddress", ""); } else { const customer = customers.find(c => c.name === val); if (customer) { setField("receiverId", customer.id); setField("receiverTazkira", customer.tazkira || ""); setField("receiverPhone", customer.phone || ""); setField("receiverAddress", customer.address || ""); } else { setField("receiverId", ""); setField("receiverTazkira", ""); setField("receiverPhone", ""); setField("receiverAddress", ""); } } }} placeholder="انتخاب از لیست یا نوشتن نام جدید…" className={`${uiInput} pl-12 ${errors.receiverName ? errInput : ""}`} autoComplete="off" /><button type="button" onClick={(e) => { e.stopPropagation(); setShowReceiverList(!showReceiverList); }} className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition ${dk ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}><Ic n="chevron" className={`h-4 w-4 transition-transform ${showReceiverList ? "rotate-180" : ""}`} /></button>{showReceiverList && (<div className={`hw-menu absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>{filteredReceiverList.length === 0 ? (<div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>) : (filteredReceiverList.map((c, idx) => (<button key={c.id} type="button" onClick={() => { setField("receiverId", c.id); setField("receiverName", c.name); setField("receiverTazkira", c.tazkira || ""); setField("receiverPhone", c.phone || ""); setField("receiverAddress", c.address || ""); setReceiverFilter(""); setShowReceiverList(false); setErrors(p => ({ ...p, receiverName: undefined })); }} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-amber-400/15 hover:text-amber-300" : "text-slate-700 hover:bg-amber-50 hover:text-amber-600"}`}><span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-amber-500 to-orange-500`}>{idx + 1}</span><span className="flex-1 truncate flex items-center gap-1.5">{c.name}{hasTelegram(c) && <span title="دارای چت آیدی تلگرام">📱</span>}</span>{c.phone && <span className={`text-[10px] ${subText}`} dir="ltr">{c.phone}</span></button>)))}<div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} /><div className={`px-3 py-2 text-[10px] text-center ${subText}`}>نام جدید در لیست ذخیره نمی‌شود</div></div>)}</div>))}
                   {fld("شماره تذکره *", (<input className={`${uiInput} ${errors.receiverTazkira ? errInput : ""}`} value={form.receiverTazkira} onChange={e => setField("receiverTazkira", e.target.value)} placeholder="شماره تذکره" />))}
                   {fld("شماره تماس *", (<input className={`${uiInput} ${errors.receiverPhone ? errInput : ""}`} value={form.receiverPhone} onChange={e => setField("receiverPhone", e.target.value)} placeholder="07xxxxxxxx" />))}
                   {fld("آدرس", (<input className={`${uiInput} sm:col-span-2 lg:col-span-3`} value={form.receiverAddress} onChange={e => setField("receiverAddress", e.target.value)} placeholder="اختیاری" />))}
