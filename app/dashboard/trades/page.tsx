@@ -506,6 +506,9 @@ export default function CurrencyExchangePage() {
   const [cashEntries, setCashEntries] = useState<any[]>(() => {
     try { return loadCashEntriesShared(); } catch { return []; }
   });
+  const [hawalas, setHawalas] = useState<any[]>(() => {
+    try { return loadHawalasShared(); } catch { return []; }
+  });
   useEffect(() => { try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); } catch {} }, [customers]);
   useEffect(() => { try { window.localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(transactions)); } catch {} }, [transactions]);
   useEffect(() => { try { initTrackingSystem(); } catch {} }, []);
@@ -515,6 +518,7 @@ export default function CurrencyExchangePage() {
         if (e.key === CUSTOMERS_KEY && e.newValue) { const parsed = JSON.parse(e.newValue); if (Array.isArray(parsed)) setCustomers(parsed); }
         if (e.key === TRANSACTIONS_KEY && e.newValue) { const parsed = JSON.parse(e.newValue); if (Array.isArray(parsed)) setTransactions(parsed); }
         if (e.key === CASH_KEY && e.newValue) { const parsed = JSON.parse(e.newValue); if (Array.isArray(parsed)) setCashEntries(parsed); }
+        if (e.key === HAWALAS_KEY && e.newValue) { const parsed = JSON.parse(e.newValue); if (Array.isArray(parsed)) setHawalas(parsed); }
       } catch {}
     };
     window.addEventListener("storage", handleStorage);
@@ -526,6 +530,7 @@ export default function CurrencyExchangePage() {
         setCustomers(loadCustomersShared() as Customer[]);
         setTransactions(loadTransactionsShared());
         setCashEntries(loadCashEntriesShared());
+        setHawalas(loadHawalasShared());
       } catch {}
     };
     window.addEventListener("focus", handleFocus);
@@ -1114,9 +1119,69 @@ export default function CurrencyExchangePage() {
       <span className={chevPos}><Ic n="chevron" className="h-4 w-4" /></span>
     </div>
   );
+  const getSharedCustomerBalances = useCallback((customerId: string): Record<Currency, number> => {
+    const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+    if (!customerId || customerId === CASH_BOX_ID || customerId === EXCHANGE_ACCOUNT_ID) return balances;
+
+    const add = (currency: Currency, amount: number) => {
+      if (!currencies.includes(currency) || !Number.isFinite(amount)) return;
+      balances[currency] += amount;
+    };
+
+    // معاملات ارز / انتقال بین مشتریان / تبدیل ارز
+    for (const tx of transactions) {
+      if (!tx || tx.status === "voided") continue;
+      if (tx.type === "exchange" && tx.customerId === customerId) {
+        add(tx.fromCurrency, -Number(tx.fromAmount || 0));
+        add(tx.toCurrency, Number(tx.toAmount || 0));
+        if (tx.commission && tx.commissionCurrency) add(tx.commissionCurrency, -Number(tx.commission || 0));
+      }
+      if (tx.type === "transfer") {
+        if (tx.senderId === customerId) {
+          add(tx.fromCurrency, -Number(tx.fromAmount || 0));
+          if (tx.commissionPayer === "sender" && tx.commission && tx.commissionCurrency) add(tx.commissionCurrency, -Number(tx.commission || 0));
+        }
+        if (tx.receiverId === customerId) {
+          add(tx.toCurrency, Number(tx.toAmount || 0));
+          if (tx.commissionPayer === "receiver" && tx.commission && tx.commissionCurrency) add(tx.commissionCurrency, -Number(tx.commission || 0));
+        }
+      }
+      if (tx.type === "convert" && tx.customerId === customerId) {
+        add(tx.fromCurrency, -Number(tx.fromAmount || 0));
+        add(tx.toCurrency, Number(tx.toAmount || 0));
+        if (tx.commission && tx.commissionCurrency) add(tx.commissionCurrency, -Number(tx.commission || 0));
+      }
+    }
+
+    // حواله‌جات — دقیقاً مطابق دفتر حساب تب مشتریان
+    for (const h of hawalas) {
+      if (!h || h.status === "cancelled") continue;
+      if (h.senderId === customerId) {
+        add(h.currencyFrom, -Number(h.amountFrom || 0));
+        if (h.feePayer === "sender" && h.fee > 0 && h.feeCurrency) add(h.feeCurrency, -Number(h.fee || 0));
+      }
+      if (h.receiverId === customerId && h.status === "paid") {
+        add(h.currencyTo, Number(h.finalAmount || 0));
+        if (h.feePayer === "receiver" && h.fee > 0 && h.feeCurrency) add(h.feeCurrency, -Number(h.fee || 0));
+      }
+    }
+
+    // واریز/برداشت و قرض‌های ثبت‌شده در حساب مشتری
+    for (const ce of cashEntries) {
+      if (!ce || ce.status === "voided" || ce.customerId !== customerId) continue;
+      if (ce.linkedExchangeId || ce.linkedTransferId || ce.linkedConvertId || ce.linkedHawalaId || ce.linkedHawalaSettleId) continue;
+      const amount = Number(ce.amount || 0);
+      if (!amount || !currencies.includes(ce.currency as Currency)) continue;
+      if (ce.type === "customer_deposit" || ce.type === "loan_received") add(ce.currency, amount);
+      else if (ce.type === "customer_withdraw" || ce.type === "loan_given") add(ce.currency, -amount);
+    }
+
+    return balances;
+  }, [transactions, hawalas, cashEntries]);
+
   const CustomerBalanceCard = memo(({ customer, color, isCashBox }: { customer: Customer | null; color: "cyan" | "orange" | "violet"; isCashBox?: boolean }) => {
     if (!customer) return null;
-    const balances = customer.id === EXCHANGE_ACCOUNT_ID ? exchangeAccountBalances : customer.balances;
+    const balances = customer.id === EXCHANGE_ACCOUNT_ID ? exchangeAccountBalances : getSharedCustomerBalances(customer.id);
     const title = customer.id === EXCHANGE_ACCOUNT_ID ? "💼 موجودی حساب صرافی" : `موجودی حساب ${customer.name}`;
     const colors = {
       cyan: { border: dk ? "border-cyan-400/30 bg-cyan-400/10" : "border-cyan-200 bg-cyan-50", text: dk ? "text-cyan-300" : "text-cyan-700", icon: dk ? "text-cyan-300" : "text-cyan-600" },
