@@ -58,13 +58,9 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: CashE
     if (entry.status === "voided" || entry.currency !== currency) continue;
     
     if (customerId === CASH_BOX_ID) {
-      // تبدیل ارز بین مشتری و حساب صرافی، معامله حسابداری است و نباید
-      // هیچ اثری روی موجودی فیزیکی صندوق داشته باشد.
       if (entry.type === "exchange_account_in" || entry.type === "exchange_account_out") {
         continue;
       }
-
-      // قرض دادن پول را از صندوق خارج می‌کند (کاهش)، دریافت قرض پول را برمی‌گرداند (افزایش)
       if (entry.type === "loan_given") {
         balance -= entry.amount;
       } else if (entry.type === "loan_received") {
@@ -75,8 +71,6 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: CashE
       }
     } 
     else if (customerId === EXCHANGE_ACCOUNT_ID) {
-      // حساب صرافی علاوه بر سرمایه مالک و قرض‌ها، اثر تبدیل ارز
-      // با مشتری را نیز مستقیماً از Ledger دریافت می‌کند.
       if (entry.type === "owner_deposit") balance += entry.amount;
       else if (entry.type === "owner_withdraw") balance -= entry.amount;
       else if (entry.type === "exchange_account_in") balance += entry.amount;
@@ -88,8 +82,8 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: CashE
       if (entry.customerId === customerId) {
         if (entry.type === "customer_deposit") balance += entry.amount;
         else if (entry.type === "customer_withdraw") balance -= entry.amount;
-        else if (entry.type === "loan_given") balance -= entry.amount; // مشتری بدهکار می‌شود (منفی)
-        else if (entry.type === "loan_received") balance += entry.amount; // بدهی مشتری کم می‌شود
+        else if (entry.type === "loan_given") balance -= entry.amount;
+        else if (entry.type === "loan_received") balance += entry.amount;
       }
     }
   }
@@ -143,13 +137,12 @@ function getBalanceChangesForCashEntry(entry: CashEntry, action: "register" | "r
     }
   }
   
-  // ✅ واریز/برداشت مالک و دادن/دریافت قرض روی حساب صرافی تأثیر می‌گذارد
   if (entry.type === "owner_deposit" || entry.type === "owner_withdraw" || entry.type === "loan_given" || entry.type === "loan_received") {
     let exchangeDelta = 0;
     if (entry.type === "owner_deposit") exchangeDelta = entry.amount;
     else if (entry.type === "owner_withdraw") exchangeDelta = -entry.amount;
-    else if (entry.type === "loan_given") exchangeDelta = -entry.amount; // قرض داده شد، از حساب صرافی کم می‌شود
-    else if (entry.type === "loan_received") exchangeDelta = entry.amount; // قرض پس داده شد، به حساب صرافی اضافه می‌شود
+    else if (entry.type === "loan_given") exchangeDelta = -entry.amount;
+    else if (entry.type === "loan_received") exchangeDelta = entry.amount;
     
     changes.push({ customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, currency: entry.currency, amount: exchangeDelta * sign });
   }
@@ -217,12 +210,13 @@ function getCustomerChatId(customerId: string | undefined, customers: Customer[]
   try { const c = customers.find(x => x.id === customerId); return c ? (c.telegramChatId || c.telegram || "") : ""; } catch { return ""; }
 }
 
+// ✅ اصلاح ۱: تغییر "پیگیری" به "کد پیگیری"
 function buildCashReceiptText(params: { entry: CashEntry; customerName: string; balances: Record<string, number>; date: Date; }): string {
   const { entry, customerName, balances, date } = params;
   const dateStr = formatShamsiDateTime(date);
   const isDeposit = entry.direction === "in";
   const title = isDeposit ? "🟢 سند رسید" : "🔴 سند برد";
-  let text = `${title}\n\n🗓 تاریخ: ${dateStr}\n\n🛅 پیگیری: ${entry.trackingCode}\n\n👤 مشتری: ${customerName}\n\n📑 شرح: ${entry.reason}\n\n`;
+  let text = `${title}\n\n🗓 تاریخ: ${dateStr}\n\n🛅 کد پیگیری: ${entry.trackingCode}\n\n👤 مشتری: ${customerName}\n\n📑 شرح: ${entry.reason}\n\n`;
   if (isDeposit) text += `💵 دریافت: ${fmt(entry.amount)} ${labels[entry.currency]}\n`;
   else text += `💰 پرداخت: ${fmt(entry.amount)} ${labels[entry.currency]}\n`;
   text += `📝 به حروف: ${numberToPersianWords(entry.amount)}\n\n-------------بیلانس فعلی شما--------------\n`;
@@ -236,10 +230,11 @@ function buildCashReceiptText(params: { entry: CashEntry; customerName: string; 
   return text;
 }
 
+// ✅ اصلاح ۱: تغییر "پیگیری" به "کد پیگیری"
 function buildCashVoidNoticeText(params: { entry: CashEntry; customerName: string; balances: Record<string, number>; date: Date; }): string {
   const { entry, customerName, balances, date } = params;
   const dateStr = formatShamsiDateTime(date);
-  let text = `📬 اطلاعیه لغو سند صندوق\n\n🗓 تاریخ: ${dateStr}\n\n🛅 پیگیری: ${entry.trackingCode}\n\n👤 مشتری: ${customerName}\n\n`;
+  let text = `📬 اطلاعیه لغو سند صندوق\n\n🗓 تاریخ: ${dateStr}\n\n🛅 کد پیگیری: ${entry.trackingCode}\n\n👤 مشتری: ${customerName}\n\n`;
   if (entry.type === "customer_deposit") text += `📑 شرح: سند لغو شد — مبلغ از حساب شما کسر گردید\n\n💰 مبلغ کسرشده: ${fmt(entry.amount)} ${labels[entry.currency]}\n`;
   else text += `📑 شرح: سند لغو شد — مبلغ به حساب شما برگشت داده شد\n\n💰 مبلغ برگشتی: ${fmt(entry.amount)} ${labels[entry.currency]}\n`;
   text += `📝 به حروف: ${numberToPersianWords(entry.amount)}\n\n-------------بیلانس فعلی شما--------------\n`;
@@ -253,6 +248,7 @@ function buildCashVoidNoticeText(params: { entry: CashEntry; customerName: strin
   return text;
 }
 
+// ✅ اصلاح ۲: دریافت بیلانس دقیق از آرایه customers که قبلاً به‌روزرسانی شده است
 async function sendCashReceipts(params: { entry: CashEntry; action: "register" | "void"; customers: Customer[]; }) {
   const settings = getTelegramSettings();
   if (!settings.enabled || !settings.botToken || !settings.notifyCash) return;
@@ -262,16 +258,15 @@ async function sendCashReceipts(params: { entry: CashEntry; action: "register" |
   const chatId = getCustomerChatId(entry.customerId, customers);
   if (!chatId) return;
   
-  const getBalances = (customerId: string | undefined): Record<string, number> => {
-    const balances: Record<string, number> = {};
-    for (const cur of currencies) balances[cur] = getLedgerBalance(customerId || "", cur, JSON.parse(localStorage.getItem(CASH_KEY) || "[]"));
-    return balances;
+  const getBalances = (): Record<string, number> => {
+    const customer = customers.find(c => c.id === entry.customerId);
+    return customer ? customer.balances : {};
   };
   
   const now = new Date();
   const text = action === "register" 
-    ? buildCashReceiptText({ entry, customerName: entry.customerName || "", balances: getBalances(entry.customerId), date: now })
-    : buildCashVoidNoticeText({ entry, customerName: entry.customerName || "", balances: getBalances(entry.customerId), date: now });
+    ? buildCashReceiptText({ entry, customerName: entry.customerName || "", balances: getBalances(), date: now })
+    : buildCashVoidNoticeText({ entry, customerName: entry.customerName || "", balances: getBalances(), date: now });
     
   await sendTelegramMessage(settings.botToken, chatId, text);
 }
@@ -395,7 +390,6 @@ export default function CashPage() {
     return totals;
   }, [customers, entries]);
 
-  // بدهی باز مشتریان: این مبلغ از سرمایه حساب صرافی کسر می‌شود.
   const customerDebts = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
@@ -408,27 +402,20 @@ export default function CashPage() {
     return totals;
   }, [customers, entries]);
 
-  // موجودی حساب صرافی = سرمایه مالک - بدهی‌های باز مشتریان
-  // بازپرداخت قرض، بدهی را کم می‌کند و در نتیجه موجودی حساب صرافی دوباره افزایش می‌یابد.
   const exchangeBalance = useMemo(() => {
     const bal: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-
     for (const cur of currencies) {
       let ownerBalance = 0;
-
       for (const entry of entries) {
         if (entry.status === "voided" || entry.currency !== cur) continue;
-
         if (entry.type === "owner_deposit") {
           ownerBalance += entry.amount;
         } else if (entry.type === "owner_withdraw") {
           ownerBalance -= entry.amount;
         }
       }
-
       bal[cur] = ownerBalance - (customerDebts[cur] || 0);
     }
-
     return bal;
   }, [entries, customerDebts]);
 
@@ -453,12 +440,9 @@ export default function CashPage() {
 
   const filteredCustomerList = useMemo(() => {
     const q = normalizeDigits(customerFilter.trim()).toLowerCase();
-    
     const virtualAccounts = [EXCHANGE_ACCOUNT_CUSTOMER].filter(acc => !q || acc.name.includes(q));
-    
     const normalCustomers = customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID)
       .filter(c => !q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q)) || (c.tazkira && normalizeDigits(c.tazkira).includes(q)));
-      
     return [...virtualAccounts, ...normalCustomers];
   }, [customers, customerFilter]);
 
