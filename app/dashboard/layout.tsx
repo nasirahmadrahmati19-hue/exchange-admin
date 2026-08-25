@@ -61,7 +61,6 @@ const saveSettings = (s: Settings) => {
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch {}
 };
 
-// ===== دریافت کاربران ربات تلگرام =====
 async function fetchTelegramUsers(botToken: string): Promise<TelegramUser[]> {
   if (!botToken.trim()) return [];
   try {
@@ -85,7 +84,6 @@ async function fetchTelegramUsers(botToken: string): Promise<TelegramUser[]> {
   } catch { return []; }
 }
 
-// ===== آیکون‌ها =====
 const Ic = ({ n, className = "h-5 w-5" }: { n: string; className?: string }) => {
   const paths: Record<string, string> = {
     gear: "M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
@@ -105,7 +103,6 @@ const Ic = ({ n, className = "h-5 w-5" }: { n: string; className?: string }) => 
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true"><path d={paths[n] || ""} /></svg>;
 };
 
-// ===== کامپوننت Toggle (خارج از SettingsPanel برای جلوگیری از re-render) =====
 const Toggle = memo(({ enabled, onChange, label }: { enabled: boolean; onChange: (v: boolean) => void; label?: string }) => (
   <button type="button" onClick={() => onChange(!enabled)} className="flex items-center gap-3 cursor-pointer">
     <span className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${enabled ? "bg-emerald-500" : "bg-slate-600"}`}>
@@ -115,7 +112,6 @@ const Toggle = memo(({ enabled, onChange, label }: { enabled: boolean; onChange:
   </button>
 ));
 
-// ===== کامپوننت AccordionItem (خارج از SettingsPanel) =====
 const AccordionItem = memo(({ id, icon, title, isOpen, onToggle, children }: { id: string; icon: string; title: string; isOpen: boolean; onToggle: () => void; children: ReactNode }) => (
   <div className="rounded-xl border border-slate-700 bg-slate-800/50 overflow-hidden">
     <button type="button" onClick={onToggle} className="flex w-full items-center justify-between gap-3 px-4 py-3.5 hover:bg-slate-700/50 transition-colors">
@@ -131,7 +127,6 @@ const AccordionItem = memo(({ id, icon, title, isOpen, onToggle, children }: { i
   </div>
 ));
 
-// ===== پنل تنظیمات =====
 function SettingsPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [settings, setSettings] = useState<Settings>(defaultSettings);
   const [toast, setToast] = useState("");
@@ -214,9 +209,7 @@ function SettingsPanel({ open, onClose }: { open: boolean; onClose: () => void }
   return (
     <>
       {open && <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-[55]" onClick={onClose} />}
-
       <div className={`fixed top-0 left-0 z-[60] h-full w-full max-w-md transform transition-transform duration-300 ease-in-out ${open ? "translate-x-0" : "-translate-x-full"} bg-slate-900 border-r border-slate-700 shadow-2xl overflow-y-auto`}>
-        {/* هدر پنل */}
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-700 px-5 py-4 backdrop-blur bg-slate-900/95">
           <div className="flex items-center gap-3">
             <span className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-400/15 text-emerald-300"><Ic n="gear" className="h-5 w-5" /></span>
@@ -227,10 +220,7 @@ function SettingsPanel({ open, onClose }: { open: boolean; onClose: () => void }
           </div>
           <button onClick={onClose} className="grid h-9 w-9 place-items-center rounded-lg hover:bg-slate-700 text-slate-400"><Ic n="x" className="h-5 w-5" /></button>
         </div>
-
         <div className="space-y-3 p-4">
-
-          {/* 📧 ایمیل */}
           <AccordionItem id="email" icon="mail" title="ایمیل (جیمیل)" isOpen={activeAccordion === "email"} onToggle={() => toggleAccordion("email")}>
             <div className="space-y-3">
               {fld("ایمیل صرافی", <input type="email" dir="ltr" value={settings.email} onChange={e => updateSettings({ email: e.target.value })} placeholder="example@gmail.com" className={`${uiInput} text-left`} />)}
@@ -240,8 +230,6 @@ function SettingsPanel({ open, onClose }: { open: boolean; onClose: () => void }
               </button>
             </div>
           </AccordionItem>
-
-          {/* 🌐 زبان */}
           <AccordionItem id="language" icon="globe" title="زبان سیستم" isOpen={activeAccordion === "language"} onToggle={() => toggleAccordion("language")}>
             <div className="space-y-2">
               {([
@@ -258,8 +246,6 @@ function SettingsPanel({ open, onClose }: { open: boolean; onClose: () => void }
               ))}
             </div>
           </AccordionItem>
-
-          {/* 👥 تیم */}
           <AccordionItem id="team" icon="users" title="اطلاعات تیم" isOpen={activeAccordion === "team"} onToggle={() => toggleAccordion("team")}>
             <div className="space-y-3">
               {fld("نام تیم / صرافی", <input value={settings.teamName} onChange={e => updateSettings({ teamName: e.target.value })} placeholder="صرافی برادران نورزاد" className={uiInput} />)}
@@ -270,8 +256,6 @@ function SettingsPanel({ open, onClose }: { open: boolean; onClose: () => void }
               </button>
             </div>
           </AccordionItem>
-
-          {/* 💾 پشتیبان‌گیری */}
           <AccordionItem id="backup" icon="backup" title="پشتیبان‌گیری" isOpen={activeAccordion === "backup"} onToggle={() => toggleAccordion("backup")}>
             <div className="space-y-3">
               <button onClick={handleBackup} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white hover:bg-emerald-600 active:scale-95">
@@ -284,20 +268,16 @@ function SettingsPanel({ open, onClose }: { open: boolean; onClose: () => void }
               <div className="rounded-lg p-3 text-[11px] font-bold bg-slate-700/50 text-slate-400">💡 شامل تمام مشتریان، معاملات، حواله‌ها و اسناد صندوق</div>
             </div>
           </AccordionItem>
-
-          {/* 📱 تلگرام */}
           <AccordionItem id="telegram" icon="telegram" title="تنظیمات تلگرام" isOpen={activeAccordion === "telegram"} onToggle={() => toggleAccordion("telegram")}>
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-bold text-white">فعال‌سازی تلگرام</span>
                 <Toggle enabled={settings.telegram.enabled} onChange={v => updateTelegram({ enabled: v })} />
               </div>
-
               {settings.telegram.enabled && (
                 <>
                   {fld("توکن بات (از @BotFather)", <input dir="ltr" value={settings.telegram.botToken} onChange={e => updateTelegram({ botToken: e.target.value })} placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz" className={`${uiInput} text-left font-mono text-xs`} />)}
                   {fld("چت آی‌دی اصلی", <input dir="ltr" value={settings.telegram.chatId} onChange={e => updateTelegram({ chatId: e.target.value })} placeholder="-1001234567890" className={`${uiInput} text-left font-mono text-xs`} />)}
-
                   <div className="rounded-xl border border-slate-600 p-3 space-y-3">
                     <p className="text-xs font-black text-white">اعلان‌ها:</p>
                     <Toggle enabled={settings.telegram.notifyNewHawala} onChange={v => updateTelegram({ notifyNewHawala: v })} label="حواله جدید" />
@@ -305,26 +285,19 @@ function SettingsPanel({ open, onClose }: { open: boolean; onClose: () => void }
                     <Toggle enabled={settings.telegram.notifyVoid} onChange={v => updateTelegram({ notifyVoid: v })} label="لغو حواله" />
                     <Toggle enabled={settings.telegram.notifyExchange} onChange={v => updateTelegram({ notifyExchange: v })} label="تبادل ارز" />
                   </div>
-
-                  {/* 👥 کاربران ربات تلگرام */}
                   <div className="rounded-xl border border-sky-600 p-3 space-y-3">
                     <div className="flex items-center justify-between">
                       <p className="text-xs font-black text-sky-300">👥 کاربران ربات ({telegramUsers.length})</p>
-                      <button onClick={handleRefreshUsers} disabled={loadingUsers}
-                        className="flex items-center gap-1.5 rounded-lg bg-sky-500 px-3 py-1.5 text-[11px] font-black text-white hover:bg-sky-600 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+                      <button onClick={handleRefreshUsers} disabled={loadingUsers} className="flex items-center gap-1.5 rounded-lg bg-sky-500 px-3 py-1.5 text-[11px] font-black text-white hover:bg-sky-600 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
                         <Ic n="refresh" className={`h-3.5 w-3.5 ${loadingUsers ? "animate-spin" : ""}`} />
                         {loadingUsers ? "در حال بارگذاری..." : "به‌روزرسانی لیست"}
                       </button>
                     </div>
-
                     <div className="rounded-lg p-2.5 text-[10px] font-bold bg-slate-700/50 text-slate-400 leading-5">
                       📌 راهنما: برای نمایش کاربران، به ربات خود در تلگرام پیام <b className="text-white">/start</b> بفرستید، سپس روی دکمه «به‌روزرسانی لیست» کلیک کنید.
                     </div>
-
                     {telegramUsers.length === 0 ? (
-                      <div className="rounded-lg p-3 text-center text-[11px] font-bold text-slate-500">
-                        هنوز کاربری یافت نشده
-                      </div>
+                      <div className="rounded-lg p-3 text-center text-[11px] font-bold text-slate-500">هنوز کاربری یافت نشده</div>
                     ) : (
                       <div className="space-y-2 max-h-48 overflow-y-auto">
                         {telegramUsers.map(user => (
@@ -334,8 +307,7 @@ function SettingsPanel({ open, onClose }: { open: boolean; onClose: () => void }
                               <p className="text-[10px] font-bold text-slate-400 truncate">{user.username}</p>
                               <p className="text-[9px] font-mono text-slate-500" dir="ltr">chat_id: {user.chat_id}</p>
                             </div>
-                            <button onClick={() => { updateTelegram({ chatId: String(user.chat_id) }); showToast(`chat_id انتخاب شد: ${user.chat_id}`); }}
-                              className="flex shrink-0 items-center gap-1 rounded-lg bg-emerald-500 px-2.5 py-1.5 text-[10px] font-black text-white hover:bg-emerald-600 active:scale-95">
+                            <button onClick={() => { updateTelegram({ chatId: String(user.chat_id) }); showToast(`chat_id انتخاب شد: ${user.chat_id}`); }} className="flex shrink-0 items-center gap-1 rounded-lg bg-emerald-500 px-2.5 py-1.5 text-[10px] font-black text-white hover:bg-emerald-600 active:scale-95">
                               <Ic n="star" className="h-3 w-3" />استفاده
                             </button>
                           </div>
@@ -343,7 +315,6 @@ function SettingsPanel({ open, onClose }: { open: boolean; onClose: () => void }
                       </div>
                     )}
                   </div>
-
                   <button onClick={() => showToast("ذخیره شد")} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white hover:bg-emerald-600 active:scale-95">
                     <Ic n="check" className="h-4 w-4" />ذخیره تنظیمات تلگرام
                   </button>
@@ -351,29 +322,44 @@ function SettingsPanel({ open, onClose }: { open: boolean; onClose: () => void }
               )}
             </div>
           </AccordionItem>
-
           <div className="mt-4 rounded-xl p-4 text-center bg-slate-800/50">
             <p className="text-[10px] font-bold text-slate-500">نسخه ۱.۰.۰ — صرافی برادران نورزاد</p>
           </div>
         </div>
       </div>
-
       {toast && <div className="fixed bottom-6 left-1/2 z-[70] -translate-x-1/2 rounded-xl px-5 py-3 text-sm font-black shadow-lg bg-emerald-500 text-white">{toast}</div>}
     </>
   );
 }
 
-// ===== Layout اصلی =====
+// ============================================================
+// ✅ Layout اصلی با سیستم همگام‌سازی سراسری (Global Sync)
+// ============================================================
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  
+  // ✅ جادوی همگام‌سازی: این کلید باعث رفرش هوشمند صفحات هنگام تغییر داده می‌شود
+  const [syncKey, setSyncKey] = useState(0);
 
   useEffect(() => {
     if (typeof window !== "undefined" && localStorage.getItem("isAuthenticated") !== "true") {
       router.push("/");
     }
   }, [router]);
+
+  // ✅ گوش دادن به سیگنال تغییر داده از هر تبی (مثلاً تب حواله)
+  useEffect(() => {
+    const handleDbUpdate = () => {
+      // با تغییر این کلید، کامپوننت صفحه فعلی (children) به طور خودکار Remount شده 
+      // و داده‌های جدید را از localStorage می‌خواند.
+      setSyncKey(prev => prev + 1);
+    };
+    
+    window.addEventListener("db-updated", handleDbUpdate);
+    return () => window.removeEventListener("db-updated", handleDbUpdate);
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem("isAuthenticated");
@@ -382,7 +368,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen">
-      {/* آیکن شناور تنظیمات */}
       <button
         data-settings-toggle
         onClick={() => setSettingsOpen(true)}
@@ -392,10 +377,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <Ic n="gear" className={`h-6 w-6 transition-transform duration-500 ${settingsOpen ? "rotate-90" : ""}`} />
       </button>
 
-      {/* پنل تنظیمات */}
       <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
-      {/* هدر اصلی */}
       <header className="sticky top-0 z-50 shadow-lg">
         <div className="bg-[#0b1f2e] text-white">
           <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
@@ -424,7 +407,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-8">{children}</main>
+      {/* ✅ اضافه کردن key={syncKey} برای رفرش هوشمند محتوا */}
+      <main key={syncKey} className="max-w-7xl mx-auto px-4 py-8">
+        {children}
+      </main>
 
       <footer className="max-w-7xl mx-auto px-4 pb-8 text-center text-xs text-slate-400">
         © ۱۴۰۵ صرافی برادران نورزاد — هرات، افغانستان
