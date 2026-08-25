@@ -1,7 +1,7 @@
 // ============================================================
-// app/dashboard/lib/defaultData.ts
+// lib/defaultData.ts
 // فایل مشترک داده‌های پیش‌فرض برای همه تب‌ها
-// نسخه اصلاح‌شده: حل مشکل بازگشت مشتریان پیش‌فرض
+// نسخه نهایی: شامل توابع بارگذاری و ذخیره‌سازی هوشمند متصل
 // ============================================================
 
 export type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
@@ -70,26 +70,16 @@ export const defaultCustomers: CustomerBase[] = [
 ];
 
 // ============================================================
-// تابع بارگذاری مشتریان (اصلاح‌شده)
+// توابع بارگذاری (Load)
 // ============================================================
 export const loadCustomersShared = (): CustomerBase[] => {
-  // در سمت سرور (SSR)، default برگردان
   if (typeof window === "undefined") return defaultCustomers;
-
   try {
     const raw = localStorage.getItem(CUSTOMERS_KEY);
-
-    // ✅ اگر کلید اصلاً وجود ندارد (اولین بار)، default برگردان
     if (raw === null) return defaultCustomers;
-
     const parsed = JSON.parse(raw);
-
     if (Array.isArray(parsed)) {
-      // ✅ اگر آرایه خالی است (کاربر همه مشتریان را حذف کرده)
-      // آرایه خالی برگردان، NOT defaultCustomers
       if (parsed.length === 0) return [];
-
-      // ✅ اگر داده معتبر دارد، داده‌ها را برگردان
       if (parsed.length > 0 && parsed[0]?.id && parsed[0]?.name) {
         return parsed.map((c: any) => ({
           id: c.id || "",
@@ -110,17 +100,12 @@ export const loadCustomersShared = (): CustomerBase[] => {
         }));
       }
     }
-
-    // اگر داده نامعتبر بود، default برگردان
     return defaultCustomers;
   } catch {
     return defaultCustomers;
   }
 };
 
-// ============================================================
-// تابع بارگذاری تراکنش‌ها
-// ============================================================
 export const loadTransactionsShared = (): any[] => {
   if (typeof window === "undefined") return [];
   try {
@@ -133,9 +118,6 @@ export const loadTransactionsShared = (): any[] => {
   }
 };
 
-// ============================================================
-// تابع بارگذاری حواله‌ها
-// ============================================================
 export const loadHawalasShared = (): any[] => {
   if (typeof window === "undefined") return [];
   try {
@@ -148,9 +130,6 @@ export const loadHawalasShared = (): any[] => {
   }
 };
 
-// ============================================================
-// تابع بارگذاری اسناد صندوق
-// ============================================================
 export const loadCashEntriesShared = (): any[] => {
   if (typeof window === "undefined") return [];
   try {
@@ -162,3 +141,30 @@ export const loadCashEntriesShared = (): any[] => {
     return [];
   }
 };
+
+// ============================================================
+// ✅ توابع ذخیره‌سازی هوشمند (با ارسال سیگنال به همه تب‌ها)
+// ============================================================
+export function saveCustomersShared(customers: CustomerBase[]) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers));
+  window.dispatchEvent(new Event("db-updated")); // سیگنال جادویی
+}
+
+export function saveTransactionsShared(transactions: any[]) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(transactions));
+  window.dispatchEvent(new Event("db-updated"));
+}
+
+export function saveHawalasShared(hawalas: any[]) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(HAWALAS_KEY, JSON.stringify(hawalas));
+  window.dispatchEvent(new Event("db-updated"));
+}
+
+export function saveCashEntriesShared(entries: any[]) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(CASH_KEY, JSON.stringify(entries));
+  window.dispatchEvent(new Event("db-updated"));
+}
