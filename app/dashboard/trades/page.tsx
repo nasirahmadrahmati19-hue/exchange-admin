@@ -828,60 +828,71 @@ export default function CurrencyExchangePage() {
     setCustomers(prev => {
       const updated = applyBalanceChanges(prev, getBalanceChangesForTransaction(tx, "register"));
 
-      // ✅ ارسال خودکار سند رسید برای مشتری
+      // ارسال خودکار سند برای مشتری:
+      // کارمزد در سند مشتری نمایش داده نمی‌شود و بیلانس فعلی بعد از همین معامله درج می‌شود.
+      // برداشت از حساب مشتری = سند برد معامله | دریافت به حساب مشتری = سند رسید معامله
       try {
         const settings = getTelegramSettings();
         if (settings.enabled && settings.botToken) {
-          let chatId = "";
-          let customerName = "";
+          const getBalanceText = (customerId?: string) => {
+            if (!customerId || customerId === CASH_BOX_ID || customerId === EXCHANGE_ACCOUNT_ID) return "";
+            const b = getSharedCustomerBalances(customerId, tx);
+            return `\n------------- بیلانس فعلی شما --------------\n` +
+              `افغانی: ${fmt(b.AFN)}\n` +
+              `دالر: ${fmt(b.USD)}\n` +
+              `یورو: ${fmt(b.EUR)}\n` +
+              `تومان: ${fmt(b.IRR)}\n` +
+              `کلدار: ${fmt(b.PKR)}\n`;
+          };
+
+          const sendCustomerDocument = (chatId: string, customerName: string, customerId: string | undefined, title: "سند برد معامله" | "سند رسید معامله", details: string) => {
+            if (!chatId) return;
+            let message = `🟢 ${title}\n\n`;
+            message += `🗓 تاریخ: ${formatDateTime(new Date(tx.date))}\n\n`;
+            message += `🛅 کد پیگیری: ${tx.trackingCode}\n\n`;
+            message += `👤 مشتری: ${customerName}\n\n`;
+            message += details;
+            message += getBalanceText(customerId);
+            message += `\n🏦 صرافی برادران نورزاد — هرات`;
+            void sendTelegramMessage(settings.botToken, chatId, message);
+          };
 
           if (tx.type === "exchange" || tx.type === "convert") {
-            chatId = tx.customerTelegram || "";
-            customerName = tx.customerName || "";
-          } else if (tx.type === "transfer") {
-            const sender = customers.find(c => c.id === tx.senderId);
-            chatId = sender?.telegram || "";
-            customerName = tx.senderName || "";
-          }
-
-          if (chatId) {
-            let text = `🟢 سند رسید معامله\n\n`;
-            text += `🗓 تاریخ: ${formatDateTime(new Date(tx.date))}\n\n`;
-            text += `🛅 کد پیگیری: ${tx.trackingCode}\n\n`;
-            text += `👤 مشتری: ${customerName}\n\n`;
-
+            const customerId = tx.customerId;
+            const customerName = tx.customerName || "";
+            const chatId = tx.customerTelegram || "";
+            // در خرید، ارز دریافت‌شده از مشتری و ارز پرداختی به مشتری است؛
+            // سند برای عملیات برداشت از حساب مشتری «برد» و برای دریافت «رسید» است.
+            const title = tx.type === "exchange" && tx.dealType === "buy" ? "سند رسید معامله" : "سند برد معامله";
+            let details = "";
             if (tx.type === "exchange") {
-              text += `📑 شرح: تبادل ارز (${tx.dealType === "buy" ? "خرید" : "فروش"})\n`;
-              text += `💰 دریافت: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]}\n`;
-              text += `💵 پرداخت: ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}\n`;
-            } else if (tx.type === "transfer") {
-              text += `📑 شرح: انتقال به ${tx.receiverName}\n`;
-              text += `💰 مبلغ انتقال: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]}\n`;
-            } else if (tx.type === "convert") {
-              text += `📑 شرح: تبدیل ارز\n`;
-              text += `💰 از: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]}\n`;
-              text += `💵 به: ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}\n`;
+              details += `📑 شرح: تبادل ارز (${tx.dealType === "buy" ? "خرید" : "فروش"})\n`;
+              details += `💰 دریافت: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]}\n`;
+              details += `💵 پرداخت: ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}\n`;
+            } else {
+              details += `📑 شرح: تبدیل ارز\n`;
+              details += `💰 از: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]}\n`;
+              details += `💵 به: ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}\n`;
             }
-
-            // کارمزد در سند ارسالی به مشتری نمایش داده نمی‌شود.
-            // بیلانس فعلی مشتری بعد از ثبت معامله در سند درج می‌شود.
-            const currentCustomer = updated.find(c => c.id === tx.customerId);
-            if (currentCustomer && tx.customerId !== EXCHANGE_ACCOUNT_ID && tx.customerId !== CASH_BOX_ID) {
-              text += `\n------------- بیلانس فعلی شما --------------\n`;
-              text += `افغانی: ${fmt(currentCustomer.balances.AFN || 0)}\n`;
-              text += `دالر: ${fmt(currentCustomer.balances.USD || 0)}\n`;
-              text += `یورو: ${fmt(currentCustomer.balances.EUR || 0)}\n`;
-              text += `تومان: ${fmt(currentCustomer.balances.IRR || 0)}\n`;
-              text += `کلدار: ${fmt(currentCustomer.balances.PKR || 0)}\n`;
+            sendCustomerDocument(chatId, customerName, customerId, title, details);
+          } else if (tx.type === "transfer") {
+            // فرستنده: برداشت | گیرنده: رسید
+            const sender = customers.find(c => c.id === tx.senderId);
+            const receiver = customers.find(c => c.id === tx.receiverId);
+            if (tx.senderId && tx.senderId !== CASH_BOX_ID && tx.senderId !== EXCHANGE_ACCOUNT_ID) {
+              let details = `📑 شرح: انتقال به ${tx.receiverName || "گیرنده"}\n`;
+              details += `💰 مبلغ انتقال: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]}\n`;
+              sendCustomerDocument(sender?.telegram || "", tx.senderName || sender?.name || "", tx.senderId, "سند برد معامله", details);
             }
-
-            text += `\n🏦 صرافی برادران نورزاد — هرات`;
-
-            sendTelegramMessage(settings.botToken, chatId, text);
+            if (tx.receiverId && tx.receiverId !== CASH_BOX_ID && tx.receiverId !== EXCHANGE_ACCOUNT_ID) {
+              let details = `📑 شرح: دریافت از ${tx.senderName || "فرستنده"}\n`;
+              details += `💰 مبلغ دریافت: ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}\n`;
+              sendCustomerDocument(receiver?.telegram || "", tx.receiverName || receiver?.name || "", tx.receiverId, "سند رسید معامله", details);
+            }
           }
         }
       } catch (err) {
-        console.error("Error sending receipt:", err);
+        console.error("Error sending customer document:", err);
       }
 
       return updated;
@@ -1141,7 +1152,7 @@ export default function CurrencyExchangePage() {
     </div>
   );
 
-  const getSharedCustomerBalances = useCallback((customerId: string): Record<Currency, number> => {
+  const getSharedCustomerBalances = useCallback((customerId: string, pendingTx?: Transaction): Record<Currency, number> => {
     const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     if (!customerId || customerId === CASH_BOX_ID || customerId === EXCHANGE_ACCOUNT_ID) return balances;
     const add = (currency: Currency, amount: number) => {
@@ -1189,6 +1200,29 @@ export default function CurrencyExchangePage() {
       if (!amount || !currencies.includes(ce.currency as Currency)) continue;
       if (ce.type === "customer_deposit" || ce.type === "loan_received") add(ce.currency, amount);
       else if (ce.type === "customer_withdraw" || ce.type === "loan_given") add(ce.currency, -amount);
+    }
+    // معامله فعلی هنوز وارد state نشده؛ برای سند ارسالی، اثر همین معامله را نیز اضافه می‌کنیم.
+    if (pendingTx && pendingTx.status !== "voided") {
+      if (pendingTx.type === "exchange" && pendingTx.customerId === customerId) {
+        add(pendingTx.fromCurrency, -Number(pendingTx.fromAmount || 0));
+        add(pendingTx.toCurrency, Number(pendingTx.toAmount || 0));
+        if (pendingTx.commission && pendingTx.commissionCurrency) add(pendingTx.commissionCurrency, -Number(pendingTx.commission || 0));
+      }
+      if (pendingTx.type === "convert" && pendingTx.customerId === customerId) {
+        add(pendingTx.fromCurrency, -Number(pendingTx.fromAmount || 0));
+        add(pendingTx.toCurrency, Number(pendingTx.toAmount || 0));
+        if (pendingTx.commission && pendingTx.commissionCurrency) add(pendingTx.commissionCurrency, -Number(pendingTx.commission || 0));
+      }
+      if (pendingTx.type === "transfer") {
+        if (pendingTx.senderId === customerId) {
+          add(pendingTx.fromCurrency, -Number(pendingTx.fromAmount || 0));
+          if (pendingTx.commissionPayer === "sender" && pendingTx.commission && pendingTx.commissionCurrency) add(pendingTx.commissionCurrency, -Number(pendingTx.commission || 0));
+        }
+        if (pendingTx.receiverId === customerId) {
+          add(pendingTx.toCurrency, Number(pendingTx.toAmount || 0));
+          if (pendingTx.commissionPayer === "receiver" && pendingTx.commission && pendingTx.commissionCurrency) add(pendingTx.commissionCurrency, -Number(pendingTx.commission || 0));
+        }
+      }
     }
     return balances;
   }, [transactions, hawalas, cashEntries]);
