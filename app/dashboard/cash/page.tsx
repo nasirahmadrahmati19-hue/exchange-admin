@@ -1,7 +1,9 @@
 "use client";
 import { useEffect, useMemo, useState, useRef, useCallback, type ReactNode } from "react";
 import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem } from "../lib/trackingCode";
-import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY, loadCustomersShared, loadTransactionsShared, loadHawalasShared, loadCashEntriesShared } from "../lib/defaultData";
+import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY } from "../lib/defaultData";
+// ✅ تغییر ۱: ایمپورت هوک جادویی همگام‌سازی
+import { useSyncedState } from "../lib/useSyncedState";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type Customer = { id: string; name: string; phone?: string; tazkira?: string; address?: string; note?: string; telegram?: string; telegramChatId?: string; registeredAt: string; balances: Record<Currency, number>; };
@@ -291,10 +293,13 @@ const Ic = ({ n, className = "h-5 w-5" }: { n: string; className?: string }) => 
 
 export default function CashPage() {
   const [mounted, setMounted] = useState(false);
-  const [entries, setEntries] = useState<CashEntry[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [hawalas, setHawalas] = useState<Hawala[]>([]);
+  
+  // ✅ تغییر ۲: جایگزینی useState با useSyncedState برای هماهنگی آنی بین تمام تب‌ها
+  const [entries, setEntries] = useSyncedState<CashEntry[]>(CASH_KEY, []);
+  const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
+  const [transactions, setTransactions] = useSyncedState<Transaction[]>(TRANSACTIONS_KEY, []);
+  const [hawalas, setHawalas] = useSyncedState<Hawala[]>(HAWALAS_KEY, []);
+  
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [activeTab, setActiveTab] = useState<"register" | "ledger">("register");
   const [form, setForm] = useState<FormState>(emptyForm);
@@ -318,15 +323,13 @@ export default function CashPage() {
 
   useEffect(() => {
     try {
-      setEntries(loadCashEntriesShared() as CashEntry[]);
-      setCustomers(loadCustomersShared() as Customer[]);
-      setTransactions(loadTransactionsShared() as Transaction[]);
-      setHawalas(loadHawalasShared() as Hawala[]);
+      // ✅ تغییر ۳: حذف بارگذاری دستی داده‌ها، زیرا useSyncedState این کار را خودکار انجام می‌دهد
       initTrackingSystem();
     } catch (err) { console.error("Load error:", err); }
     setMounted(true);
   }, []);
 
+  // این useEffect ها برای گوش دادن به تغییرات تب‌های دیگر مرورگر همچنان مفید هستند
   useEffect(() => {
     const handleStorage = (e: StorageEvent) => {
       try {
@@ -343,10 +346,11 @@ export default function CashPage() {
   useEffect(() => {
     const handleFocus = () => {
       try {
-        setEntries(loadCashEntriesShared() as CashEntry[]);
-        setCustomers(loadCustomersShared() as Customer[]);
-        setTransactions(loadTransactionsShared() as Transaction[]);
-        setHawalas(loadHawalasShared() as Hawala[]);
+        // بازخوانی در صورت بازگشت фокус به تب
+        const rawCash = window.localStorage.getItem(CASH_KEY);
+        if (rawCash) setEntries(JSON.parse(rawCash));
+        const rawCust = window.localStorage.getItem(CUSTOMERS_KEY);
+        if (rawCust) setCustomers(JSON.parse(rawCust));
       } catch (e) { /* ignore */ }
     };
     window.addEventListener("focus", handleFocus);
@@ -357,8 +361,7 @@ export default function CashPage() {
   useEffect(() => { setNow(new Date()); const timer = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(timer); }, []);
   const currentDateTime = now ? formatDateTime(now) : "";
 
-  useEffect(() => { if (!mounted) return; try { localStorage.setItem(CASH_KEY, JSON.stringify(entries)); window.dispatchEvent(new Event("db:updated")); } catch (e) { /* ignore */ } }, [entries, mounted]);
-  useEffect(() => { if (!mounted) return; try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); window.dispatchEvent(new Event("db:updated")); } catch (e) { /* ignore */ } }, [customers, mounted]);
+  // ✅ تغییر ۴: حذف کامل useEffectهای دستی localStorage.setItem زیرا useSyncedState این کار را انجام می‌دهد
 
   useEffect(() => {
     if (!showCustomerList) return;
@@ -477,7 +480,6 @@ export default function CashPage() {
     if (!form.reason.trim()) errs.reason = "دلیل / شرح ضروری است.";
     if (isCustomerType && !form.customerName.trim()) errs.customerName = "انتخاب مشتری ضروری است.";
     
-    // ✅ حذف محدودیت موجودی برای اجازه برداشت بیشتر و ثبت به عنوان بدهی
     if (form.type === "commission_withdraw") {
       const avail = availableCommission[form.currency] || 0;
       if (amount > avail) errs.amount = `کارمزد کافی نیست. قابل برداشت: ${fmt(avail)} ${labels[form.currency]}`;
