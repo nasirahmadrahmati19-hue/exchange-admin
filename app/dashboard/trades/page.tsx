@@ -848,8 +848,7 @@ export default function CurrencyExchangePage() {
       message += getCustomerBalanceText(customerId);
       message += `\n🏦 صرافی برادران نورزاد — هرات`;
 
-      await sendTelegramMessage(settings.botToken, chatId, message);
-    };
+await sendTelegramMessage(settings.botToken, chatId, message);    };
 
     if (editingExchangeId) {
       const old = transactions.find(t => t.id === editingExchangeId);
