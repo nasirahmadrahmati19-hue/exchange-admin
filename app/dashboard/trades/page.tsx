@@ -863,8 +863,16 @@ export default function CurrencyExchangePage() {
               text += `💵 به: ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}\n`;
             }
 
-            if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
-              text += `💎 کارمزد: ${fmt(tx.commission)} ${labels[tx.commissionCurrency]}\n`;
+            // کارمزد در سند ارسالی به مشتری نمایش داده نمی‌شود.
+            // بیلانس فعلی مشتری بعد از ثبت معامله در سند درج می‌شود.
+            const currentCustomer = updated.find(c => c.id === tx.customerId);
+            if (currentCustomer && tx.customerId !== EXCHANGE_ACCOUNT_ID && tx.customerId !== CASH_BOX_ID) {
+              text += `\n------------- بیلانس فعلی شما --------------\n`;
+              text += `افغانی: ${fmt(currentCustomer.balances.AFN || 0)}\n`;
+              text += `دالر: ${fmt(currentCustomer.balances.USD || 0)}\n`;
+              text += `یورو: ${fmt(currentCustomer.balances.EUR || 0)}\n`;
+              text += `تومان: ${fmt(currentCustomer.balances.IRR || 0)}\n`;
+              text += `کلدار: ${fmt(currentCustomer.balances.PKR || 0)}\n`;
             }
 
             text += `\n🏦 صرافی برادران نورزاد — هرات`;
