@@ -417,7 +417,7 @@ export default function CurrencyExchangePage() {
   useEffect(() => { try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); } catch {} }, [customers]);
   useEffect(() => { try { window.localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(transactions)); } catch {} }, [transactions]);
   useEffect(() => { try { initTrackingSystem(); } catch {} }, []);
-  
+
   useEffect(() => {
     const handleStorage = (e: StorageEvent) => {
       try {
@@ -449,23 +449,23 @@ export default function CurrencyExchangePage() {
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewData, setPreviewData] = useState<Transaction | null>(null);
-  
+
   const [showCustomerList, setShowCustomerList] = useState(false);
   const [customerFilter, setCustomerFilter] = useState("");
   const customerListRef = useRef<HTMLDivElement>(null);
-  
+
   const [showSenderList, setShowSenderList] = useState(false);
   const [senderFilter, setSenderFilter] = useState("");
   const senderListRef = useRef<HTMLDivElement>(null);
-  
+
   const [showReceiverList, setShowReceiverList] = useState(false);
   const [receiverFilter, setReceiverFilter] = useState("");
   const receiverListRef = useRef<HTMLDivElement>(null);
-  
+
   const [showConvertList, setShowConvertList] = useState(false);
   const [convertFilter, setConvertFilter] = useState("");
   const convertListRef = useRef<HTMLDivElement>(null);
-  
+
   const [openActionId, setOpenActionId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -489,7 +489,7 @@ export default function CurrencyExchangePage() {
   const [editingExchangeId, setEditingExchangeId] = useState<string | null>(null);
   const [editingTransferId, setEditingTransferId] = useState<string | null>(null);
   const [editingConvertId, setEditingConvertId] = useState<string | null>(null);
-  
+
   const [search, setSearch] = useState("");
   const [customer, setCustomer] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -613,28 +613,28 @@ export default function CurrencyExchangePage() {
     return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); };
   }, [anyDropdownOpen, showCustomerList, showSenderList, showReceiverList, showConvertList]);
 
-  const filteredCustomerList = useMemo(() => { 
-    const q = normalizeDigits(customerFilter.trim()).toLowerCase(); 
-    const normal = customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID).filter(c => !q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))); 
-    return [EXCHANGE_ACCOUNT_CUSTOMER, ...normal].filter(c => !q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))); 
+  const filteredCustomerList = useMemo(() => {
+    const q = normalizeDigits(customerFilter.trim()).toLowerCase();
+    const normal = customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID).filter(c => !q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q)));
+    return [EXCHANGE_ACCOUNT_CUSTOMER, ...normal].filter(c => !q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q)));
   }, [customers, customerFilter]);
 
-  const filteredSenderList = useMemo(() => { 
-    const q = normalizeDigits(senderFilter.trim()).toLowerCase(); 
-    const normal = customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID).filter(c => !q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))); 
-    return [EXCHANGE_ACCOUNT_CUSTOMER, ...normal].filter(c => !q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))); 
+  const filteredSenderList = useMemo(() => {
+    const q = normalizeDigits(senderFilter.trim()).toLowerCase();
+    const normal = customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID).filter(c => !q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q)));
+    return [EXCHANGE_ACCOUNT_CUSTOMER, ...normal].filter(c => !q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q)));
   }, [customers, senderFilter]);
 
-  const filteredReceiverList = useMemo(() => { 
-    const q = normalizeDigits(receiverFilter.trim()).toLowerCase(); 
-    const normal = customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID).filter(c => !q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))); 
-    return [EXCHANGE_ACCOUNT_CUSTOMER, ...normal].filter(c => !q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))); 
+  const filteredReceiverList = useMemo(() => {
+    const q = normalizeDigits(receiverFilter.trim()).toLowerCase();
+    const normal = customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID).filter(c => !q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q)));
+    return [EXCHANGE_ACCOUNT_CUSTOMER, ...normal].filter(c => !q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q)));
   }, [customers, receiverFilter]);
 
-  const filteredConvertList = useMemo(() => { 
-    const q = normalizeDigits(convertFilter.trim()).toLowerCase(); 
-    const normal = customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID).filter(c => !q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))); 
-    return [EXCHANGE_ACCOUNT_CUSTOMER, ...normal].filter(c => !q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))); 
+  const filteredConvertList = useMemo(() => {
+    const q = normalizeDigits(convertFilter.trim()).toLowerCase();
+    const normal = customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID).filter(c => !q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q)));
+    return [EXCHANGE_ACCOUNT_CUSTOMER, ...normal].filter(c => !q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q)));
   }, [customers, convertFilter]);
 
   const isCustomerExchangeAccount = customer === EXCHANGE_ACCOUNT_NAME;
@@ -822,7 +822,7 @@ export default function CurrencyExchangePage() {
     setPreviewOpen(true);
   }, [validateConvert, convertFromAmount, convertToAmount, convertMode, convertRateValue, convertForeign, convertDirectCounter, convertDirectBaseValue, convertDescription, convertCommissionValue, convertCommissionCurrency, editingConvertId, transactions, convertCustomer, convertFromCurrency, convertToCurrency, customers]);
 
-  // ✅ تابع اصلاح‌شده برای ارسال خودکار رسید با موجودی به‌روز و برای هر دو طرف
+  // ✅ تابع اصلاح‌شده: حذف کارمزد از رسید + نمایش دقیق طلب/قرض
   const confirmRegister = useCallback(async () => {
     if (!previewData) return;
     const tx = { ...previewData, trackingCode: consumeTrackingCode() };
@@ -873,14 +873,39 @@ export default function CurrencyExchangePage() {
           const chatId = cust?.telegramChatId || cust?.telegram || (tx.type === "exchange" ? tx.customerTelegram : "") || "";
 
           if (chatId) {
-            let balanceText = "";
             const bals = cust?.balances || { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+
+            // ✅ جدا کردن طلب‌ها و قرض‌ها با مقادیر مطلق
+            const credits: string[] = [];
+            const debts: string[] = [];
             for (const cur of currencies) {
-              if (bals[cur] !== 0) {
-                balanceText += `• ${labels[cur]}: ${fmt(bals[cur])}\n`;
-              }
+              const b = bals[cur];
+              if (b > 0) credits.push(`  • ${labels[cur]}: ${fmt(b)}`);
+              else if (b < 0) debts.push(`  • ${labels[cur]}: ${fmt(Math.abs(b))}`);
             }
-            if (!balanceText) balanceText = "• بدون موجودی\n";
+
+            let balanceText = "";
+            if (credits.length > 0) {
+              balanceText += `🟢 طلب‌های شما از صرافی:\n${credits.join("\n")}\n`;
+            }
+            if (debts.length > 0) {
+              balanceText += `🔴 قرض‌های شما به صرافی:\n${debts.join("\n")}\n`;
+            }
+            if (credits.length === 0 && debts.length === 0) {
+              balanceText = "⚪ حساب شما بدون طلب و قرض است.\n";
+            }
+
+            // خط جمع‌بندی وضعیت
+            let summaryLine = "";
+            if (credits.length > 0 && debts.length > 0) {
+              summaryLine = "📊 شما هم طلب و هم قرض دارید.";
+            } else if (credits.length > 0) {
+              summaryLine = "✅ شما از صرافی طلبکار هستید.";
+            } else if (debts.length > 0) {
+              summaryLine = "⚠️ شما به صرافی بدهکار هستید.";
+            } else {
+              summaryLine = "⚪ حساب شما صاف است.";
+            }
 
             let text = `🟢 سند رسید معامله\n`;
             text += `🗓 تاریخ: ${formatDateTime(new Date(tx.date))}\n`;
@@ -903,11 +928,10 @@ export default function CurrencyExchangePage() {
               text += `💵 به: ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}\n`;
             }
 
-            if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
-              text += `💎 کارمزد: ${fmt(tx.commission)} ${labels[tx.commissionCurrency]}\n`;
-            }
+            // ❌ بخش کارمزد حذف شد
 
-            text += `\n💳 موجودی فعلی حساب:\n${balanceText}`;
+            text += `\n💳 وضعیت حساب شما:\n${balanceText}`;
+            text += `${summaryLine}\n`;
             text += `\n🏦 صرافی برادران نورزاد — هرات`;
 
             await sendTelegramMessage(settings.botToken, chatId, text);
@@ -918,10 +942,10 @@ export default function CurrencyExchangePage() {
       console.error("Error sending receipt:", err);
     }
 
-    resetExchangeForm(); 
-    resetTransferForm(); 
+    resetExchangeForm();
+    resetTransferForm();
     resetConvertForm();
-    setPreviewOpen(false); 
+    setPreviewOpen(false);
     setPreviewData(null);
     setCashEntries(loadCashEntriesShared());
   }, [previewData, editingExchangeId, editingTransferId, editingConvertId, transactions, resetExchangeForm, resetTransferForm, resetConvertForm, customers]);
@@ -1001,7 +1025,7 @@ export default function CurrencyExchangePage() {
   }, []);
 
   const viewTransaction = useCallback((tx: Transaction) => setSelectedTransaction(tx), []);
-  
+
   const voidTransaction = useCallback((tx: Transaction) => {
     if (tx.status === "voided") return;
     if (!window.confirm("لغو شود؟")) return;
@@ -1045,14 +1069,14 @@ export default function CurrencyExchangePage() {
   const uiLabel = `mb-1.5 block text-[11px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`;
   const rateChip = `flex h-12 items-center whitespace-nowrap rounded-xl border px-3.5 text-sm font-bold ${dk ? "border-slate-600 bg-slate-900 text-slate-100" : "border-slate-200 bg-white text-slate-700"}`;
   const chevPos = `pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${iconMuted}`;
-  
+
   const cSky = { wrap: dk ? "border-sky-400/25 bg-sky-400/[0.07]" : "border-sky-300 bg-sky-50", icon: dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-600", title: dk ? "text-sky-300" : "text-sky-700", badge: dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-700" };
   const cEmerald = { wrap: dk ? "border-emerald-400/25 bg-emerald-400/[0.07]" : "border-emerald-300 bg-emerald-50", icon: dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600", title: dk ? "text-emerald-300" : "text-emerald-700", badge: dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-700" };
   const cOrange = { wrap: dk ? "border-orange-400/25 bg-orange-400/[0.07]" : "border-orange-300 bg-orange-50", icon: dk ? "bg-orange-400/15 text-orange-300" : "bg-orange-100 text-orange-600", title: dk ? "text-orange-300" : "text-orange-700", badge: dk ? "bg-orange-400/15 text-orange-300" : "bg-orange-100 text-orange-700" };
   const cAmber = { wrap: dk ? "border-amber-400/25 bg-amber-400/[0.07]" : "border-amber-300 bg-amber-50", icon: dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600", title: dk ? "text-amber-300" : "text-amber-700", badge: dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-700" };
   const cTeal = { wrap: dk ? "border-teal-400/25 bg-teal-400/[0.07]" : "border-teal-300 bg-teal-50", icon: dk ? "bg-teal-400/15 text-teal-300" : "bg-teal-100 text-teal-600", title: dk ? "text-teal-300" : "text-teal-700", badge: dk ? "bg-teal-400/15 text-teal-300" : "bg-teal-100 text-teal-700" };
   const cViolet = { wrap: dk ? "border-violet-400/25 bg-violet-400/[0.07]" : "border-violet-300 bg-violet-50", icon: dk ? "bg-violet-400/15 text-violet-300" : "bg-violet-100 text-violet-600", title: dk ? "text-violet-300" : "text-violet-700", badge: dk ? "bg-violet-400/15 text-violet-300" : "bg-violet-100 text-violet-700" };
-  
+
   const identExIcon = dk ? "from-cyan-400/20 to-cyan-400/5 text-cyan-300 ring-cyan-400/25" : "from-sky-400/20 to-cyan-400/10 text-sky-600 ring-sky-400/30";
   const identExChip = dk ? "bg-cyan-400/10 text-cyan-300 ring-cyan-400/25" : "bg-sky-100 text-sky-700 ring-sky-300/60";
   const identTrIcon = dk ? "from-orange-400/20 to-orange-400/5 text-orange-300 ring-orange-400/25" : "from-orange-400/20 to-amber-400/10 text-orange-600 ring-orange-400/30";
