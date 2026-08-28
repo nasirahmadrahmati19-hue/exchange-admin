@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useMemo, useState, useRef, useCallback, type ReactNode } from "react";
-import { useSyncedState } from "../lib/useSyncedState"; // ✅ اضافه شد
+import { useSyncedState } from "../lib/useSyncedState";
 import { initTrackingSystem } from "../lib/trackingCode";
-import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY } from "../lib/defaultData"; // ✅ توابع load حذف شدند
+import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY } from "../lib/defaultData";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type Customer = { id: string; name: string; phone?: string; tazkira?: string; address?: string; note?: string; telegram?: string; registeredAt: string; balances: Record<Currency, number>; };
@@ -341,15 +341,13 @@ export default function CustomersPage() {
   // ✅ استفاده از useSyncedState برای هماهنگی کامل بین تمام تب‌ها
   const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
 
-  // اطمینان از وجود حساب صرافی در لیست مشتریان (اگر وجود نداشت اضافه می‌شود)
+  // ✅ اطمینان از وجود حساب صرافی در لیست مشتریان (اگر وجود نداشت اضافه می‌شود)
   useEffect(() => {
     if (!customers.find(c => c.id === EXCHANGE_ACCOUNT_ID)) {
       setCustomers(prev => [EXCHANGE_ACCOUNT_CUSTOMER, ...prev]);
     }
   }, []);
-    }
-    return [EXCHANGE_ACCOUNT_CUSTOMER];
-  });
+
   const [transactions, setTransactions] = useSyncedState<any[]>(TRANSACTIONS_KEY, []);
   const [hawalas, setHawalas] = useSyncedState<any[]>(HAWALAS_KEY, []);
   const [cashEntries, setCashEntries] = useSyncedState<any[]>(CASH_KEY, []);
@@ -385,8 +383,6 @@ export default function CustomersPage() {
     } catch (err) { console.error(err); }
     setMounted(true);
   }, []);
-
-  // ✅ حذف useEffectهای دستی load و event listenerها، چون useSyncedState خودش همه کارها را انجام می‌دهد!
 
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => { setNow(new Date()); const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t); }, []);
@@ -534,7 +530,6 @@ export default function CustomersPage() {
       });
     }
 
-    // ✅ استفاده مستقیم از setCashEntries (useSyncedState خودش ذخیره و هماهنگ‌سازی را انجام می‌دهد)
     setCashEntries(prev => [...prev, ...newEntries]);
 
     setLoanModalOpen(false);
