@@ -403,16 +403,9 @@ function getStoredCustomers(): Customer[] { return loadCustomersShared() as Cust
 
 export default function CurrencyExchangePage() {
   const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, getStoredCustomers());
-  const [transactions, setTransactions] = useState<Transaction[]>(() => {
-    if (typeof window === "undefined") return [];
-    try { return loadTransactionsShared(); } catch { return []; }
-  });
-  const [cashEntries, setCashEntries] = useState<any[]>(() => {
-    try { return loadCashEntriesShared(); } catch { return []; }
-  });
-  const [hawalas, setHawalas] = useState<any[]>(() => {
-    try { return loadHawalasShared(); } catch { return []; }
-  });
+const [transactions, setTransactions] = useSyncedState<Transaction[]>(TRANSACTIONS_KEY, []);
+const [cashEntries, setCashEntries] = useSyncedState<any[]>(CASH_KEY, []);
+const [hawalas, setHawalas] = useSyncedState<any[]>(HAWALAS_KEY, []);
 
   useEffect(() => { try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); } catch {} }, [customers]);
   useEffect(() => { try { window.localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(transactions)); } catch {} }, [transactions]);
