@@ -1,16 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState, useMemo } from "react";
+import { useSyncedState } from "../lib/useSyncedState"; // ✅ اضافه شد
 import {
   CUSTOMERS_KEY,
   TRANSACTIONS_KEY,
   HAWALAS_KEY,
   CASH_KEY,
-  loadCustomersShared,
-  loadTransactionsShared,
-  loadHawalasShared,
-  loadCashEntriesShared,
-} from "./lib/defaultData";
+} from "../lib/defaultData";
 
 // ============================================================
 // تایپ‌ها و ثابت‌ها
@@ -29,7 +26,7 @@ interface CashEntry {
   id: string;
   trackingCode: string;
   date: string;
-  type: string; // برای محاسبه Ledger ضروری است
+  type: string;
   currency: Currency;
   amount: number;
   direction: "in" | "out";
@@ -147,10 +144,13 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: CashE
 export default function DashboardPage() {
   const [mounted, setMounted] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [entries, setEntries] = useState<CashEntry[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [hawalas, setHawalas] = useState<Hawala[]>([]);
+  
+  // ✅ جایگزینی useState با useSyncedState برای هماهنگی کامل بین تمام تب‌ها
+  const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
+  const [entries, setEntries] = useSyncedState<CashEntry[]>(CASH_KEY, []);
+  const [transactions, setTransactions] = useSyncedState<Transaction[]>(TRANSACTIONS_KEY, []);
+  const [hawalas, setHawalas] = useSyncedState<Hawala[]>(HAWALAS_KEY, []);
+  
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   useEffect(() => {
@@ -158,50 +158,10 @@ export default function DashboardPage() {
       const saved = window.localStorage.getItem("fx-theme");
       if (saved === "dark" || saved === "light") setTheme(saved);
     } catch {}
-
-    try {
-      setCustomers(loadCustomersShared() as Customer[]);
-      setEntries(loadCashEntriesShared() as CashEntry[]);
-      setTransactions(loadTransactionsShared() as Transaction[]);
-      setHawalas(loadHawalasShared() as Hawala[]);
-      setLastUpdated(new Date());
-    } catch (err) {
-      console.error("Load error:", err);
-    }
     setMounted(true);
   }, []);
 
-  useEffect(() => {
-    const handleStorage = (e: StorageEvent) => {
-      try {
-        if (e.key === CASH_KEY && e.newValue) setEntries(JSON.parse(e.newValue));
-        if (e.key === CUSTOMERS_KEY && e.newValue) setCustomers(JSON.parse(e.newValue));
-        if (e.key === TRANSACTIONS_KEY && e.newValue) setTransactions(JSON.parse(e.newValue));
-        if (e.key === HAWALAS_KEY && e.newValue) setHawalas(JSON.parse(e.newValue));
-        setLastUpdated(new Date());
-      } catch {}
-    };
-
-    const handleFocus = () => {
-      try {
-        setCustomers(loadCustomersShared() as Customer[]);
-        setEntries(loadCashEntriesShared() as CashEntry[]);
-        setTransactions(loadTransactionsShared() as Transaction[]);
-        setHawalas(loadHawalasShared() as Hawala[]);
-        setLastUpdated(new Date());
-      } catch {}
-    };
-
-    window.addEventListener("storage", handleStorage);
-    window.addEventListener("focus", handleFocus);
-    const interval = setInterval(handleFocus, 15000);
-
-    return () => {
-      window.removeEventListener("storage", handleStorage);
-      window.removeEventListener("focus", handleFocus);
-      clearInterval(interval);
-    };
-  }, []);
+  // ✅ حذف useEffectهای دستی load و event listenerها، چون useSyncedState خودش همه کارها را انجام می‌دهد!
 
   // ── محاسبات مبتنی بر Ledger (منبع واحد حقیقت) ──
   
@@ -722,7 +682,7 @@ export default function DashboardPage() {
 
           {/* ═══════════ فوتر ═══════════ */}
           <div className={`cs-up text-center py-4 text-[11px] font-bold ${subText}`} style={{ animationDelay: "420ms" }}>
-            🏦 صرافی برادران نورزاد — هرات | هر ۱۵ ثانیه به‌روزرسانی می‌شود
+            🏦 صرافی برادران نورزاد — هرات | سیستم هماهنگ‌سازی هوشمند فعال است
           </div>
         </div>
       </div>
