@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
+import { useSyncedState } from "../lib/useSyncedState"; // ✅ اضافه شد
 import { initTrackingSystem } from "../lib/trackingCode";
-import { CUSTOMERS_KEY, TRANSACTIONS_KEY, CASH_KEY, HAWALAS_KEY, loadCustomersShared, loadTransactionsShared, loadCashEntriesShared, loadHawalasShared } from "../lib/defaultData";
+import { CUSTOMERS_KEY, TRANSACTIONS_KEY, CASH_KEY, HAWALAS_KEY } from "../lib/defaultData"; // ✅ توابع load حذف شدند
 
 // ============================================================
 // Types
@@ -187,10 +188,13 @@ const typeChipClass = (tx: Transaction, dk: boolean): string => {
 // ============================================================
 export default function ReportsPage() {
   const [mounted, setMounted] = useState(false);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [hawalas, setHawalas] = useState<any[]>([]);
-  const [cashEntries, setCashEntries] = useState<CashEntry[]>([]);
+  
+  // ✅ جایگزینی useState با useSyncedState برای هماهنگی کامل بین تمام تب‌ها
+  const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
+  const [transactions, setTransactions] = useSyncedState<Transaction[]>(TRANSACTIONS_KEY, []);
+  const [hawalas, setHawalas] = useSyncedState<any[]>(HAWALAS_KEY, []);
+  const [cashEntries, setCashEntries] = useSyncedState<CashEntry[]>(CASH_KEY, []);
+  
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [activeSection, setActiveSection] = useState<"search" | "debtors" | "journal">("search");
   const [search, setSearch] = useState("");
@@ -199,46 +203,20 @@ export default function ReportsPage() {
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState("");
 
-  useEffect(() => { try { const s = window.localStorage.getItem("fx-theme"); if (s === "dark" || s === "light") setTheme(s); } catch {} }, []);
-  useEffect(() => { try { window.localStorage.setItem("fx-theme", theme); } catch {} }, [theme]);
-  const dk = theme === "dark";
-
-  useEffect(() => {
+  useEffect(() => { 
+    try { 
+      const s = window.localStorage.getItem("fx-theme"); 
+      if (s === "dark" || s === "light") setTheme(s); 
+    } catch {} 
     try {
-      setCustomers(loadCustomersShared() as Customer[]);
-      setTransactions(loadTransactionsShared() as Transaction[]);
-      setHawalas(loadHawalasShared());
-      setCashEntries(loadCashEntriesShared() as CashEntry[]);
       initTrackingSystem();
-    } catch (err) { console.error(err); }
+    } catch (err) { 
+      console.error(err); 
+    }
     setMounted(true);
   }, []);
 
-  useEffect(() => {
-    const handleStorage = (e: StorageEvent) => {
-      try {
-        if (e.key === CUSTOMERS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setCustomers(p); }
-        if (e.key === TRANSACTIONS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setTransactions(p); }
-        if (e.key === HAWALAS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setHawalas(p); }
-        if (e.key === CASH_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setCashEntries(p); }
-      } catch {}
-    };
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
-  }, []);
-
-  useEffect(() => {
-    const handleFocus = () => {
-      try {
-        setCustomers(loadCustomersShared() as Customer[]);
-        setTransactions(loadTransactionsShared() as Transaction[]);
-        setHawalas(loadHawalasShared());
-        setCashEntries(loadCashEntriesShared() as CashEntry[]);
-      } catch {}
-    };
-    window.addEventListener("focus", handleFocus);
-    return () => window.removeEventListener("focus", handleFocus);
-  }, []);
+  // ✅ حذف useEffectهای دستی load و event listenerها، چون useSyncedState خودش همه کارها را انجام می‌دهد!
 
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => { setNow(new Date()); const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t); }, []);
