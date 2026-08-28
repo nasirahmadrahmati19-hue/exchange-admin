@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { useSyncedState } from "../lib/useSyncedState"; // ✅ اضافه شد
+import { useSyncedState } from "../lib/useSyncedState"; // ✅ ایمپورت هوک هماهنگ‌ساز
 import { initTrackingSystem } from "../lib/trackingCode";
-import { CUSTOMERS_KEY, TRANSACTIONS_KEY, CASH_KEY, HAWALAS_KEY } from "../lib/defaultData"; // ✅ توابع load حذف شدند
+import { CUSTOMERS_KEY, TRANSACTIONS_KEY, CASH_KEY, HAWALAS_KEY } from "../lib/defaultData";
 
 // ============================================================
 // Types
@@ -151,9 +151,6 @@ function splitDateTime(s: string): { datePart: string; timePart: string } {
   }
 }
 
-// ============================================================
-// Transaction helpers
-// ============================================================
 function transactionTypeLabel(tx: Transaction): string {
   if (tx.type === "exchange") return tx.dealType === "buy" ? "خرید ارز" : tx.dealType === "sell" ? "فروش ارز" : "تبادل ارز";
   if (tx.type === "transfer") return "انتقال";
@@ -188,14 +185,14 @@ const typeChipClass = (tx: Transaction, dk: boolean): string => {
 // ============================================================
 export default function ReportsPage() {
   const [mounted, setMounted] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
   
-  // ✅ جایگزینی useState با useSyncedState برای هماهنگی کامل بین تمام تب‌ها
+  // ✅ استفاده از useSyncedState برای هماهنگی کامل بین تمام تب‌ها
   const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
   const [transactions, setTransactions] = useSyncedState<Transaction[]>(TRANSACTIONS_KEY, []);
   const [hawalas, setHawalas] = useSyncedState<any[]>(HAWALAS_KEY, []);
   const [cashEntries, setCashEntries] = useSyncedState<CashEntry[]>(CASH_KEY, []);
   
-  const [theme, setTheme] = useState<"light" | "dark">("light");
   const [activeSection, setActiveSection] = useState<"search" | "debtors" | "journal">("search");
   const [search, setSearch] = useState("");
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -216,7 +213,10 @@ export default function ReportsPage() {
     setMounted(true);
   }, []);
 
-  // ✅ حذف useEffectهای دستی load و event listenerها، چون useSyncedState خودش همه کارها را انجام می‌دهد!
+  useEffect(() => { try { window.localStorage.setItem("fx-theme", theme); } catch {} }, [theme]);
+  
+  // ✅ خط حیاتی که قبلاً جا افتاده بود:
+  const dk = theme === "dark";
 
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => { setNow(new Date()); const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t); }, []);
@@ -661,7 +661,7 @@ export default function ReportsPage() {
             </section>
           )}
 
-          {/* ═══════════ DAILY JOURNAL — با ستون مشتری در هر دو جدول ═══════════ */}
+          {/* ═══════════ DAILY JOURNAL ═══════════ */}
           {activeSection === "journal" && (
             <section className={`rp-up space-y-4 ${uiCard}`} style={{ animationDelay: "160ms" }}>
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
@@ -702,8 +702,6 @@ export default function ReportsPage() {
 
                         {isExpanded && (
                           <div className={`p-4 space-y-4 border-t ${dk ? "border-slate-700 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
-
-                            {/* ── Transactions table — ستون مشتری دارد ── */}
                             {data.transactions.length > 0 && (
                               <div>
                                 <b className={`block text-xs font-black mb-2 ${dk ? "text-blue-300" : "text-blue-600"}`}>📋 معاملات ({fa(data.transactions.length)}):</b>
@@ -721,33 +719,13 @@ export default function ReportsPage() {
                                         const dt = splitDateTime(tx.date);
                                         return (
                                           <tr key={tx.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/50"}`}>
-                                            <td className={cellClass}>
-                                              <span className={`inline-grid h-7 w-7 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>{index + 1}</span>
-                                            </td>
-                                            <td className={cellClass}>
-                                              <span className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-black ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-cyan-300 bg-cyan-50 text-cyan-700"}`} dir="ltr">
-                                                <Ic n="tag" className="h-3 w-3" />
-                                                {tx.trackingCode}
-                                              </span>
-                                            </td>
+                                            <td className={cellClass}><span className={`inline-grid h-7 w-7 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>{index + 1}</span></td>
+                                            <td className={cellClass}><span className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-black ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-cyan-300 bg-cyan-50 text-cyan-700"}`} dir="ltr"><Ic n="tag" className="h-3 w-3" />{tx.trackingCode}</span></td>
                                             <td className={`${cellClass} text-[12px] font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>{transactionCustomerLabel(tx)}</td>
-                                            <td className={cellClass}>
-                                              <div className="flex flex-col items-center gap-0.5">
-                                                <span dir="ltr" className={`text-xs font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`}>{dt.datePart}</span>
-                                                <span dir="ltr" className={`text-[10px] tabular-nums ${subText}`}>{dt.timePart}</span>
-                                              </div>
-                                            </td>
-                                            <td className={cellClass}>
-                                              <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${typeChipClass(tx, dk)}`}>{transactionTypeLabel(tx)}</span>
-                                            </td>
-                                            <td className={cellClass}>
-                                              <div className={`text-[13px] font-black tabular-nums ${dk ? "text-emerald-300" : "text-emerald-700"}`}>{fmt(tx.toAmount)}</div>
-                                              <div className={`text-[10px] ${subText}`}>{labels[tx.toCurrency]}</div>
-                                            </td>
-                                            <td className={cellClass}>
-                                              <div className={`text-[13px] font-black tabular-nums ${dk ? "text-rose-300" : "text-rose-700"}`}>{fmt(tx.fromAmount)}</div>
-                                              <div className={`text-[10px] ${subText}`}>{labels[tx.fromCurrency]}</div>
-                                            </td>
+                                            <td className={cellClass}><div className="flex flex-col items-center gap-0.5"><span dir="ltr" className={`text-xs font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`}>{dt.datePart}</span><span dir="ltr" className={`text-[10px] tabular-nums ${subText}`}>{dt.timePart}</span></div></td>
+                                            <td className={cellClass}><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${typeChipClass(tx, dk)}`}>{transactionTypeLabel(tx)}</span></td>
+                                            <td className={cellClass}><div className={`text-[13px] font-black tabular-nums ${dk ? "text-emerald-300" : "text-emerald-700"}`}>{fmt(tx.toAmount)}</div><div className={`text-[10px] ${subText}`}>{labels[tx.toCurrency]}</div></td>
+                                            <td className={cellClass}><div className={`text-[13px] font-black tabular-nums ${dk ? "text-rose-300" : "text-rose-700"}`}>{fmt(tx.fromAmount)}</div><div className={`text-[10px] ${subText}`}>{labels[tx.fromCurrency]}</div></td>
                                             <td className={`${cellClass} text-[11px] ${dk ? "text-slate-400" : "text-slate-500"}`}>{tx.rateLabel}</td>
                                             <td className={`${cellClass} text-xs font-bold tabular-nums ${tx.commission && tx.commission > 0 ? (dk ? "text-amber-300" : "text-amber-700") : subText}`}>{transactionCommissionLabel(tx)}</td>
                                             <td className={`${cellClass} text-[11px] ${dk ? "text-slate-300" : "text-slate-600"}`}>{commissionPayerLabel(tx)}</td>
@@ -755,45 +733,11 @@ export default function ReportsPage() {
                                         );
                                       })}
                                     </tbody>
-                                    <tfoot>
-                                      <tr className={`border-t-2 ${dk ? "border-emerald-400/50 bg-emerald-400/10" : "border-emerald-300 bg-emerald-50"}`}>
-                                        <td colSpan={5} className="px-3 py-3 text-right">
-                                          <span className={`text-[11px] font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}>📊 جمع کل معاملات روز</span>
-                                        </td>
-                                        <td className={cellClass}>
-                                          <div className="space-y-0.5">
-                                            {currencies.map(cur => summary.received[cur] > 0 && (
-                                              <div key={cur} className={`text-[11px] font-black tabular-nums ${dk ? "text-emerald-300" : "text-emerald-700"}`}>{fmt(summary.received[cur])} <span className="text-[9px]">{labels[cur]}</span></div>
-                                            ))}
-                                            {currencies.every(cur => summary.received[cur] === 0) && <span className={`text-[11px] ${subText}`}>—</span>}
-                                          </div>
-                                        </td>
-                                        <td className={cellClass}>
-                                          <div className="space-y-0.5">
-                                            {currencies.map(cur => summary.paid[cur] > 0 && (
-                                              <div key={cur} className={`text-[11px] font-black tabular-nums ${dk ? "text-rose-300" : "text-rose-700"}`}>{fmt(summary.paid[cur])} <span className="text-[9px]">{labels[cur]}</span></div>
-                                            ))}
-                                            {currencies.every(cur => summary.paid[cur] === 0) && <span className={`text-[11px] ${subText}`}>—</span>}
-                                          </div>
-                                        </td>
-                                        <td className={cellClass} />
-                                        <td className={cellClass}>
-                                          <div className="space-y-0.5">
-                                            {currencies.map(cur => summary.commission[cur] > 0 && (
-                                              <div key={cur} className={`text-[11px] font-black tabular-nums ${dk ? "text-amber-300" : "text-amber-700"}`}>{fmt(summary.commission[cur])} <span className="text-[9px]">{labels[cur]}</span></div>
-                                            ))}
-                                            {currencies.every(cur => summary.commission[cur] === 0) && <span className={`text-[11px] ${subText}`}>—</span>}
-                                          </div>
-                                        </td>
-                                        <td className={cellClass} />
-                                      </tr>
-                                    </tfoot>
                                   </table>
                                 </div>
                               </div>
                             )}
 
-                            {/* ── Cash entries table — ✅ ستون مشتری اضافه شد ── */}
                             {data.cashEntries.length > 0 && (
                               <div>
                                 <b className={`block text-xs font-black mb-2 ${dk ? "text-emerald-300" : "text-emerald-600"}`}>🏦 اسناد صندوق ({fa(data.cashEntries.length)}):</b>
@@ -812,30 +756,11 @@ export default function ReportsPage() {
                                         const cur = ce.currency as Currency;
                                         return (
                                           <tr key={ce.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/50"}`}>
-                                            <td className={cellClass}>
-                                              <span className={`inline-grid h-7 w-7 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>{index + 1}</span>
-                                            </td>
-                                            <td className={cellClass}>
-                                              <span className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-black ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-cyan-300 bg-cyan-50 text-cyan-700"}`} dir="ltr">
-                                                <Ic n="tag" className="h-3 w-3" />
-                                                {ce.trackingCode || "-"}
-                                              </span>
-                                            </td>
-                                            {/* ✅ ستون مشتری */}
-                                            <td className={`${cellClass} text-[12px] font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>
-                                              {ce.customerName || "💰 صندوق"}
-                                            </td>
-                                            <td className={cellClass}>
-                                              <div className="flex flex-col items-center gap-0.5">
-                                                <span dir="ltr" className={`text-xs font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`}>{dt.datePart}</span>
-                                                <span dir="ltr" className={`text-[10px] tabular-nums ${subText}`}>{dt.timePart}</span>
-                                              </div>
-                                            </td>
-                                            <td className={cellClass}>
-                                              <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${ce.direction === "in" ? (dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-700") : (dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-700")}`}>
-                                                {ce.direction === "in" ? "واریز" : "برداشت"}
-                                              </span>
-                                            </td>
+                                            <td className={cellClass}><span className={`inline-grid h-7 w-7 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>{index + 1}</span></td>
+                                            <td className={cellClass}><span className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-black ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-cyan-300 bg-cyan-50 text-cyan-700"}`} dir="ltr"><Ic n="tag" className="h-3 w-3" />{ce.trackingCode || "-"}</span></td>
+                                            <td className={`${cellClass} text-[12px] font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>{ce.customerName || "💰 صندوق"}</td>
+                                            <td className={cellClass}><div className="flex flex-col items-center gap-0.5"><span dir="ltr" className={`text-xs font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`}>{dt.datePart}</span><span dir="ltr" className={`text-[10px] tabular-nums ${subText}`}>{dt.timePart}</span></div></td>
+                                            <td className={cellClass}><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${ce.direction === "in" ? (dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-700") : (dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-700")}`}>{ce.direction === "in" ? "واریز" : "برداشت"}</span></td>
                                             <td className={`${cellClass} text-[12px] max-w-[200px] truncate ${dk ? "text-slate-200" : "text-slate-700"}`}>{ce.reason || ce.type}</td>
                                             <td className={`${cellClass} text-[13px] font-black tabular-nums ${dk ? "text-emerald-300" : "text-emerald-700"}`}>{ce.direction === "in" ? fmt(ce.amount) : "—"}</td>
                                             <td className={`${cellClass} text-[13px] font-black tabular-nums ${dk ? "text-rose-300" : "text-rose-700"}`}>{ce.direction === "out" ? fmt(ce.amount) : "—"}</td>
@@ -844,73 +769,10 @@ export default function ReportsPage() {
                                         );
                                       })}
                                     </tbody>
-                                    <tfoot>
-                                      <tr className={`border-t-2 ${dk ? "border-emerald-400/50 bg-emerald-400/10" : "border-emerald-300 bg-emerald-50"}`}>
-                                        <td colSpan={6} className="px-3 py-3 text-right">
-                                          <span className={`text-[11px] font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}>📊 جمع کل صندوق روز</span>
-                                        </td>
-                                        <td className={cellClass}>
-                                          <div className="space-y-0.5">
-                                            {currencies.map(cur => summary.cashIn[cur] > 0 && (
-                                              <div key={cur} className={`text-[11px] font-black tabular-nums ${dk ? "text-emerald-300" : "text-emerald-700"}`}>{fmt(summary.cashIn[cur])} <span className="text-[9px]">{labels[cur]}</span></div>
-                                            ))}
-                                            {currencies.every(cur => summary.cashIn[cur] === 0) && <span className={`text-[11px] ${subText}`}>—</span>}
-                                          </div>
-                                        </td>
-                                        <td className={cellClass}>
-                                          <div className="space-y-0.5">
-                                            {currencies.map(cur => summary.cashOut[cur] > 0 && (
-                                              <div key={cur} className={`text-[11px] font-black tabular-nums ${dk ? "text-rose-300" : "text-rose-700"}`}>{fmt(summary.cashOut[cur])} <span className="text-[9px]">{labels[cur]}</span></div>
-                                            ))}
-                                            {currencies.every(cur => summary.cashOut[cur] === 0) && <span className={`text-[11px] ${subText}`}>—</span>}
-                                          </div>
-                                        </td>
-                                        <td className={cellClass} />
-                                      </tr>
-                                    </tfoot>
                                   </table>
                                 </div>
                               </div>
                             )}
-
-                            {/* ── Grand Day Summary Card ── */}
-                            <div className={`rounded-xl border-2 p-4 ${dk ? "border-amber-400/40 bg-gradient-to-br from-amber-900/20 to-slate-900/40" : "border-amber-300 bg-gradient-to-br from-amber-50 to-white"}`}>
-                              <div className="flex items-center gap-2 mb-3">
-                                <span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="check" className="h-4 w-4" /></span>
-                                <b className={`text-sm font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>📊 خلاصه نهایی روز {day}</b>
-                              </div>
-                              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                <div className={`rounded-lg p-3 text-center ${dk ? "bg-slate-900/50" : "bg-white/80"}`}>
-                                  <div className={`text-[9px] font-black ${subText}`}>تعداد معاملات</div>
-                                  <div className={`text-xl font-black tabular-nums mt-1 ${dk ? "text-blue-300" : "text-blue-700"}`}>{fa(txCount)}</div>
-                                </div>
-                                <div className={`rounded-lg p-3 text-center ${dk ? "bg-slate-900/50" : "bg-white/80"}`}>
-                                  <div className={`text-[9px] font-black ${subText}`}>اسناد صندوق</div>
-                                  <div className={`text-xl font-black tabular-nums mt-1 ${dk ? "text-emerald-300" : "text-emerald-700"}`}>{fa(cashCount)}</div>
-                                </div>
-                                <div className={`rounded-lg p-3 text-center ${dk ? "bg-slate-900/50" : "bg-white/80"}`}>
-                                  <div className={`text-[9px] font-black ${subText}`}>مجموع کارمزد</div>
-                                  <div className={`text-xl font-black tabular-nums mt-1 ${dk ? "text-amber-300" : "text-amber-700"}`}>
-                                    {currencies.some(cur => summary.commission[cur] > 0) ? currencies.filter(cur => summary.commission[cur] > 0).map(cur => `${fmt(summary.commission[cur])} ${labels[cur]}`).join(" | ") : "۰"}
-                                  </div>
-                                </div>
-                                <div className={`rounded-lg p-3 text-center ${dk ? "bg-slate-900/50" : "bg-white/80"}`}>
-                                  <div className={`text-[9px] font-black ${subText}`}>خالص صندوق</div>
-                                  <div className="mt-1 space-y-0.5">
-                                    {currencies.map(cur => {
-                                      const net = summary.cashIn[cur] - summary.cashOut[cur];
-                                      if (net === 0) return null;
-                                      return (
-                                        <div key={cur} className={`text-[11px] font-black tabular-nums ${net > 0 ? (dk ? "text-emerald-300" : "text-emerald-700") : "text-rose-500"}`}>
-                                          {net > 0 ? "+" : ""}{fmt(net)} <span className="text-[9px]">{labels[cur]}</span>
-                                        </div>
-                                      );
-                                    })}
-                                    {currencies.every(cur => (summary.cashIn[cur] - summary.cashOut[cur]) === 0) && <span className={`text-[11px] ${subText}`}>—</span>}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
                           </div>
                         )}
                       </div>
@@ -975,27 +837,12 @@ export default function ReportsPage() {
                             const dt = splitDateTime(tx.date);
                             return (
                               <tr key={tx.id} className={dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/50"}>
-                                <td className={cellClass}>
-                                  <span className={`inline-grid h-6 w-6 place-items-center rounded-lg text-[10px] font-black ${dk ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>{index + 1}</span>
-                                </td>
-                                <td className={cellClass}>
-                                  <span className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-black ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-cyan-300 bg-cyan-50 text-cyan-700"}`} dir="ltr"><Ic n="tag" className="h-3 w-3" />{tx.trackingCode}</span>
-                                </td>
-                                <td className={cellClass}>
-                                  <div className="flex flex-col items-center gap-0.5">
-                                    <span dir="ltr" className={`text-[11px] font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`}>{dt.datePart}</span>
-                                    <span dir="ltr" className={`text-[9px] tabular-nums ${subText}`}>{dt.timePart}</span>
-                                  </div>
-                                </td>
+                                <td className={cellClass}><span className={`inline-grid h-6 w-6 place-items-center rounded-lg text-[10px] font-black ${dk ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>{index + 1}</span></td>
+                                <td className={cellClass}><span className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-black ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-cyan-300 bg-cyan-50 text-cyan-700"}`} dir="ltr"><Ic n="tag" className="h-3 w-3" />{tx.trackingCode}</span></td>
+                                <td className={cellClass}><div className="flex flex-col items-center gap-0.5"><span dir="ltr" className={`text-[11px] font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`}>{dt.datePart}</span><span dir="ltr" className={`text-[9px] tabular-nums ${subText}`}>{dt.timePart}</span></div></td>
                                 <td className={cellClass}><span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${typeChipClass(tx, dk)}`}>{transactionTypeLabel(tx)}</span></td>
-                                <td className={cellClass}>
-                                  <div className={`text-[12px] font-black tabular-nums ${dk ? "text-emerald-300" : "text-emerald-700"}`}>{fmt(tx.toAmount)}</div>
-                                  <div className={`text-[9px] ${subText}`}>{labels[tx.toCurrency]}</div>
-                                </td>
-                                <td className={cellClass}>
-                                  <div className={`text-[12px] font-black tabular-nums ${dk ? "text-rose-300" : "text-rose-700"}`}>{fmt(tx.fromAmount)}</div>
-                                  <div className={`text-[9px] ${subText}`}>{labels[tx.fromCurrency]}</div>
-                                </td>
+                                <td className={cellClass}><div className={`text-[12px] font-black tabular-nums ${dk ? "text-emerald-300" : "text-emerald-700"}`}>{fmt(tx.toAmount)}</div><div className={`text-[9px] ${subText}`}>{labels[tx.toCurrency]}</div></td>
+                                <td className={cellClass}><div className={`text-[12px] font-black tabular-nums ${dk ? "text-rose-300" : "text-rose-700"}`}>{fmt(tx.fromAmount)}</div><div className={`text-[9px] ${subText}`}>{labels[tx.fromCurrency]}</div></td>
                                 <td className={`${cellClass} text-[10px] ${subText}`}>{tx.rateLabel}</td>
                                 <td className={`${cellClass} text-[11px] font-bold tabular-nums ${tx.commission && tx.commission > 0 ? (dk ? "text-amber-300" : "text-amber-700") : subText}`}>{transactionCommissionLabel(tx)}</td>
                               </tr>
