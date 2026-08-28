@@ -109,7 +109,6 @@ function splitDateTime(s: string): { datePart: string; timePart: string } {
   } catch { return { datePart: "-", timePart: "" }; }
 }
 function dealTypeLabel(d?: DealType) { return d === "buy" ? "خرید" : d === "sell" ? "فروش" : "-"; }
-
 function getRateMode(f: Currency, t: Currency): RateMode {
   if (f === t) return "same";
   if (f === "AFN" || t === "AFN") return "afn";
@@ -238,24 +237,19 @@ function recomputeCashBalances(entries: any[]): any[] {
   });
 }
 
-// ✅ توابع Pure که state فعلی را می‌گیرند و state جدید را برمی‌گردانند
+// ✅ توابع خالص (Pure Functions) برای اتصال به تب صندوق
 function syncCashEntriesForExchange(action: "add" | "remove" | "replace", tx: Transaction | null, oldTxId: string | undefined, currentEntries: any[]): any[] {
   let entries = [...currentEntries];
   const targetId = oldTxId || tx?.id;
   if (targetId) entries = entries.filter((e: any) => e.linkedExchangeId !== targetId);
+  
   if ((action === "add" || action === "replace") && tx) {
     const dateStr = tx.date || new Date().toISOString();
     const newEntries: any[] = [];
-    newEntries.push({
-      id: newId(), trackingCode: `${tx.trackingCode}-EX-IN`, date: dateStr, type: "exchange_account_in", currency: tx.fromCurrency, amount: tx.fromAmount, direction: "in", reason: "تبادل ارز - دریافت ارز توسط حساب صرافی", balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedExchangeId: tx.id, status: "active"
-    });
-    newEntries.push({
-      id: newId(), trackingCode: `${tx.trackingCode}-EX-OUT`, date: dateStr, type: "exchange_account_out", currency: tx.toCurrency, amount: tx.toAmount, direction: "out", reason: "تبادل ارز - پرداخت ارز توسط حساب صرافی", balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedExchangeId: tx.id, status: "active"
-    });
+    newEntries.push({ id: newId(), trackingCode: `${tx.trackingCode}-EX-IN`, date: dateStr, type: "exchange_account_in", currency: tx.fromCurrency, amount: tx.fromAmount, direction: "in", reason: "تبادل ارز - دریافت ارز توسط حساب صرافی", balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedExchangeId: tx.id, status: "active" });
+    newEntries.push({ id: newId(), trackingCode: `${tx.trackingCode}-EX-OUT`, date: dateStr, type: "exchange_account_out", currency: tx.toCurrency, amount: tx.toAmount, direction: "out", reason: "تبادل ارز - پرداخت ارز توسط حساب صرافی", balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedExchangeId: tx.id, status: "active" });
     if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
-      newEntries.push({
-        id: newId(), trackingCode: `${tx.trackingCode}-FEE`, date: dateStr, type: "exchange_account_in", currency: tx.commissionCurrency, amount: tx.commission, direction: "in", reason: "تبادل ارز - کارمزد دریافتی صرافی", balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedExchangeId: tx.id, status: "active"
-      });
+      newEntries.push({ id: newId(), trackingCode: `${tx.trackingCode}-FEE`, date: dateStr, type: "exchange_account_in", currency: tx.commissionCurrency, amount: tx.commission, direction: "in", reason: "تبادل ارز - کارمزد دریافتی صرافی", balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedExchangeId: tx.id, status: "active" });
     }
     entries = [...entries, ...newEntries];
   }
@@ -266,14 +260,13 @@ function syncCashEntriesForTransfer(action: "add" | "remove" | "replace", tx: Tr
   let entries = [...currentEntries];
   const targetId = oldTxId || tx?.id;
   if (targetId) entries = entries.filter((e: any) => e.linkedTransferId !== targetId);
+  
   if ((action === "add" || action === "replace") && tx) {
     const dateStr = tx.date || new Date().toISOString();
-    const senderAccount = tx.senderId === EXCHANGE_ACCOUNT_ID;
-    const receiverAccount = tx.receiverId === EXCHANGE_ACCOUNT_ID;
     const newEntries: any[] = [];
-    if (senderAccount) {
+    if (tx.senderId === EXCHANGE_ACCOUNT_ID) {
       newEntries.push({ id: newId(), trackingCode: `${tx.trackingCode}-S-OUT`, date: dateStr, type: "owner_withdraw", currency: tx.fromCurrency, amount: tx.fromAmount, direction: "out", reason: `انتقال - برداشت از حساب صرافی به ${tx.receiverName || "مشتری"}`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedTransferId: tx.id, status: "active" });
-    } else if (receiverAccount) {
+    } else if (tx.receiverId === EXCHANGE_ACCOUNT_ID) {
       newEntries.push({ id: newId(), trackingCode: `${tx.trackingCode}-R-IN`, date: dateStr, type: "owner_deposit", currency: tx.toCurrency, amount: tx.toAmount, direction: "in", reason: `انتقال - دریافت به حساب صرافی از ${tx.senderName || "مشتری"}`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedTransferId: tx.id, status: "active" });
     }
     if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
@@ -288,11 +281,11 @@ function syncCashEntriesForConvert(action: "add" | "remove" | "replace", tx: Tra
   let entries = [...currentEntries];
   const targetId = oldTxId || tx?.id;
   if (targetId) entries = entries.filter((e: any) => e.linkedConvertId !== targetId);
+  
   if ((action === "add" || action === "replace") && tx) {
     const dateStr = tx.date || new Date().toISOString();
-    const isAccount = tx.customerId === EXCHANGE_ACCOUNT_ID;
     const newEntries: any[] = [];
-    if (isAccount) {
+    if (tx.customerId === EXCHANGE_ACCOUNT_ID) {
       newEntries.push({ id: newId(), trackingCode: `${tx.trackingCode}-OUT`, date: dateStr, type: "owner_withdraw", currency: tx.fromCurrency, amount: tx.fromAmount, direction: "out", reason: `تبدیل ارز - برداشت از حساب صرافی`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedConvertId: tx.id, status: "active" });
       newEntries.push({ id: newId(), trackingCode: `${tx.trackingCode}-IN`, date: dateStr, type: "owner_deposit", currency: tx.toCurrency, amount: tx.toAmount, direction: "in", reason: `تبدیل ارز - واریز به حساب صرافی`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedConvertId: tx.id, status: "active" });
     } else {
@@ -349,7 +342,6 @@ const DetailRow = memo(function DetailRow({ label, value, valueClass = "", dark 
 });
 
 export default function CurrencyExchangePage() {
-  // ✅ تمام state ها با useSyncedState برای هماهنگی کامل
   const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
   const [transactions, setTransactions] = useSyncedState<Transaction[]>(TRANSACTIONS_KEY, []);
   const [cashEntries, setCashEntries] = useSyncedState<any[]>(CASH_KEY, []);
@@ -372,19 +364,15 @@ export default function CurrencyExchangePage() {
   const [showCustomerList, setShowCustomerList] = useState(false);
   const [customerFilter, setCustomerFilter] = useState("");
   const customerListRef = useRef<HTMLDivElement>(null);
-  
   const [showSenderList, setShowSenderList] = useState(false);
   const [senderFilter, setSenderFilter] = useState("");
   const senderListRef = useRef<HTMLDivElement>(null);
-  
   const [showReceiverList, setShowReceiverList] = useState(false);
   const [receiverFilter, setReceiverFilter] = useState("");
   const receiverListRef = useRef<HTMLDivElement>(null);
-  
   const [showConvertList, setShowConvertList] = useState(false);
   const [convertFilter, setConvertFilter] = useState("");
   const convertListRef = useRef<HTMLDivElement>(null);
-  
   const [openActionId, setOpenActionId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -529,7 +517,6 @@ export default function CurrencyExchangePage() {
     return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); };
   }, [anyDropdownOpen, showCustomerList, showSenderList, showReceiverList, showConvertList]);
 
-  // ✅ فیلتر لیست‌ها فقط بر اساس customerId و نمایش نام، نه جستجو بر اساس نام
   const filteredCustomerList = useMemo(() => {
     const q = normalizeDigits(customerFilter.trim()).toLowerCase();
     return customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID && (!q || c.name.toLowerCase().includes(q)));
@@ -663,7 +650,6 @@ export default function CurrencyExchangePage() {
     if (transferMode === "same") rl = "بدون تبدیل";
     if (transferMode === "afn" && transferForeign) rl = afnRateLabel(transferForeign, tr);
     if (transferMode === "direct" && transferDirectCounter) rl = directRateLabel(transferDirectBaseValue, transferDirectCounter, tr);
-    // ✅ استفاده از customerId به جای جستجو بر اساس نام
     const selS = sender === EXCHANGE_ACCOUNT_NAME ? EXCHANGE_ACCOUNT_CUSTOMER : customers.find(c => c.name === sender);
     const selR = receiver === EXCHANGE_ACCOUNT_NAME ? EXCHANGE_ACCOUNT_CUSTOMER : customers.find(c => c.name === receiver);
     const tx: Transaction = {
@@ -720,51 +706,47 @@ export default function CurrencyExchangePage() {
     setPreviewOpen(true);
   }, [validateConvert, convertFromAmount, convertToAmount, convertMode, convertRateValue, convertForeign, convertDirectCounter, convertDirectBaseValue, convertDescription, convertCommissionValue, convertCommissionCurrency, editingConvertId, transactions, convertCustomer, convertFromCurrency, convertToCurrency, customers]);
 
-  // ✅ تابع اصلی ثبت با هماهنگی کامل و برگشت صحیح موجودی در ویرایش
+  // ✅ تابع اصلی ثبت با هماهنگی کامل صندوق و اصلاح رسید تلگرام
   const confirmRegister = useCallback(async () => {
     if (!previewData) return;
     const tx = { ...previewData, trackingCode: consumeTrackingCode() };
     
-    // ۱. اگر ویرایش است، اثر قبلی را برگردان
+    let newCashEntries = cashEntries;
+
     if (editingExchangeId) {
       const oldTx = transactions.find(t => t.id === editingExchangeId);
       if (oldTx && oldTx.status !== "voided") {
         setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForTransaction(oldTx, "reverse")));
-        setCashEntries(prev => syncCashEntriesForExchange("remove", null, editingExchangeId, prev));
+        newCashEntries = syncCashEntriesForExchange("remove", null, editingExchangeId, newCashEntries);
       }
       setTransactions(p => p.map(t => t.id === editingExchangeId ? { ...tx, id: editingExchangeId, trackingCode: t.trackingCode, date: t.date } : t));
-      setCashEntries(prev => syncCashEntriesForExchange("add", tx, undefined, prev));
+      newCashEntries = syncCashEntriesForExchange("add", tx, undefined, newCashEntries);
     } else if (editingTransferId) {
       const oldTx = transactions.find(t => t.id === editingTransferId);
       if (oldTx && oldTx.status !== "voided") {
         setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForTransaction(oldTx, "reverse")));
-        setCashEntries(prev => syncCashEntriesForTransfer("remove", null, editingTransferId, prev));
+        newCashEntries = syncCashEntriesForTransfer("remove", null, editingTransferId, newCashEntries);
       }
       setTransactions(p => p.map(t => t.id === editingTransferId ? { ...tx, id: editingTransferId, trackingCode: t.trackingCode, date: t.date } : t));
-      setCashEntries(prev => syncCashEntriesForTransfer("add", tx, undefined, prev));
+      newCashEntries = syncCashEntriesForTransfer("add", tx, undefined, newCashEntries);
     } else if (editingConvertId) {
       const oldTx = transactions.find(t => t.id === editingConvertId);
       if (oldTx && oldTx.status !== "voided") {
         setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForTransaction(oldTx, "reverse")));
-        setCashEntries(prev => syncCashEntriesForConvert("remove", null, editingConvertId, prev));
+        newCashEntries = syncCashEntriesForConvert("remove", null, editingConvertId, newCashEntries);
       }
       setTransactions(p => p.map(t => t.id === editingConvertId ? { ...tx, id: editingConvertId, trackingCode: t.trackingCode, date: t.date } : t));
-      setCashEntries(prev => syncCashEntriesForConvert("add", tx, undefined, prev));
+      newCashEntries = syncCashEntriesForConvert("add", tx, undefined, newCashEntries);
     } else {
-      // ۲. معامله جدید
       setTransactions(x => [...x, tx]);
-      if (tx.type === "exchange") setCashEntries(prev => syncCashEntriesForExchange("add", tx, undefined, prev));
-      else if (tx.type === "transfer") setCashEntries(prev => syncCashEntriesForTransfer("add", tx, undefined, prev));
-      else if (tx.type === "convert") setCashEntries(prev => syncCashEntriesForConvert("add", tx, undefined, prev));
+      if (tx.type === "exchange") newCashEntries = syncCashEntriesForExchange("add", tx, undefined, newCashEntries);
+      else if (tx.type === "transfer") newCashEntries = syncCashEntriesForTransfer("add", tx, undefined, newCashEntries);
+      else if (tx.type === "convert") newCashEntries = syncCashEntriesForConvert("add", tx, undefined, newCashEntries);
     }
     
-    // ۳. اعمال تغییرات موجودی مشتریان
+    setCashEntries(newCashEntries);
     setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForTransaction(tx, "register")));
-    
-    // ۴. دریافت state به‌روز شده برای ارسال سند تلگرام
-    const updatedCustomers = applyBalanceChanges(customers, getBalanceChangesForTransaction(tx, "register"));
-    
-    // ۵. ارسال سند تلگرام برای طرفین (مشابه سند حواله)
+
     try {
       const settings = getTelegramSettings();
       if (settings.enabled && settings.botToken) {
@@ -775,52 +757,56 @@ export default function CurrencyExchangePage() {
           if (tx.senderId && tx.senderId !== CASH_BOX_ID && tx.senderId !== EXCHANGE_ACCOUNT_ID) recipientIds.add(tx.senderId);
           if (tx.receiverId && tx.receiverId !== CASH_BOX_ID && tx.receiverId !== EXCHANGE_ACCOUNT_ID) recipientIds.add(tx.receiverId);
         }
+        
         for (const custId of recipientIds) {
-          const cust = updatedCustomers.find(c => c.id === custId);
+          const cust = customers.find(c => c.id === custId);
           const chatId = cust?.telegramChatId || cust?.telegram || (tx.type === "exchange" ? tx.customerTelegram : "") || "";
           if (!chatId) continue;
+          
           const bals = cust?.balances || { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-          
-          // تعیین عنوان و شرح سند بر اساس نوع عملیات
-          let msgTitle = "🟢 سند رسید";
-          let description = "";
-          let amount = 0;
-          let currency = "";
-          
-          if (tx.type === "exchange") {
-            description = `تبادل ارز (${tx.dealType === "buy" ? "خرید" : "فروش"})`;
-            amount = tx.toAmount;
-            currency = labels[tx.toCurrency];
-            if (tx.dealType === "sell") msgTitle = "🔴 سند برد";
-          } else if (tx.type === "convert") {
-            msgTitle = "🔄 سند تبدیل ارز";
-            description = "تبدیل ارز";
-            amount = tx.toAmount;
-            currency = labels[tx.toCurrency];
-          } else if (tx.type === "transfer") {
-            msgTitle = "📤 سند انتقال بین حساب";
-            description = `انتقال بین حساب از ${tx.senderName} به ${tx.receiverName}`;
-            amount = tx.toAmount;
-            currency = labels[tx.toCurrency];
-            if (custId === tx.senderId) msgTitle = "🔴 سند برد - انتقال";
-          }
-          
-          const customerName = tx.type === "transfer" ? (custId === tx.senderId ? tx.senderName : tx.receiverName) : (tx.customerName || "مشتری");
-          
-          let text = `${msgTitle}\n`;
-          text += `🗓 تاریخ: ${formatDateTime(new Date(tx.date))}\n`;
-          text += `🛅 پیگیری: ${tx.trackingCode}\n`;
-          text += `👤 مشتری: ${customerName}\n`;
-          text += `📑 شرح: ${description}\n`;
-          text += `💰 مبلغ: ${fmt(amount)} ${currency}\n`;
-          text += `📝 به حروف: ${numberToPersianWords(amount)}\n`;
-          text += `-------------بیلانس فعلی شما--------------\n`;
+          const credits: string[] = [];
+          const debts: string[] = [];
           
           for (const cur of currencies) {
             const b = bals[cur];
-            const status = b > 0 ? "طلب" : b < 0 ? "قرض" : "";
-            text += `${labels[cur]}: ${fmt(Math.abs(b))} ${status}\n`;
+            if (b > 0) credits.push(`  • ${labels[cur]}: ${fmt(b)}`);
+            else if (b < 0) debts.push(`  • ${labels[cur]}: ${fmt(Math.abs(b))}`);
           }
+          
+          let balanceText = "";
+          if (credits.length > 0) balanceText += `🟢 طلب‌های شما از صرافی:\n${credits.join("\n")}\n`;
+          if (debts.length > 0) balanceText += `🔴 قرض‌های شما به صرافی:\n${debts.join("\n")}\n`;
+          if (credits.length === 0 && debts.length === 0) balanceText = "⚪ حساب شما بدون طلب و قرض است.\n";
+          
+          let summaryLine = "";
+          if (credits.length > 0 && debts.length > 0) summaryLine = "📊 شما هم طلب و هم قرض دارید.";
+          else if (credits.length > 0) summaryLine = "✅ شما از صرافی طلبکار هستید.";
+          else if (debts.length > 0) summaryLine = "⚠️ شما به صرافی بدهکار هستید.";
+          else summaryLine = "⚪ حساب شما صاف است.";
+          
+          let text = `🟢 سند رسید معامله\n`;
+          text += `🗓 تاریخ: ${formatDateTime(new Date(tx.date))}\n`;
+          text += `🛅 کد پیگیری: ${tx.trackingCode}\n`;
+          
+          if (tx.type === "exchange") {
+            text += `👤 مشتری: ${tx.customerName}\n`;
+            text += `📑 شرح: تبادل ارز (${tx.dealType === "buy" ? "خرید" : "فروش"})\n`;
+            text += `💰 دریافت: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]}\n`;
+            text += `💵 پرداخت: ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}\n`;
+          } else if (tx.type === "transfer") {
+            const isSender = custId === tx.senderId;
+            text += `👤 ${isSender ? "فرستنده" : "گیرنده"}: ${isSender ? tx.senderName : tx.receiverName}\n`;
+            text += `📑 شرح: انتقال ${isSender ? "از حساب شما به" : "به حساب شما از"} ${isSender ? tx.receiverName : tx.senderName}\n`;
+            text += `💰 مبلغ ${isSender ? "ارسالی" : "دریافتی"}: ${fmt(isSender ? tx.fromAmount : tx.toAmount)} ${labels[isSender ? tx.fromCurrency : tx.toCurrency]}\n`;
+          } else if (tx.type === "convert") {
+            text += `👤 مشتری: ${tx.customerName}\n`;
+            text += `📑 شرح: تبدیل ارز\n`;
+            text += `💰 از: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]}\n`;
+            text += `💵 به: ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}\n`;
+          }
+          
+          text += `\n💳 وضعیت حساب شما:\n${balanceText}`;
+          text += `${summaryLine}\n`;
           text += `\n🏦 صرافی برادران نورزاد — هرات`;
           
           await sendTelegramMessage(settings.botToken, chatId, text);
@@ -835,7 +821,7 @@ export default function CurrencyExchangePage() {
     resetConvertForm();
     setPreviewOpen(false);
     setPreviewData(null);
-  }, [previewData, editingExchangeId, editingTransferId, editingConvertId, transactions, customers, resetExchangeForm, resetTransferForm, resetConvertForm, setCustomers, setTransactions, setCashEntries]);
+  }, [previewData, editingExchangeId, editingTransferId, editingConvertId, transactions, customers, cashEntries, resetExchangeForm, resetTransferForm, resetConvertForm, setCustomers, setTransactions, setCashEntries]);
 
   const customerName = useCallback((id?: string) => {
     if (id === EXCHANGE_ACCOUNT_ID) return EXCHANGE_ACCOUNT_NAME;
@@ -913,29 +899,32 @@ export default function CurrencyExchangePage() {
 
   const viewTransaction = useCallback((tx: Transaction) => setSelectedTransaction(tx), []);
 
-  // ✅ لغو معامله با بازگشت کامل اثر
+  // ✅ لغو معامله با بازگشت کامل اثر و به‌روزرسانی صندوق
   const voidTransaction = useCallback((tx: Transaction) => {
     if (tx.status === "voided") return;
     if (!window.confirm("لغو شود؟")) return;
-    // ۱. بازگرداندن موجودی مشتریان
     setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForTransaction(tx, "reverse")));
-    // ۲. علامت‌گذاری معامله به عنوان لغو شده
     setTransactions(p => p.map(t => t.id === tx.id ? { ...t, status: "voided" } : t));
-    // ۳. حذف cash entries مرتبط
-    if (tx.type === "exchange") setCashEntries(prev => syncCashEntriesForExchange("remove", null, tx.id, prev));
-    else if (tx.type === "transfer") setCashEntries(prev => syncCashEntriesForTransfer("remove", null, tx.id, prev));
-    else if (tx.type === "convert") setCashEntries(prev => syncCashEntriesForConvert("remove", null, tx.id, prev));
+    setCashEntries(prev => {
+      if (tx.type === "exchange") return syncCashEntriesForExchange("remove", null, tx.id, prev);
+      if (tx.type === "transfer") return syncCashEntriesForTransfer("remove", null, tx.id, prev);
+      if (tx.type === "convert") return syncCashEntriesForConvert("remove", null, tx.id, prev);
+      return prev;
+    });
     setEditingExchangeId(null); setEditingTransferId(null); setEditingConvertId(null);
   }, [setCustomers, setTransactions, setCashEntries]);
 
-  // ✅ حذف معامله با بازگشت کامل اثر
+  // ✅ حذف معامله با بازگشت کامل اثر و به‌روزرسانی صندوق
   const deleteTransaction = useCallback((tx: Transaction) => {
     if (!window.confirm(`حذف ${tx.trackingCode}؟`)) return;
     if (tx.status !== "voided") {
       setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForTransaction(tx, "reverse")));
-      if (tx.type === "exchange") setCashEntries(prev => syncCashEntriesForExchange("remove", null, tx.id, prev));
-      else if (tx.type === "transfer") setCashEntries(prev => syncCashEntriesForTransfer("remove", null, tx.id, prev));
-      else if (tx.type === "convert") setCashEntries(prev => syncCashEntriesForConvert("remove", null, tx.id, prev));
+      setCashEntries(prev => {
+        if (tx.type === "exchange") return syncCashEntriesForExchange("remove", null, tx.id, prev);
+        if (tx.type === "transfer") return syncCashEntriesForTransfer("remove", null, tx.id, prev);
+        if (tx.type === "convert") return syncCashEntriesForConvert("remove", null, tx.id, prev);
+        return prev;
+      });
     }
     setTransactions(p => p.filter(t => t.id !== tx.id));
   }, [setCustomers, setTransactions, setCashEntries]);
@@ -973,7 +962,7 @@ export default function CurrencyExchangePage() {
   const identTrChip = dk ? "bg-orange-400/10 text-orange-300 ring-orange-400/25" : "bg-orange-100 text-orange-700 ring-orange-300/60";
   const identCvIcon = dk ? "from-violet-400/20 to-violet-400/5 text-violet-300 ring-violet-400/25" : "from-violet-400/20 to-purple-400/10 text-violet-600 ring-violet-400/30";
   const identCvChip = dk ? "bg-violet-400/10 text-violet-300 ring-violet-400/25" : "bg-violet-100 text-violet-700 ring-violet-300/60";
-
+  
   const typeChipClass = useCallback((tx: Transaction) => {
     if (tx.type === "transfer") return dk ? "bg-orange-400/15 text-orange-300" : "bg-orange-100 text-orange-700";
     if (tx.type === "convert") return dk ? "bg-violet-400/15 text-violet-300" : "bg-violet-100 text-violet-700";
@@ -1091,7 +1080,6 @@ export default function CurrencyExchangePage() {
     </div>
   );
 
-  // ✅ محاسبه موجودی مشترک مشتری (بر اساس customerId)
   const getSharedCustomerBalances = useCallback((customerId: string): Record<Currency, number> => {
     const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     if (!customerId || customerId === CASH_BOX_ID || customerId === EXCHANGE_ACCOUNT_ID) return balances;
@@ -1212,16 +1200,26 @@ export default function CurrencyExchangePage() {
         </button>
         {isOpen && (
           <div className={`absolute left-1/2 -translate-x-1/2 top-full z-50 mt-1.5 w-44 overflow-hidden rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
-            <button onClick={() => { viewTransaction(tx); setOpenActionId(null); }} className={`${btn} ${btnBase} ${dk ? "text-cyan-300 hover:bg-cyan-400/15" : "text-cyan-600 hover:bg-cyan-50"}`}><Ic n="eye" className="h-3.5 w-3.5" /> مشاهده</button>
+            <button onClick={() => { viewTransaction(tx); setOpenActionId(null); }} className={`${btn} ${btnBase} ${dk ? "text-cyan-300 hover:bg-cyan-400/15" : "text-cyan-600 hover:bg-cyan-50"}`}>
+              <Ic n="eye" className="h-3.5 w-3.5" /> مشاهده
+            </button>
             {!isVoided && (
               <>
-                <button onClick={() => { editTransaction(tx); setOpenActionId(null); }} className={`${btn} ${btnBase} ${dk ? "text-sky-300 hover:bg-sky-400/15" : "text-sky-600 hover:bg-sky-50"}`}><Ic n="pencil" className="h-3.5 w-3.5" /> ویرایش</button>
-                <button onClick={() => { voidTransaction(tx); setOpenActionId(null); }} className={`${btn} ${btnBase} ${dk ? "text-amber-300 hover:bg-amber-400/15" : "text-amber-600 hover:bg-amber-50"}`}><Ic n="xCircle" className="h-3.5 w-3.5" /> لغو</button>
+                <button onClick={() => { editTransaction(tx); setOpenActionId(null); }} className={`${btn} ${btnBase} ${dk ? "text-sky-300 hover:bg-sky-400/15" : "text-sky-600 hover:bg-sky-50"}`}>
+                  <Ic n="pencil" className="h-3.5 w-3.5" /> ویرایش
+                </button>
+                <button onClick={() => { voidTransaction(tx); setOpenActionId(null); }} className={`${btn} ${btnBase} ${dk ? "text-amber-300 hover:bg-amber-400/15" : "text-amber-600 hover:bg-amber-50"}`}>
+                  <Ic n="xCircle" className="h-3.5 w-3.5" /> لغو
+                </button>
               </>
             )}
-            <button onClick={() => { printReceipt(tx); setOpenActionId(null); }} className={`${btn} ${btnBase} ${dk ? "text-emerald-300 hover:bg-emerald-400/15" : "text-emerald-600 hover:bg-emerald-50"}`}><Ic n="printer" className="h-3.5 w-3.5" /> چاپ رسید</button>
+            <button onClick={() => { printReceipt(tx); setOpenActionId(null); }} className={`${btn} ${btnBase} ${dk ? "text-emerald-300 hover:bg-emerald-400/15" : "text-emerald-600 hover:bg-emerald-50"}`}>
+              <Ic n="printer" className="h-3.5 w-3.5" /> چاپ رسید
+            </button>
             <div className={`my-1 h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
-            <button onClick={() => { deleteTransaction(tx); setOpenActionId(null); }} className={`${btn} ${dk ? "text-rose-300 hover:bg-rose-400/15" : "text-rose-500 hover:bg-rose-50"}`}><Ic n="trash" className="h-3.5 w-3.5" /> حذف</button>
+            <button onClick={() => { deleteTransaction(tx); setOpenActionId(null); }} className={`${btn} ${dk ? "text-rose-300 hover:bg-rose-400/15" : "text-rose-500 hover:bg-rose-50"}`}>
+              <Ic n="trash" className="h-3.5 w-3.5" /> حذف
+            </button>
           </div>
         )}
       </div>
