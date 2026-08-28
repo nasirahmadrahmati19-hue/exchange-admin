@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useMemo, useState, useRef, useCallback, memo, type ReactNode, type ChangeEvent } from "react";
+import { useSyncedState } from "../lib/useSyncedState";
 import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem, getTrackingNumberValue } from "../lib/trackingCode";
-import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY, loadCustomersShared, loadTransactionsShared, loadHawalasShared, loadCashEntriesShared } from "../lib/defaultData";
+import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY } from "../lib/defaultData";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type RateMode = "same" | "afn" | "direct";
@@ -26,12 +27,9 @@ const CASH_BOX_CUSTOMER: Customer = { id: CASH_BOX_ID, name: CASH_BOX_NAME, phon
 const EXCHANGE_ACCOUNT_ID = "EXCHANGE_ACCOUNT";
 const EXCHANGE_ACCOUNT_NAME = "حساب صرافی";
 const EXCHANGE_ACCOUNT_CUSTOMER: Customer = { id: EXCHANGE_ACCOUNT_ID, name: EXCHANGE_ACCOUNT_NAME, phone: "", tazkira: "", address: "", note: "", telegram: "", telegramChatId: "", registeredAt: "", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
-const isInternalAccountId = (id?: string) => id === CASH_BOX_ID || id === EXCHANGE_ACCOUNT_ID;
 
 const hasTelegram = (c: Customer): boolean => Boolean(c.telegramChatId || c.telegram);
-
 const generateId = (): string => { if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") { try { return crypto.randomUUID(); } catch {} } return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => { const r = (Math.random() * 16) | 0; return (c === "x" ? r : (r & 0x3) | 0x8).toString(16); }); };
-const isCurrency = (v: any): v is Currency => typeof v === "string" && (currencies as string[]).includes(v);
 const normalizeDigits = (value: string) => { const pd = "۰۱۲۳۴۵۶۷۸۹", ad = "٠١٢٣٤٥٦٧٨٩"; return String(value || "").replace(/[۰-۹]/g, d => String(pd.indexOf(d))).replace(/[٠-٩]/g, d => String(ad.indexOf(d))); };
 const toNumericText = (v: string) => { let s = normalizeDigits(String(v || "")).replace(/[^0-9.]/g, ""); const fd = s.indexOf("."); if (fd !== -1) s = s.slice(0, fd + 1) + s.slice(fd + 1).replace(/\./g, ""); return s; };
 const parseAmount = (v: string) => { const n = Number(normalizeDigits(String(v || "")).replace(/,/g, "")); return Number.isFinite(n) && n >= 0 ? n : 0; };
@@ -97,17 +95,14 @@ function computeExchangeBalances(entries: any[]): Record<Currency, number> {
   return balances;
 }
 
-function loadCashEntriesLocal(): any[] { if (typeof window === "undefined") return []; try { const raw = localStorage.getItem(CASH_KEY); if (!raw) return []; const parsed = JSON.parse(raw); return Array.isArray(parsed) ? parsed : []; } catch { return []; } }
-function saveCashEntriesLocal(entries: any[]) { if (typeof window === "undefined") return; try { localStorage.setItem(CASH_KEY, JSON.stringify(entries)); window.dispatchEvent(new Event("db:updated")); } catch {} }
-
-function recomputeCashBalancesLocal(entries: any[]): any[] {
+function recomputeCashBalances(entries: any[]): any[] {
   const sorted = [...entries].sort((a, b) => { const t1 = new Date(a.date).getTime(); const t2 = new Date(b.date).getTime(); if (t1 !== t2) return t1 - t2; const aIsHawala = a.linkedHawalaId || a.linkedHawalaSettleId; const bIsHawala = b.linkedHawalaId || b.linkedHawalaSettleId; if (aIsHawala && bIsHawala) { if (a.direction === "out" && b.direction === "in") return -1; if (a.direction === "in" && b.direction === "out") return 1; } if (a.direction === "in" && b.direction === "out") return -1; if (a.direction === "out" && b.direction === "in") return 1; return 0; });
   const bals: Record<string, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
   return sorted.map(e => { if (e.status === "voided") return { ...e, balanceAfter: bals[e.currency] || 0 }; if (e.currency && bals[e.currency] !== undefined) { if (e.type !== "exchange_account_in" && e.type !== "exchange_account_out") { bals[e.currency] += e.direction === "in" ? (e.amount || 0) : -(e.amount || 0); } } return { ...e, balanceAfter: bals[e.currency] || 0 }; });
 }
 
-function syncCashEntriesForHawala(action: "add" | "remove", h: Hawala | null, oldHawalaId?: string) {
-  let entries = loadCashEntriesLocal();
+function syncCashEntriesForHawala(action: "add" | "remove", h: Hawala | null, oldHawalaId: string | undefined, currentEntries: any[]): any[] {
+  let entries = [...currentEntries];
   const targetId = oldHawalaId || h?.id;
   if (targetId) entries = entries.filter((e: any) => e.linkedHawalaId !== targetId);
 
@@ -132,12 +127,11 @@ function syncCashEntriesForHawala(action: "add" | "remove", h: Hawala | null, ol
       }
     }
   }
-  entries = recomputeCashBalancesLocal(entries);
-  saveCashEntriesLocal(entries);
+  return recomputeCashBalances(entries);
 }
 
-function syncCashEntriesForHawalaSettlement(action: "add" | "remove", h: Hawala) {
-  let entries = loadCashEntriesLocal();
+function syncCashEntriesForHawalaSettlement(action: "add" | "remove", h: Hawala, currentEntries: any[]): any[] {
+  let entries = [...currentEntries];
   if (action === "remove") entries = entries.filter((e: any) => e.linkedHawalaSettleId !== h.id);
 
   if (action === "add" && h) {
@@ -158,13 +152,11 @@ function syncCashEntriesForHawalaSettlement(action: "add" | "remove", h: Hawala)
       entries.push({ id: generateId(), trackingCode: getNextTrackingCode(), date: dateStr, type: "owner_deposit", currency: h.feeCurrency, amount: h.fee, direction: "in", reason: `دریافت کارمزد حواله ${h.number} از گیرنده`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedHawalaSettleId: h.id, status: "active" });
     }
   }
-  entries = recomputeCashBalancesLocal(entries);
-  saveCashEntriesLocal(entries);
+  return recomputeCashBalances(entries);
 }
 
-// ✅ تابع جادویی جدید: همگام‌سازی بالانس مشتریان با دفتر کل و ذخیره در localStorage
-function syncCustomerBalancesWithLedger(currentCustomers: Customer[], latestEntries: any[]): Customer[] {
-  const updatedCustomers = currentCustomers.map(c => {
+function getUpdatedCustomerBalances(currentCustomers: Customer[], latestEntries: any[]): Customer[] {
+  return currentCustomers.map(c => {
     if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) return c;
     const newBalances = { ...c.balances };
     for (const cur of currencies) {
@@ -172,12 +164,6 @@ function syncCustomerBalancesWithLedger(currentCustomers: Customer[], latestEntr
     }
     return { ...c, balances: newBalances };
   });
-  
-  // ذخیره قطعی در حافظه مرورگر و اطلاع‌رسانی به سایر تب‌ها
-  localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(updatedCustomers));
-  window.dispatchEvent(new Event("db:updated"));
-  
-  return updatedCustomers;
 }
 
 function formatShamsiDateTime(date: Date): string {
@@ -289,14 +275,13 @@ async function sendHawalaReceipts(params: { hawala: Hawala; action: "register" |
 
   const receipts: { chatId: string; text: string; target: string }[] = [];
   const now = new Date();
+  
   const getBalances = (customerId: string | undefined): Record<string, number> => {
-    const balances: Record<string, number> = {};
-    for (const cur of currencies) balances[cur] = 0;
-    if (!customerId || customerId === CASH_BOX_ID || customerId === EXCHANGE_ACCOUNT_ID) return balances;
-    const entries = loadCashEntriesLocal();
-    for (const cur of currencies) balances[cur] = getLedgerBalance(customerId, cur, entries);
-    return balances;
+    if (!customerId || customerId === CASH_BOX_ID || customerId === EXCHANGE_ACCOUNT_ID) return { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+    const c = customers.find(x => x.id === customerId);
+    return c ? c.balances : { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
   };
+  
   const isRealCustomer = (id: string | undefined): boolean => Boolean(id && id !== CASH_BOX_ID);
 
   if (action === "register" && isRealCustomer(hawala.senderId)) {
@@ -332,10 +317,13 @@ const Ic = memo(function Ic({ n, className = "h-5 w-5" }: { n: IconName; classNa
 
 export default function HawalaPage() {
   const [mounted, setMounted] = useState(false);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [transactions, setTransactions] = useState<any[]>([]);
-  const [hawalas, setHawalas] = useState<Hawala[]>([]);
-  const [cashEntries, setCashEntries] = useState<any[]>([]);
+  
+  // ✅ استفاده از useSyncedState برای هماهنگی کامل بین تمام تب‌ها
+  const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
+  const [transactions, setTransactions] = useSyncedState<any[]>(TRANSACTIONS_KEY, []);
+  const [hawalas, setHawalas] = useSyncedState<Hawala[]>(HAWALAS_KEY, []);
+  const [cashEntries, setCashEntries] = useSyncedState<any[]>(CASH_KEY, []);
+  
   const [lastNames, setLastNames] = useState<LastNames>({ senderName: "", receiverName: "" });
   const [activeTab, setActiveTab] = useState<"new" | "current" | "history">("new");
   const [form, setForm] = useState<FormState>(emptyForm);
@@ -365,17 +353,15 @@ export default function HawalaPage() {
   useEffect(() => { try { window.localStorage.setItem("hawala-theme", theme); } catch {} }, [theme]);
   const dk = theme === "dark";
 
-  useEffect(() => { try { setCustomers(loadCustomersShared() as Customer[]); setTransactions(loadTransactionsShared()); setHawalas(loadHawalasShared() as Hawala[]); setCashEntries(loadCashEntriesShared()); initTrackingSystem(); } catch (err) { console.error("Load error:", err); } setMounted(true); }, []);
-  useEffect(() => { const handleStorage = (e: StorageEvent) => { try { if (e.key === CUSTOMERS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setCustomers(p); } if (e.key === HAWALAS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setHawalas(p); } if (e.key === TRANSACTIONS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setTransactions(p); } if (e.key === CASH_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setCashEntries(p); } } catch {} }; window.addEventListener("storage", handleStorage); return () => window.removeEventListener("storage", handleStorage); }, []);
-  useEffect(() => { const handleFocus = () => { try { setCustomers(loadCustomersShared() as Customer[]); setHawalas(loadHawalasShared() as Hawala[]); setTransactions(loadTransactionsShared()); setCashEntries(loadCashEntriesShared()); } catch {} }; window.addEventListener("focus", handleFocus); return () => window.removeEventListener("focus", handleFocus); }, []);
+  useEffect(() => { try { initTrackingSystem(); } catch (err) { console.error("Load error:", err); } setMounted(true); }, []);
+  
+  useEffect(() => { try { localStorage.setItem("hawalaLastNames", JSON.stringify(lastNames)); } catch {} }, [lastNames]);
+  
   useEffect(() => { if (!openActionId) return; const handler = (e: MouseEvent) => { const target = e.target as HTMLElement; if (!target.closest('.action-dropdown')) setOpenActionId(null); }; document.addEventListener("mousedown", handler); return () => document.removeEventListener("mousedown", handler); }, [openActionId]);
+  
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => { setNow(new Date()); const timer = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(timer); }, []);
   const currentDateTime = now ? formatDateTime(now) : "";
-
-  useEffect(() => { try { localStorage.setItem("hawalaLastNames", JSON.stringify(lastNames)); } catch {} }, [lastNames]);
-  useEffect(() => { try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); window.dispatchEvent(new Event("db:updated")); } catch {} }, [customers]);
-  useEffect(() => { try { localStorage.setItem(HAWALAS_KEY, JSON.stringify(hawalas)); window.dispatchEvent(new Event("db:updated")); } catch {} }, [hawalas]);
 
   const anyDropdownOpen = showSenderList || showReceiverList;
   useEffect(() => { if (!anyDropdownOpen) return; const handler = (e: MouseEvent) => { const t = e.target as Node; if (showSenderList && senderListRef.current && !senderListRef.current.contains(t)) setShowSenderList(false); if (showReceiverList && receiverListRef.current && !receiverListRef.current.contains(t)) setShowReceiverList(false); }; const timer = setTimeout(() => document.addEventListener("mousedown", handler), 0); return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); }; }, [anyDropdownOpen, showSenderList, showReceiverList]);
@@ -463,21 +449,20 @@ export default function HawalaPage() {
       const newHawala: Hawala = { id: generateId(), number: trackingNumber, date: nowDate.toISOString(), time: "", type: form.type, destinationCountry: "افغانستان", province: form.province, district: form.province === "هرات" ? form.district : form.province, destinationText, currencyFrom: form.currencyFrom, currencyTo: form.currencyTo, amountFrom, rate: txRate, rateLabel, rateBase: rateMode === "direct" ? directBaseValue : undefined, fee: feeValue, feeCurrency: form.feeCurrency, feePayer: form.feePayer, finalAmount, balance: form.balance, note: form.note, profit: feeValue, profitCurrency: form.feeCurrency, senderId: sender?.id, senderName, senderPhone: form.senderPhone, senderTelegram: form.senderTelegram, receiverId: receiver?.id, receiverName, receiverTazkira: form.receiverTazkira, receiverPhone: form.receiverPhone, receiverAddress: form.receiverAddress, status: "pending" as HawalaStatus };
       
       setHawalas(prev => [newHawala, ...prev]);
-      syncCashEntriesForHawala("add", newHawala);
       
-      // ✅ اصلاح: همگام‌سازی و ذخیره بالانس مشتریان
-      const updatedEntries = loadCashEntriesLocal();
-      const syncedCustomers = syncCustomerBalancesWithLedger(customers, updatedEntries);
+      const newEntries = syncCashEntriesForHawala("add", newHawala, undefined, cashEntries);
+      setCashEntries(newEntries);
       
-      setCustomers(syncedCustomers);
-      setCashEntries(updatedEntries);
+      const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries);
+      setCustomers(updatedCustomers);
+      
       setLastNames({ senderName, receiverName });
       setForm(emptyForm); setErrors({}); setPreviewOpen(false); setActiveTab("current");
       
-      await sendHawalaReceipts({ hawala: newHawala, action: "register", customers: syncedCustomers });
+      await sendHawalaReceipts({ hawala: newHawala, action: "register", customers: updatedCustomers });
       showToast("✅ حواله ثبت شد، حساب‌ها به‌روز و رسید ارسال شد");
     } catch (err) { console.error("Register error:", err); showToast("خطا در ثبت حواله"); }
-  }, [form, rateMode, rateValue, afnForeign, directCounter, directBaseValue, feeValue, amountFrom, destinationText, customers, showToast, finalAmount, editingId, hawalas]);
+  }, [form, rateMode, rateValue, afnForeign, directCounter, directBaseValue, feeValue, amountFrom, destinationText, customers, cashEntries, showToast, finalAmount, editingId, hawalas]);
 
   const openDetails = useCallback((item: Hawala) => { setDetailTarget(item); setOpenActionId(null); }, []);
 
@@ -506,75 +491,69 @@ export default function HawalaPage() {
     try {
       const paidHawala = { ...settleTarget, status: "paid" as HawalaStatus, paidAt: new Date().toISOString(), paidBy, paidAmount: amountPaid };
       setHawalas(prev => prev.map(item => item.id === settleTarget.id ? paidHawala : item));
-      syncCashEntriesForHawalaSettlement("add", paidHawala);
       
-      // ✅ اصلاح: همگام‌سازی و ذخیره بالانس مشتریان
-      const updatedEntries = loadCashEntriesLocal();
-      const syncedCustomers = syncCustomerBalancesWithLedger(customers, updatedEntries);
+      const newEntries = syncCashEntriesForHawalaSettlement("add", paidHawala, cashEntries);
+      setCashEntries(newEntries);
       
-      setCustomers(syncedCustomers);
-      setCashEntries(updatedEntries);
-      await sendHawalaReceipts({ hawala: paidHawala, action: "settle", customers: syncedCustomers });
+      const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries);
+      setCustomers(updatedCustomers);
+      
+      await sendHawalaReceipts({ hawala: paidHawala, action: "settle", customers: updatedCustomers });
       setSettleTarget(null);
       showToast("✅ حواله تسویه شد، حساب‌ها به‌روز و رسید ارسال شد");
     } catch (err) { console.error("Settle error:", err); showToast("خطا در تسویه حواله"); }
-  }, [settleTarget, paidBy, paidAmount, customers, showToast]);
+  }, [settleTarget, paidBy, paidAmount, customers, cashEntries, showToast]);
 
   const openCancel = useCallback((item: Hawala) => { setCancelTarget(item); setCancelReason(""); }, []);
   const confirmCancel = useCallback(async () => {
     if (!cancelTarget) return;
     if (!cancelReason.trim()) { showToast("دلیل لغو حواله را بنویسید."); return; }
     try {
-      syncCashEntriesForHawala("remove", null, cancelTarget.id);
-      syncCashEntriesForHawalaSettlement("remove", cancelTarget);
+      const newEntries1 = syncCashEntriesForHawala("remove", null, cancelTarget.id, cashEntries);
+      const newEntries2 = syncCashEntriesForHawalaSettlement("remove", cancelTarget, newEntries1);
+      setCashEntries(newEntries2);
       
-      // ✅ اصلاح: همگام‌سازی و ذخیره بالانس مشتریان
-      const updatedEntries = loadCashEntriesLocal();
-      const syncedCustomers = syncCustomerBalancesWithLedger(customers, updatedEntries);
+      const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries2);
       
       const updatedHawala = { ...cancelTarget, status: "cancelled" as HawalaStatus, cancelReason };
       setHawalas(prev => prev.map(item => item.id === cancelTarget.id ? updatedHawala : item));
-      setCustomers(syncedCustomers);
-      setCashEntries(updatedEntries);
-      await sendHawalaReceipts({ hawala: updatedHawala, action: "cancel", customers: syncedCustomers });
+      setCustomers(updatedCustomers);
+      
+      await sendHawalaReceipts({ hawala: updatedHawala, action: "cancel", customers: updatedCustomers });
       setCancelTarget(null);
       showToast("✅ حواله ابطال شد، حساب‌ها به‌روز و اطلاعیه ارسال شد");
     } catch (err) { console.error("Cancel error:", err); showToast("خطا در ابطال حواله"); }
-  }, [cancelTarget, cancelReason, customers, showToast]);
+  }, [cancelTarget, cancelReason, customers, cashEntries, showToast]);
 
   const restoreToSent = useCallback((item: Hawala) => {
     try {
-      syncCashEntriesForHawala("add", item);
+      const newEntries = syncCashEntriesForHawala("add", item, undefined, cashEntries);
+      setCashEntries(newEntries);
       
-      // ✅ اصلاح: همگام‌سازی و ذخیره بالانس مشتریان
-      const updatedEntries = loadCashEntriesLocal();
-      const syncedCustomers = syncCustomerBalancesWithLedger(customers, updatedEntries);
+      const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries);
+      setCustomers(updatedCustomers);
       
-      setCashEntries(updatedEntries);
       const restored: Hawala = { ...item, status: "sent" as HawalaStatus, paidAt: undefined, paidBy: undefined, paidAmount: undefined, cancelReason: undefined };
       setHawalas(prev => prev.map(h => h.id === item.id ? restored : h));
-      setCustomers(syncedCustomers);
       showToast("حواله به وضعیت ارسال‌شده برگشت و حساب مشتری نیز به‌روز شد.");
     } catch (err) { console.error("Restore error:", err); showToast("خطا در برگشت حواله"); }
-  }, [customers, showToast]);
+  }, [customers, cashEntries, showToast]);
 
   const deleteHawala = useCallback((item: Hawala) => {
     const msg = `آیا از حذف کامل حواله ${item.number} مطمئن هستید؟\n\nاین عملیات قابل بازگشت نیست و حواله از سیستم پاک می‌شود.`;
     if (!window.confirm(msg)) return;
     try {
-      syncCashEntriesForHawala("remove", null, item.id);
-      syncCashEntriesForHawalaSettlement("remove", item);
+      const newEntries1 = syncCashEntriesForHawala("remove", null, item.id, cashEntries);
+      const newEntries2 = syncCashEntriesForHawalaSettlement("remove", item, newEntries1);
+      setCashEntries(newEntries2);
       
-      // ✅ اصلاح: همگام‌سازی و ذخیره بالانس مشتریان
-      const updatedEntries = loadCashEntriesLocal();
-      const syncedCustomers = syncCustomerBalancesWithLedger(customers, updatedEntries);
+      const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries2);
+      setCustomers(updatedCustomers);
       
-      setCashEntries(updatedEntries);
-      setCustomers(syncedCustomers);
       setHawalas(prev => prev.filter(h => h.id !== item.id));
       showToast(`حواله ${item.number} حذف شد و حساب‌های مرتبط به‌روز شد.`);
     } catch (err) { console.error("Delete error:", err); showToast("خطا در حذف حواله"); }
-  }, [customers, showToast]);
+  }, [customers, cashEntries, showToast]);
 
   if (!mounted) return (<div className="min-h-screen flex items-center justify-center"><div className="text-center"><div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-slate-300 border-t-blue-500" /><p className="mt-4 text-slate-500">در حال بارگذاری...</p></div></div>);
 
@@ -697,155 +676,7 @@ export default function HawalaPage() {
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="receive" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>معلومات حواله‌گیرنده</b></div>
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {fld(
-                    "نام حواله‌گیرنده *",
-                    (
-                      <div className="relative" ref={receiverListRef}>
-                        <input
-                          value={form.receiverName}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setField("receiverName", val);
-                            setReceiverFilter(val);
-                            setShowReceiverList(true);
-
-                            if (val.trim() === CASH_BOX_NAME) {
-                              setField("receiverId", CASH_BOX_ID);
-                              setField("receiverTazkira", "");
-                              setField("receiverPhone", "");
-                              setField("receiverAddress", "");
-                              return;
-                            }
-
-                            if (val.trim() === EXCHANGE_ACCOUNT_NAME) {
-                              setField("receiverId", EXCHANGE_ACCOUNT_ID);
-                              setField("receiverTazkira", "");
-                              setField("receiverPhone", "");
-                              setField("receiverAddress", "");
-                              return;
-                            }
-
-                            const customer = customers.find(
-                              (c) => c.name.trim() === val.trim()
-                            );
-
-                            if (customer) {
-                              setField("receiverId", customer.id);
-                              setField("receiverTazkira", customer.tazkira || "");
-                              setField("receiverPhone", customer.phone || "");
-                              setField("receiverAddress", customer.address || "");
-                            } else {
-                              setField("receiverId", "");
-                              setField("receiverTazkira", "");
-                              setField("receiverPhone", "");
-                              setField("receiverAddress", "");
-                            }
-                          }}
-                          placeholder="انتخاب از لیست یا نوشتن نام جدید…"
-                          className={`${uiInput} pl-12 ${errors.receiverName ? errInput : ""}`}
-                          autoComplete="off"
-                        />
-
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setShowReceiverList((v) => !v);
-                          }}
-                          className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition ${
-                            dk
-                              ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700"
-                              : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-                          }`}
-                        >
-                          <Ic
-                            n="chevron"
-                            className={`h-4 w-4 transition-transform ${
-                              showReceiverList ? "rotate-180" : ""
-                            }`}
-                          />
-                        </button>
-
-                        {showReceiverList && (
-                          <div
-                            className={`hw-menu absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${
-                              dk
-                                ? "border-slate-600 bg-slate-800"
-                                : "border-slate-200 bg-white"
-                            }`}
-                          >
-                            {filteredReceiverList.length === 0 ? (
-                              <div
-                                className={`px-4 py-3 text-xs text-center ${subText}`}
-                              >
-                                مشتری‌ای یافت نشد
-                              </div>
-                            ) : (
-                              filteredReceiverList.map((c, idx) => (
-                                <button
-                                  key={c.id}
-                                  type="button"
-                                  onClick={() => {
-                                    setField("receiverId", c.id);
-                                    setField("receiverName", c.name);
-                                    setField(
-                                      "receiverTazkira",
-                                      c.tazkira || ""
-                                    );
-                                    setField("receiverPhone", c.phone || "");
-                                    setField(
-                                      "receiverAddress",
-                                      c.address || ""
-                                    );
-                                    setReceiverFilter("");
-                                    setShowReceiverList(false);
-                                    setErrors((prev) => ({
-                                      ...prev,
-                                      receiverName: undefined,
-                                    }));
-                                  }}
-                                  className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${
-                                    dk
-                                      ? "text-slate-200 hover:bg-amber-400/15 hover:text-amber-300"
-                                      : "text-slate-700 hover:bg-amber-50 hover:text-amber-600"
-                                  }`}
-                                >
-                                  <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-amber-500 to-orange-500">
-                                    {idx + 1}
-                                  </span>
-                                  <span className="flex-1 truncate flex items-center gap-1.5">
-                                    {c.name}
-                                    {hasTelegram(c) && (
-                                      <span title="دارای چت آیدی تلگرام">📱</span>
-                                    )}
-                                  </span>
-                                  {c.phone && (
-                                    <span
-                                      className={`text-[10px] ${subText}`}
-                                      dir="ltr"
-                                    >
-                                      {c.phone}
-                                    </span>
-                                  )}
-                                </button>
-                              ))
-                            )}
-
-                            <div
-                              className={`h-px ${
-                                dk ? "bg-slate-700" : "bg-slate-100"
-                              }`}
-                            />
-                            <div
-                              className={`px-3 py-2 text-[10px] text-center ${subText}`}
-                            >
-                              نام جدید در لیست ذخیره نمی‌شود
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )
-                  )}
+                  {fld("نام حواله‌گیرنده *", (<div className="relative" ref={receiverListRef}><input value={form.receiverName} onChange={(e) => { const val = e.target.value; setField("receiverName", val); setReceiverFilter(val); setShowReceiverList(true); if (val.trim() === CASH_BOX_NAME) { setField("receiverId", CASH_BOX_ID); setField("receiverTazkira", ""); setField("receiverPhone", ""); setField("receiverAddress", ""); return; } if (val.trim() === EXCHANGE_ACCOUNT_NAME) { setField("receiverId", EXCHANGE_ACCOUNT_ID); setField("receiverTazkira", ""); setField("receiverPhone", ""); setField("receiverAddress", ""); return; } const customer = customers.find((c) => c.name.trim() === val.trim()); if (customer) { setField("receiverId", customer.id); setField("receiverTazkira", customer.tazkira || ""); setField("receiverPhone", customer.phone || ""); setField("receiverAddress", customer.address || ""); } else { setField("receiverId", ""); setField("receiverTazkira", ""); setField("receiverPhone", ""); setField("receiverAddress", ""); } }} placeholder="انتخاب از لیست یا نوشتن نام جدید…" className={`${uiInput} pl-12 ${errors.receiverName ? errInput : ""}`} autoComplete="off" /><button type="button" onClick={(e) => { e.stopPropagation(); setShowReceiverList((v) => !v); }} className={`absolute left-2 top-1/2 -translate-y-1/2 grid h-8 w-8 place-items-center rounded-lg transition ${dk ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}><Ic n="chevron" className={`h-4 w-4 transition-transform ${showReceiverList ? "rotate-180" : ""}`} /></button>{showReceiverList && (<div className={`hw-menu absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>{filteredReceiverList.length === 0 ? (<div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>) : (filteredReceiverList.map((c, idx) => (<button key={c.id} type="button" onClick={() => { setField("receiverId", c.id); setField("receiverName", c.name); setField("receiverTazkira", c.tazkira || ""); setField("receiverPhone", c.phone || ""); setField("receiverAddress", c.address || ""); setReceiverFilter(""); setShowReceiverList(false); setErrors((prev) => ({ ...prev, receiverName: undefined })); }} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-amber-400/15 hover:text-amber-300" : "text-slate-700 hover:bg-amber-50 hover:text-amber-600"}`}><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-amber-500 to-orange-500">{idx + 1}</span><span className="flex-1 truncate flex items-center gap-1.5">{c.name}{hasTelegram(c) && (<span title="دارای چت آیدی تلگرام">📱</span>)}</span>{c.phone && (<span className={`text-[10px] ${subText}`} dir="ltr">{c.phone}</span>)}</button>)))}<div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} /><div className={`px-3 py-2 text-[10px] text-center ${subText}`}>نام جدید در لیست ذخیره نمی‌شود</div></div>)}</div>))}
                   {fld("شماره تذکره *", (<input className={`${uiInput} ${errors.receiverTazkira ? errInput : ""}`} value={form.receiverTazkira} onChange={e => setField("receiverTazkira", e.target.value)} placeholder="شماره تذکره" />))}
                   {fld("شماره تماس *", (<input className={`${uiInput} ${errors.receiverPhone ? errInput : ""}`} value={form.receiverPhone} onChange={e => setField("receiverPhone", e.target.value)} placeholder="07xxxxxxxx" />))}
                   {fld("آدرس", (<input className={`${uiInput} sm:col-span-2 lg:col-span-3`} value={form.receiverAddress} onChange={e => setField("receiverAddress", e.target.value)} placeholder="اختیاری" />))}
