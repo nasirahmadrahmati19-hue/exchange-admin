@@ -707,72 +707,75 @@ export default function CurrencyExchangePage() {
   }, [validateConvert, convertFromAmount, convertToAmount, convertMode, convertRateValue, convertForeign, convertDirectCounter, convertDirectBaseValue, convertDescription, convertCommissionValue, convertCommissionCurrency, editingConvertId, transactions, convertCustomer, convertFromCurrency, convertToCurrency, customers]);
 
   // ✅ تابع اصلی ثبت با هماهنگی کامل صندوق و اصلاح رسید تلگرام
-  const confirmRegister = useCallback(async () => {
-    if (!previewData) return;
-    const tx = { ...previewData, trackingCode: consumeTrackingCode() };
-    
-    let newCashEntries = cashEntries;
-
-    if (editingExchangeId) {
-      const oldTx = transactions.find(t => t.id === editingExchangeId);
-      if (oldTx && oldTx.status !== "voided") {
-        setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForTransaction(oldTx, "reverse")));
-        newCashEntries = syncCashEntriesForExchange("remove", null, editingExchangeId, newCashEntries);
-      }
-      setTransactions(p => p.map(t => t.id === editingExchangeId ? { ...tx, id: editingExchangeId, trackingCode: t.trackingCode, date: t.date } : t));
-      newCashEntries = syncCashEntriesForExchange("add", tx, undefined, newCashEntries);
-    } else if (editingTransferId) {
-      const oldTx = transactions.find(t => t.id === editingTransferId);
-      if (oldTx && oldTx.status !== "voided") {
-        setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForTransaction(oldTx, "reverse")));
-        newCashEntries = syncCashEntriesForTransfer("remove", null, editingTransferId, newCashEntries);
-      }
-      setTransactions(p => p.map(t => t.id === editingTransferId ? { ...tx, id: editingTransferId, trackingCode: t.trackingCode, date: t.date } : t));
-      newCashEntries = syncCashEntriesForTransfer("add", tx, undefined, newCashEntries);
-    } else if (editingConvertId) {
-      const oldTx = transactions.find(t => t.id === editingConvertId);
-      if (oldTx && oldTx.status !== "voided") {
-        setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForTransaction(oldTx, "reverse")));
-        newCashEntries = syncCashEntriesForConvert("remove", null, editingConvertId, newCashEntries);
-      }
-      setTransactions(p => p.map(t => t.id === editingConvertId ? { ...tx, id: editingConvertId, trackingCode: t.trackingCode, date: t.date } : t));
-      newCashEntries = syncCashEntriesForConvert("add", tx, undefined, newCashEntries);
-    } else {
-      setTransactions(x => [...x, tx]);
-      if (tx.type === "exchange") newCashEntries = syncCashEntriesForExchange("add", tx, undefined, newCashEntries);
-      else if (tx.type === "transfer") newCashEntries = syncCashEntriesForTransfer("add", tx, undefined, newCashEntries);
-      else if (tx.type === "convert") newCashEntries = syncCashEntriesForConvert("add", tx, undefined, newCashEntries);
+const confirmRegister = useCallback(async () => {
+  if (!previewData) return;
+  const tx = { ...previewData, trackingCode: consumeTrackingCode() };
+  
+  if (editingExchangeId) {
+    const oldTx = transactions.find(t => t.id === editingExchangeId);
+    if (oldTx && oldTx.status !== "voided") {
+      setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForTransaction(oldTx, "reverse")));
+      setCashEntries(prev => syncCashEntriesForExchange("remove", null, editingExchangeId, prev));
     }
-    
-    setCashEntries(newCashEntries);
-    setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForTransaction(tx, "register")));
+    setTransactions(p => p.map(t => t.id === editingExchangeId ? { ...tx, id: editingExchangeId, trackingCode: t.trackingCode, date: t.date } : t));
+    setCashEntries(prev => syncCashEntriesForExchange("add", tx, undefined, prev));
+  } else if (editingTransferId) {
+    const oldTx = transactions.find(t => t.id === editingTransferId);
+    if (oldTx && oldTx.status !== "voided") {
+      setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForTransaction(oldTx, "reverse")));
+      setCashEntries(prev => syncCashEntriesForTransfer("remove", null, editingTransferId, prev));
+    }
+    setTransactions(p => p.map(t => t.id === editingTransferId ? { ...tx, id: editingTransferId, trackingCode: t.trackingCode, date: t.date } : t));
+    setCashEntries(prev => syncCashEntriesForTransfer("add", tx, undefined, prev));
+  } else if (editingConvertId) {
+    const oldTx = transactions.find(t => t.id === editingConvertId);
+    if (oldTx && oldTx.status !== "voided") {
+      setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForTransaction(oldTx, "reverse")));
+      setCashEntries(prev => syncCashEntriesForConvert("remove", null, editingConvertId, prev));
+    }
+    setTransactions(p => p.map(t => t.id === editingConvertId ? { ...tx, id: editingConvertId, trackingCode: t.trackingCode, date: t.date } : t));
+    setCashEntries(prev => syncCashEntriesForConvert("add", tx, undefined, prev));
+  } else {
+    // ✅ اینجا مشکل اصلی بود: setCashEntries فراخوانی نمی‌شد!
+    setTransactions(x => [...x, tx]);
+    if (tx.type === "exchange") {
+      setCashEntries(prev => syncCashEntriesForExchange("add", tx, undefined, prev));
+    } else if (tx.type === "transfer") {
+      setCashEntries(prev => syncCashEntriesForTransfer("add", tx, undefined, prev));
+    } else if (tx.type === "convert") {
+      setCashEntries(prev => syncCashEntriesForConvert("add", tx, undefined, prev));
+    }
+  }
 
-    try {
-      const settings = getTelegramSettings();
-      if (settings.enabled && settings.botToken) {
-        const recipientIds = new Set<string>();
-        if (tx.type === "exchange" || tx.type === "convert") {
-          if (tx.customerId && tx.customerId !== CASH_BOX_ID && tx.customerId !== EXCHANGE_ACCOUNT_ID) recipientIds.add(tx.customerId);
-        } else if (tx.type === "transfer") {
-          if (tx.senderId && tx.senderId !== CASH_BOX_ID && tx.senderId !== EXCHANGE_ACCOUNT_ID) recipientIds.add(tx.senderId);
-          if (tx.receiverId && tx.receiverId !== CASH_BOX_ID && tx.receiverId !== EXCHANGE_ACCOUNT_ID) recipientIds.add(tx.receiverId);
+  // ۱. محاسبه موجودی‌های به‌روز شده پس از ثبت تراکنش
+  const updatedCustomers = applyBalanceChanges(customers, getBalanceChangesForTransaction(tx, "register"));
+  setCustomers(updatedCustomers);
+
+  // ۲. ارسال رسید تلگرام برای تمام طرفین درگیر
+  try {
+    const settings = getTelegramSettings();
+    if (settings.enabled && settings.botToken) {
+      const recipientIds = new Set<string>();
+      if (tx.type === "exchange" || tx.type === "convert") {
+        if (tx.customerId && tx.customerId !== CASH_BOX_ID && tx.customerId !== EXCHANGE_ACCOUNT_ID) {
+          recipientIds.add(tx.customerId);
         }
-        
-        for (const custId of recipientIds) {
-          const cust = customers.find(c => c.id === custId);
-          const chatId = cust?.telegramChatId || cust?.telegram || (tx.type === "exchange" ? tx.customerTelegram : "") || "";
-          if (!chatId) continue;
-          
+      } else if (tx.type === "transfer") {
+        if (tx.senderId && tx.senderId !== CASH_BOX_ID && tx.senderId !== EXCHANGE_ACCOUNT_ID) recipientIds.add(tx.senderId);
+        if (tx.receiverId && tx.receiverId !== CASH_BOX_ID && tx.receiverId !== EXCHANGE_ACCOUNT_ID) recipientIds.add(tx.receiverId);
+      }
+      for (const custId of recipientIds) {
+        const cust = updatedCustomers.find(c => c.id === custId);
+        const chatId = cust?.telegramChatId || cust?.telegram || (tx.type === "exchange" ? tx.customerTelegram : "") || "";
+        if (chatId) {
           const bals = cust?.balances || { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
           const credits: string[] = [];
           const debts: string[] = [];
-          
           for (const cur of currencies) {
             const b = bals[cur];
             if (b > 0) credits.push(`  • ${labels[cur]}: ${fmt(b)}`);
             else if (b < 0) debts.push(`  • ${labels[cur]}: ${fmt(Math.abs(b))}`);
           }
-          
           let balanceText = "";
           if (credits.length > 0) balanceText += `🟢 طلب‌های شما از صرافی:\n${credits.join("\n")}\n`;
           if (debts.length > 0) balanceText += `🔴 قرض‌های شما به صرافی:\n${debts.join("\n")}\n`;
@@ -787,7 +790,6 @@ export default function CurrencyExchangePage() {
           let text = `🟢 سند رسید معامله\n`;
           text += `🗓 تاریخ: ${formatDateTime(new Date(tx.date))}\n`;
           text += `🛅 کد پیگیری: ${tx.trackingCode}\n`;
-          
           if (tx.type === "exchange") {
             text += `👤 مشتری: ${tx.customerName}\n`;
             text += `📑 شرح: تبادل ارز (${tx.dealType === "buy" ? "خرید" : "فروش"})\n`;
@@ -804,25 +806,23 @@ export default function CurrencyExchangePage() {
             text += `💰 از: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]}\n`;
             text += `💵 به: ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}\n`;
           }
-          
           text += `\n💳 وضعیت حساب شما:\n${balanceText}`;
           text += `${summaryLine}\n`;
           text += `\n🏦 صرافی برادران نورزاد — هرات`;
-          
           await sendTelegramMessage(settings.botToken, chatId, text);
         }
       }
-    } catch (err) {
-      console.error("Error sending receipt:", err);
     }
-    
-    resetExchangeForm();
-    resetTransferForm();
-    resetConvertForm();
-    setPreviewOpen(false);
-    setPreviewData(null);
-  }, [previewData, editingExchangeId, editingTransferId, editingConvertId, transactions, customers, cashEntries, resetExchangeForm, resetTransferForm, resetConvertForm, setCustomers, setTransactions, setCashEntries]);
-
+  } catch (err) {
+    console.error("Error sending receipt:", err);
+  }
+  
+  resetExchangeForm();
+  resetTransferForm();
+  resetConvertForm();
+  setPreviewOpen(false);
+  setPreviewData(null);
+}, [previewData, editingExchangeId, editingTransferId, editingConvertId, transactions, customers, resetExchangeForm, resetTransferForm, resetConvertForm, setCustomers, setTransactions, setCashEntries]);
   const customerName = useCallback((id?: string) => {
     if (id === EXCHANGE_ACCOUNT_ID) return EXCHANGE_ACCOUNT_NAME;
     return customers.find(c => c.id === id)?.name || id || "-";
