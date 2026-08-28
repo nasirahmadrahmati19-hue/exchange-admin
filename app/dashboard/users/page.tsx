@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useMemo, useState, useRef, useCallback, type ReactNode } from "react";
+import { useSyncedState } from "../lib/useSyncedState"; // ✅ اضافه شد
 import { initTrackingSystem } from "../lib/trackingCode";
-import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY, loadCustomersShared, loadTransactionsShared, loadHawalasShared, loadCashEntriesShared } from "../lib/defaultData";
+import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY } from "../lib/defaultData"; // ✅ توابع load حذف شدند
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type Customer = { id: string; name: string; phone?: string; tazkira?: string; address?: string; note?: string; telegram?: string; registeredAt: string; balances: Record<Currency, number>; };
@@ -179,26 +180,21 @@ function timeLabel(s: string) { try { const d = new Date(s); if (Number.isNaN(d.
 
 const emptyForm: FormState = { name: "", tazkira: "", phone: "", address: "", note: "", telegram: "" };
 
-// ✅ منطق ساده‌سازی شده و ضدگلوله برای محاسبه موجودی
 function getLedgerBalance(customerId: string, currency: Currency, cashEntries: any[], ledger: LedgerEntry[]): number {
   let balance = 0;
-  
   if (customerId === CASH_BOX_ID) {
     for (const e of cashEntries) {
       if (e.status === "voided" || e.currency !== currency) continue;
       balance += e.direction === "in" ? e.amount : -e.amount;
     }
-  } 
-  else if (customerId === EXCHANGE_ACCOUNT_ID) {
-    // ✅ ساده‌سازی مطلق: اگر سند متعلق به حساب صرافی است، فقط جهت حرکت پول مهم است
+  } else if (customerId === EXCHANGE_ACCOUNT_ID) {
     for (const e of cashEntries) {
       if (e.status === "voided" || e.currency !== currency) continue;
       if (e.customerId === EXCHANGE_ACCOUNT_ID) {
         balance += e.direction === "in" ? e.amount : -e.amount;
       }
     }
-  } 
-  else {
+  } else {
     for (const e of ledger) {
       if (e.customerId === customerId && e.currency === currency) {
         balance += e.direction === "in" ? e.amount : -e.amount;
@@ -341,10 +337,25 @@ function buildCashBoxLedger(cashEntries: any[]): LedgerEntry[] {
 
 export default function CustomersPage() {
   const [mounted, setMounted] = useState(false);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [transactions, setTransactions] = useState<any[]>([]);
-  const [hawalas, setHawalas] = useState<any[]>([]);
-  const [cashEntries, setCashEntries] = useState<any[]>([]);
+  
+  // ✅ استفاده از useSyncedState برای هماهنگی کامل بین تمام تب‌ها
+  const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, () => {
+    if (typeof window !== "undefined") {
+      try {
+        const raw = localStorage.getItem(CUSTOMERS_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(parsed) || !parsed.find((c: any) => c.id === EXCHANGE_ACCOUNT_ID)) {
+          return [EXCHANGE_ACCOUNT_CUSTOMER, ...(Array.isArray(parsed) ? parsed : [])];
+        }
+        return parsed;
+      } catch {}
+    }
+    return [EXCHANGE_ACCOUNT_CUSTOMER];
+  });
+  const [transactions, setTransactions] = useSyncedState<any[]>(TRANSACTIONS_KEY, []);
+  const [hawalas, setHawalas] = useSyncedState<any[]>(HAWALAS_KEY, []);
+  const [cashEntries, setCashEntries] = useSyncedState<any[]>(CASH_KEY, []);
+  
   const [activeTab, setActiveTab] = useState<"list" | "new" | "profile">("list");
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [profileTab, setProfileTab] = useState<"info" | "balances" | "ledger" | "statement">("info");
@@ -372,62 +383,16 @@ export default function CustomersPage() {
 
   useEffect(() => {
     try {
-      let custs = loadCustomersShared() as Customer[];
-      if (!custs.find(c => c.id === EXCHANGE_ACCOUNT_ID)) {
-        custs = [EXCHANGE_ACCOUNT_CUSTOMER, ...custs];
-      }
-      setCustomers(custs);
-      setTransactions(loadTransactionsShared());
-      setHawalas(loadHawalasShared());
-      setCashEntries(loadCashEntriesShared());
       initTrackingSystem();
     } catch (err) { console.error(err); }
     setMounted(true);
   }, []);
 
-  useEffect(() => {
-    const handleStorage = (e: StorageEvent) => {
-      try {
-        if (e.key === CUSTOMERS_KEY && e.newValue) {
-          const p = JSON.parse(e.newValue);
-          if (Array.isArray(p)) {
-            if (!p.find((c: any) => c.id === EXCHANGE_ACCOUNT_ID)) {
-              p.unshift(EXCHANGE_ACCOUNT_CUSTOMER);
-            }
-            setCustomers(p);
-          }
-        }
-        if (e.key === TRANSACTIONS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setTransactions(p); }
-        if (e.key === HAWALAS_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setHawalas(p); }
-        if (e.key === CASH_KEY && e.newValue) { const p = JSON.parse(e.newValue); if (Array.isArray(p)) setCashEntries(p); }
-      } catch {}
-    };
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
-  }, []);
-
-  useEffect(() => {
-    const handleFocus = () => {
-      try {
-        let custs = loadCustomersShared() as Customer[];
-        if (!custs.find(c => c.id === EXCHANGE_ACCOUNT_ID)) {
-          custs = [EXCHANGE_ACCOUNT_CUSTOMER, ...custs];
-        }
-        setCustomers(custs);
-        setTransactions(loadTransactionsShared());
-        setHawalas(loadHawalasShared());
-        setCashEntries(loadCashEntriesShared());
-      } catch {}
-    };
-    window.addEventListener("focus", handleFocus);
-    return () => window.removeEventListener("focus", handleFocus);
-  }, []);
+  // ✅ حذف useEffectهای دستی load و event listenerها، چون useSyncedState خودش همه کارها را انجام می‌دهد!
 
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => { setNow(new Date()); const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t); }, []);
   const currentDateTime = now ? formatDateTime(now) : "";
-
-  useEffect(() => { if (!mounted) return; try { localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers)); window.dispatchEvent(new Event("db:updated")); } catch {} }, [customers, mounted]);
 
   useEffect(() => {
     if (!openMenuId) return;
@@ -537,7 +502,6 @@ export default function CustomersPage() {
     setLoanModalOpen(true);
   };
 
-  // ✅ تابع processLoan اصلاح‌شده و ضدگلوله برای ثبت دو سند همزمان
   const processLoan = () => {
     if (!selectedCustomer || selectedCustomer.id === CASH_BOX_ID || selectedCustomer.id === EXCHANGE_ACCOUNT_ID) {
       showToast("فقط برای مشتریان واقعی قابل انجام است.");
@@ -557,84 +521,23 @@ export default function CustomersPage() {
     const newEntries: any[] = [];
 
     if (loanModalType === "give") {
-      // ۱. سند مشتری (بدهکار می‌شود)
       newEntries.push({
-        id: generateId(),
-        trackingCode: `${trackingCode}-CUST`,
-        date: now,
-        type: "loan_given",
-        currency: loanCurrency,
-        amount: amt,
-        direction: "in", // مشتری پول دریافت کرد (بدهکار شد)
-        reason: `قرض داده‌شده - ${reason}`,
-        balanceAfter: 0,
-        customerId: selectedCustomer.id,
-        customerName: selectedCustomer.name,
-        counterPartyId: EXCHANGE_ACCOUNT_ID,
-        status: "active"
+        id: generateId(), trackingCode: `${trackingCode}-CUST`, date: now, type: "loan_given", currency: loanCurrency, amount: amt, direction: "in", reason: `قرض داده‌شده - ${reason}`, balanceAfter: 0, customerId: selectedCustomer.id, customerName: selectedCustomer.name, counterPartyId: EXCHANGE_ACCOUNT_ID, status: "active"
       });
-      // ۲. سند حساب صرافی (موجودی آن کم می‌شود) - این خط کلید حل مشکل است!
       newEntries.push({
-        id: generateId(),
-        trackingCode: `${trackingCode}-EXCH`,
-        date: now,
-        type: "loan_given",
-        currency: loanCurrency,
-        amount: amt,
-        direction: "out", // پول از حساب صرافی خارج شد
-        reason: `قرض به ${selectedCustomer.name} - ${reason}`,
-        balanceAfter: 0,
-        customerId: EXCHANGE_ACCOUNT_ID, // <-- این خط باعث می‌شود صندوق آن را شناسایی و کم کند
-        customerName: EXCHANGE_ACCOUNT_NAME,
-        counterPartyId: selectedCustomer.id,
-        status: "active"
+        id: generateId(), trackingCode: `${trackingCode}-EXCH`, date: now, type: "loan_given", currency: loanCurrency, amount: amt, direction: "out", reason: `قرض به ${selectedCustomer.name} - ${reason}`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, counterPartyId: selectedCustomer.id, status: "active"
       });
     } else {
-      // ۱. سند مشتری (بدهی کم می‌شود)
       newEntries.push({
-        id: generateId(),
-        trackingCode: `${trackingCode}-CUST`,
-        date: now,
-        type: "loan_received",
-        currency: loanCurrency,
-        amount: amt,
-        direction: "out", // مشتری پول پرداخت کرد (بدهی کم شد)
-        reason: `بازپرداخت قرض - ${reason}`,
-        balanceAfter: 0,
-        customerId: selectedCustomer.id,
-        customerName: selectedCustomer.name,
-        counterPartyId: EXCHANGE_ACCOUNT_ID,
-        status: "active"
+        id: generateId(), trackingCode: `${trackingCode}-CUST`, date: now, type: "loan_received", currency: loanCurrency, amount: amt, direction: "out", reason: `بازپرداخت قرض - ${reason}`, balanceAfter: 0, customerId: selectedCustomer.id, customerName: selectedCustomer.name, counterPartyId: EXCHANGE_ACCOUNT_ID, status: "active"
       });
-      // ۲. سند حساب صرافی (موجودی آن زیاد می‌شود)
       newEntries.push({
-        id: generateId(),
-        trackingCode: `${trackingCode}-EXCH`,
-        date: now,
-        type: "loan_received",
-        currency: loanCurrency,
-        amount: amt,
-        direction: "in", // پول به حساب صرافی برگشت
-        reason: `دریافت قرض از ${selectedCustomer.name} - ${reason}`,
-        balanceAfter: 0,
-        customerId: EXCHANGE_ACCOUNT_ID,
-        customerName: EXCHANGE_ACCOUNT_NAME,
-        counterPartyId: selectedCustomer.id,
-        status: "active"
+        id: generateId(), trackingCode: `${trackingCode}-EXCH`, date: now, type: "loan_received", currency: loanCurrency, amount: amt, direction: "in", reason: `دریافت قرض از ${selectedCustomer.name} - ${reason}`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, counterPartyId: selectedCustomer.id, status: "active"
       });
     }
 
-    // ✅ لاگ برای اطمینان از صحت داده‌ها (در کنسول مرورگر F12 چک کنید)
-    console.log("🚀 در حال ثبت اسناد قرض:", newEntries);
-
-    setCashEntries(prev => {
-      const nextEntries = [...prev, ...newEntries];
-      try {
-        localStorage.setItem(CASH_KEY, JSON.stringify(nextEntries));
-        window.dispatchEvent(new Event("db:updated"));
-      } catch (e) { console.error("Storage error", e); }
-      return nextEntries;
-    });
+    // ✅ استفاده مستقیم از setCashEntries (useSyncedState خودش ذخیره و هماهنگ‌سازی را انجام می‌دهد)
+    setCashEntries(prev => [...prev, ...newEntries]);
 
     setLoanModalOpen(false);
     showToast(loanModalType === "give"
@@ -653,12 +556,13 @@ export default function CustomersPage() {
     if (cnt > 0) msg += `\n⚠️ ${cnt} رویداد مالی دارد.`;
     if (hasBal) msg += `\n⚠️ موجودی غیر صفر دارد!`;
     if (!window.confirm(msg)) return;
+    
     setTransactions(prev => prev.map((t: any) => { if (t.customerId === id || t.customerName === c.name || t.senderId === id || t.senderName === c.name || t.receiverId === id || t.receiverName === c.name) return { ...t, customerDeleted: true }; return t; }));
     setHawalas(prev => prev.map((h: any) => { if (h.senderId === id || h.senderName === c.name || h.receiverId === id || h.receiverName === c.name) return { ...h, customerDeleted: true }; return h; }));
     setCashEntries(prev => prev.map((ce: any) => { if (ce.customerId === id || ce.customerName === c.name) return { ...ce, customerDeleted: true }; return ce; }));
     setCustomers(p => p.filter(x => x.id !== id));
+    
     if (selectedCustomerId === id) { setSelectedCustomerId(null); setActiveTab("list"); }
-    window.dispatchEvent(new Event("db:updated"));
     showToast(`"${c.name}" حذف شد.`);
   };
 
@@ -682,7 +586,6 @@ export default function CustomersPage() {
     if (Object.keys(errs).length > 0) { showToast("فیلدها را تکمیل کنید."); return; }
     const nc: Customer = { id: generateId(), name: form.name.trim(), phone: form.phone.trim(), tazkira: form.tazkira.trim(), address: form.address.trim(), note: form.note.trim(), telegram: form.telegram.trim(), registeredAt: new Date().toISOString(), balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
     setCustomers(p => [...p, nc]); setForm(emptyForm); setErrors({}); setActiveTab("list");
-    window.dispatchEvent(new Event("db:updated"));
     showToast(`"${nc.name}" ثبت شد.`);
   };
 
@@ -696,7 +599,6 @@ export default function CustomersPage() {
       setHawalas(prev => prev.map((h: any) => { const u = { ...h }; if (h.senderName === oldName) u.senderName = newName; if (h.receiverName === oldName) u.receiverName = newName; return u; }));
       setCashEntries(prev => prev.map((ce: any) => { const u = { ...ce }; if (ce.customerName === oldName) u.customerName = newName; return u; }));
     }
-    window.dispatchEvent(new Event("db:updated"));
     showToast("به‌روز شد.");
   };
 
