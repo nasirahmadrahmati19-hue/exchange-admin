@@ -1,13 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState, useMemo } from "react";
-import { useSyncedState } from "../lib/useSyncedState"; // ✅ اضافه شد
+import { useSyncedState } from "./lib/useSyncedState"; // ✅ مسیر اصلاح شد (./lib)
 import {
   CUSTOMERS_KEY,
   TRANSACTIONS_KEY,
   HAWALAS_KEY,
   CASH_KEY,
-} from "../lib/defaultData";
+} from "./lib/defaultData"; // ✅ مسیر اصلاح شد (./lib)
 
 // ============================================================
 // تایپ‌ها و ثابت‌ها
@@ -115,7 +115,6 @@ function isToday(dateStr: string | number | undefined | null): boolean {
   return false;
 }
 
-// ✅ تابع حیاتی: محاسبه موجودی فقط و فقط از روی Ledger (همان منطق CashPage)
 function getLedgerBalance(customerId: string, currency: Currency, entries: CashEntry[]): number {
   let balance = 0;
   for (const entry of entries) {
@@ -145,7 +144,7 @@ export default function DashboardPage() {
   const [mounted, setMounted] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   
-  // ✅ جایگزینی useState با useSyncedState برای هماهنگی کامل بین تمام تب‌ها
+  // ✅ استفاده از useSyncedState برای هماهنگی کامل بین تمام تب‌ها
   const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
   const [entries, setEntries] = useSyncedState<CashEntry[]>(CASH_KEY, []);
   const [transactions, setTransactions] = useSyncedState<Transaction[]>(TRANSACTIONS_KEY, []);
@@ -160,8 +159,6 @@ export default function DashboardPage() {
     } catch {}
     setMounted(true);
   }, []);
-
-  // ✅ حذف useEffectهای دستی load و event listenerها، چون useSyncedState خودش همه کارها را انجام می‌دهد!
 
   // ── محاسبات مبتنی بر Ledger (منبع واحد حقیقت) ──
   
