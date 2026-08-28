@@ -339,16 +339,14 @@ export default function CustomersPage() {
   const [mounted, setMounted] = useState(false);
   
   // ✅ استفاده از useSyncedState برای هماهنگی کامل بین تمام تب‌ها
-  const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, () => {
-    if (typeof window !== "undefined") {
-      try {
-        const raw = localStorage.getItem(CUSTOMERS_KEY);
-        const parsed = raw ? JSON.parse(raw) : [];
-        if (!Array.isArray(parsed) || !parsed.find((c: any) => c.id === EXCHANGE_ACCOUNT_ID)) {
-          return [EXCHANGE_ACCOUNT_CUSTOMER, ...(Array.isArray(parsed) ? parsed : [])];
-        }
-        return parsed;
-      } catch {}
+  const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
+
+  // اطمینان از وجود حساب صرافی در لیست مشتریان (اگر وجود نداشت اضافه می‌شود)
+  useEffect(() => {
+    if (!customers.find(c => c.id === EXCHANGE_ACCOUNT_ID)) {
+      setCustomers(prev => [EXCHANGE_ACCOUNT_CUSTOMER, ...prev]);
+    }
+  }, []);
     }
     return [EXCHANGE_ACCOUNT_CUSTOMER];
   });
