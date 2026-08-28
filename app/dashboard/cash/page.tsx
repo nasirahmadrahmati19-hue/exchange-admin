@@ -502,8 +502,7 @@ export default function CashPage() {
     if (!window.confirm(`آیا از ابطال سند ${entry.trackingCode} مطمئن هستید؟`)) return;
     const updatedCustomers = applyBalanceChanges(customers, getBalanceChangesForCashEntry(entry, "reverse"));
     setCustomers(updatedCustomers);
-    setEntries(prev => recomputeCashBalances(prev.map(e => e.id === entry.id ? { ...e, status: "voided" as const } : e)));
-    await sendCashReceipts({ entry, action: "void", customers: updatedCustomers });
+setEntries((prev: any[]) => recomputeCashBalances(prev.map((e: any) => e.id === entry.id ? { ...e, status: "voided" as const } : e)));    await sendCashReceipts({ entry, action: "void", customers: updatedCustomers });
     showToast(`سند ${entry.trackingCode} ابطال شد.`);
   }, [showToast, customers, entries]);
 
