@@ -61,8 +61,11 @@ function formatShamsiDate(d: Date) { const s = shamsiParts(d); return `${s.year}
 function shortDateLabel(s: string) { try { const d = new Date(s); return Number.isNaN(d.getTime()) ? "-" : formatShamsiDate(d); } catch (e) { return "-"; } }
 function timeLabel(s: string) { try { const d = new Date(s); if (Number.isNaN(d.getTime())) return "-"; const pad = (n: number) => String(n).padStart(2, "0"); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; } catch (e) { return "-"; } }
 
-function getLedgerBalance(customerId: string, currency: Currency, entries: CashEntry[]): number {
+// ✅ تابع اصلاح‌شده - هم entries و هم transactions را محاسبه می‌کند
+function getLedgerBalance(customerId: string, currency: Currency, entries: CashEntry[], transactions: Transaction[] = []): number {
   let balance = 0;
+  
+  // ۱. محاسبه از صندوق (entries)
   for (const entry of entries) {
     if (entry.status === "voided" || entry.currency !== currency) continue;
     if (customerId === CASH_BOX_ID) {
@@ -86,12 +89,43 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: CashE
       }
     }
   }
+  
+  // ۲. محاسبه از معاملات (transactions) - برای مشتریان عادی
+  if (customerId !== CASH_BOX_ID && customerId !== EXCHANGE_ACCOUNT_ID) {
+    for (const tx of transactions) {
+      if (tx.status === "voided") continue;
+      
+      if (tx.type === "exchange" && tx.customerId === customerId) {
+        if (tx.fromCurrency === currency) balance -= tx.fromAmount;
+        if (tx.toCurrency === currency) balance += tx.toAmount;
+        if (tx.commission && tx.commissionCurrency === currency) balance -= tx.commission;
+      }
+      
+      if (tx.type === "transfer") {
+        if (tx.senderId === customerId) {
+          if (tx.fromCurrency === currency) balance -= tx.fromAmount;
+          if (tx.commissionPayer === "sender" && tx.commission && tx.commissionCurrency === currency) balance -= tx.commission;
+        }
+        if (tx.receiverId === customerId) {
+          if (tx.toCurrency === currency) balance += tx.toAmount;
+          if (tx.commissionPayer === "receiver" && tx.commission && tx.commissionCurrency === currency) balance -= tx.commission;
+        }
+      }
+      
+      if (tx.type === "convert" && tx.customerId === customerId) {
+        if (tx.fromCurrency === currency) balance -= tx.fromAmount;
+        if (tx.toCurrency === currency) balance += tx.toAmount;
+        if (tx.commission && tx.commissionCurrency === currency) balance -= tx.commission;
+      }
+    }
+  }
+  
   return balance;
 }
 
 function computeCashBalances(entries: CashEntry[]): Record<Currency, number> {
   const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-  for (const cur of currencies) balances[cur] = getLedgerBalance(CASH_BOX_ID, cur, entries);
+  for (const cur of currencies) balances[cur] = getLedgerBalance(CASH_BOX_ID, cur, entries, []);
   return balances;
 }
 
@@ -315,32 +349,6 @@ export default function CashPage() {
     setMounted(true);
   }, []);
 
-  useEffect(() => {
-    const handleStorage = (e: StorageEvent) => {
-      try {
-        if (e.key === CASH_KEY && e.newValue) setEntries(JSON.parse(e.newValue));
-        if (e.key === CUSTOMERS_KEY && e.newValue) setCustomers(JSON.parse(e.newValue));
-        if (e.key === TRANSACTIONS_KEY && e.newValue) setTransactions(JSON.parse(e.newValue));
-        if (e.key === HAWALAS_KEY && e.newValue) setHawalas(JSON.parse(e.newValue));
-      } catch (e) { /* ignore */ }
-    };
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
-  }, []);
-
-  useEffect(() => {
-    const handleFocus = () => {
-      try {
-        const rawCash = window.localStorage.getItem(CASH_KEY);
-        if (rawCash) setEntries(JSON.parse(rawCash));
-        const rawCust = window.localStorage.getItem(CUSTOMERS_KEY);
-        if (rawCust) setCustomers(JSON.parse(rawCust));
-      } catch (e) { /* ignore */ }
-    };
-    window.addEventListener("focus", handleFocus);
-    return () => window.removeEventListener("focus", handleFocus);
-  }, []);
-
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => { setNow(new Date()); const timer = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(timer); }, []);
   const currentDateTime = now ? formatDateTime(now) : "";
@@ -361,29 +369,31 @@ export default function CashPage() {
 
   const physicalCashBalances = useMemo(() => computeCashBalances(entries), [entries]);
 
+  // ✅ اصلاح شده - transactions هم اضافه شد
   const customerDeposits = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
       if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) continue;
       for (const cur of currencies) {
-        const bal = getLedgerBalance(c.id, cur, entries);
+        const bal = getLedgerBalance(c.id, cur, entries, transactions);
         if (bal > 0) totals[cur] += bal;
       }
     }
     return totals;
-  }, [customers, entries]);
+  }, [customers, entries, transactions]);
 
+  // ✅ اصلاح شده - transactions هم اضافه شد
   const customerDebts = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
       if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) continue;
       for (const cur of currencies) {
-        const bal = getLedgerBalance(c.id, cur, entries);
+        const bal = getLedgerBalance(c.id, cur, entries, transactions);
         if (bal < 0) totals[cur] += Math.abs(bal);
       }
     }
     return totals;
-  }, [customers, entries]);
+  }, [customers, entries, transactions]);
 
   const exchangeBalance = useMemo(() => {
     const bal: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
@@ -475,7 +485,6 @@ export default function CashPage() {
     setActiveTab("register");
   }, []);
 
-  // ✅ اصلاح شده: حذف prev => برای سازگاری با useSyncedState
   const voidEntry = useCallback(async (entry: CashEntry) => {
     if (entry.status === "voided") return;
     if (!window.confirm(`آیا از ابطال سند ${entry.trackingCode} مطمئن هستید؟`)) return;
@@ -486,7 +495,6 @@ export default function CashPage() {
     showToast(`سند ${entry.trackingCode} ابطال شد.`);
   }, [showToast, customers, entries]);
 
-  // ✅ اصلاح شده: حذف prev => برای سازگاری با useSyncedState
   const deleteEntry = useCallback((entry: CashEntry) => {
     if (!window.confirm(`آیا از حذف سند ${entry.trackingCode} مطمئن هستید؟`)) return;
     if (entry.status !== "voided") {
@@ -515,7 +523,6 @@ export default function CashPage() {
     setPreviewData(entry); setPreviewOpen(true);
   }, [validateForm, form, physicalCashBalances, isInType, isCustomerType, showToast, editingEntryId, entries]);
 
-  // ✅ اصلاح شده: حذف prev => در confirmRegister
   const confirmRegister = useCallback(async () => {
     if (!previewData) return;
     const wasEditing = !!editingEntryId;
@@ -740,7 +747,8 @@ export default function CashPage() {
                         <div className={`absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
                           {filteredCustomerList.length === 0 ? (<div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>) : (
                             filteredCustomerList.map((c) => {
-                              const liveBal = getLedgerBalance(c.id, form.currency, entries);
+                              // ✅ اصلاح شده - transactions هم اضافه شد
+                              const liveBal = getLedgerBalance(c.id, form.currency, entries, transactions);
                               return (
                                 <button key={c.id} type="button" onClick={() => { setField("customerId", c.id); setField("customerName", c.name); setCustomerFilter(""); setShowCustomerList(false); }} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-teal-400/15 hover:text-teal-300" : "text-slate-700 hover:bg-teal-50 hover:text-teal-600"}`}>
                                   <span className="flex-1 truncate flex items-center gap-1.5">
@@ -767,7 +775,8 @@ export default function CashPage() {
                       </div>
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
                         {currencies.map(cur => {
-                          const bal = getLedgerBalance(selectedCustomer.id, cur, entries);
+                          // ✅ اصلاح شده - transactions هم اضافه شد
+                          const bal = getLedgerBalance(selectedCustomer.id, cur, entries, transactions);
                           const isDebt = bal < 0; const isCredit = bal > 0; const isSel = form.currency === cur;
                           return (
                             <div key={cur} className={`relative rounded-xl px-3 py-2.5 text-center transition-all ${isSel ? dk ? "bg-teal-400/15 ring-2 ring-teal-400/40" : "bg-teal-50 ring-2 ring-teal-400/40" : dk ? "bg-slate-900/40" : "bg-slate-50"}`}>
