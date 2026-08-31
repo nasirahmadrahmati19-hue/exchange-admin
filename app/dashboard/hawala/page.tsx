@@ -55,11 +55,13 @@ const statusColors: Record<HawalaStatus, { light: string; dark: string }> = { pe
 const formatDestination = (province: string, district: string) => province === "هرات" ? `${province} — ${district}` : province;
 const sortByHawalaNumber = (items: Hawala[], order: "asc" | "desc") => [...items].sort((a, b) => { const an = getTrackingNumberValue(a.number), bn = getTrackingNumberValue(b.number); return order === "asc" ? an - bn : bn - an; });
 
-// ✅ اصلاح شده: حالا transactions و hawalas را هم در محاسبه موجودی لحاظ می‌کند
+// ✅ اصلاح شده: جلوگیری از شمارش دوگانه (Double Counting)
 function getLedgerBalance(customerId: string, currency: Currency, entries: any[], transactions: any[] = [], hawalas: any[] = []): number {
   let balance = 0;
   
   // ۱. محاسبه از صندوق (entries)
+  // نکته کلیدی: توابع syncCashEntriesForHawala از قبل اثر مالی حواله (برداشت/واریز) را به آرایه entries اضافه کرده‌اند.
+  // بنابراین، محاسبه موجودی مشتری از طریق entries، اثر حواله را به درستی و فقط یک بار اعمال می‌کند.
   for (const entry of entries) {
     if (entry.status === "voided" || entry.currency !== currency) continue;
     if (customerId === CASH_BOX_ID) {
@@ -84,7 +86,10 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: any[]
     }
   }
 
-  // ۲. محاسبه از معاملات و حواله‌جات (فقط برای مشتریان عادی)
+  // ۲. محاسبه از معاملات (فقط برای مشتریان عادی)
+  // نکته: معاملات (Transactions) توسط سیستم تبادل ارز به entries مشتری اضافه نمی‌شوند (فقط برای حساب صرافی اضافه می‌شوند).
+  // بنابراین، برای محاسبه دقیق موجودی مشتری، باید آرایه transactions را هم بررسی کنیم.
+  // اما برای حواله‌ها (Hawalas)، چون قبلاً در مرحله ۱ از طریق entries محاسبه شده‌اند، اینجا دیگر نباید محاسبه شوند تا از کسر/اضافه شدن دو برابری جلوگیری شود.
   if (customerId !== CASH_BOX_ID && customerId !== EXCHANGE_ACCOUNT_ID) {
     for (const tx of transactions) {
       if (tx.status === "voided") continue;
@@ -107,18 +112,6 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: any[]
         if (tx.fromCurrency === currency) balance -= tx.fromAmount;
         if (tx.toCurrency === currency) balance += tx.toAmount;
         if (tx.commission && tx.commissionCurrency === currency) balance -= tx.commission;
-      }
-    }
-
-    for (const h of hawalas) {
-      if (h.status === "cancelled") continue;
-      if (h.senderId === customerId) {
-        if (h.currencyFrom === currency) balance -= h.amountFrom;
-        if (h.feePayer === "sender" && h.feeCurrency === currency) balance -= h.fee;
-      }
-      if (h.receiverId === customerId && h.status === "paid") {
-        if (h.currencyTo === currency) balance += h.finalAmount;
-        if (h.feePayer === "receiver" && h.feeCurrency === currency) balance -= h.fee;
       }
     }
   }
@@ -198,7 +191,7 @@ function syncCashEntriesForHawalaSettlement(action: "add" | "remove", h: Hawala,
   return recomputeCashBalances(entries);
 }
 
-// ✅ اصلاح شده: حالا آرایه‌های transactions و hawalas را هم دریافت می‌کند
+// ✅ اصلاح شده: پارامترها حفظ شده‌اند اما getLedgerBalance خودش از شمارش دوگانه جلوگیری می‌کند
 function getUpdatedCustomerBalances(currentCustomers: Customer[], latestEntries: any[], currentTransactions: any[], currentHawalas: any[]): Customer[] {
   return currentCustomers.map(c => {
     if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) return c;
@@ -494,7 +487,6 @@ export default function HawalaPage() {
       const newEntries = syncCashEntriesForHawala("add", newHawala, undefined, cashEntries);
       setCashEntries(newEntries);
       
-      // ✅ اصلاح شده: آرایه به‌روز شده حواله‌ها به تابع محاسبه موجودی پاس داده می‌شود
       const updatedHawalas = [newHawala, ...hawalas];
       const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries, transactions, updatedHawalas);
       setCustomers(updatedCustomers);
@@ -538,7 +530,6 @@ export default function HawalaPage() {
       const newEntries = syncCashEntriesForHawalaSettlement("add", paidHawala, cashEntries);
       setCashEntries(newEntries);
       
-      // ✅ اصلاح شده: آرایه به‌روز شده حواله‌ها به تابع محاسبه موجودی پاس داده می‌شود
       const updatedHawalas = hawalas.map(item => item.id === settleTarget.id ? paidHawala : item);
       const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries, transactions, updatedHawalas);
       setCustomers(updatedCustomers);
@@ -558,7 +549,6 @@ export default function HawalaPage() {
       const newEntries2 = syncCashEntriesForHawalaSettlement("remove", cancelTarget, newEntries1);
       setCashEntries(newEntries2);
       
-      // ✅ اصلاح شده: آرایه به‌روز شده حواله‌ها به تابع محاسبه موجودی پاس داده می‌شود
       const updatedHawala = { ...cancelTarget, status: "cancelled" as HawalaStatus, cancelReason };
       const updatedHawalas = hawalas.map(item => item.id === cancelTarget.id ? updatedHawala : item);
       const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries2, transactions, updatedHawalas);
@@ -575,7 +565,6 @@ export default function HawalaPage() {
       const newEntries = syncCashEntriesForHawala("add", item, undefined, cashEntries);
       setCashEntries(newEntries);
       
-      // ✅ اصلاح شده: آرایه به‌روز شده حواله‌ها به تابع محاسبه موجودی پاس داده می‌شود
       const restored: Hawala = { ...item, status: "sent" as HawalaStatus, paidAt: undefined, paidBy: undefined, paidAmount: undefined, cancelReason: undefined };
       const updatedHawalas = hawalas.map(h => h.id === item.id ? restored : h);
       const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries, transactions, updatedHawalas);
@@ -593,7 +582,6 @@ export default function HawalaPage() {
       const newEntries2 = syncCashEntriesForHawalaSettlement("remove", item, newEntries1);
       setCashEntries(newEntries2);
       
-      // ✅ اصلاح شده: آرایه به‌روز شده حواله‌ها به تابع محاسبه موجودی پاس داده می‌شود
       const updatedHawalas = hawalas.filter(h => h.id !== item.id);
       const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries2, transactions, updatedHawalas);
       setCustomers(updatedCustomers);
@@ -628,7 +616,6 @@ export default function HawalaPage() {
   const rateBox = (c: { wrap: string; icon: string; title: string }, title: string, formContent: ReactNode, badges: ReactNode) => (<div className={`space-y-4 rounded-2xl border p-4 transition-colors md:p-5 ${c.wrap}`}><div className="flex items-center gap-2.5"><span className={`grid h-9 w-9 place-items-center rounded-xl ${c.icon}`}><Ic n="rate" className="h-4 w-4" /></span><b className={`text-sm font-black ${c.title}`}>{title}</b></div>{formContent}<div className="flex flex-wrap items-center gap-2.5">{badges}</div></div>);
   const pill = (cls: string, txt: string, check = false) => !txt ? null : (<span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black ${cls}`}>{check && <Ic n="check" className="h-3.5 w-3.5" />}{txt}</span>);
 
-  // ✅ اصلاح شده: حالا از getLedgerBalance جامع استفاده می‌کند
   const CustomerBalanceCard = memo(({ customer, color, isCashBox }: { customer: Customer | null; color: "blue" | "orange" | "emerald"; isCashBox?: boolean }) => {
     if (!customer) return null;
     const isExchange = customer.id === EXCHANGE_ACCOUNT_ID;
