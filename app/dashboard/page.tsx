@@ -1,16 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useState, useMemo } from "react";
-import { useSyncedState } from "./lib/useSyncedState"; // ✅ مسیر اصلاح شد (./lib)
+import { useSyncedState } from "./lib/useSyncedState";
 import {
   CUSTOMERS_KEY,
   TRANSACTIONS_KEY,
   HAWALAS_KEY,
   CASH_KEY,
-} from "./lib/defaultData"; // ✅ مسیر اصلاح شد (./lib)
+} from "./lib/defaultData";
 
 // ============================================================
-// تایپ‌ها و ثابت‌ها
+// تایپ‌ها و ثابت‌ها (هماهنگ‌شده با تب‌های تبادل و حواله)
 // ============================================================
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 
@@ -22,6 +22,87 @@ const labels: Record<Currency, string> = {
 const CASH_BOX_ID = "CASH_BOX";
 const EXCHANGE_ACCOUNT_ID = "EXCHANGE_ACCOUNT";
 
+interface Customer {
+  id: string;
+  name: string;
+  phone?: string;
+  tazkira?: string;
+  address?: string;
+  note?: string;
+  telegram?: string;
+  telegramChatId?: string;
+  registeredAt: string;
+  balances: Record<Currency, number>;
+}
+
+interface Transaction {
+  id: string;
+  trackingCode: string;
+  type: "exchange" | "transfer" | "convert";
+  dealType?: "buy" | "sell";
+  date: string;
+  customerId?: string;
+  customerName?: string;
+  senderId?: string;
+  senderName?: string;
+  receiverId?: string;
+  receiverName?: string;
+  fromCurrency: Currency;
+  fromAmount: number;
+  toCurrency: Currency;
+  toAmount: number;
+  rate: number;
+  rateLabel: string;
+  rateBase?: Currency;
+  commission?: number;
+  commissionCurrency?: Currency;
+  commissionPayer?: "sender" | "receiver";
+  description?: string;
+  status: "active" | "voided";
+  profit?: number;
+  profitCurrency?: Currency;
+}
+
+interface Hawala {
+  id: string;
+  number: string;
+  date: string;
+  time: string;
+  type: string;
+  destinationCountry: string;
+  province: string;
+  district: string;
+  destinationText: string;
+  currencyFrom: Currency;
+  currencyTo: Currency;
+  amountFrom: number;
+  rate: number;
+  rateLabel: string;
+  rateBase?: Currency;
+  fee: number;
+  feeCurrency: Currency;
+  feePayer: "sender" | "receiver";
+  finalAmount: number;
+  balance: string;
+  note: string;
+  profit: number;
+  profitCurrency: Currency;
+  senderId?: string;
+  senderName: string;
+  senderPhone: string;
+  senderTelegram: string;
+  receiverId?: string;
+  receiverName: string;
+  receiverTazkira: string;
+  receiverPhone: string;
+  receiverAddress: string;
+  status: "pending" | "sent" | "paid" | "cancelled";
+  paidAt?: string;
+  paidBy?: string;
+  paidAmount?: number;
+  cancelReason?: string;
+}
+
 interface CashEntry {
   id: string;
   trackingCode: string;
@@ -32,34 +113,6 @@ interface CashEntry {
   direction: "in" | "out";
   status: "active" | "voided";
   customerId?: string;
-}
-
-interface Customer {
-  id: string;
-  name: string;
-  balances: Record<Currency, number>;
-}
-
-interface Transaction {
-  id: string;
-  date: string;
-  type: "exchange" | "transfer" | "convert";
-  currency?: Currency;
-  amount?: number;
-  afnValue?: number;
-  commission?: number;
-  commissionCurrency?: Currency;
-  status: "active" | "voided";
-}
-
-interface Hawala {
-  id: string;
-  date: string;
-  amountFrom: number;
-  currencyFrom: Currency;
-  fee?: number;
-  feeCurrency?: Currency;
-  status: "pending" | "sent" | "paid" | "cancelled";
 }
 
 // ============================================================
@@ -115,25 +168,68 @@ function isToday(dateStr: string | number | undefined | null): boolean {
   return false;
 }
 
-function getLedgerBalance(customerId: string, currency: Currency, entries: CashEntry[]): number {
+// ✅ اصلاح شده: حالا transactions و hawalas را هم در محاسبه موجودی لحاظ می‌کند
+function getLedgerBalance(customerId: string, currency: Currency, entries: any[], transactions: any[] = [], hawalas: any[] = []): number {
   let balance = 0;
+  
+  // ۱. محاسبه از صندوق (entries)
   for (const entry of entries) {
     if (entry.status === "voided" || entry.currency !== currency) continue;
-    
     if (customerId === CASH_BOX_ID) {
-      balance += entry.direction === "in" ? entry.amount : -entry.amount;
-    } 
-    else if (customerId === EXCHANGE_ACCOUNT_ID) {
-      if (entry.type === "owner_deposit" || entry.type === "loan_received") balance += entry.amount;
-      else if (entry.type === "owner_withdraw" || entry.type === "loan_given") balance -= entry.amount;
-    } 
-    else {
+      if (entry.type === "exchange_account_in" || entry.type === "exchange_account_out") continue;
+      if (entry.type === "loan_given") balance -= entry.amount;
+      else if (entry.type === "loan_received") balance += entry.amount;
+      else balance += entry.direction === "in" ? entry.amount : -entry.amount;
+    } else if (customerId === EXCHANGE_ACCOUNT_ID) {
+      if (entry.type === "owner_deposit" || entry.type === "loan_received" || entry.type === "exchange_account_in") balance += entry.amount;
+      else if (entry.type === "owner_withdraw" || entry.type === "loan_given" || entry.type === "exchange_account_out") balance -= entry.amount;
+    } else {
       if (entry.customerId === customerId) {
-        if (entry.type === "customer_deposit") balance += entry.amount;
-        else if (entry.type === "customer_withdraw") balance -= entry.amount;
+        if (entry.type === "customer_deposit" || entry.type === "loan_received") balance += entry.amount;
+        else if (entry.type === "customer_withdraw" || entry.type === "loan_given") balance -= entry.amount;
       }
     }
   }
+
+  // ۲. محاسبه از معاملات و حواله‌جات (فقط برای مشتریان عادی)
+  if (customerId !== CASH_BOX_ID && customerId !== EXCHANGE_ACCOUNT_ID) {
+    for (const tx of transactions) {
+      if (tx.status === "voided") continue;
+      if (tx.type === "exchange" && tx.customerId === customerId) {
+        if (tx.fromCurrency === currency) balance -= (tx.fromAmount || 0);
+        if (tx.toCurrency === currency) balance += (tx.toAmount || 0);
+        if (tx.commission && tx.commissionCurrency === currency) balance -= (tx.commission || 0);
+      }
+      if (tx.type === "transfer") {
+        if (tx.senderId === customerId) {
+          if (tx.fromCurrency === currency) balance -= (tx.fromAmount || 0);
+          if (tx.commissionPayer === "sender" && tx.commission && tx.commissionCurrency === currency) balance -= (tx.commission || 0);
+        }
+        if (tx.receiverId === customerId) {
+          if (tx.toCurrency === currency) balance += (tx.toAmount || 0);
+          if (tx.commissionPayer === "receiver" && tx.commission && tx.commissionCurrency === currency) balance -= (tx.commission || 0);
+        }
+      }
+      if (tx.type === "convert" && tx.customerId === customerId) {
+        if (tx.fromCurrency === currency) balance -= (tx.fromAmount || 0);
+        if (tx.toCurrency === currency) balance += (tx.toAmount || 0);
+        if (tx.commission && tx.commissionCurrency === currency) balance -= (tx.commission || 0);
+      }
+    }
+
+    for (const h of hawalas) {
+      if (h.status === "cancelled") continue;
+      if (h.senderId === customerId) {
+        if (h.currencyFrom === currency) balance -= (h.amountFrom || 0);
+        if (h.feePayer === "sender" && h.feeCurrency === currency) balance -= (h.fee || 0);
+      }
+      if (h.receiverId === customerId && h.status === "paid") {
+        if (h.currencyTo === currency) balance += (h.finalAmount || 0);
+        if (h.feePayer === "receiver" && h.feeCurrency === currency) balance -= (h.fee || 0);
+      }
+    }
+  }
+  
   return balance;
 }
 
@@ -144,7 +240,6 @@ export default function DashboardPage() {
   const [mounted, setMounted] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   
-  // ✅ استفاده از useSyncedState برای هماهنگی کامل بین تمام تب‌ها
   const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
   const [entries, setEntries] = useSyncedState<CashEntry[]>(CASH_KEY, []);
   const [transactions, setTransactions] = useSyncedState<Transaction[]>(TRANSACTIONS_KEY, []);
@@ -158,6 +253,7 @@ export default function DashboardPage() {
       if (saved === "dark" || saved === "light") setTheme(saved);
     } catch {}
     setMounted(true);
+    setLastUpdated(new Date());
   }, []);
 
   // ── محاسبات مبتنی بر Ledger (منبع واحد حقیقت) ──
@@ -166,19 +262,19 @@ export default function DashboardPage() {
   const physicalCashBalances = useMemo(() => {
     const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const cur of currencies) {
-      balances[cur] = getLedgerBalance(CASH_BOX_ID, cur, entries);
+      balances[cur] = getLedgerBalance(CASH_BOX_ID, cur, entries, transactions, hawalas);
     }
     return balances;
-  }, [entries]);
+  }, [entries, transactions, hawalas]);
 
   // ۲. موجودی حساب صرافی (واریز/برداشت مالک + قرض)
   const exchangeBalance = useMemo(() => {
     const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const cur of currencies) {
-      balances[cur] = getLedgerBalance(EXCHANGE_ACCOUNT_ID, cur, entries);
+      balances[cur] = getLedgerBalance(EXCHANGE_ACCOUNT_ID, cur, entries, transactions, hawalas);
     }
     return balances;
-  }, [entries]);
+  }, [entries, transactions, hawalas]);
 
   // ۳. مجموع طلب مشتریان (فقط مقادیر مثبت)
   const customerDeposits = useMemo(() => {
@@ -186,12 +282,12 @@ export default function DashboardPage() {
     for (const c of customers) {
       if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) continue;
       for (const cur of currencies) {
-        const bal = getLedgerBalance(c.id, cur, entries);
+        const bal = getLedgerBalance(c.id, cur, entries, transactions, hawalas);
         if (bal > 0) totals[cur] += bal;
       }
     }
     return totals;
-  }, [customers, entries]);
+  }, [customers, entries, transactions, hawalas]);
 
   // ۴. مجموع بدهی مشتریان (فقط مقادیر منفی)
   const customerDebts = useMemo(() => {
@@ -199,12 +295,12 @@ export default function DashboardPage() {
     for (const c of customers) {
       if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) continue;
       for (const cur of currencies) {
-        const bal = getLedgerBalance(c.id, cur, entries);
+        const bal = getLedgerBalance(c.id, cur, entries, transactions, hawalas);
         if (bal < 0) totals[cur] += Math.abs(bal);
       }
     }
     return totals;
-  }, [customers, entries]);
+  }, [customers, entries, transactions, hawalas]);
 
   // ۵. کارمزدها
   const totalCommissionEarned = useMemo(() => {
@@ -252,7 +348,8 @@ export default function DashboardPage() {
       if (tx.status === "voided") continue;
       if (isToday(tx.date)) {
         tradeCount++;
-        tradeAmountSum += tx.amount || 0;
+        // ✅ اصلاح شده: استفاده از fromAmount به جای amount
+        tradeAmountSum += tx.fromAmount || 0;
         if (tx.commission && tx.commission > 0) {
           tradeCommissionSum += tx.commission;
         }
@@ -273,13 +370,13 @@ export default function DashboardPage() {
     return { tradeCount, hawalaCount, tradeAmountSum, hawalaAmountSum, tradeCommissionSum, hawalaFeeSum };
   }, [transactions, hawalas]);
 
-  // ۷. تعداد مشتریان بدهکار (بر اساس Ledger)
+  // ۷. تعداد مشتریان بدهکار (بر اساس Ledger جامع)
   const debtorsCount = useMemo(() => {
     return customers.filter(c => {
       if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) return false;
-      return currencies.some(cur => getLedgerBalance(c.id, cur, entries) < 0);
+      return currencies.some(cur => getLedgerBalance(c.id, cur, entries, transactions, hawalas) < 0);
     }).length;
-  }, [customers, entries]);
+  }, [customers, entries, transactions, hawalas]);
 
   // ── استایل‌ها ──
   const dk = theme === "dark";
