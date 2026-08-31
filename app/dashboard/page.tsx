@@ -10,7 +10,7 @@ import {
 } from "./lib/defaultData";
 
 // ============================================================
-// تایپ‌ها و ثابت‌ها (هماهنگ‌شده با تمام تب‌ها)
+// تایپ‌ها و ثابت‌ها
 // ============================================================
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 
@@ -168,11 +168,10 @@ function isToday(dateStr: string | number | undefined | null): boolean {
   return false;
 }
 
-// ✅ تابع جامع محاسبه موجودی (هماهنگ با تمام تب‌ها)
+// ✅ تابع جامع محاسبه موجودی
 function getLedgerBalance(customerId: string, currency: Currency, entries: any[], transactions: any[] = []): number {
   let balance = 0;
   
-  // ۱. محاسبه از صندوق (entries)
   for (const entry of entries) {
     if (entry.status === "voided" || entry.currency !== currency) continue;
     if (customerId === CASH_BOX_ID) {
@@ -197,7 +196,6 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: any[]
     }
   }
 
-  // ۲. محاسبه از معاملات (فقط برای مشتریان عادی)
   if (customerId !== CASH_BOX_ID && customerId !== EXCHANGE_ACCOUNT_ID) {
     for (const tx of transactions) {
       if (tx.status === "voided") continue;
@@ -250,24 +248,9 @@ export default function DashboardPage() {
     setLastUpdated(new Date());
   }, []);
 
-  // ── محاسبات مبتنی بر Ledger (منبع واحد حقیقت) ──
+  // ── محاسبات مبتنی بر Ledger ──
   
-  // ✅ ۱. موجودی فیزیکی صندوق (مجموع موجودی خالص مشتریان + موجودی حساب صرافی)
-  const physicalCashBalances = useMemo(() => {
-    const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-    for (const cur of currencies) {
-      let netCustomerBalance = 0;
-      for (const c of customers) {
-        if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) continue;
-        netCustomerBalance += getLedgerBalance(c.id, cur, entries, transactions);
-      }
-      const exchangeBal = getLedgerBalance(EXCHANGE_ACCOUNT_ID, cur, entries, transactions);
-      balances[cur] = netCustomerBalance + exchangeBal;
-    }
-    return balances;
-  }, [customers, entries, transactions]);
-
-  // ۲. موجودی حساب صرافی (واریز/برداشت مالک + قرض)
+  // ۱. موجودی حساب صرافی (واریز/برداشت مالک + قرض)
   const exchangeBalance = useMemo(() => {
     const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const cur of currencies) {
@@ -276,7 +259,7 @@ export default function DashboardPage() {
     return balances;
   }, [entries, transactions]);
 
-  // ۳. مجموع طلب مشتریان (فقط مقادیر مثبت)
+  // ۲. مجموع طلب مشتریان (فقط مقادیر مثبت)
   const customerDeposits = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
@@ -289,7 +272,7 @@ export default function DashboardPage() {
     return totals;
   }, [customers, entries, transactions]);
 
-  // ۴. مجموع بدهی مشتریان (فقط مقادیر منفی)
+  // ۳. مجموع بدهی مشتریان (فقط مقادیر منفی)
   const customerDebts = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
@@ -301,6 +284,16 @@ export default function DashboardPage() {
     }
     return totals;
   }, [customers, entries, transactions]);
+
+  // ✅ ۴. موجودی فیزیکی صندوق = حساب صرافی + طلب مشتریان (فقط مثبت)
+  // نکته کلیدی: بدهی مشتریان از حساب صرافی کم می‌شود، نه از صندوق فیزیکی
+  const physicalCashBalances = useMemo(() => {
+    const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+    for (const cur of currencies) {
+      balances[cur] = customerDeposits[cur] + exchangeBalance[cur];
+    }
+    return balances;
+  }, [customerDeposits, exchangeBalance]);
 
   // ۵. کارمزدها
   const totalCommissionEarned = useMemo(() => {
@@ -369,7 +362,7 @@ export default function DashboardPage() {
     return { tradeCount, hawalaCount, tradeAmountSum, hawalaAmountSum, tradeCommissionSum, hawalaFeeSum };
   }, [transactions, hawalas]);
 
-  // ۷. تعداد مشتریان بدهکار (بر اساس Ledger جامع)
+  // ۷. تعداد مشتریان بدهکار
   const debtorsCount = useMemo(() => {
     return customers.filter(c => {
       if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) return false;
@@ -540,7 +533,7 @@ export default function DashboardPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <b className={`block text-base md:text-lg font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}>💰 موجودی فیزیکی صندوق</b>
-                  <span className={`block text-[11px] md:text-xs font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>مجموع موجودی خالص مشتریان + موجودی حساب صرافی</span>
+                  <span className={`block text-[11px] md:text-xs font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>حساب صرافی + طلب مشتریان</span>
                 </div>
               </div>
               
@@ -571,7 +564,7 @@ export default function DashboardPage() {
                   <span className="text-xl">💳</span>
                 </span>
                 <div className="min-w-0">
-                  <b className={`block text-[13px] md:text-[14px] font-black leading-tight ${dk ? "text-sky-300" : "text-sky-700"}`}>💳 موجودی مشتریان</b>
+                  <b className={`block text-[13px] md:text-[14px] font-black leading-tight ${dk ? "text-sky-300" : "text-sky-700"}`}>💳 طلب مشتریان</b>
                   <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${subText}`}>پول مشتری نزد صرافی</span>
                 </div>
               </div>
@@ -601,7 +594,7 @@ export default function DashboardPage() {
                 </span>
                 <div className="min-w-0">
                   <b className={`block text-[13px] md:text-[14px] font-black leading-tight ${dk ? "text-rose-300" : "text-rose-700"}`}>🔻 بدهی مشتریان</b>
-                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${subText}`}>صرافی قرض داده</span>
+                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${subText}`}>از حساب صرافی کسر شده</span>
                 </div>
               </div>
               <div className="relative space-y-1.5">
@@ -630,7 +623,7 @@ export default function DashboardPage() {
                 </span>
                 <div className="min-w-0">
                   <b className={`block text-[13px] md:text-[14px] font-black leading-tight ${dk ? "text-violet-300" : "text-violet-700"}`}>💼 موجودی حساب صرافی</b>
-                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${subText}`}>واریز/برداشت مالک + قرض</span>
+                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${subText}`}>سرمایه مالک (پس از کسر بدهی)</span>
                 </div>
               </div>
               <div className="relative space-y-1.5">
@@ -650,7 +643,7 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* ۴. وضعیت مشتریان (دو قسمتی) */}
+            {/* ۴. وضعیت مشتریان */}
             <div className={`group relative overflow-hidden rounded-2xl border p-4 md:p-5 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-cyan-400/25 bg-gradient-to-br from-cyan-900/30 to-slate-900/50" : "border-cyan-200 bg-gradient-to-br from-cyan-50 to-white"}`}>
               <div className={`absolute top-0 right-0 h-24 w-24 rounded-full blur-2xl opacity-10 ${dk ? "bg-cyan-400" : "bg-cyan-300"}`} />
               <div className="relative flex items-center gap-3 mb-3">
@@ -698,7 +691,7 @@ export default function DashboardPage() {
               </span>
               <span className="text-slate-400">+</span>
               <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${dk ? "bg-sky-400/10 text-sky-300 ring-1 ring-sky-400/30" : "bg-sky-50 text-sky-700 ring-1 ring-sky-200"}`}>
-                💳 موجودی خالص مشتریان
+                💳 طلب مشتریان
               </span>
             </div>
           </div>
