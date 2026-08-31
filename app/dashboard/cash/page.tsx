@@ -61,11 +61,8 @@ function formatShamsiDate(d: Date) { const s = shamsiParts(d); return `${s.year}
 function shortDateLabel(s: string) { try { const d = new Date(s); return Number.isNaN(d.getTime()) ? "-" : formatShamsiDate(d); } catch (e) { return "-"; } }
 function timeLabel(s: string) { try { const d = new Date(s); if (Number.isNaN(d.getTime())) return "-"; const pad = (n: number) => String(n).padStart(2, "0"); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; } catch (e) { return "-"; } }
 
-// ✅ تابع اصلاح‌شده - هم entries و هم transactions را محاسبه می‌کند
 function getLedgerBalance(customerId: string, currency: Currency, entries: CashEntry[], transactions: Transaction[] = []): number {
   let balance = 0;
-  
-  // ۱. محاسبه از صندوق (entries)
   for (const entry of entries) {
     if (entry.status === "voided" || entry.currency !== currency) continue;
     if (customerId === CASH_BOX_ID) {
@@ -90,17 +87,14 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: CashE
     }
   }
   
-  // ۲. محاسبه از معاملات (transactions) - برای مشتریان عادی
   if (customerId !== CASH_BOX_ID && customerId !== EXCHANGE_ACCOUNT_ID) {
     for (const tx of transactions) {
       if (tx.status === "voided") continue;
-      
       if (tx.type === "exchange" && tx.customerId === customerId) {
         if (tx.fromCurrency === currency) balance -= tx.fromAmount;
         if (tx.toCurrency === currency) balance += tx.toAmount;
         if (tx.commission && tx.commissionCurrency === currency) balance -= tx.commission;
       }
-      
       if (tx.type === "transfer") {
         if (tx.senderId === customerId) {
           if (tx.fromCurrency === currency) balance -= tx.fromAmount;
@@ -111,7 +105,6 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: CashE
           if (tx.commissionPayer === "receiver" && tx.commission && tx.commissionCurrency === currency) balance -= tx.commission;
         }
       }
-      
       if (tx.type === "convert" && tx.customerId === customerId) {
         if (tx.fromCurrency === currency) balance -= tx.fromAmount;
         if (tx.toCurrency === currency) balance += tx.toAmount;
@@ -119,14 +112,7 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: CashE
       }
     }
   }
-  
   return balance;
-}
-
-function computeCashBalances(entries: CashEntry[]): Record<Currency, number> {
-  const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-  for (const cur of currencies) balances[cur] = getLedgerBalance(CASH_BOX_ID, cur, entries, []);
-  return balances;
 }
 
 function recomputeCashBalances(entries: CashEntry[]): CashEntry[] {
@@ -367,9 +353,9 @@ export default function CashPage() {
     return () => document.removeEventListener("mousedown", handler);
   }, [openActionId]);
 
-  const physicalCashBalances = useMemo(() => computeCashBalances(entries), [entries]);
-
-  // ✅ اصلاح شده - transactions هم اضافه شد
+  // ✅ اصلاح شده: ترتیب محاسبات دقیقاً مطابق داشبورد برای تضمین یکسانی اعداد
+  
+  // ۱. مجموع طلب مشتریان (فقط مقادیر مثبت)
   const customerDeposits = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
@@ -382,7 +368,7 @@ export default function CashPage() {
     return totals;
   }, [customers, entries, transactions]);
 
-  // ✅ اصلاح شده - transactions هم اضافه شد
+  // ۲. مجموع بدهی مشتریان (فقط مقادیر منفی)
   const customerDebts = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
@@ -395,6 +381,7 @@ export default function CashPage() {
     return totals;
   }, [customers, entries, transactions]);
 
+  // ۳. موجودی حساب صرافی (واریز/برداشت مالک - بدهی مشتریان)
   const exchangeBalance = useMemo(() => {
     const bal: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const cur of currencies) {
@@ -408,6 +395,15 @@ export default function CashPage() {
     }
     return bal;
   }, [entries, customerDebts]);
+
+  // ✅ ۴. موجودی فیزیکی صندوق = حساب صرافی + طلب مشتریان (دقیقاً مطابق فرمول داشبورد)
+  const physicalCashBalances = useMemo(() => {
+    const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+    for (const cur of currencies) {
+      balances[cur] = customerDeposits[cur] + exchangeBalance[cur];
+    }
+    return balances;
+  }, [customerDeposits, exchangeBalance]);
 
   const totalCommissionEarned = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
@@ -600,7 +596,7 @@ export default function CashPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <b className={`block text-sm md:text-base font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}>💰 موجودی فیزیکی صندوق</b>
-                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>مجموع خالص تمام ورودی‌ها و خروجی‌ها (شامل قرض)</span>
+                  <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>حساب صرافی + طلب مشتریان</span>
                 </div>
               </div>
               <div className="relative grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-3">
@@ -747,7 +743,6 @@ export default function CashPage() {
                         <div className={`absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
                           {filteredCustomerList.length === 0 ? (<div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>) : (
                             filteredCustomerList.map((c) => {
-                              // ✅ اصلاح شده - transactions هم اضافه شد
                               const liveBal = getLedgerBalance(c.id, form.currency, entries, transactions);
                               return (
                                 <button key={c.id} type="button" onClick={() => { setField("customerId", c.id); setField("customerName", c.name); setCustomerFilter(""); setShowCustomerList(false); }} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-teal-400/15 hover:text-teal-300" : "text-slate-700 hover:bg-teal-50 hover:text-teal-600"}`}>
@@ -775,7 +770,6 @@ export default function CashPage() {
                       </div>
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
                         {currencies.map(cur => {
-                          // ✅ اصلاح شده - transactions هم اضافه شد
                           const bal = getLedgerBalance(selectedCustomer.id, cur, entries, transactions);
                           const isDebt = bal < 0; const isCredit = bal > 0; const isSel = form.currency === cur;
                           return (
