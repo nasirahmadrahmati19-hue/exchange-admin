@@ -168,9 +168,7 @@ function isToday(dateStr: string | number | undefined | null): boolean {
   return false;
 }
 
-// ✅ اصلاح شده: دقیقاً منطبق با تابع getLedgerBalance تب صندوق
-// حذف حلقه hawalas برای مشتریان عادی جلوگیری از شمارش دوگانه (Double Counting) می‌کند،
-// زیرا syncCashEntriesForHawala از قبل اثر حواله را در entries ثبت کرده است.
+// ✅ تابع جامع محاسبه موجودی (هماهنگ با تمام تب‌ها)
 function getLedgerBalance(customerId: string, currency: Currency, entries: any[], transactions: any[] = []): number {
   let balance = 0;
   
@@ -200,8 +198,6 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: any[]
   }
 
   // ۲. محاسبه از معاملات (فقط برای مشتریان عادی)
-  // نکته حیاتی: توابع syncCashEntriesForExchange/Transfer/Convert فقط ردیف‌های حساب صرافی را به entries اضافه می‌کنند.
-  // بنابراین برای محاسبه موجودی مشتری عادی، باید آرایه transactions را هم بررسی کنیم.
   if (customerId !== CASH_BOX_ID && customerId !== EXCHANGE_ACCOUNT_ID) {
     for (const tx of transactions) {
       if (tx.status === "voided") continue;
@@ -256,14 +252,20 @@ export default function DashboardPage() {
 
   // ── محاسبات مبتنی بر Ledger (منبع واحد حقیقت) ──
   
-  // ۱. موجودی فیزیکی صندوق
+  // ✅ ۱. موجودی فیزیکی صندوق (مجموع موجودی خالص مشتریان + موجودی حساب صرافی)
   const physicalCashBalances = useMemo(() => {
     const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const cur of currencies) {
-      balances[cur] = getLedgerBalance(CASH_BOX_ID, cur, entries, transactions);
+      let netCustomerBalance = 0;
+      for (const c of customers) {
+        if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) continue;
+        netCustomerBalance += getLedgerBalance(c.id, cur, entries, transactions);
+      }
+      const exchangeBal = getLedgerBalance(EXCHANGE_ACCOUNT_ID, cur, entries, transactions);
+      balances[cur] = netCustomerBalance + exchangeBal;
     }
     return balances;
-  }, [entries, transactions]);
+  }, [customers, entries, transactions]);
 
   // ۲. موجودی حساب صرافی (واریز/برداشت مالک + قرض)
   const exchangeBalance = useMemo(() => {
@@ -346,7 +348,6 @@ export default function DashboardPage() {
       if (tx.status === "voided") continue;
       if (isToday(tx.date)) {
         tradeCount++;
-        // ✅ اصلاح شده: استفاده از fromAmount به جای amount
         tradeAmountSum += tx.fromAmount || 0;
         if (tx.commission && tx.commission > 0) {
           tradeCommissionSum += tx.commission;
@@ -539,7 +540,7 @@ export default function DashboardPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <b className={`block text-base md:text-lg font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}>💰 موجودی فیزیکی صندوق</b>
-                  <span className={`block text-[11px] md:text-xs font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>محاسبه‌شده مستقیم از دفتر کل (Ledger)</span>
+                  <span className={`block text-[11px] md:text-xs font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>مجموع موجودی خالص مشتریان + موجودی حساب صرافی</span>
                 </div>
               </div>
               
@@ -697,11 +698,7 @@ export default function DashboardPage() {
               </span>
               <span className="text-slate-400">+</span>
               <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${dk ? "bg-sky-400/10 text-sky-300 ring-1 ring-sky-400/30" : "bg-sky-50 text-sky-700 ring-1 ring-sky-200"}`}>
-                💳 موجودی مشتریان
-              </span>
-              <span className="text-rose-500 font-black">−</span>
-              <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${dk ? "bg-rose-400/10 text-rose-300 ring-1 ring-rose-400/30" : "bg-rose-50 text-rose-700 ring-1 ring-rose-200"}`}>
-                📉 بدهی مشتریان
+                💳 موجودی خالص مشتریان
               </span>
             </div>
           </div>
