@@ -168,7 +168,7 @@ function isToday(dateStr: string | number | undefined | null): boolean {
   return false;
 }
 
-// ✅ تابع جامع محاسبه موجودی
+// ✅ تابع جامع محاسبه موجودی (برای مشتریان عادی و صندوق)
 function getLedgerBalance(customerId: string, currency: Currency, entries: any[], transactions: any[] = []): number {
   let balance = 0;
   
@@ -250,16 +250,7 @@ export default function DashboardPage() {
 
   // ── محاسبات مبتنی بر Ledger ──
   
-  // ۱. موجودی حساب صرافی (واریز/برداشت مالک + قرض)
-  const exchangeBalance = useMemo(() => {
-    const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-    for (const cur of currencies) {
-      balances[cur] = getLedgerBalance(EXCHANGE_ACCOUNT_ID, cur, entries, transactions);
-    }
-    return balances;
-  }, [entries, transactions]);
-
-  // ۲. مجموع طلب مشتریان (فقط مقادیر مثبت)
+  // ۱. مجموع طلب مشتریان (فقط مقادیر مثبت)
   const customerDeposits = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
@@ -272,7 +263,7 @@ export default function DashboardPage() {
     return totals;
   }, [customers, entries, transactions]);
 
-  // ۳. مجموع بدهی مشتریان (فقط مقادیر منفی)
+  // ۲. مجموع بدهی مشتریان (فقط مقادیر منفی)
   const customerDebts = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
@@ -285,8 +276,23 @@ export default function DashboardPage() {
     return totals;
   }, [customers, entries, transactions]);
 
-  // ✅ ۴. موجودی فیزیکی صندوق = حساب صرافی + طلب مشتریان (فقط مثبت)
-  // نکته کلیدی: بدهی مشتریان از حساب صرافی کم می‌شود، نه از صندوق فیزیکی
+  // ✅ ۳. موجودی حساب صرافی = واریز/برداشت مالک − بدهی مشتریان
+  // این منطق دقیقاً مطابق با تب صندوق است
+  const exchangeBalance = useMemo(() => {
+    const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+    for (const cur of currencies) {
+      let ownerBalance = 0;
+      for (const entry of entries) {
+        if (entry.status === "voided" || entry.currency !== cur) continue;
+        if (entry.type === "owner_deposit") ownerBalance += entry.amount;
+        else if (entry.type === "owner_withdraw") ownerBalance -= entry.amount;
+      }
+      balances[cur] = ownerBalance - (customerDebts[cur] || 0);
+    }
+    return balances;
+  }, [entries, customerDebts]);
+
+  // ✅ ۴. موجودی فیزیکی صندوق = حساب صرافی + طلب مشتریان
   const physicalCashBalances = useMemo(() => {
     const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const cur of currencies) {
