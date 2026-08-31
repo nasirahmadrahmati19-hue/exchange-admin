@@ -18,7 +18,7 @@ type Settings = {
   telegram: {
     enabled: boolean;
     botToken: string;
-    chatId: string;
+    chatIds: string[]; // ✅ تغییر به آرایه برای پشتیبانی از لیست چندگانه
     notifyNewHawala: boolean;
     notifySettlement: boolean;
     notifyVoid: boolean;
@@ -36,7 +36,7 @@ const defaultSettings: Settings = {
   telegram: {
     enabled: false,
     botToken: "",
-    chatId: "",
+    chatIds: [], // ✅ مقدار پیش‌فرض آرایه
     notifyNewHawala: true,
     notifySettlement: true,
     notifyVoid: true,
@@ -50,8 +50,30 @@ function loadSettings(): Settings {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (!raw) return defaultSettings;
     const parsed = JSON.parse(raw);
-    return { ...defaultSettings, ...parsed, telegram: { ...defaultSettings.telegram, ...parsed.telegram } };
-  } catch { return defaultSettings; }
+    
+    // ✅ سیستم مهاجرت خودکار: اگر نسخه قدیمی (chatId) وجود داشت، آن را به آرایه تبدیل می‌کند
+    let migratedChatIds: string[] = [];
+    if (parsed.telegram?.chatIds && Array.isArray(parsed.telegram.chatIds)) {
+      migratedChatIds = parsed.telegram.chatIds;
+    } else if (parsed.telegram?.chatId) {
+      migratedChatIds = String(parsed.telegram.chatId)
+        .split(/[\n,]+/)
+        .map((id: string) => id.trim())
+        .filter(Boolean);
+    }
+
+    return { 
+      ...defaultSettings, 
+      ...parsed, 
+      telegram: { 
+        ...defaultSettings.telegram, 
+        ...parsed.telegram,
+        chatIds: migratedChatIds // ✅ استفاده از لیست مهاجرت‌یافته
+      } 
+    };
+  } catch { 
+    return defaultSettings; 
+  }
 }
 
 function saveSettings(s: Settings) {
@@ -72,6 +94,7 @@ const Ic = ({ n, className = "h-5 w-5" }: { n: string; className?: string }) => 
     download: "M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 16.5V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5",
     upload: "M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 16.5V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3",
     chevron: "m19.5 8.25-7.5 7.5-7.5-7.5",
+    plus: "M12 4.5v15m7.5-7.5h-15",
   };
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true"><path d={paths[n] || ""} /></svg>;
 };
@@ -200,7 +223,7 @@ export default function SettingsDrawer() {
           </div>
           <Ic n="chevron" className={`h-4 w-4 transition-transform duration-300 ${subText} ${isOpen ? "rotate-180" : ""}`} />
         </button>
-        <div className={`transition-all duration-300 overflow-hidden ${isOpen ? "max-h-[600px] opacity-100" : "max-h-0 opacity-0"}`}>
+        <div className={`transition-all duration-300 overflow-hidden ${isOpen ? "max-h-[800px] opacity-100" : "max-h-0 opacity-0"}`}>
           <div className={`px-4 pb-4 pt-2 ${dk ? "border-t border-slate-700" : "border-t border-slate-100"}`}>
             {children}
           </div>
@@ -356,9 +379,49 @@ export default function SettingsDrawer() {
                   {fld("توکن بات (Bot Token)", (
                     <input dir="ltr" value={settings.telegram.botToken} onChange={e => updateTelegram({ botToken: e.target.value })} placeholder="123456789:ABCdefGHI..." className={`${uiInput} text-left font-mono text-xs`} />
                   ))}
-                  {fld("چت آی‌دی (Chat ID)", (
-                    <input dir="ltr" value={settings.telegram.chatId} onChange={e => updateTelegram({ chatId: e.target.value })} placeholder="-1001234567890" className={`${uiInput} text-left font-mono text-xs`} />
-                  ))}
+                  
+                  {/* ✅ لیست مدیریت چت آی‌دی‌ها */}
+                  <div className="space-y-2">
+                    <label className={uiLabel}>لیست چت آی‌دی‌ها (Chat IDs)</label>
+                    <div className="space-y-2">
+                      {settings.telegram.chatIds.map((id, idx) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <input 
+                            dir="ltr" 
+                            value={id} 
+                            onChange={e => {
+                              const newIds = [...settings.telegram.chatIds];
+                              newIds[idx] = e.target.value;
+                              updateTelegram({ chatIds: newIds });
+                            }} 
+                            placeholder="-1001234567890" 
+                            className={`${uiInput} text-left font-mono text-xs flex-1`} 
+                          />
+                          <button 
+                            onClick={() => {
+                              const newIds = settings.telegram.chatIds.filter((_, i) => i !== idx);
+                              updateTelegram({ chatIds: newIds });
+                            }}
+                            className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 transition-colors"
+                            title="حذف این چت آی‌دی"
+                          >
+                            <Ic n="x" className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
+                      <button 
+                        onClick={() => updateTelegram({ chatIds: [...settings.telegram.chatIds, ""] })}
+                        className={`flex w-full items-center justify-center gap-2 rounded-xl border border-dashed py-2.5 text-xs font-bold transition-colors ${dk ? "border-slate-600 text-slate-400 hover:border-emerald-400 hover:text-emerald-300" : "border-slate-300 text-slate-500 hover:border-emerald-500 hover:text-emerald-600"}`}
+                      >
+                        <Ic n="plus" className="h-4 w-4" />
+                        افزودن چت آی‌دی جدید
+                      </button>
+                    </div>
+                    <p className={`text-[10px] leading-relaxed ${subText}`}>
+                      💡 هر مشتری که ربات را استارت می‌کند، چت آی‌دی او را اینجا به عنوان یک سطر جدید اضافه کنید. این لیست به صورت آرایه در حافظه مرورگر ذخیره می‌شود و دیگر به صورت تصادفی پاک نخواهد شد.
+                    </p>
+                  </div>
+
                   <div className={`rounded-xl border p-3 space-y-3 ${dk ? "border-slate-600" : "border-slate-200"}`}>
                     <p className={`text-xs font-black ${heading}`}>اعلان‌ها:</p>
                     <Toggle enabled={settings.telegram.notifyNewHawala} onChange={v => updateTelegram({ notifyNewHawala: v })} label="حواله جدید" />
