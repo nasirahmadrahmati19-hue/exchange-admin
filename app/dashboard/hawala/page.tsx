@@ -55,8 +55,11 @@ const statusColors: Record<HawalaStatus, { light: string; dark: string }> = { pe
 const formatDestination = (province: string, district: string) => province === "هرات" ? `${province} — ${district}` : province;
 const sortByHawalaNumber = (items: Hawala[], order: "asc" | "desc") => [...items].sort((a, b) => { const an = getTrackingNumberValue(a.number), bn = getTrackingNumberValue(b.number); return order === "asc" ? an - bn : bn - an; });
 
-function getLedgerBalance(customerId: string, currency: Currency, entries: any[]): number {
+// ✅ اصلاح شده: حالا transactions و hawalas را هم در محاسبه موجودی لحاظ می‌کند
+function getLedgerBalance(customerId: string, currency: Currency, entries: any[], transactions: any[] = [], hawalas: any[] = []): number {
   let balance = 0;
+  
+  // ۱. محاسبه از صندوق (entries)
   for (const entry of entries) {
     if (entry.status === "voided" || entry.currency !== currency) continue;
     if (customerId === CASH_BOX_ID) {
@@ -80,18 +83,58 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: any[]
       }
     }
   }
+
+  // ۲. محاسبه از معاملات و حواله‌جات (فقط برای مشتریان عادی)
+  if (customerId !== CASH_BOX_ID && customerId !== EXCHANGE_ACCOUNT_ID) {
+    for (const tx of transactions) {
+      if (tx.status === "voided") continue;
+      if (tx.type === "exchange" && tx.customerId === customerId) {
+        if (tx.fromCurrency === currency) balance -= tx.fromAmount;
+        if (tx.toCurrency === currency) balance += tx.toAmount;
+        if (tx.commission && tx.commissionCurrency === currency) balance -= tx.commission;
+      }
+      if (tx.type === "transfer") {
+        if (tx.senderId === customerId) {
+          if (tx.fromCurrency === currency) balance -= tx.fromAmount;
+          if (tx.commissionPayer === "sender" && tx.commission && tx.commissionCurrency === currency) balance -= tx.commission;
+        }
+        if (tx.receiverId === customerId) {
+          if (tx.toCurrency === currency) balance += tx.toAmount;
+          if (tx.commissionPayer === "receiver" && tx.commission && tx.commissionCurrency === currency) balance -= tx.commission;
+        }
+      }
+      if (tx.type === "convert" && tx.customerId === customerId) {
+        if (tx.fromCurrency === currency) balance -= tx.fromAmount;
+        if (tx.toCurrency === currency) balance += tx.toAmount;
+        if (tx.commission && tx.commissionCurrency === currency) balance -= tx.commission;
+      }
+    }
+
+    for (const h of hawalas) {
+      if (h.status === "cancelled") continue;
+      if (h.senderId === customerId) {
+        if (h.currencyFrom === currency) balance -= h.amountFrom;
+        if (h.feePayer === "sender" && h.feeCurrency === currency) balance -= h.fee;
+      }
+      if (h.receiverId === customerId && h.status === "paid") {
+        if (h.currencyTo === currency) balance += h.finalAmount;
+        if (h.feePayer === "receiver" && h.feeCurrency === currency) balance -= h.fee;
+      }
+    }
+  }
+  
   return balance;
 }
 
 function computeCashBalances(entries: any[]): Record<Currency, number> {
   const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-  for (const cur of currencies) balances[cur] = getLedgerBalance(CASH_BOX_ID, cur, entries);
+  for (const cur of currencies) balances[cur] = getLedgerBalance(CASH_BOX_ID, cur, entries, [], []);
   return balances;
 }
 
 function computeExchangeBalances(entries: any[]): Record<Currency, number> {
   const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-  for (const cur of currencies) balances[cur] = getLedgerBalance(EXCHANGE_ACCOUNT_ID, cur, entries);
+  for (const cur of currencies) balances[cur] = getLedgerBalance(EXCHANGE_ACCOUNT_ID, cur, entries, [], []);
   return balances;
 }
 
@@ -155,12 +198,13 @@ function syncCashEntriesForHawalaSettlement(action: "add" | "remove", h: Hawala,
   return recomputeCashBalances(entries);
 }
 
-function getUpdatedCustomerBalances(currentCustomers: Customer[], latestEntries: any[]): Customer[] {
+// ✅ اصلاح شده: حالا آرایه‌های transactions و hawalas را هم دریافت می‌کند
+function getUpdatedCustomerBalances(currentCustomers: Customer[], latestEntries: any[], currentTransactions: any[], currentHawalas: any[]): Customer[] {
   return currentCustomers.map(c => {
     if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) return c;
-    const newBalances = { ...c.balances };
+    const newBalances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const cur of currencies) {
-      newBalances[cur] = getLedgerBalance(c.id, cur, latestEntries);
+      newBalances[cur] = getLedgerBalance(c.id, cur, latestEntries, currentTransactions, currentHawalas);
     }
     return { ...c, balances: newBalances };
   });
@@ -318,7 +362,6 @@ const Ic = memo(function Ic({ n, className = "h-5 w-5" }: { n: IconName; classNa
 export default function HawalaPage() {
   const [mounted, setMounted] = useState(false);
   
-  // ✅ استفاده از useSyncedState برای هماهنگی کامل بین تمام تب‌ها
   const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
   const [transactions, setTransactions] = useSyncedState<any[]>(TRANSACTIONS_KEY, []);
   const [hawalas, setHawalas] = useSyncedState<Hawala[]>(HAWALAS_KEY, []);
@@ -354,9 +397,7 @@ export default function HawalaPage() {
   const dk = theme === "dark";
 
   useEffect(() => { try { initTrackingSystem(); } catch (err) { console.error("Load error:", err); } setMounted(true); }, []);
-  
   useEffect(() => { try { localStorage.setItem("hawalaLastNames", JSON.stringify(lastNames)); } catch {} }, [lastNames]);
-  
   useEffect(() => { if (!openActionId) return; const handler = (e: MouseEvent) => { const target = e.target as HTMLElement; if (!target.closest('.action-dropdown')) setOpenActionId(null); }; document.addEventListener("mousedown", handler); return () => document.removeEventListener("mousedown", handler); }, [openActionId]);
   
   const [now, setNow] = useState<Date | null>(null);
@@ -453,7 +494,9 @@ export default function HawalaPage() {
       const newEntries = syncCashEntriesForHawala("add", newHawala, undefined, cashEntries);
       setCashEntries(newEntries);
       
-      const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries);
+      // ✅ اصلاح شده: آرایه به‌روز شده حواله‌ها به تابع محاسبه موجودی پاس داده می‌شود
+      const updatedHawalas = [newHawala, ...hawalas];
+      const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries, transactions, updatedHawalas);
       setCustomers(updatedCustomers);
       
       setLastNames({ senderName, receiverName });
@@ -462,7 +505,7 @@ export default function HawalaPage() {
       await sendHawalaReceipts({ hawala: newHawala, action: "register", customers: updatedCustomers });
       showToast("✅ حواله ثبت شد، حساب‌ها به‌روز و رسید ارسال شد");
     } catch (err) { console.error("Register error:", err); showToast("خطا در ثبت حواله"); }
-  }, [form, rateMode, rateValue, afnForeign, directCounter, directBaseValue, feeValue, amountFrom, destinationText, customers, cashEntries, showToast, finalAmount, editingId, hawalas]);
+  }, [form, rateMode, rateValue, afnForeign, directCounter, directBaseValue, feeValue, amountFrom, destinationText, customers, cashEntries, showToast, finalAmount, editingId, hawalas, transactions]);
 
   const openDetails = useCallback((item: Hawala) => { setDetailTarget(item); setOpenActionId(null); }, []);
 
@@ -495,14 +538,16 @@ export default function HawalaPage() {
       const newEntries = syncCashEntriesForHawalaSettlement("add", paidHawala, cashEntries);
       setCashEntries(newEntries);
       
-      const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries);
+      // ✅ اصلاح شده: آرایه به‌روز شده حواله‌ها به تابع محاسبه موجودی پاس داده می‌شود
+      const updatedHawalas = hawalas.map(item => item.id === settleTarget.id ? paidHawala : item);
+      const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries, transactions, updatedHawalas);
       setCustomers(updatedCustomers);
       
       await sendHawalaReceipts({ hawala: paidHawala, action: "settle", customers: updatedCustomers });
       setSettleTarget(null);
       showToast("✅ حواله تسویه شد، حساب‌ها به‌روز و رسید ارسال شد");
     } catch (err) { console.error("Settle error:", err); showToast("خطا در تسویه حواله"); }
-  }, [settleTarget, paidBy, paidAmount, customers, cashEntries, showToast]);
+  }, [settleTarget, paidBy, paidAmount, customers, cashEntries, showToast, hawalas, transactions]);
 
   const openCancel = useCallback((item: Hawala) => { setCancelTarget(item); setCancelReason(""); }, []);
   const confirmCancel = useCallback(async () => {
@@ -513,31 +558,32 @@ export default function HawalaPage() {
       const newEntries2 = syncCashEntriesForHawalaSettlement("remove", cancelTarget, newEntries1);
       setCashEntries(newEntries2);
       
-      const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries2);
-      
+      // ✅ اصلاح شده: آرایه به‌روز شده حواله‌ها به تابع محاسبه موجودی پاس داده می‌شود
       const updatedHawala = { ...cancelTarget, status: "cancelled" as HawalaStatus, cancelReason };
-      setHawalas(prev => prev.map(item => item.id === cancelTarget.id ? updatedHawala : item));
+      const updatedHawalas = hawalas.map(item => item.id === cancelTarget.id ? updatedHawala : item);
+      const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries2, transactions, updatedHawalas);
       setCustomers(updatedCustomers);
       
       await sendHawalaReceipts({ hawala: updatedHawala, action: "cancel", customers: updatedCustomers });
       setCancelTarget(null);
       showToast("✅ حواله ابطال شد، حساب‌ها به‌روز و اطلاعیه ارسال شد");
     } catch (err) { console.error("Cancel error:", err); showToast("خطا در ابطال حواله"); }
-  }, [cancelTarget, cancelReason, customers, cashEntries, showToast]);
+  }, [cancelTarget, cancelReason, customers, cashEntries, showToast, hawalas, transactions]);
 
   const restoreToSent = useCallback((item: Hawala) => {
     try {
       const newEntries = syncCashEntriesForHawala("add", item, undefined, cashEntries);
       setCashEntries(newEntries);
       
-      const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries);
+      // ✅ اصلاح شده: آرایه به‌روز شده حواله‌ها به تابع محاسبه موجودی پاس داده می‌شود
+      const restored: Hawala = { ...item, status: "sent" as HawalaStatus, paidAt: undefined, paidBy: undefined, paidAmount: undefined, cancelReason: undefined };
+      const updatedHawalas = hawalas.map(h => h.id === item.id ? restored : h);
+      const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries, transactions, updatedHawalas);
       setCustomers(updatedCustomers);
       
-      const restored: Hawala = { ...item, status: "sent" as HawalaStatus, paidAt: undefined, paidBy: undefined, paidAmount: undefined, cancelReason: undefined };
-      setHawalas(prev => prev.map(h => h.id === item.id ? restored : h));
       showToast("حواله به وضعیت ارسال‌شده برگشت و حساب مشتری نیز به‌روز شد.");
     } catch (err) { console.error("Restore error:", err); showToast("خطا در برگشت حواله"); }
-  }, [customers, cashEntries, showToast]);
+  }, [customers, cashEntries, showToast, hawalas, transactions]);
 
   const deleteHawala = useCallback((item: Hawala) => {
     const msg = `آیا از حذف کامل حواله ${item.number} مطمئن هستید؟\n\nاین عملیات قابل بازگشت نیست و حواله از سیستم پاک می‌شود.`;
@@ -547,13 +593,15 @@ export default function HawalaPage() {
       const newEntries2 = syncCashEntriesForHawalaSettlement("remove", item, newEntries1);
       setCashEntries(newEntries2);
       
-      const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries2);
+      // ✅ اصلاح شده: آرایه به‌روز شده حواله‌ها به تابع محاسبه موجودی پاس داده می‌شود
+      const updatedHawalas = hawalas.filter(h => h.id !== item.id);
+      const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries2, transactions, updatedHawalas);
       setCustomers(updatedCustomers);
       
       setHawalas(prev => prev.filter(h => h.id !== item.id));
       showToast(`حواله ${item.number} حذف شد و حساب‌های مرتبط به‌روز شد.`);
     } catch (err) { console.error("Delete error:", err); showToast("خطا در حذف حواله"); }
-  }, [customers, cashEntries, showToast]);
+  }, [customers, cashEntries, showToast, hawalas, transactions]);
 
   if (!mounted) return (<div className="min-h-screen flex items-center justify-center"><div className="text-center"><div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-slate-300 border-t-blue-500" /><p className="mt-4 text-slate-500">در حال بارگذاری...</p></div></div>);
 
@@ -580,12 +628,15 @@ export default function HawalaPage() {
   const rateBox = (c: { wrap: string; icon: string; title: string }, title: string, formContent: ReactNode, badges: ReactNode) => (<div className={`space-y-4 rounded-2xl border p-4 transition-colors md:p-5 ${c.wrap}`}><div className="flex items-center gap-2.5"><span className={`grid h-9 w-9 place-items-center rounded-xl ${c.icon}`}><Ic n="rate" className="h-4 w-4" /></span><b className={`text-sm font-black ${c.title}`}>{title}</b></div>{formContent}<div className="flex flex-wrap items-center gap-2.5">{badges}</div></div>);
   const pill = (cls: string, txt: string, check = false) => !txt ? null : (<span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black ${cls}`}>{check && <Ic n="check" className="h-3.5 w-3.5" />}{txt}</span>);
 
+  // ✅ اصلاح شده: حالا از getLedgerBalance جامع استفاده می‌کند
   const CustomerBalanceCard = memo(({ customer, color, isCashBox }: { customer: Customer | null; color: "blue" | "orange" | "emerald"; isCashBox?: boolean }) => {
     if (!customer) return null;
     const isExchange = customer.id === EXCHANGE_ACCOUNT_ID;
     const customerLedgerBalances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     if (!isCashBox && !isExchange) {
-      for (const cur of currencies) customerLedgerBalances[cur] = getLedgerBalance(customer.id, cur, cashEntries);
+      for (const cur of currencies) {
+        customerLedgerBalances[cur] = getLedgerBalance(customer.id, cur, cashEntries, transactions, hawalas);
+      }
     }
     const balances = isCashBox ? cashBoxBalances : isExchange ? exchangeAccountBalances : customerLedgerBalances;
     const title = isCashBox ? "💰 موجودی فیزیکی صندوق" : isExchange ? "💼 موجودی حساب صرافی" : `موجودی حساب ${customer.name}`;
