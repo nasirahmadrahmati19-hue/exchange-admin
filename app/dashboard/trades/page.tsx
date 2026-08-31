@@ -78,6 +78,7 @@ function splitDateTime(s: string): { datePart: string; timePart: string } {
     return { datePart: parts[0] || "-", timePart: parts[1] || "" };
   } catch { return { datePart: "-", timePart: "" }; }
 }
+
 function dealTypeLabel(d?: DealType) { return d === "buy" ? "خرید" : d === "sell" ? "فروش" : "-"; }
 function getRateMode(f: Currency, t: Currency): RateMode {
   if (f === t) return "same";
@@ -135,7 +136,6 @@ function getTelegramSettings() {
     return { enabled: s.telegram?.enabled || false, botToken: s.telegram?.botToken || "", chatId: s.telegram?.chatId || "" };
   } catch { return { enabled: false, botToken: "", chatId: "" }; }
 }
-
 async function sendTelegramMessage(botToken: string, chatId: string, text: string): Promise<boolean> {
   if (!botToken || !chatId) return false;
   try {
@@ -208,12 +208,10 @@ function recomputeCashBalances(entries: any[]): any[] {
   });
 }
 
-// ✅ توابع خالص (Pure Functions) - State جدید را return می‌کنند
 function syncCashEntriesForExchange(action: "add" | "remove" | "replace", tx: Transaction | null, oldTxId: string | undefined, currentEntries: any[]): any[] {
   let entries = [...currentEntries];
   const targetId = oldTxId || tx?.id;
   if (targetId) entries = entries.filter((e: any) => e.linkedExchangeId !== targetId);
-  
   if ((action === "add" || action === "replace") && tx) {
     const dateStr = tx.date || new Date().toISOString();
     const newEntries: any[] = [];
@@ -237,7 +235,6 @@ function syncCashEntriesForTransfer(action: "add" | "remove" | "replace", tx: Tr
   let entries = [...currentEntries];
   const targetId = oldTxId || tx?.id;
   if (targetId) entries = entries.filter((e: any) => e.linkedTransferId !== targetId);
-  
   if ((action === "add" || action === "replace") && tx) {
     const dateStr = tx.date || new Date().toISOString();
     const newEntries: any[] = [];
@@ -258,7 +255,6 @@ function syncCashEntriesForConvert(action: "add" | "remove" | "replace", tx: Tra
   let entries = [...currentEntries];
   const targetId = oldTxId || tx?.id;
   if (targetId) entries = entries.filter((e: any) => e.linkedConvertId !== targetId);
-  
   if ((action === "add" || action === "replace") && tx) {
     const dateStr = tx.date || new Date().toISOString();
     const newEntries: any[] = [];
@@ -303,12 +299,15 @@ const iconPaths = {
   trash: "M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0",
   wallet: "M21 12a2.25 2.25 0 0 0-2.25-2.25H15a3 3 0 1 1-6 0H5.25A2.25 2.25 0 0 0 3 12m18 0v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 9m18 0V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v3",
   tag: "M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z",
-  more: "M12 6.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 12.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 18.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Z"
+  more: "M12 6.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 12.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 18.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Z",
+  briefcase: "M20 7h-4V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2Zm-6 0h-4V5h4v2Z"
 };
 type IconName = keyof typeof iconPaths;
+
 const Ic = memo(function Ic({ n, className = "h-5 w-5" }: { n: IconName; className?: string }) {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true"><path d={iconPaths[n]} /></svg>;
 });
+
 const DetailRow = memo(function DetailRow({ label, value, valueClass = "", dark = false }: { label: string; value: string; valueClass?: string; dark?: boolean }) {
   return (
     <div className={`flex items-start justify-between gap-4 border-b border-dashed py-3 last:border-0 ${dark ? "border-slate-700" : "border-slate-200"}`}>
@@ -423,6 +422,7 @@ export default function CurrencyExchangePage() {
   const exchangeForeign = getAfnForeign(receivedCurrency, paidCurrency);
   const exchangeDirectBaseValue = exchangeMode === "direct" ? getSafeDirectBase(exchangeDirectBase, receivedCurrency, paidCurrency) : receivedCurrency;
   const exchangeDirectCounter = exchangeMode === "direct" ? getDirectCounter(exchangeDirectBaseValue, receivedCurrency, paidCurrency) : null;
+
   useEffect(() => { if (exchangeMode === "direct" && exchangeDirectBase !== exchangeDirectBaseValue) setExchangeDirectBase(exchangeDirectBaseValue); }, [exchangeMode, exchangeDirectBase, exchangeDirectBaseValue]);
   useEffect(() => { setRate(""); }, [exchangeMode, exchangeForeign, exchangeDirectBaseValue, exchangeDirectCounter]);
 
@@ -430,6 +430,7 @@ export default function CurrencyExchangePage() {
   const transferForeign = getAfnForeign(senderCurrency, receiverCurrency);
   const transferDirectBaseValue = transferMode === "direct" ? getSafeDirectBase(transferDirectBase, senderCurrency, receiverCurrency) : senderCurrency;
   const transferDirectCounter = transferMode === "direct" ? getDirectCounter(transferDirectBaseValue, senderCurrency, receiverCurrency) : null;
+
   useEffect(() => { if (transferMode === "direct" && transferDirectBase !== transferDirectBaseValue) setTransferDirectBase(transferDirectBaseValue); }, [transferMode, transferDirectBase, transferDirectBaseValue]);
   useEffect(() => { setTransferRate(""); }, [transferMode, transferForeign, transferDirectBaseValue, transferDirectCounter]);
 
@@ -437,6 +438,7 @@ export default function CurrencyExchangePage() {
   const convertForeign = getAfnForeign(convertFromCurrency, convertToCurrency);
   const convertDirectBaseValue = convertMode === "direct" ? getSafeDirectBase(convertDirectBase, convertFromCurrency, convertToCurrency) : convertFromCurrency;
   const convertDirectCounter = convertMode === "direct" ? getDirectCounter(convertDirectBaseValue, convertFromCurrency, convertToCurrency) : null;
+
   useEffect(() => { if (convertMode === "direct" && convertDirectBase !== convertDirectBaseValue) setConvertDirectBase(convertDirectBaseValue); }, [convertMode, convertDirectBase, convertDirectBaseValue]);
   useEffect(() => { setConvertRate(""); }, [convertMode, convertForeign, convertDirectBaseValue, convertDirectCounter]);
 
@@ -490,24 +492,40 @@ export default function CurrencyExchangePage() {
     return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); };
   }, [anyDropdownOpen, showCustomerList, showSenderList, showReceiverList, showConvertList]);
 
+  // ✅ اصلاح شده - اضافه کردن حساب صرافی به ابتدای لیست
   const filteredCustomerList = useMemo(() => {
     const q = normalizeDigits(customerFilter.trim()).toLowerCase();
-    return customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID && (!q || c.name.toLowerCase().includes(q)));
+    const normal = customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID && (!q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))));
+    const matchExchange = !q || EXCHANGE_ACCOUNT_NAME.toLowerCase().includes(q) || "حساب".includes(q) || "صرافی".includes(q);
+    if (matchExchange) return [EXCHANGE_ACCOUNT_CUSTOMER, ...normal];
+    return normal;
   }, [customers, customerFilter]);
 
+  // ✅ اصلاح شده - اضافه کردن حساب صرافی به ابتدای لیست
   const filteredSenderList = useMemo(() => {
     const q = normalizeDigits(senderFilter.trim()).toLowerCase();
-    return customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID && (!q || c.name.toLowerCase().includes(q)));
+    const normal = customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID && (!q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))));
+    const matchExchange = !q || EXCHANGE_ACCOUNT_NAME.toLowerCase().includes(q) || "حساب".includes(q) || "صرافی".includes(q);
+    if (matchExchange) return [EXCHANGE_ACCOUNT_CUSTOMER, ...normal];
+    return normal;
   }, [customers, senderFilter]);
 
+  // ✅ اصلاح شده - اضافه کردن حساب صرافی به ابتدای لیست
   const filteredReceiverList = useMemo(() => {
     const q = normalizeDigits(receiverFilter.trim()).toLowerCase();
-    return customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID && (!q || c.name.toLowerCase().includes(q)));
+    const normal = customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID && (!q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))));
+    const matchExchange = !q || EXCHANGE_ACCOUNT_NAME.toLowerCase().includes(q) || "حساب".includes(q) || "صرافی".includes(q);
+    if (matchExchange) return [EXCHANGE_ACCOUNT_CUSTOMER, ...normal];
+    return normal;
   }, [customers, receiverFilter]);
 
+  // ✅ اصلاح شده - اضافه کردن حساب صرافی به ابتدای لیست
   const filteredConvertList = useMemo(() => {
     const q = normalizeDigits(convertFilter.trim()).toLowerCase();
-    return customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID && (!q || c.name.toLowerCase().includes(q)));
+    const normal = customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID && (!q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))));
+    const matchExchange = !q || EXCHANGE_ACCOUNT_NAME.toLowerCase().includes(q) || "حساب".includes(q) || "صرافی".includes(q);
+    if (matchExchange) return [EXCHANGE_ACCOUNT_CUSTOMER, ...normal];
+    return normal;
   }, [customers, convertFilter]);
 
   const isCustomerExchangeAccount = customer === EXCHANGE_ACCOUNT_NAME;
@@ -525,12 +543,10 @@ export default function CurrencyExchangePage() {
     setRate(""); setExchangeCommission(""); setExchangeCommissionPayer("sender"); setExchangeCommissionCurrency("AFN");
     setExchangeDescription(""); setExchangeErrors({}); setEditingExchangeId(null);
   }, []);
-
   const resetTransferForm = useCallback(() => {
     setSender(""); setReceiver(""); setSenderAmount(""); setReceiverAmount(""); setTransferRate(""); setCommission("");
     setTransferCommissionPayer("sender"); setTransferCommissionCurrency("AFN"); setTransferDescription(""); setTransferErrors({}); setEditingTransferId(null);
   }, []);
-
   const resetConvertForm = useCallback(() => {
     setConvertCustomer(""); setConvertCustomerPhone(""); setConvertCustomerTelegram(""); setConvertFromCurrency("AFN"); setConvertToCurrency("USD");
     setConvertAmount(""); setConvertRate(""); setConvertedAmount(""); setConvertCommission(""); setConvertCommissionCurrency("AFN");
@@ -679,12 +695,9 @@ export default function CurrencyExchangePage() {
     setPreviewOpen(true);
   }, [validateConvert, convertFromAmount, convertToAmount, convertMode, convertRateValue, convertForeign, convertDirectCounter, convertDirectBaseValue, convertDescription, convertCommissionValue, convertCommissionCurrency, editingConvertId, transactions, convertCustomer, convertFromCurrency, convertToCurrency, customers]);
 
-  // ✅ تابع اصلی ثبت - State را به‌روز می‌کند
   const confirmRegister = useCallback(async () => {
     if (!previewData) return;
     const tx = { ...previewData, trackingCode: consumeTrackingCode() };
-    
-    // ۱. اگر ویرایش است، اثر قبلی را برگردان
     if (editingExchangeId) {
       const oldTx = transactions.find(t => t.id === editingExchangeId);
       if (oldTx && oldTx.status !== "voided") {
@@ -710,17 +723,12 @@ export default function CurrencyExchangePage() {
       setTransactions(p => p.map(t => t.id === editingConvertId ? { ...tx, id: editingConvertId, trackingCode: t.trackingCode, date: t.date } : t));
       setCashEntries(prev => syncCashEntriesForConvert("add", tx, undefined, prev));
     } else {
-      // ۲. معامله جدید
       setTransactions(x => [...x, tx]);
       if (tx.type === "exchange") setCashEntries(prev => syncCashEntriesForExchange("add", tx, undefined, prev));
       else if (tx.type === "transfer") setCashEntries(prev => syncCashEntriesForTransfer("add", tx, undefined, prev));
       else if (tx.type === "convert") setCashEntries(prev => syncCashEntriesForConvert("add", tx, undefined, prev));
     }
-    
-    // ۳. اعمال تغییرات موجودی مشتریان
     setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForTransaction(tx, "register")));
-    
-    // ۴. ارسال رسید تلگرام
     try {
       const settings = getTelegramSettings();
       if (settings.enabled && settings.botToken) {
@@ -731,39 +739,31 @@ export default function CurrencyExchangePage() {
           if (tx.senderId && tx.senderId !== CASH_BOX_ID && tx.senderId !== EXCHANGE_ACCOUNT_ID) recipientIds.add(tx.senderId);
           if (tx.receiverId && tx.receiverId !== CASH_BOX_ID && tx.receiverId !== EXCHANGE_ACCOUNT_ID) recipientIds.add(tx.receiverId);
         }
-        
         const updatedCustomers = applyBalanceChanges(customers, getBalanceChangesForTransaction(tx, "register"));
-        
         for (const custId of recipientIds) {
           const cust = updatedCustomers.find(c => c.id === custId);
           const chatId = cust?.telegramChatId || cust?.telegram || (tx.type === "exchange" ? tx.customerTelegram : "") || "";
           if (!chatId) continue;
-          
           const bals = cust?.balances || { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
           const credits: string[] = [];
           const debts: string[] = [];
-          
           for (const cur of currencies) {
             const b = bals[cur];
             if (b > 0) credits.push(`  • ${labels[cur]}: ${fmt(b)}`);
             else if (b < 0) debts.push(`  • ${labels[cur]}: ${fmt(Math.abs(b))}`);
           }
-          
           let balanceText = "";
           if (credits.length > 0) balanceText += `🟢 طلب‌های شما از صرافی:\n${credits.join("\n")}\n`;
           if (debts.length > 0) balanceText += `🔴 قرض‌های شما به صرافی:\n${debts.join("\n")}\n`;
           if (credits.length === 0 && debts.length === 0) balanceText = "⚪ حساب شما بدون طلب و قرض است.\n";
-          
           let summaryLine = "";
           if (credits.length > 0 && debts.length > 0) summaryLine = "📊 شما هم طلب و هم قرض دارید.";
           else if (credits.length > 0) summaryLine = "✅ شما از صرافی طلبکار هستید.";
           else if (debts.length > 0) summaryLine = "⚠️ شما به صرافی بدهکار هستید.";
           else summaryLine = "⚪ حساب شما صاف است.";
-          
           let text = `🟢 سند رسید معامله\n`;
           text += `🗓 تاریخ: ${formatDateTime(new Date(tx.date))}\n`;
           text += `🛅 کد پیگیری: ${tx.trackingCode}\n`;
-          
           if (tx.type === "exchange") {
             text += `👤 مشتری: ${tx.customerName}\n`;
             text += `📑 شرح: تبادل ارز (${tx.dealType === "buy" ? "خرید" : "فروش"})\n`;
@@ -780,18 +780,15 @@ export default function CurrencyExchangePage() {
             text += `💰 از: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]}\n`;
             text += `💵 به: ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}\n`;
           }
-          
           text += `\n💳 وضعیت حساب شما:\n${balanceText}`;
           text += `${summaryLine}\n`;
           text += `\n🏦 صرافی برادران نورزاد — هرات`;
-          
           await sendTelegramMessage(settings.botToken, chatId, text);
         }
       }
     } catch (err) {
       console.error("Error sending receipt:", err);
     }
-    
     resetExchangeForm();
     resetTransferForm();
     resetConvertForm();
@@ -829,11 +826,9 @@ export default function CurrencyExchangePage() {
   const exchangeErrorList = useMemo(() => Object.values(exchangeErrors).filter((m): m is string => Boolean(m)), [exchangeErrors]);
   const transferErrorList = useMemo(() => Object.values(transferErrors).filter((m): m is string => Boolean(m)), [transferErrors]);
   const convertErrorList = useMemo(() => Object.values(convertErrors).filter((m): m is string => Boolean(m)), [convertErrors]);
-
   const editingExchangeTransaction = useMemo(() => transactions.find(t => t.id === editingExchangeId), [transactions, editingExchangeId]);
   const editingTransferTransaction = useMemo(() => transactions.find(t => t.id === editingTransferId), [transactions, editingTransferId]);
   const editingConvertTransaction = useMemo(() => transactions.find(t => t.id === editingConvertId), [transactions, editingConvertId]);
-
   const exchangeDateDisplay = editingExchangeTransaction ? dateLabel(editingExchangeTransaction.date) : currentDateTime;
   const transferDateDisplay = editingTransferTransaction ? dateLabel(editingTransferTransaction.date) : currentDateTime;
   const convertDateDisplay = editingConvertTransaction ? dateLabel(editingConvertTransaction.date) : currentDateTime;
@@ -875,7 +870,6 @@ export default function CurrencyExchangePage() {
 
   const viewTransaction = useCallback((tx: Transaction) => setSelectedTransaction(tx), []);
 
-  // ✅ لغو معامله - State را به‌روز می‌کند
   const voidTransaction = useCallback((tx: Transaction) => {
     if (tx.status === "voided") return;
     if (!window.confirm("لغو شود؟")) return;
@@ -887,7 +881,6 @@ export default function CurrencyExchangePage() {
     setEditingExchangeId(null); setEditingTransferId(null); setEditingConvertId(null);
   }, [setCustomers, setTransactions, setCashEntries]);
 
-  // ✅ حذف معامله - State را به‌روز می‌کند
   const deleteTransaction = useCallback((tx: Transaction) => {
     if (!window.confirm(`حذف ${tx.trackingCode}؟`)) return;
     if (tx.status !== "voided") {
@@ -918,12 +911,14 @@ export default function CurrencyExchangePage() {
   const uiLabel = `mb-1.5 block text-[11px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`;
   const rateChip = `flex h-12 items-center whitespace-nowrap rounded-xl border px-3.5 text-sm font-bold ${dk ? "border-slate-600 bg-slate-900 text-slate-100" : "border-slate-200 bg-white text-slate-700"}`;
   const chevPos = `pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${iconMuted}`;
+
   const cSky = { wrap: dk ? "border-sky-400/25 bg-sky-400/[0.07]" : "border-sky-300 bg-sky-50", icon: dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-600", title: dk ? "text-sky-300" : "text-sky-700", badge: dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-700" };
   const cEmerald = { wrap: dk ? "border-emerald-400/25 bg-emerald-400/[0.07]" : "border-emerald-300 bg-emerald-50", icon: dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600", title: dk ? "text-emerald-300" : "text-emerald-700", badge: dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-700" };
   const cOrange = { wrap: dk ? "border-orange-400/25 bg-orange-400/[0.07]" : "border-orange-300 bg-orange-50", icon: dk ? "bg-orange-400/15 text-orange-300" : "bg-orange-100 text-orange-600", title: dk ? "text-orange-300" : "text-orange-700", badge: dk ? "bg-orange-400/15 text-orange-300" : "bg-orange-100 text-orange-700" };
   const cAmber = { wrap: dk ? "border-amber-400/25 bg-amber-400/[0.07]" : "border-amber-300 bg-amber-50", icon: dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600", title: dk ? "text-amber-300" : "text-amber-700", badge: dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-700" };
   const cTeal = { wrap: dk ? "border-teal-400/25 bg-teal-400/[0.07]" : "border-teal-300 bg-teal-50", icon: dk ? "bg-teal-400/15 text-teal-300" : "bg-teal-100 text-teal-600", title: dk ? "text-teal-300" : "text-teal-700", badge: dk ? "bg-teal-400/15 text-teal-300" : "bg-teal-100 text-teal-700" };
   const cViolet = { wrap: dk ? "border-violet-400/25 bg-violet-400/[0.07]" : "border-violet-300 bg-violet-50", icon: dk ? "bg-violet-400/15 text-violet-300" : "bg-violet-100 text-violet-600", title: dk ? "text-violet-300" : "text-violet-700", badge: dk ? "bg-violet-400/15 text-violet-300" : "bg-violet-100 text-violet-700" };
+
   const identExIcon = dk ? "from-cyan-400/20 to-cyan-400/5 text-cyan-300 ring-cyan-400/25" : "from-sky-400/20 to-cyan-400/10 text-sky-600 ring-sky-400/30";
   const identExChip = dk ? "bg-cyan-400/10 text-cyan-300 ring-cyan-400/25" : "bg-sky-100 text-sky-700 ring-sky-300/60";
   const identTrIcon = dk ? "from-orange-400/20 to-orange-400/5 text-orange-300 ring-orange-400/25" : "from-orange-400/20 to-amber-400/10 text-orange-600 ring-orange-400/30";
@@ -1212,6 +1207,29 @@ export default function CurrencyExchangePage() {
 
   const tableMaxHeight = "max-h-[672px]";
 
+  // ✅ تابع کمکی برای رندر کردن آیتم‌های لیست با ظاهر ویژه برای حساب صرافی
+  const renderCustomerItem = (c: Customer, idx: number, onSelect: (c: Customer) => void, hoverClass: string, gradientClass: string) => {
+    const isExchangeAcc = c.id === EXCHANGE_ACCOUNT_ID;
+    return (
+      <button key={c.id} type="button" onClick={() => onSelect(c)} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${
+        isExchangeAcc 
+          ? (dk ? "bg-sky-400/10 text-sky-300 hover:bg-sky-400/20 border-b border-sky-400/20" : "bg-sky-50 text-sky-700 hover:bg-sky-100 border-b border-sky-200")
+          : hoverClass
+      }`}>
+        {isExchangeAcc ? (
+          <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-sky-500 to-indigo-500`}>💼</span>
+        ) : (
+          <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white ${gradientClass}`}>{idx + 1}</span>
+        )}
+        <span className="flex-1 truncate">
+          {c.name}
+          {isExchangeAcc && <span className="mr-1 text-[9px] font-black opacity-70">(حساب داخلی)</span>}
+        </span>
+        {c.phone && <span className={`text-[10px] ${subText}`} dir="ltr">{c.phone}</span>}
+      </button>
+    );
+  };
+
   return (
     <div dir="rtl" className={dk ? "dark" : ""}>
       <style>{`@import url("https://fonts.googleapis.com/css2?family=Lalezar&family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap");.cs-font{font-family:"Vazirmatn","Segoe UI",Tahoma,sans-serif}.cs-display{font-family:"Lalezar","Vazirmatn",Tahoma,sans-serif}.dark{color-scheme:dark}`}</style>
@@ -1234,13 +1252,11 @@ export default function CurrencyExchangePage() {
               <button onClick={() => setTheme(dk ? "light" : "dark")} className={`grid h-10 w-10 cursor-pointer place-items-center rounded-lg border ${dk ? "border-slate-600 bg-slate-800/85 text-amber-300" : "border-slate-200 bg-white/85 text-slate-600"}`}>{dk ? <Ic n="sun" className="h-4 w-4" /> : <Ic n="moon" className="h-4 w-4" />}</button>
             </div>
           </header>
-
           <div className="flex flex-wrap items-center gap-2 text-[11px] font-black">
             <span className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 ${glassChip} ${dk ? "text-slate-300" : "text-slate-600"}`}>کل <b className={dk ? "text-cyan-300" : "text-sky-600"}>{transactions.length}</b></span>
             <span className={`rounded-full px-3 py-1.5 ring-1 ${dk ? "bg-emerald-400/15 text-emerald-300 ring-emerald-400/25" : "bg-emerald-400/15 text-emerald-700 ring-emerald-400/40"}`}>فعال {activeCount}</span>
             <span className={`rounded-full px-3 py-1.5 ring-1 ${dk ? "bg-rose-400/15 text-rose-300 ring-rose-400/25" : "bg-rose-400/15 text-rose-600 ring-rose-400/40"}`}>لغو {voidedCount}</span>
           </div>
-
           <div className={`flex gap-1.5 rounded-xl border p-1.5 ${glassChip}`}>
             <button onClick={() => setTab("exchange")} className={`flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-black ${tab === "exchange" ? dk ? "bg-cyan-400 text-slate-950" : "bg-sky-500 text-white" : dk ? "text-slate-400" : "text-slate-500"}`}><Ic n="swap" className="h-4 w-4" />تبادل ارز</button>
             <button onClick={() => setTab("transfer")} className={`flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-black ${tab === "transfer" ? dk ? "bg-orange-400 text-slate-950" : "bg-orange-500 text-white" : dk ? "text-slate-400" : "text-slate-500"}`}><Ic n="users" className="h-4 w-4" />بین مشتریان</button>
@@ -1282,19 +1298,13 @@ export default function CurrencyExchangePage() {
                         {filteredCustomerList.length === 0 ? (
                           <div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>
                         ) : (
-                          filteredCustomerList.map((c, idx) => (
-                            <button key={c.id} type="button" onClick={() => {
-                              setCustomer(c.name); setCustomerPhone(c.phone || ""); setCustomerTelegram(c.telegram || "");
-                              setCustomerFilter(""); setShowCustomerList(false); setExchangeErrors(p => ({ ...p, customer: undefined }));
-                            }} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-cyan-400/15 hover:text-cyan-300" : "text-slate-700 hover:bg-cyan-50 hover:text-cyan-600"}`}>
-                              <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-cyan-500 to-sky-500`}>{idx + 1}</span>
-                              <span className="flex-1 truncate">{c.name}{c.id === EXCHANGE_ACCOUNT_ID && " 💼"}</span>
-                              {c.phone && <span className={`text-[10px] ${subText}`} dir="ltr">{c.phone}</span>}
-                            </button>
-                          ))
+                          filteredCustomerList.map((c, idx) => renderCustomerItem(c, idx, (sel) => {
+                            setCustomer(sel.name); setCustomerPhone(sel.phone || ""); setCustomerTelegram(sel.telegram || "");
+                            setCustomerFilter(""); setShowCustomerList(false); setExchangeErrors(p => ({ ...p, customer: undefined }));
+                          }, dk ? "text-slate-200 hover:bg-cyan-400/15 hover:text-cyan-300" : "text-slate-700 hover:bg-cyan-50 hover:text-cyan-600", "bg-gradient-to-br from-cyan-500 to-sky-500"))
                         )}
                         <div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
-                        <div className={`px-3 py-2 text-[10px] text-center ${subText}`}>نام جدید در لیست ذخیره نمی‌شود</div>
+                        <div className={`px-3 py-2 text-[10px] text-center ${subText}`}>💼 حساب صرافی همیشه در دسترس است</div>
                       </div>
                     )}
                   </div>
@@ -1415,19 +1425,13 @@ export default function CurrencyExchangePage() {
                             {filteredSenderList.length === 0 ? (
                               <div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>
                             ) : (
-                              filteredSenderList.map((c, idx) => (
-                                <button key={c.id} type="button" onClick={() => {
-                                  setSender(c.name); setSenderPhone(c.phone || ""); setSenderTelegram(c.telegram || "");
-                                  setSenderFilter(""); setShowSenderList(false); setTransferErrors(p => ({ ...p, sender: undefined }));
-                                }} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-orange-400/15 hover:text-orange-300" : "text-slate-700 hover:bg-orange-50 hover:text-orange-600"}`}>
-                                  <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-orange-500 to-amber-500`}>{idx + 1}</span>
-                                  <span className="flex-1 truncate">{c.name}{c.id === EXCHANGE_ACCOUNT_ID && " 💼"}</span>
-                                  {c.phone && <span className={`text-[10px] ${subText}`} dir="ltr">{c.phone}</span>}
-                                </button>
-                              ))
+                              filteredSenderList.map((c, idx) => renderCustomerItem(c, idx, (sel) => {
+                                setSender(sel.name); setSenderPhone(sel.phone || ""); setSenderTelegram(sel.telegram || "");
+                                setSenderFilter(""); setShowSenderList(false); setTransferErrors(p => ({ ...p, sender: undefined }));
+                              }, dk ? "text-slate-200 hover:bg-orange-400/15 hover:text-orange-300" : "text-slate-700 hover:bg-orange-50 hover:text-orange-600", "bg-gradient-to-br from-orange-500 to-amber-500"))
                             )}
                             <div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
-                            <div className={`px-3 py-2 text-[10px] text-center ${subText}`}>نام جدید در لیست ذخیره نمی‌شود</div>
+                            <div className={`px-3 py-2 text-[10px] text-center ${subText}`}>💼 حساب صرافی همیشه در دسترس است</div>
                           </div>
                         )}
                       </div>
@@ -1464,19 +1468,13 @@ export default function CurrencyExchangePage() {
                             {filteredReceiverList.length === 0 ? (
                               <div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>
                             ) : (
-                              filteredReceiverList.map((c, idx) => (
-                                <button key={c.id} type="button" onClick={() => {
-                                  setReceiver(c.name); setReceiverPhone(c.phone || ""); setReceiverTelegram(c.telegram || "");
-                                  setReceiverFilter(""); setShowReceiverList(false); setTransferErrors(p => ({ ...p, receiver: undefined }));
-                                }} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-emerald-400/15 hover:text-emerald-300" : "text-slate-700 hover:bg-emerald-50 hover:text-emerald-600"}`}>
-                                  <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-emerald-500 to-teal-500`}>{idx + 1}</span>
-                                  <span className="flex-1 truncate">{c.name}{c.id === EXCHANGE_ACCOUNT_ID && " 💼"}</span>
-                                  {c.phone && <span className={`text-[10px] ${subText}`} dir="ltr">{c.phone}</span>}
-                                </button>
-                              ))
+                              filteredReceiverList.map((c, idx) => renderCustomerItem(c, idx, (sel) => {
+                                setReceiver(sel.name); setReceiverPhone(sel.phone || ""); setReceiverTelegram(sel.telegram || "");
+                                setReceiverFilter(""); setShowReceiverList(false); setTransferErrors(p => ({ ...p, receiver: undefined }));
+                              }, dk ? "text-slate-200 hover:bg-emerald-400/15 hover:text-emerald-300" : "text-slate-700 hover:bg-emerald-50 hover:text-emerald-600", "bg-gradient-to-br from-emerald-500 to-teal-500"))
                             )}
                             <div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
-                            <div className={`px-3 py-2 text-[10px] text-center ${subText}`}>نام جدید در لیست ذخیره نمی‌شود</div>
+                            <div className={`px-3 py-2 text-[10px] text-center ${subText}`}>💼 حساب صرافی همیشه در دسترس است</div>
                           </div>
                         )}
                       </div>
@@ -1571,19 +1569,13 @@ export default function CurrencyExchangePage() {
                         {filteredConvertList.length === 0 ? (
                           <div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>
                         ) : (
-                          filteredConvertList.map((c, idx) => (
-                            <button key={c.id} type="button" onClick={() => {
-                              setConvertCustomer(c.name); setConvertCustomerPhone(c.phone || ""); setConvertCustomerTelegram(c.telegram || "");
-                              setConvertFilter(""); setShowConvertList(false); setConvertErrors(p => ({ ...p, customer: undefined }));
-                            }} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-violet-400/15 hover:text-violet-300" : "text-slate-700 hover:bg-violet-50 hover:text-violet-600"}`}>
-                              <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-black text-white bg-gradient-to-br from-violet-500 to-purple-500`}>{idx + 1}</span>
-                              <span className="flex-1 truncate">{c.name}{c.id === EXCHANGE_ACCOUNT_ID && " 💼"}</span>
-                              {c.phone && <span className={`text-[10px] ${subText}`} dir="ltr">{c.phone}</span>}
-                            </button>
-                          ))
+                          filteredConvertList.map((c, idx) => renderCustomerItem(c, idx, (sel) => {
+                            setConvertCustomer(sel.name); setConvertCustomerPhone(sel.phone || ""); setConvertCustomerTelegram(sel.telegram || "");
+                            setConvertFilter(""); setShowConvertList(false); setConvertErrors(p => ({ ...p, customer: undefined }));
+                          }, dk ? "text-slate-200 hover:bg-violet-400/15 hover:text-violet-300" : "text-slate-700 hover:bg-violet-50 hover:text-violet-600", "bg-gradient-to-br from-violet-500 to-purple-500"))
                         )}
                         <div className={`h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
-                        <div className={`px-3 py-2 text-[10px] text-center ${subText}`}>نام جدید در لیست ذخیره نمی‌شود</div>
+                        <div className={`px-3 py-2 text-[10px] text-center ${subText}`}>💼 حساب صرافی همیشه در دسترس است</div>
                       </div>
                     )}
                   </div>
@@ -1853,7 +1845,6 @@ export default function CurrencyExchangePage() {
   );
 }
 
-// ✅ تابع کمکی برای محاسبه موجودی حساب صرافی
 function computeExchangeBalances(entries: any[]): Record<Currency, number> {
   const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
   for (const entry of entries) {
