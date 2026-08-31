@@ -10,7 +10,7 @@ import {
 } from "./lib/defaultData";
 
 // ============================================================
-// تایپ‌ها و ثابت‌ها (هماهنگ‌شده با تب‌های تبادل و حواله)
+// تایپ‌ها و ثابت‌ها (هماهنگ‌شده با تمام تب‌ها)
 // ============================================================
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 
@@ -168,8 +168,10 @@ function isToday(dateStr: string | number | undefined | null): boolean {
   return false;
 }
 
-// ✅ اصلاح شده: حالا transactions و hawalas را هم در محاسبه موجودی لحاظ می‌کند
-function getLedgerBalance(customerId: string, currency: Currency, entries: any[], transactions: any[] = [], hawalas: any[] = []): number {
+// ✅ اصلاح شده: دقیقاً منطبق با تابع getLedgerBalance تب صندوق
+// حذف حلقه hawalas برای مشتریان عادی جلوگیری از شمارش دوگانه (Double Counting) می‌کند،
+// زیرا syncCashEntriesForHawala از قبل اثر حواله را در entries ثبت کرده است.
+function getLedgerBalance(customerId: string, currency: Currency, entries: any[], transactions: any[] = []): number {
   let balance = 0;
   
   // ۱. محاسبه از صندوق (entries)
@@ -179,19 +181,27 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: any[]
       if (entry.type === "exchange_account_in" || entry.type === "exchange_account_out") continue;
       if (entry.type === "loan_given") balance -= entry.amount;
       else if (entry.type === "loan_received") balance += entry.amount;
-      else balance += entry.direction === "in" ? entry.amount : -entry.amount;
+      else { const physicalMultiplier = entry.direction === "in" ? 1 : -1; balance += entry.amount * physicalMultiplier; }
     } else if (customerId === EXCHANGE_ACCOUNT_ID) {
-      if (entry.type === "owner_deposit" || entry.type === "loan_received" || entry.type === "exchange_account_in") balance += entry.amount;
-      else if (entry.type === "owner_withdraw" || entry.type === "loan_given" || entry.type === "exchange_account_out") balance -= entry.amount;
+      if (entry.type === "owner_deposit") balance += entry.amount;
+      else if (entry.type === "owner_withdraw") balance -= entry.amount;
+      else if (entry.type === "exchange_account_in") balance += entry.amount;
+      else if (entry.type === "exchange_account_out") balance -= entry.amount;
+      else if (entry.type === "loan_given") balance -= entry.amount;
+      else if (entry.type === "loan_received") balance += entry.amount;
     } else {
       if (entry.customerId === customerId) {
-        if (entry.type === "customer_deposit" || entry.type === "loan_received") balance += entry.amount;
-        else if (entry.type === "customer_withdraw" || entry.type === "loan_given") balance -= entry.amount;
+        if (entry.type === "customer_deposit") balance += entry.amount;
+        else if (entry.type === "customer_withdraw") balance -= entry.amount;
+        else if (entry.type === "loan_given") balance -= entry.amount;
+        else if (entry.type === "loan_received") balance += entry.amount;
       }
     }
   }
 
-  // ۲. محاسبه از معاملات و حواله‌جات (فقط برای مشتریان عادی)
+  // ۲. محاسبه از معاملات (فقط برای مشتریان عادی)
+  // نکته حیاتی: توابع syncCashEntriesForExchange/Transfer/Convert فقط ردیف‌های حساب صرافی را به entries اضافه می‌کنند.
+  // بنابراین برای محاسبه موجودی مشتری عادی، باید آرایه transactions را هم بررسی کنیم.
   if (customerId !== CASH_BOX_ID && customerId !== EXCHANGE_ACCOUNT_ID) {
     for (const tx of transactions) {
       if (tx.status === "voided") continue;
@@ -214,18 +224,6 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: any[]
         if (tx.fromCurrency === currency) balance -= (tx.fromAmount || 0);
         if (tx.toCurrency === currency) balance += (tx.toAmount || 0);
         if (tx.commission && tx.commissionCurrency === currency) balance -= (tx.commission || 0);
-      }
-    }
-
-    for (const h of hawalas) {
-      if (h.status === "cancelled") continue;
-      if (h.senderId === customerId) {
-        if (h.currencyFrom === currency) balance -= (h.amountFrom || 0);
-        if (h.feePayer === "sender" && h.feeCurrency === currency) balance -= (h.fee || 0);
-      }
-      if (h.receiverId === customerId && h.status === "paid") {
-        if (h.currencyTo === currency) balance += (h.finalAmount || 0);
-        if (h.feePayer === "receiver" && h.feeCurrency === currency) balance -= (h.fee || 0);
       }
     }
   }
@@ -262,19 +260,19 @@ export default function DashboardPage() {
   const physicalCashBalances = useMemo(() => {
     const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const cur of currencies) {
-      balances[cur] = getLedgerBalance(CASH_BOX_ID, cur, entries, transactions, hawalas);
+      balances[cur] = getLedgerBalance(CASH_BOX_ID, cur, entries, transactions);
     }
     return balances;
-  }, [entries, transactions, hawalas]);
+  }, [entries, transactions]);
 
   // ۲. موجودی حساب صرافی (واریز/برداشت مالک + قرض)
   const exchangeBalance = useMemo(() => {
     const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const cur of currencies) {
-      balances[cur] = getLedgerBalance(EXCHANGE_ACCOUNT_ID, cur, entries, transactions, hawalas);
+      balances[cur] = getLedgerBalance(EXCHANGE_ACCOUNT_ID, cur, entries, transactions);
     }
     return balances;
-  }, [entries, transactions, hawalas]);
+  }, [entries, transactions]);
 
   // ۳. مجموع طلب مشتریان (فقط مقادیر مثبت)
   const customerDeposits = useMemo(() => {
@@ -282,12 +280,12 @@ export default function DashboardPage() {
     for (const c of customers) {
       if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) continue;
       for (const cur of currencies) {
-        const bal = getLedgerBalance(c.id, cur, entries, transactions, hawalas);
+        const bal = getLedgerBalance(c.id, cur, entries, transactions);
         if (bal > 0) totals[cur] += bal;
       }
     }
     return totals;
-  }, [customers, entries, transactions, hawalas]);
+  }, [customers, entries, transactions]);
 
   // ۴. مجموع بدهی مشتریان (فقط مقادیر منفی)
   const customerDebts = useMemo(() => {
@@ -295,12 +293,12 @@ export default function DashboardPage() {
     for (const c of customers) {
       if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) continue;
       for (const cur of currencies) {
-        const bal = getLedgerBalance(c.id, cur, entries, transactions, hawalas);
+        const bal = getLedgerBalance(c.id, cur, entries, transactions);
         if (bal < 0) totals[cur] += Math.abs(bal);
       }
     }
     return totals;
-  }, [customers, entries, transactions, hawalas]);
+  }, [customers, entries, transactions]);
 
   // ۵. کارمزدها
   const totalCommissionEarned = useMemo(() => {
@@ -374,9 +372,9 @@ export default function DashboardPage() {
   const debtorsCount = useMemo(() => {
     return customers.filter(c => {
       if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) return false;
-      return currencies.some(cur => getLedgerBalance(c.id, cur, entries, transactions, hawalas) < 0);
+      return currencies.some(cur => getLedgerBalance(c.id, cur, entries, transactions) < 0);
     }).length;
-  }, [customers, entries, transactions, hawalas]);
+  }, [customers, entries, transactions]);
 
   // ── استایل‌ها ──
   const dk = theme === "dark";
