@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { useSyncedState } from "../lib/useSyncedState"; // ✅ ایمپورت هوک هماهنگ‌ساز
+import { useSyncedState } from "../lib/useSyncedState";
 import { initTrackingSystem } from "../lib/trackingCode";
 import { CUSTOMERS_KEY, TRANSACTIONS_KEY, CASH_KEY, HAWALAS_KEY } from "../lib/defaultData";
 
@@ -73,6 +73,7 @@ type CashEntry = {
 const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
 const labels: Record<Currency, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
 const CASH_BOX_ID = "CASH_BOX";
+const EXCHANGE_ACCOUNT_ID = "EXCHANGE_ACCOUNT";
 
 // ============================================================
 // Icons
@@ -180,6 +181,61 @@ const typeChipClass = (tx: Transaction, dk: boolean): string => {
   return dk ? "bg-purple-400/15 text-purple-300" : "bg-purple-100 text-purple-700";
 };
 
+// ✅ تابع جامع محاسبه موجودی (دقیقاً منطبق با داشبورد و صندوق)
+function getLedgerBalance(customerId: string, currency: Currency, entries: any[], transactions: any[] = []): number {
+  let balance = 0;
+  for (const entry of entries) {
+    if (entry.status === "voided" || entry.currency !== currency) continue;
+    if (customerId === CASH_BOX_ID) {
+      if (entry.type === "exchange_account_in" || entry.type === "exchange_account_out") continue;
+      if (entry.type === "loan_given") balance -= entry.amount;
+      else if (entry.type === "loan_received") balance += entry.amount;
+      else { const physicalMultiplier = entry.direction === "in" ? 1 : -1; balance += entry.amount * physicalMultiplier; }
+    } else if (customerId === EXCHANGE_ACCOUNT_ID) {
+      if (entry.type === "owner_deposit") balance += entry.amount;
+      else if (entry.type === "owner_withdraw") balance -= entry.amount;
+      else if (entry.type === "exchange_account_in") balance += entry.amount;
+      else if (entry.type === "exchange_account_out") balance -= entry.amount;
+      else if (entry.type === "loan_given") balance -= entry.amount;
+      else if (entry.type === "loan_received") balance += entry.amount;
+    } else {
+      if (entry.customerId === customerId) {
+        if (entry.type === "customer_deposit") balance += entry.amount;
+        else if (entry.type === "customer_withdraw") balance -= entry.amount;
+        else if (entry.type === "loan_given") balance -= entry.amount;
+        else if (entry.type === "loan_received") balance += entry.amount;
+      }
+    }
+  }
+  
+  if (customerId !== CASH_BOX_ID && customerId !== EXCHANGE_ACCOUNT_ID) {
+    for (const tx of transactions) {
+      if (tx.status === "voided") continue;
+      if (tx.type === "exchange" && tx.customerId === customerId) {
+        if (tx.fromCurrency === currency) balance -= (tx.fromAmount || 0);
+        if (tx.toCurrency === currency) balance += (tx.toAmount || 0);
+        if (tx.commission && tx.commissionCurrency === currency) balance -= (tx.commission || 0);
+      }
+      if (tx.type === "transfer") {
+        if (tx.senderId === customerId) {
+          if (tx.fromCurrency === currency) balance -= (tx.fromAmount || 0);
+          if (tx.commissionPayer === "sender" && tx.commission && tx.commissionCurrency === currency) balance -= (tx.commission || 0);
+        }
+        if (tx.receiverId === customerId) {
+          if (tx.toCurrency === currency) balance += (tx.toAmount || 0);
+          if (tx.commissionPayer === "receiver" && tx.commission && tx.commissionCurrency === currency) balance -= (tx.commission || 0);
+        }
+      }
+      if (tx.type === "convert" && tx.customerId === customerId) {
+        if (tx.fromCurrency === currency) balance -= (tx.fromAmount || 0);
+        if (tx.toCurrency === currency) balance += (tx.toAmount || 0);
+        if (tx.commission && tx.commissionCurrency === currency) balance -= (tx.commission || 0);
+      }
+    }
+  }
+  return balance;
+}
+
 // ============================================================
 // Main Component
 // ============================================================
@@ -187,7 +243,6 @@ export default function ReportsPage() {
   const [mounted, setMounted] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   
-  // ✅ استفاده از useSyncedState برای هماهنگی کامل بین تمام تب‌ها
   const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
   const [transactions, setTransactions] = useSyncedState<Transaction[]>(TRANSACTIONS_KEY, []);
   const [hawalas, setHawalas] = useSyncedState<any[]>(HAWALAS_KEY, []);
@@ -215,7 +270,6 @@ export default function ReportsPage() {
 
   useEffect(() => { try { window.localStorage.setItem("fx-theme", theme); } catch {} }, [theme]);
   
-  // ✅ خط حیاتی که قبلاً جا افتاده بود:
   const dk = theme === "dark";
 
   const [now, setNow] = useState<Date | null>(null);
@@ -279,11 +333,20 @@ export default function ReportsPage() {
     });
   }, [customers, search]);
 
+  // ✅ اصلاح شده: محاسبه بدهکاران با استفاده از getLedgerBalance برای هماهنگی ۱۰۰٪ با داشبورد
   const debtorCustomers = useMemo(() => {
-    return customers.filter(c => currencies.some(cur => (c.balances?.[cur] || 0) < 0));
-  }, [customers]);
+    return customers.filter(c => {
+      if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) return false;
+      return currencies.some(cur => getLedgerBalance(c.id, cur, cashEntries, transactions) < 0);
+    });
+  }, [customers, cashEntries, transactions]);
 
-  const withBalanceCount = customers.filter(c => currencies.some(cur => (c.balances?.[cur] || 0) !== 0)).length;
+  const withBalanceCount = useMemo(() => {
+    return customers.filter(c => {
+      if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) return false;
+      return currencies.some(cur => getLedgerBalance(c.id, cur, cashEntries, transactions) !== 0);
+    }).length;
+  }, [customers, cashEntries, transactions]);
 
   // ── Share functions ──
   const generateCustomerReport = useCallback((customer: Customer): string => {
@@ -295,7 +358,8 @@ export default function ReportsPage() {
     report += `\n━━━━━━━━━━━━━━━━━━━━\n`;
     report += `💼 موجودی حساب:\n`;
     for (const cur of currencies) {
-      const bal = customer.balances?.[cur] || 0;
+      // ✅ اصلاح شده: استفاده از getLedgerBalance
+      const bal = getLedgerBalance(customer.id, cur, cashEntries, transactions);
       if (bal !== 0) report += `  • ${labels[cur]}: ${fmt(Math.abs(bal))} (${bal > 0 ? "طلب" : "قرض"})\n`;
     }
     report += `\n━━━━━━━━━━━━━━━━━━━━\n`;
@@ -311,7 +375,7 @@ export default function ReportsPage() {
     report += `\n━━━━━━━━━━━━━━━━━━━━\n`;
     report += `🏦 صرافی برادران نورزاد — هرات`;
     return report;
-  }, [getCustomerTransactions]);
+  }, [getCustomerTransactions, cashEntries, transactions]);
 
   const shareViaTelegram = useCallback((customer: Customer) => {
     const text = generateCustomerReport(customer);
@@ -472,8 +536,9 @@ export default function ReportsPage() {
                           </thead>
                           <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
                             {searchResults.map((c, idx) => {
-                              const hasDebt = currencies.some(cur => (c.balances?.[cur] || 0) < 0);
-                              const hasCredit = currencies.some(cur => (c.balances?.[cur] || 0) > 0);
+                              // ✅ اصلاح شده: استفاده از getLedgerBalance برای نمایش دقیق موجودی
+                              const hasDebt = currencies.some(cur => getLedgerBalance(c.id, cur, cashEntries, transactions) < 0);
+                              const hasCredit = currencies.some(cur => getLedgerBalance(c.id, cur, cashEntries, transactions) > 0);
                               return (
                                 <tr key={c.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/50"}`}>
                                   <td className={cellClass}><span className={`inline-grid h-7 w-7 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>{idx + 1}</span></td>
@@ -487,7 +552,7 @@ export default function ReportsPage() {
                                   <td className={`${cellClass} text-[12px] font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`} dir="ltr">{c.tazkira || "—"}</td>
                                   <td className={`${cellClass} text-[11px] tabular-nums ${subText}`} dir="ltr">{c.registeredAt ? shortDateLabel(c.registeredAt) : "—"}</td>
                                   {currencies.map(cur => {
-                                    const bal = c.balances?.[cur] || 0;
+                                    const bal = getLedgerBalance(c.id, cur, cashEntries, transactions);
                                     return (
                                       <td key={cur} className={`${cellClass} text-[13px] font-black tabular-nums ${bal < 0 ? "text-rose-500" : bal > 0 ? (dk ? "text-emerald-300" : "text-emerald-700") : subText}`}>{fmt(bal)}</td>
                                     );
@@ -516,7 +581,7 @@ export default function ReportsPage() {
                     </div>
                     <div className="md:hidden space-y-2">
                       {searchResults.map(c => {
-                        const hasDebt = currencies.some(cur => (c.balances?.[cur] || 0) < 0);
+                        const hasDebt = currencies.some(cur => getLedgerBalance(c.id, cur, cashEntries, transactions) < 0);
                         return (
                           <div key={c.id} className={`p-4 rounded-xl border ${hasDebt ? (dk ? "border-rose-400/30 bg-rose-400/[0.03]" : "border-rose-200 bg-rose-50/30") : (dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-white")}`}>
                             <div className="flex items-center gap-2 mb-2">
@@ -528,7 +593,7 @@ export default function ReportsPage() {
                             </div>
                             <div className="grid grid-cols-5 gap-1 mt-2">
                               {currencies.map(cur => {
-                                const bal = c.balances?.[cur] || 0;
+                                const bal = getLedgerBalance(c.id, cur, cashEntries, transactions);
                                 return (
                                   <div key={cur} className={`rounded-lg px-1 py-1.5 text-center ${dk ? "bg-slate-900/50" : "bg-slate-50"}`}>
                                     <div className={`text-[8px] font-black ${subText}`}>{labels[cur]}</div>
@@ -592,7 +657,7 @@ export default function ReportsPage() {
                                 <td className={`${cellClass} text-[12px] font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`} dir="ltr">{c.phone || "—"}</td>
                                 <td className={`${cellClass} text-[12px] font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`} dir="ltr">{c.tazkira || "—"}</td>
                                 {currencies.map(cur => {
-                                  const bal = c.balances?.[cur] || 0;
+                                  const bal = getLedgerBalance(c.id, cur, cashEntries, transactions);
                                   const debt = bal < 0 ? Math.abs(bal) : 0;
                                   return (
                                     <td key={cur} className={`${cellClass} text-[13px] font-black tabular-nums ${debt > 0 ? "text-rose-500" : subText}`}>{debt > 0 ? fmt(debt) : "—"}</td>
@@ -614,7 +679,7 @@ export default function ReportsPage() {
                               </td>
                               {currencies.map(cur => {
                                 const totalDebt = debtorCustomers.reduce((sum, c) => {
-                                  const bal = c.balances?.[cur] || 0;
+                                  const bal = getLedgerBalance(c.id, cur, cashEntries, transactions);
                                   return sum + (bal < 0 ? Math.abs(bal) : 0);
                                 }, 0);
                                 return (
@@ -629,7 +694,7 @@ export default function ReportsPage() {
                     </div>
                     <div className="md:hidden space-y-2">
                       {debtorCustomers.map(c => {
-                        const debts = currencies.filter(cur => (c.balances?.[cur] || 0) < 0);
+                        const debts = currencies.filter(cur => getLedgerBalance(c.id, cur, cashEntries, transactions) < 0);
                         return (
                           <div key={c.id} className={`p-4 rounded-xl border ${dk ? "border-rose-400/25 bg-rose-400/[0.03]" : "border-rose-200 bg-rose-50/30"}`}>
                             <div className="flex items-center gap-2 mb-2">
@@ -643,7 +708,7 @@ export default function ReportsPage() {
                               {debts.map(cur => (
                                 <div key={cur} className={`flex items-center justify-between text-xs rounded-lg px-3 py-1.5 ${dk ? "bg-slate-900/30" : "bg-white/70"}`}>
                                   <span className={`font-black ${dk ? "text-slate-300" : "text-slate-600"}`}>{labels[cur]}</span>
-                                  <span className="font-black tabular-nums text-rose-500">{fmt(Math.abs(c.balances?.[cur] || 0))}</span>
+                                  <span className="font-black tabular-nums text-rose-500">{fmt(Math.abs(getLedgerBalance(c.id, cur, cashEntries, transactions)))}</span>
                                 </div>
                               ))}
                             </div>
@@ -808,7 +873,8 @@ export default function ReportsPage() {
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                 {currencies.map(cur => {
-                  const bal = selectedCustomer.balances?.[cur] || 0;
+                  // ✅ اصلاح شده: استفاده از getLedgerBalance در مودال جزئیات
+                  const bal = getLedgerBalance(selectedCustomer.id, cur, cashEntries, transactions);
                   return (
                     <div key={cur} className={`rounded-lg p-3 text-center ${dk ? "bg-slate-800/50" : "bg-slate-100"}`}>
                       <div className={`text-[9px] font-black ${subText}`}>{labels[cur]}</div>
