@@ -48,7 +48,7 @@ function numberToPersianWords(num: number): string {
   const ones = ["", "یک", "دو", "سه", "چهار", "پنج", "شش", "هفت", "هشت", "نه"];
   const teens = ["ده", "یازده", "دوازده", "سیزده", "چهارده", "پانزده", "شانزده", "هفده", "هجده", "نوزده"];
   const tens = ["", "", "بیست", "سی", "چهل", "پنجاه", "شصت", "هفتاد", "هشتاد", "نود"];
-  const hundreds = ["", "یکصد", "دویست", "سیصد", "چهارصد", "پانصد", "ششصد", "هفتصد", "هشتصد", "نهصد"];
+  const hundreds = ["", "یک صد", "دو صد", "سه صد", "چهار صد", "پنج صد", "شش صد", "هفت صد", "هشت صد", "نه صد"];
   const thousands = ["", "هزار", "میلیون", "میلیارد"];
   
   function convertLessThanThousand(val: number): string {
@@ -57,13 +57,13 @@ function numberToPersianWords(num: number): string {
     const h = Math.floor(val / 100);
     const t = Math.floor((val % 100) / 10);
     const o = val % 10;
-    if (h > 0) { str += hundreds[h] + " و "; }
-    if (t === 1) { str += teens[o] + " و "; }
+    if (h > 0) { str += hundreds[h] + " "; }
+    if (t === 1) { str += teens[o] + " "; }
     else {
-      if (t > 1) { str += tens[t] + (o > 0 ? " و " : ""); }
-      if (o > 0 && t !== 1) { str += ones[o] + " و "; }
+      if (t > 1) { str += tens[t] + " "; }
+      if (o > 0 && t !== 1) { str += ones[o] + " "; }
     }
-    return str.replace(/ و $/, "");
+    return str.trim();
   }
   
   let parts: string[] = [];
@@ -79,7 +79,7 @@ function numberToPersianWords(num: number): string {
     temp = Math.floor(temp / 1000);
     i++;
   }
-  return parts.join(" و ").trim() || "صفر";
+  return parts.join(" ").trim() || "صفر";
 }
 
 const newId = () => {
@@ -500,7 +500,6 @@ if (showConvertList && convertListRef.current && !convertListRef.current.contain
 const timer = setTimeout(() => document.addEventListener("mousedown", handler), 0);
 return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); };
 }, [anyDropdownOpen, showCustomerList, showSenderList, showReceiverList, showConvertList]);
-// ✅ اصلاح شده - اضافه کردن حساب صرافی به ابتدای لیست
 const filteredCustomerList = useMemo(() => {
 const q = normalizeDigits(customerFilter.trim()).toLowerCase();
 const normal = customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID && (!q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))));
@@ -508,7 +507,6 @@ const matchExchange = !q || EXCHANGE_ACCOUNT_NAME.toLowerCase().includes(q) || "
 if (matchExchange) return [EXCHANGE_ACCOUNT_CUSTOMER, ...normal];
 return normal;
 }, [customers, customerFilter]);
-// ✅ اصلاح شده - اضافه کردن حساب صرافی به ابتدای لیست
 const filteredSenderList = useMemo(() => {
 const q = normalizeDigits(senderFilter.trim()).toLowerCase();
 const normal = customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID && (!q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))));
@@ -516,7 +514,6 @@ const matchExchange = !q || EXCHANGE_ACCOUNT_NAME.toLowerCase().includes(q) || "
 if (matchExchange) return [EXCHANGE_ACCOUNT_CUSTOMER, ...normal];
 return normal;
 }, [customers, senderFilter]);
-// ✅ اصلاح شده - اضافه کردن حساب صرافی به ابتدای لیست
 const filteredReceiverList = useMemo(() => {
 const q = normalizeDigits(receiverFilter.trim()).toLowerCase();
 const normal = customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID && (!q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))));
@@ -524,7 +521,6 @@ const matchExchange = !q || EXCHANGE_ACCOUNT_NAME.toLowerCase().includes(q) || "
 if (matchExchange) return [EXCHANGE_ACCOUNT_CUSTOMER, ...normal];
 return normal;
 }, [customers, receiverFilter]);
-// ✅ اصلاح شده - اضافه کردن حساب صرافی به ابتدای لیست
 const filteredConvertList = useMemo(() => {
 const q = normalizeDigits(convertFilter.trim()).toLowerCase();
 const normal = customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID && (!q || c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q))));
@@ -738,29 +734,48 @@ const chatId = cust?.telegramChatId || cust?.telegram || (tx.type === "exchange"
 if (!chatId) continue;
 const bals = cust?.balances || { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
 
-let text = `🟢 سند رسید\n\n`;
+let changeAmount = 0;
+let changeCurrency: Currency = "AFN";
+if (tx.type === "exchange" && tx.customerId === custId) {
+  changeAmount = tx.toAmount;
+  changeCurrency = tx.toCurrency;
+} else if (tx.type === "transfer") {
+  if (tx.senderId === custId) {
+    changeAmount = -tx.fromAmount;
+    changeCurrency = tx.fromCurrency;
+  } else if (tx.receiverId === custId) {
+    changeAmount = tx.toAmount;
+    changeCurrency = tx.toCurrency;
+  }
+} else if (tx.type === "convert" && tx.customerId === custId) {
+  changeAmount = tx.toAmount;
+  changeCurrency = tx.toCurrency;
+}
+
+const isReceipt = changeAmount >= 0;
+const docType = isReceipt ? "🟢 سند رسید" : "🔴 سند برداشت";
+const amountDisplay = Math.abs(changeAmount);
+
+let text = `${docType}\n\n`;
 text += `🗓 تاریخ: ${formatDateTime(new Date(tx.date))}\n`;
 text += `🛅 پیگیری: ${tx.trackingCode}\n`;
 
 if (tx.type === "exchange") {
   text += `👤 مشتری: ${tx.customerName}\n`;
   text += `📑 شرح: ${tx.description || `تبادل ارز (${tx.dealType === "buy" ? "خرید" : "فروش"})`}\n`;
-  text += `💰 مبلغ دریافت: ${fmt(tx.fromAmount)} ${labels[tx.fromCurrency]}\n`;
-  text += `📝 به حروف: ${numberToPersianWords(tx.fromAmount)}\n`;
-  text += `💵 مبلغ پرداخت: ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}\n`;
+  text += `💰 مبلغ: ${fmt(amountDisplay)} ${labels[changeCurrency]}\n`;
+  text += `📝 به حروف: ${numberToPersianWords(amountDisplay)}\n`;
 } else if (tx.type === "transfer") {
   const isSender = custId === tx.senderId;
   text += `👤 ${isSender ? "فرستنده" : "گیرنده"}: ${isSender ? tx.senderName : tx.receiverName}\n`;
   text += `📑 شرح: ${tx.description || `انتقال ${isSender ? "از حساب شما به" : "به حساب شما از"} ${isSender ? tx.receiverName : tx.senderName}`}\n`;
-  const amount = isSender ? tx.fromAmount : tx.toAmount;
-  const currency = isSender ? tx.fromCurrency : tx.toCurrency;
-  text += `💰 مبلغ: ${fmt(amount)} ${labels[currency]}\n`;
-  text += `📝 به حروف: ${numberToPersianWords(amount)}\n`;
+  text += `💰 مبلغ: ${fmt(amountDisplay)} ${labels[changeCurrency]}\n`;
+  text += `📝 به حروف: ${numberToPersianWords(amountDisplay)}\n`;
 } else if (tx.type === "convert") {
   text += `👤 مشتری: ${tx.customerName}\n`;
   text += `📑 شرح: ${tx.description || "تبدیل ارز"}\n`;
-  text += `💰 مبلغ تبدیل شده: ${fmt(tx.toAmount)} ${labels[tx.toCurrency]}\n`;
-  text += `📝 به حروف: ${numberToPersianWords(tx.toAmount)}\n`;
+  text += `💰 مبلغ: ${fmt(amountDisplay)} ${labels[changeCurrency]}\n`;
+  text += `📝 به حروف: ${numberToPersianWords(amountDisplay)}\n`;
 }
 
 text += `\n-------------بیلانس فعلی شما--------------\n`;
@@ -1181,7 +1196,6 @@ return (
 );
 });
 const tableMaxHeight = "max-h-[672px]";
-// ✅ تابع کمکی برای رندر کردن آیتم‌های لیست با ظاهر ویژه برای حساب صرافی
 const renderCustomerItem = (c: Customer, idx: number, onSelect: (c: Customer) => void, hoverClass: string, gradientClass: string) => {
 const isExchangeAcc = c.id === EXCHANGE_ACCOUNT_ID;
 return (
