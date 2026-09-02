@@ -2,7 +2,7 @@
   "name": "صرافی برادران نورزاد",
   "short_name": "نورزاد",
   "description": "سامانه مدیریت معاملات ارزی — هرات",
-  "start_url": "/trades",
+  "start_url": "/dashboard",
   "display": "standalone",
   "background_color": "#eef6fa",
   "theme_color": "#0ea5e9",
