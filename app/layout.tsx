@@ -1,33 +1,10 @@
-import type { Metadata, Viewport } from "next";
-import "./globals.css";
+import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: "صرافی برادران نورزاد — هرات",
-  description: "سامانه مدیریت معاملات ارزی، حواله‌جات و تبدیل ارز",
+  title: 'صرافی برادران نورزاد', // یا نام دلخواه برنامه شما
+  description: 'سیستم مدیریت صرافی و حسابداری',
   icons: {
-    icon: "/icon-512.png",
-    apple: "/icon-512.png"
+    icon: '/icon.png',
+    apple: '/icon.png', // برای نمایش صحیح آیکون در دستگاه‌های اپل
   },
-  manifest: "/manifest.json"
 };
-
-export const viewport: Viewport = {
-  themeColor: "#0ea5e9",
-  width: "device-width",
-  initialScale: 1
-};
-
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return (
-    <html lang="fa" dir="rtl">
-      <head>
-        <link rel="apple-touch-icon" href="/icon-512.png" />
-      </head>
-      <body>{children}</body>
-    </html>
-  );
-}
