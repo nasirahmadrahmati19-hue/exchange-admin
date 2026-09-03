@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import "./globals.css"; // اگر فایل استایل شما نام دیگری دارد، آن را اصلاح کنید
+import "./globals.css";
+import { AuthProvider } from "@/components/AuthProvider"; // ← این خط اضافه شد
 
-// ۱. تنظیمات متادیتا و آیکون
 export const metadata: Metadata = {
   title: "صرافی برادران نورزاد",
   description: "سیستم مدیریت صرافی و حسابداری",
@@ -11,7 +11,6 @@ export const metadata: Metadata = {
   },
 };
 
-// ۲. ساختار استاندارد Layout (این بخش بسیار مهم است)
 export default function RootLayout({
   children,
 }: {
@@ -20,7 +19,10 @@ export default function RootLayout({
   return (
     <html lang="fa" dir="rtl">
       <body className="antialiased">
-        {children}
+        {/* ← این دو خط اضافه شدند تا کل برنامه تحت پوشش سیستم لاگین قرار بگیرد */}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );
