@@ -1,0 +1,20 @@
+// app/layout.tsx
+import './globals.css';
+import { AuthProvider } from '@/components/AuthProvider'; // این خط را اضافه کن
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="fa" dir="rtl">
+      <body className="bg-gray-50">
+        {/* کل برنامه را داخل AuthProvider بپیچ */}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
+      </body>
+    </html>
+  );
+}
