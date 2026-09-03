@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { AuthProvider } from "@/components/AuthProvider"; // ← این خط اضافه شد
+import AuthProvider from "../components/AuthProvider"; // ← بدون آکولاد {}
 
 export const metadata: Metadata = {
   title: "صرافی برادران نورزاد",
@@ -19,7 +19,6 @@ export default function RootLayout({
   return (
     <html lang="fa" dir="rtl">
       <body className="antialiased">
-        {/* ← این دو خط اضافه شدند تا کل برنامه تحت پوشش سیستم لاگین قرار بگیرد */}
         <AuthProvider>
           {children}
         </AuthProvider>
