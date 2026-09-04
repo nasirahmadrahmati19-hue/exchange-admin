@@ -2,7 +2,8 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { onAuthStateChanged, User } from "firebase/auth";
-import { auth } from "./dashboard/lib/firebase";
+import { auth } from "./dashboard/lib/firebase"; // ✅ مسیر صحیح و دقیق
+
 interface AuthContextType {
   user: User | null;
   loading: boolean;
