@@ -1,44 +1,39 @@
-"use client"; // ← این خط باید حتماً خط اول باشد
+"use client"; // این خط باید حتماً خط اول باشد
 
-import { createContext, useContext, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { onAuthStateChanged } from "firebase/auth";
-import { auth } from "@/lib/firebase"; // اگر خطا داد، این خط را به: import { auth } from "../lib/firebase"; تغییر دهید
+import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { onAuthStateChanged, User } from "firebase/auth";
+import { auth } from "../lib/firebase"; // <-- تغییر مهم: استفاده از مسیر نسبی به جای @/
 
-const AuthContext = createContext<any>(null);
+interface AuthContextType {
+  user: User | null;
+  loading: boolean;
+}
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<any>(null);
+const AuthContext = createContext<AuthContextType>({ user: null, loading: true });
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const router = useRouter();
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setLoading(false);
-      
-      // هدایت به صفحه لاگین فقط در سمت کلاینت و در صورت عدم احراز هویت
-      if (!currentUser && typeof window !== "undefined") {
-        const currentPath = window.location.pathname;
-        if (!currentPath.startsWith("/login")) {
-          router.push("/login");
-        }
-      }
     });
-    
+
     return () => unsubscribe();
-  }, [router]);
+  }, []);
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-50 text-gray-700 font-sans">
-        در حال بررسی وضعیت...
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <p className="text-gray-600">در حال بارگذاری...</p>
       </div>
     );
   }
 
   return (
-    <AuthContext.Provider value={{ user }}>
+    <AuthContext.Provider value={{ user, loading }}>
       {children}
     </AuthContext.Provider>
   );
