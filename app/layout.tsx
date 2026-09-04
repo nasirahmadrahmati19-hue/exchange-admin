@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import AuthProvider from "../components/AuthProvider"; // ← بدون آکولاد {}
+// توجه: مسیر حالا "./" است چون فایل کنار همین فایل قرار دارد
+import { AuthProvider } from "./AuthProvider"; 
 
 export const metadata: Metadata = {
   title: "صرافی برادران نورزاد",
