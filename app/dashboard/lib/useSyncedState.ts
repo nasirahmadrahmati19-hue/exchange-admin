@@ -1,10 +1,8 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
-// ✅ اضافه کردن ایمپورت‌های فایربیس
 import { db } from "./firebase"; 
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
 
-// ایجاد یک کانال ارتباطی سراسری و مشترک بین تمام تب‌های برنامه
 const channel = typeof window !== "undefined" ? new BroadcastChannel("exchange-app-sync-channel") : null;
 
 export function useSyncedState<T>(key: string, initialValue: T) {
@@ -23,6 +21,9 @@ export function useSyncedState<T>(key: string, initialValue: T) {
   // نگهداری آخرین مقدار برای جلوگیری از حلقه‌های بی‌نهایت
   const latestState = useRef(state);
   latestState.current = state;
+
+  // ✅ FIX: تعریف مرجع سند در اینجا تا هم در useEffect و هم در setSyncedState قابل دسترسی باشد
+  const stateDocRef = typeof window !== "undefined" ? doc(db, "synced_states", key) : null;
 
   useEffect(() => {
     // ۲. گوش دادن به تغییرات localStorage (به عنوان پشتیبان آفلاین)
@@ -48,17 +49,20 @@ export function useSyncedState<T>(key: string, initialValue: T) {
       }
     };
 
+    let unsubscribeFirestore: (() => void) | undefined;
+
     // ✅ ۴. گوش دادن زنده به تغییرات فایربیس (برای همگام‌سازی بین گوشی و کامپیوتر)
-    const stateDocRef = doc(db, "synced_states", key);
-    const unsubscribeFirestore = onSnapshot(stateDocRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const firebaseValue = snapshot.data().value;
-        // فقط اگر مقدار واقعاً تغییر کرده بود، آپدیت کن (جلوگیری از رندر اضافی)
-        if (JSON.stringify(latestState.current) !== JSON.stringify(firebaseValue)) {
-          setState(firebaseValue);
+    if (stateDocRef) {
+      unsubscribeFirestore = onSnapshot(stateDocRef, (snapshot) => {
+        if (snapshot.exists()) {
+          const firebaseValue = snapshot.data().value;
+          // فقط اگر مقدار واقعاً تغییر کرده بود، آپدیت کن (جلوگیری از رندر اضافی)
+          if (JSON.stringify(latestState.current) !== JSON.stringify(firebaseValue)) {
+            setState(firebaseValue);
+          }
         }
-      }
-    });
+      });
+    }
 
     window.addEventListener("storage", handleStorage);
     channel?.addEventListener("message", handleBroadcast);
@@ -67,9 +71,9 @@ export function useSyncedState<T>(key: string, initialValue: T) {
     return () => {
       window.removeEventListener("storage", handleStorage);
       channel?.removeEventListener("message", handleBroadcast);
-      unsubscribeFirestore(); // ✅ قطع اتصال فایربیس
+      if (unsubscribeFirestore) unsubscribeFirestore(); // ✅ قطع اتصال فایربیس
     };
-  }, [key]);
+  }, [key, stateDocRef]);
 
   // ۵. تابع به‌روزرسانی که هم localStorage، هم تب‌ها و هم فایربیس را مطلع می‌کند
   const setSyncedState = useCallback((value: T | ((prev: T) => T)) => {
@@ -88,8 +92,10 @@ export function useSyncedState<T>(key: string, initialValue: T) {
           channel?.postMessage({ key, value: newValue });
           
           // ✅ ارسال تغییرات به سرور فایربیس (برای سایر دستگاه‌ها)
-          setDoc(stateDocRef, { value: newValue }, { merge: true })
-            .catch((err) => console.error(`[useSyncedState] خطای فایربیس برای "${key}":`, err));
+          if (stateDocRef) {
+            setDoc(stateDocRef, { value: newValue }, { merge: true })
+              .catch((err) => console.error(`[useSyncedState] خطای فایربیس برای "${key}":`, err));
+          }
 
         } catch (error) {
           console.error(`[useSyncedState] خطا در ذخیره کلید "${key}":`, error);
@@ -97,7 +103,7 @@ export function useSyncedState<T>(key: string, initialValue: T) {
       }
       return newValue;
     });
-  }, [key]);
+  }, [key, stateDocRef]);
 
   return [state, setSyncedState] as const;
 }
