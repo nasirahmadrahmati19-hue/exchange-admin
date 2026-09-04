@@ -1,8 +1,8 @@
-"use client"; // این خط باید حتماً خط اول باشد
+"use client";
 
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { onAuthStateChanged, User } from "firebase/auth";
-import { auth } from "../lib/firebase"; // <-- تغییر مهم: استفاده از مسیر نسبی به جای @/
+import { auth } from "@/lib/firebase"; // مسیر با @ اصلاح شد
 
 interface AuthContextType {
   user: User | null;
