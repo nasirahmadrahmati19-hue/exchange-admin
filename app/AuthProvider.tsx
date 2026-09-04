@@ -1,9 +1,9 @@
-// components/AuthProvider.tsx
-'use client';
-import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
-import { createContext, useContext, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+"use client"; // ← این خط باید حتماً خط اول باشد
+
+import { createContext, useContext, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth } from "@/lib/firebase"; // اگر خطا داد، این خط را به: import { auth } from "../lib/firebase"; تغییر دهید
 
 const AuthContext = createContext<any>(null);
 
@@ -17,16 +17,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(currentUser);
       setLoading(false);
       
-      // اگر کاربر لاگین نبود و در صفحه لاگین هم نبود، به لاگین بفرست
-      if (!currentUser && typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
-        router.push('/login');
+      // هدایت به صفحه لاگین فقط در سمت کلاینت و در صورت عدم احراز هویت
+      if (!currentUser && typeof window !== "undefined") {
+        const currentPath = window.location.pathname;
+        if (!currentPath.startsWith("/login")) {
+          router.push("/login");
+        }
       }
     });
+    
     return () => unsubscribe();
   }, [router]);
 
   if (loading) {
-    return <div className="flex h-screen items-center justify-center">در حال بررسی وضعیت...</div>;
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-50 text-gray-700 font-sans">
+        در حال بررسی وضعیت...
+      </div>
+    );
   }
 
   return (
