@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef, useCallback, type ReactNode } from "react";
 
 // ✅ اضافه شدن ایمپورت‌های فایربیس برای همگام‌سازی تنظیمات
-import { doc, setDoc, getDoc } from "firebase/firestore";
+import { doc, setDoc, getDoc, onSnapshot } from "firebase/firestore";
 import { db } from "../dashboard/lib/firebase";
 
 // ✅ کلیدهای localStorage - مستقیماً تعریف شده (بدون وابستگی به lib)
@@ -129,16 +129,16 @@ export default function SettingsDrawer() {
   useEffect(() => { try { window.localStorage.setItem("fx-theme", theme); } catch {} }, [theme]);
   const dk = theme === "dark";
 
-  // ✅ بارگذاری اولیه: اول از فایربیس، سپس از localStorage
+  // ✅ بارگذاری اولیه + گوش دادن زنده به تغییرات فایربیس (Real-time Sync)
   useEffect(() => {
     const loadInitialSettings = async () => {
       try {
         const docRef = doc(db, "app_settings", "global_settings");
-        const docSnap = await getDoc(docRef);
         
+        // ۱. بارگذاری اولیه از فایربیس
+        const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const fbSettings = docSnap.data().value as Settings;
-          // مهاجرت chatIds برای سازگاری با نسخه‌های قدیمی
           let migratedChatIds: string[] = [];
           if (fbSettings?.telegram?.chatIds && Array.isArray(fbSettings.telegram.chatIds)) {
             migratedChatIds = fbSettings.telegram.chatIds;
@@ -156,16 +156,49 @@ export default function SettingsDrawer() {
           
           localStorage.setItem(SETTINGS_KEY, JSON.stringify(finalSettings));
           setSettings(finalSettings);
-          setMounted(true);
-          return;
+        } else {
+          // اگر در فایربیس نبود، از localStorage بخوان
+          setSettings(loadSettings());
         }
+        
+        // ✅ ۲. گوش دادن زنده به تغییرات فایربیس (Real-time Sync)
+        const unsubscribe = onSnapshot(docRef, (snapshot) => {
+          if (snapshot.exists()) {
+            const fbSettings = snapshot.data().value as Settings;
+            let migratedChatIds: string[] = [];
+            if (fbSettings?.telegram?.chatIds && Array.isArray(fbSettings.telegram.chatIds)) {
+              migratedChatIds = fbSettings.telegram.chatIds;
+            }
+            
+            const finalSettings: Settings = {
+              ...defaultSettings,
+              ...fbSettings,
+              telegram: {
+                ...defaultSettings.telegram,
+                ...fbSettings?.telegram,
+                chatIds: migratedChatIds
+              }
+            };
+            
+            // ✅ آپدیت localStorage (برای فایل‌های دیگر که از آن می‌خوانند)
+            localStorage.setItem(SETTINGS_KEY, JSON.stringify(finalSettings));
+            
+            // آپدیت state (برای نمایش در UI)
+            setSettings(finalSettings);
+            console.log("✅ تنظیمات از فایربیس به‌روزرسانی شد");
+          }
+        });
+        
+        setMounted(true);
+        
+        // پاک‌سازی هنگام خروج از کامپوننت
+        return () => unsubscribe();
+        
       } catch (error) {
         console.warn("⚠️ عدم دسترسی به فایربیس، استفاده از حافظه محلی:", error);
+        setSettings(loadSettings());
+        setMounted(true);
       }
-      
-      // اگر در فایربیس نبود، از localStorage بخوان
-      setSettings(loadSettings());
-      setMounted(true);
     };
 
     loadInitialSettings();
