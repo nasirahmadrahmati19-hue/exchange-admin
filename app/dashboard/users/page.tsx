@@ -400,22 +400,27 @@ export default function CustomersPage() {
 
   const allBalances = useMemo(() => {
     const map: Record<string, Record<Currency, number>> = {};
-    customers.forEach(c => { map[c.id] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; });
+    
+    // ۱. مقداردهی اولیه برای همه مشتریان عادی
+    customers.forEach(c => { 
+      if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) {
+        map[c.id] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+      }
+    });
+    
     map[CASH_BOX_ID] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     map[EXCHANGE_ACCOUNT_ID] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
 
+    // ۲. محاسبه موجودی تک‌تک مشتریان عادی
     for (const c of customers) {
-      for (const cur of currencies) {
-        map[c.id][cur] = getLedgerBalance(c.id, cur, cashEntries, ledger);
+      if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) {
+        for (const cur of currencies) {
+          map[c.id][cur] = getLedgerBalance(c.id, cur, cashEntries, ledger);
+        }
       }
     }
-    map[CASH_BOX_ID] = {
-      AFN: getLedgerBalance(CASH_BOX_ID, "AFN", cashEntries, ledger),
-      USD: getLedgerBalance(CASH_BOX_ID, "USD", cashEntries, ledger),
-      EUR: getLedgerBalance(CASH_BOX_ID, "EUR", cashEntries, ledger),
-      IRR: getLedgerBalance(CASH_BOX_ID, "IRR", cashEntries, ledger),
-      PKR: getLedgerBalance(CASH_BOX_ID, "PKR", cashEntries, ledger),
-    };
+
+    // ۳. محاسبه موجودی حساب صرافی
     map[EXCHANGE_ACCOUNT_ID] = {
       AFN: getLedgerBalance(EXCHANGE_ACCOUNT_ID, "AFN", cashEntries, ledger),
       USD: getLedgerBalance(EXCHANGE_ACCOUNT_ID, "USD", cashEntries, ledger),
@@ -423,6 +428,26 @@ export default function CustomersPage() {
       IRR: getLedgerBalance(EXCHANGE_ACCOUNT_ID, "IRR", cashEntries, ledger),
       PKR: getLedgerBalance(EXCHANGE_ACCOUNT_ID, "PKR", cashEntries, ledger),
     };
+
+    // ۴. ✅ محاسبه موجودی صندوق دقیقاً مطابق فرمول داشبورد:
+    // صندوق = مجموع طلب مشتریان + موجودی حساب صرافی
+    for (const cur of currencies) {
+      let cashBoxTotal = 0;
+      
+      // جمع زدن موجودی همه مشتریان عادی
+      for (const c of customers) {
+        if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) {
+          cashBoxTotal += map[c.id][cur];
+        }
+      }
+      
+      // اضافه کردن موجودی حساب صرافی
+      cashBoxTotal += map[EXCHANGE_ACCOUNT_ID][cur];
+      
+      // ذخیره نهایی موجودی صندوق
+      map[CASH_BOX_ID][cur] = cashBoxTotal;
+    }
+
     return map;
   }, [customers, cashEntries, ledger]);
 
