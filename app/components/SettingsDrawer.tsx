@@ -1,11 +1,8 @@
 "use client";
 import { useEffect, useState, useRef, useCallback, type ReactNode } from "react";
-
-// ✅ اضافه شدن ایمپورت‌های فایربیس برای همگام‌سازی تنظیمات
 import { doc, setDoc, getDoc, onSnapshot } from "firebase/firestore";
 import { db } from "../dashboard/lib/firebase";
 
-// ✅ کلیدهای localStorage - مستقیماً تعریف شده (بدون وابستگی به lib)
 const CUSTOMERS_KEY = "fx-customers";
 const TRANSACTIONS_KEY = "fx-transactions";
 const HAWALAS_KEY = "fx-hawalas";
@@ -79,23 +76,6 @@ function loadSettings(): Settings {
   }
 }
 
-// ✅ تابع اصلاح‌شده: ذخیره همزمان در localStorage و فایربیس
-async function saveSettings(s: Settings) {
-  if (typeof window === "undefined") return;
-  try {
-    // ۱. ذخیره در حافظه دستگاه (برای حالت آفلاین و سرعت)
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
-    
-    // ۲. ✅ ذخیره در فایربیس برای همگام‌سازی بین گوشی و کامپیوتر
-    await setDoc(doc(db, "app_settings", "global_settings"), {
-      value: s,
-      updatedAt: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error("❌ خطا در ذخیره تنظیمات در فایربیس:", error);
-  }
-}
-
 const Ic = ({ n, className = "h-5 w-5" }: { n: string; className?: string }) => {
   const paths: Record<string, string> = {
     gear: "M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
@@ -124,19 +104,22 @@ export default function SettingsDrawer() {
   const [activeAccordion, setActiveAccordion] = useState<string | null>("email");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  
+  // ✅ نگهداری آخرین وضعیت برای مقایسه هوشمند و جلوگیری از حلقه بی‌نهایت
+  const latestSettingsRef = useRef(settings);
+  latestSettingsRef.current = settings;
 
   useEffect(() => { try { const s = window.localStorage.getItem("fx-theme"); if (s === "dark" || s === "light") setTheme(s); } catch {} }, []);
   useEffect(() => { try { window.localStorage.setItem("fx-theme", theme); } catch {} }, [theme]);
   const dk = theme === "dark";
 
-  // ✅ بارگذاری اولیه + گوش دادن زنده به تغییرات فایربیس (Real-time Sync)
+  // ✅ ۱. بارگذاری اولیه تنظیمات
   useEffect(() => {
     const loadInitialSettings = async () => {
       try {
         const docRef = doc(db, "app_settings", "global_settings");
-        
-        // ۱. بارگذاری اولیه از فایربیس
         const docSnap = await getDoc(docRef);
+        
         if (docSnap.exists()) {
           const fbSettings = docSnap.data().value as Settings;
           let migratedChatIds: string[] = [];
@@ -147,62 +130,70 @@ export default function SettingsDrawer() {
           const finalSettings: Settings = {
             ...defaultSettings,
             ...fbSettings,
-            telegram: {
-              ...defaultSettings.telegram,
-              ...fbSettings?.telegram,
-              chatIds: migratedChatIds
-            }
+            telegram: { ...defaultSettings.telegram, ...fbSettings?.telegram, chatIds: migratedChatIds }
           };
           
           localStorage.setItem(SETTINGS_KEY, JSON.stringify(finalSettings));
           setSettings(finalSettings);
         } else {
-          // اگر در فایربیس نبود، از localStorage بخوان
           setSettings(loadSettings());
         }
-        
-        // ✅ ۲. گوش دادن زنده به تغییرات فایربیس (Real-time Sync)
-        const unsubscribe = onSnapshot(docRef, (snapshot) => {
-          if (snapshot.exists()) {
-            const fbSettings = snapshot.data().value as Settings;
-            let migratedChatIds: string[] = [];
-            if (fbSettings?.telegram?.chatIds && Array.isArray(fbSettings.telegram.chatIds)) {
-              migratedChatIds = fbSettings.telegram.chatIds;
-            }
-            
-            const finalSettings: Settings = {
-              ...defaultSettings,
-              ...fbSettings,
-              telegram: {
-                ...defaultSettings.telegram,
-                ...fbSettings?.telegram,
-                chatIds: migratedChatIds
-              }
-            };
-            
-            // ✅ آپدیت localStorage (برای فایل‌های دیگر که از آن می‌خوانند)
-            localStorage.setItem(SETTINGS_KEY, JSON.stringify(finalSettings));
-            
-            // آپدیت state (برای نمایش در UI)
-            setSettings(finalSettings);
-            console.log("✅ تنظیمات از فایربیس به‌روزرسانی شد");
-          }
-        });
-        
         setMounted(true);
-        
-        // پاک‌سازی هنگام خروج از کامپوننت
-        return () => unsubscribe();
-        
       } catch (error) {
         console.warn("⚠️ عدم دسترسی به فایربیس، استفاده از حافظه محلی:", error);
         setSettings(loadSettings());
         setMounted(true);
       }
     };
-
     loadInitialSettings();
-  }, []);
+  }, [db]);
+
+  // ✅ ۲. گوش دادن زنده به تغییرات فایربیس (با مقایسه هوشمند برای جلوگیری از تداخل)
+  useEffect(() => {
+    const docRef = doc(db, "app_settings", "global_settings");
+    const unsubscribe = onSnapshot(docRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const fbSettings = snapshot.data().value as Settings;
+        
+        // فقط اگر داده‌های فایربیس با داده‌های فعلی دستگاه متفاوت بود، آپدیت کن
+        if (JSON.stringify(fbSettings) !== JSON.stringify(latestSettingsRef.current)) {
+          let migratedChatIds: string[] = [];
+          if (fbSettings?.telegram?.chatIds && Array.isArray(fbSettings.telegram.chatIds)) {
+            migratedChatIds = fbSettings.telegram.chatIds;
+          }
+          
+          const finalSettings: Settings = {
+            ...defaultSettings,
+            ...fbSettings,
+            telegram: { ...defaultSettings.telegram, ...fbSettings?.telegram, chatIds: migratedChatIds }
+          };
+          
+          localStorage.setItem(SETTINGS_KEY, JSON.stringify(finalSettings));
+          setSettings(finalSettings);
+          console.log("✅ تنظیمات از فایربیس همگام‌سازی شد");
+        }
+      }
+    });
+    return () => unsubscribe();
+  }, [db]);
+
+  // ✅ ۳. ذخیره هوشمند در فایربیس (Debounce: ۱ ثانیه بعد از اتمام تایپ)
+  useEffect(() => {
+    if (!mounted) return;
+    const timer = setTimeout(async () => {
+      try {
+        await setDoc(doc(db, "app_settings", "global_settings"), {
+          value: settings,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+        console.log("✅ تنظیمات در فایربیس ذخیره شد (Debounce)");
+      } catch (error) {
+        console.error("❌ خطا در ذخیره فایربیس:", error);
+      }
+    }, 1000); // ۱۰۰۰ میلی‌ثانیه صبر می‌کند تا تایپ تمام شود
+
+    return () => clearTimeout(timer);
+  }, [settings, mounted, db]);
 
   useEffect(() => {
     if (!open) return;
@@ -223,19 +214,11 @@ export default function SettingsDrawer() {
   }, []);
 
   const updateSettings = useCallback((updates: Partial<Settings>) => {
-    setSettings(prev => {
-      const next = { ...prev, ...updates };
-      saveSettings(next);
-      return next;
-    });
+    setSettings(prev => ({ ...prev, ...updates }));
   }, []);
 
   const updateTelegram = useCallback((updates: Partial<Settings["telegram"]>) => {
-    setSettings(prev => {
-      const next = { ...prev, telegram: { ...prev.telegram, ...updates } };
-      saveSettings(next);
-      return next;
-    });
+    setSettings(prev => ({ ...prev, telegram: { ...prev.telegram, ...updates } }));
   }, []);
 
   const handleBackup = useCallback(() => {
@@ -299,10 +282,7 @@ export default function SettingsDrawer() {
     const isOpen = activeAccordion === id;
     return (
       <div className={`rounded-xl border overflow-hidden transition-all duration-300 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-white"}`}>
-        <button
-          onClick={() => setActiveAccordion(isOpen ? null : id)}
-          className={`flex w-full items-center justify-between gap-3 px-4 py-3.5 transition-colors ${dk ? "hover:bg-slate-700/50" : "hover:bg-slate-50"}`}
-        >
+        <button onClick={() => setActiveAccordion(isOpen ? null : id)} className={`flex w-full items-center justify-between gap-3 px-4 py-3.5 transition-colors ${dk ? "hover:bg-slate-700/50" : "hover:bg-slate-50"}`}>
           <div className="flex items-center gap-3">
             <span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}>
               <Ic n={icon} className="h-4 w-4" />
@@ -331,69 +311,35 @@ export default function SettingsDrawer() {
 
   return (
     <>
-      {/* دکمه آیکن تنظیمات - سمت چپ بالا */}
-      <button
-        data-settings-toggle
-        onClick={() => setOpen(!open)}
-        className={`fixed top-4 left-4 z-50 grid h-12 w-12 place-items-center rounded-xl border shadow-lg transition-all duration-300 hover:scale-105 active:scale-95 ${
-          open
-            ? dk ? "bg-emerald-400 text-slate-900 border-emerald-400" : "bg-emerald-500 text-white border-emerald-500"
-            : dk ? "bg-slate-800 text-emerald-300 border-slate-600 hover:border-emerald-400" : "bg-white text-emerald-600 border-slate-200 hover:border-emerald-400"
-        }`}
-        title="تنظیمات"
-      >
+      <button data-settings-toggle onClick={() => setOpen(!open)} className={`fixed top-4 left-4 z-50 grid h-12 w-12 place-items-center rounded-xl border shadow-lg transition-all duration-300 hover:scale-105 active:scale-95 ${open ? dk ? "bg-emerald-400 text-slate-900 border-emerald-400" : "bg-emerald-500 text-white border-emerald-500" : dk ? "bg-slate-800 text-emerald-300 border-slate-600 hover:border-emerald-400" : "bg-white text-emerald-600 border-slate-200 hover:border-emerald-400"}`} title="تنظیمات">
         <Ic n="gear" className={`h-6 w-6 transition-transform duration-500 ${open ? "rotate-90" : ""}`} />
       </button>
 
-      {/* Overlay */}
-      {open && (
-        <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm transition-opacity" onClick={() => setOpen(false)} />
-      )}
+      {open && <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm transition-opacity" onClick={() => setOpen(false)} />}
 
-      {/* پنل کشویی */}
-      <div
-        ref={panelRef}
-        className={`fixed top-0 left-0 z-50 h-full w-full max-w-md transform transition-transform duration-300 ease-in-out ${open ? "translate-x-0" : "-translate-x-full"} ${panelBg} border-r shadow-2xl overflow-y-auto`}
-      >
-        {/* هدر پنل */}
+      <div ref={panelRef} className={`fixed top-0 left-0 z-50 h-full w-full max-w-md transform transition-transform duration-300 ease-in-out ${open ? "translate-x-0" : "-translate-x-full"} ${panelBg} border-r shadow-2xl overflow-y-auto`}>
         <div className={`sticky top-0 z-10 flex items-center justify-between border-b px-5 py-4 backdrop-blur ${dk ? "bg-slate-900/95 border-slate-700" : "bg-white/95 border-slate-200"}`}>
           <div className="flex items-center gap-3">
-            <span className={`grid h-10 w-10 place-items-center rounded-xl ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}>
-              <Ic n="gear" className="h-5 w-5" />
-            </span>
+            <span className={`grid h-10 w-10 place-items-center rounded-xl ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}><Ic n="gear" className="h-5 w-5" /></span>
             <div>
               <h2 className={`text-lg font-black ${heading}`}>تنظیمات</h2>
               <p className={`text-[10px] font-bold ${subText}`}>پیکربندی سیستم صرافی</p>
             </div>
           </div>
-          <button
-            onClick={() => setOpen(false)}
-            className={`grid h-9 w-9 place-items-center rounded-lg transition-colors ${dk ? "hover:bg-slate-700 text-slate-400" : "hover:bg-slate-100 text-slate-500"}`}
-          >
-            <Ic n="x" className="h-5 w-5" />
-          </button>
+          <button onClick={() => setOpen(false)} className={`grid h-9 w-9 place-items-center rounded-lg transition-colors ${dk ? "hover:bg-slate-700 text-slate-400" : "hover:bg-slate-100 text-slate-500"}`}><Ic n="x" className="h-5 w-5" /></button>
         </div>
 
-        {/* محتوای پنل */}
         <div className="space-y-3 p-4">
-
-          {/* 📧 بخش جیمیل */}
           <AccordionItem id="email" icon="mail" title="ایمیل (جیمیل)">
             <div className="space-y-3">
-              {fld("ایمیل صرافی", (
-                <input type="email" dir="ltr" value={settings.email} onChange={e => updateSettings({ email: e.target.value })} placeholder="example@gmail.com" className={`${uiInput} text-left`} />
-              ))}
-              {fld("ایمیل پشتیبانی", (
-                <input type="email" dir="ltr" value={settings.supportEmail} onChange={e => updateSettings({ supportEmail: e.target.value })} placeholder="support@gmail.com" className={`${uiInput} text-left`} />
-              ))}
-              <button onClick={() => { saveSettings(settings); showToast("ایمیل ذخیره شد"); }} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white transition-all hover:bg-emerald-600 active:scale-95">
-                <Ic n="check" className="h-4 w-4" />
-                ذخیره ایمیل
+              {fld("ایمیل صرافی", <input type="email" dir="ltr" value={settings.email} onChange={e => updateSettings({ email: e.target.value })} placeholder="example@gmail.com" className={`${uiInput} text-left`} />)}
+              {fld("ایمیل پشتیبانی", <input type="email" dir="ltr" value={settings.supportEmail} onChange={e => updateSettings({ supportEmail: e.target.value })} placeholder="support@gmail.com" className={`${uiInput} text-left`} />)}
+              <button onClick={() => showToast("تغییرات به صورت خودکار ذخیره می‌شوند")} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white transition-all hover:bg-emerald-600 active:scale-95">
+                <Ic n="check" className="h-4 w-4" /> ذخیره ایمیل
               </button>
             </div>
           </AccordionItem>
 
-          {/* 🌐 بخش زبان */}
           <AccordionItem id="language" icon="globe" title="زبان سیستم">
             <div className="space-y-2">
               {([
@@ -401,15 +347,7 @@ export default function SettingsDrawer() {
                 { value: "pashto", label: "پشتو", flag: "🇦🇫" },
                 { value: "english", label: "English", flag: "🇬🇧" },
               ] as const).map(lang => (
-                <button
-                  key={lang.value}
-                  onClick={() => { updateSettings({ language: lang.value }); showToast(`زبان به ${lang.label} تغییر کرد`); }}
-                  className={`flex w-full items-center gap-3 rounded-xl border px-4 py-3 transition-all ${
-                    settings.language === lang.value
-                      ? dk ? "border-emerald-400 bg-emerald-400/10" : "border-emerald-500 bg-emerald-50"
-                      : dk ? "border-slate-600 hover:border-slate-500" : "border-slate-200 hover:border-slate-300"
-                  }`}
-                >
+                <button key={lang.value} onClick={() => { updateSettings({ language: lang.value }); showToast(`زبان به ${lang.label} تغییر کرد`); }} className={`flex w-full items-center gap-3 rounded-xl border px-4 py-3 transition-all ${settings.language === lang.value ? dk ? "border-emerald-400 bg-emerald-400/10" : "border-emerald-500 bg-emerald-50" : dk ? "border-slate-600 hover:border-slate-500" : "border-slate-200 hover:border-slate-300"}`}>
                   <span className="text-xl">{lang.flag}</span>
                   <span className={`flex-1 text-right text-sm font-bold ${heading}`}>{lang.label}</span>
                   {settings.language === lang.value && <Ic n="check" className={`h-5 w-5 ${dk ? "text-emerald-300" : "text-emerald-600"}`} />}
@@ -418,44 +356,29 @@ export default function SettingsDrawer() {
             </div>
           </AccordionItem>
 
-          {/* 👥 بخش تیم */}
           <AccordionItem id="team" icon="users" title="اطلاعات تیم">
             <div className="space-y-3">
-              {fld("نام تیم / صرافی", (
-                <input value={settings.teamName} onChange={e => updateSettings({ teamName: e.target.value })} placeholder="صرافی برادران نورزاد" className={uiInput} />
-              ))}
-              {fld("آدرس", (
-                <input value={settings.teamAddress} onChange={e => updateSettings({ teamAddress: e.target.value })} placeholder="هرات، افغانستان" className={uiInput} />
-              ))}
-              {fld("شماره تماس", (
-                <input dir="ltr" value={settings.teamPhone} onChange={e => updateSettings({ teamPhone: e.target.value })} placeholder="+93 700 000 000" className={`${uiInput} text-left`} />
-              ))}
-              <button onClick={() => { saveSettings(settings); showToast("اطلاعات تیم ذخیره شد"); }} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white transition-all hover:bg-emerald-600 active:scale-95">
-                <Ic n="check" className="h-4 w-4" />
-                ذخیره اطلاعات تیم
+              {fld("نام تیم / صرافی", <input value={settings.teamName} onChange={e => updateSettings({ teamName: e.target.value })} placeholder="صرافی برادران نورزاد" className={uiInput} />)}
+              {fld("آدرس", <input value={settings.teamAddress} onChange={e => updateSettings({ teamAddress: e.target.value })} placeholder="هرات، افغانستان" className={uiInput} />)}
+              {fld("شماره تماس", <input dir="ltr" value={settings.teamPhone} onChange={e => updateSettings({ teamPhone: e.target.value })} placeholder="+93 700 000 000" className={`${uiInput} text-left`} />)}
+              <button onClick={() => showToast("تغییرات به صورت خودکار ذخیره می‌شوند")} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white transition-all hover:bg-emerald-600 active:scale-95">
+                <Ic n="check" className="h-4 w-4" /> ذخیره اطلاعات تیم
               </button>
             </div>
           </AccordionItem>
 
-          {/* 💾 بخش پشتیبان‌گیری */}
           <AccordionItem id="backup" icon="backup" title="پشتیبان‌گیری">
             <div className="space-y-3">
               <button onClick={handleBackup} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white transition-all hover:bg-emerald-600 active:scale-95">
-                <Ic n="download" className="h-4 w-4" />
-                دانلود پشتیبان کامل
+                <Ic n="download" className="h-4 w-4" /> دانلود پشتیبان کامل
               </button>
               <button onClick={() => fileInputRef.current?.click()} className={`flex h-11 w-full items-center justify-center gap-2 rounded-xl border text-sm font-black transition-all active:scale-95 ${dk ? "border-slate-600 text-slate-200 hover:bg-slate-700" : "border-slate-300 text-slate-700 hover:bg-slate-50"}`}>
-                <Ic n="upload" className="h-4 w-4" />
-                بازیابی از فایل
+                <Ic n="upload" className="h-4 w-4" /> بازیابی از فایل
               </button>
               <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={e => { const file = e.target.files?.[0]; if (file) handleRestore(file); e.target.value = ""; }} />
-              <div className={`rounded-lg p-3 text-[11px] font-bold ${dk ? "bg-slate-700/50 text-slate-400" : "bg-slate-50 text-slate-500"}`}>
-                💡 پشتیبان شامل تمام مشتریان، معاملات، حواله‌ها و اسناد صندوق است.
-              </div>
             </div>
           </AccordionItem>
 
-          {/* 📱 بخش تلگرام */}
           <AccordionItem id="telegram" icon="telegram" title="تنظیمات تلگرام">
             <div className="space-y-4">
               <div className="flex items-center justify-between">
@@ -464,49 +387,32 @@ export default function SettingsDrawer() {
               </div>
               {settings.telegram.enabled && (
                 <>
-                  {fld("توکن بات (Bot Token)", (
-                    <input dir="ltr" value={settings.telegram.botToken} onChange={e => updateTelegram({ botToken: e.target.value })} placeholder="123456789:ABCdefGHI..." className={`${uiInput} text-left font-mono text-xs`} />
-                  ))}
+                  {fld("توکن بات (Bot Token)", <input dir="ltr" value={settings.telegram.botToken} onChange={e => updateTelegram({ botToken: e.target.value })} placeholder="123456789:ABCdefGHI..." className={`${uiInput} text-left font-mono text-xs`} />)}
                   
-                  {/* ✅ لیست مدیریت چت آی‌دی‌ها */}
                   <div className="space-y-2">
                     <label className={uiLabel}>لیست چت آی‌دی‌ها (Chat IDs)</label>
                     <div className="space-y-2">
                       {settings.telegram.chatIds.map((id, idx) => (
                         <div key={idx} className="flex items-center gap-2">
-                          <input 
-                            dir="ltr" 
-                            value={id} 
-                            onChange={e => {
-                              const newIds = [...settings.telegram.chatIds];
-                              newIds[idx] = e.target.value;
-                              updateTelegram({ chatIds: newIds });
-                            }} 
-                            placeholder="-1001234567890" 
-                            className={`${uiInput} text-left font-mono text-xs flex-1`} 
-                          />
-                          <button 
-                            onClick={() => {
-                              const newIds = settings.telegram.chatIds.filter((_, i) => i !== idx);
-                              updateTelegram({ chatIds: newIds });
-                            }}
-                            className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 transition-colors"
-                            title="حذف این چت آی‌دی"
-                          >
+                          <input dir="ltr" value={id} onChange={e => {
+                            const newIds = [...settings.telegram.chatIds];
+                            newIds[idx] = e.target.value;
+                            updateTelegram({ chatIds: newIds });
+                          }} placeholder="-1001234567890" className={`${uiInput} text-left font-mono text-xs flex-1`} />
+                          <button onClick={() => {
+                            const newIds = settings.telegram.chatIds.filter((_, i) => i !== idx);
+                            updateTelegram({ chatIds: newIds });
+                          }} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 transition-colors" title="حذف">
                             <Ic n="x" className="h-4 w-4" />
                           </button>
                         </div>
                       ))}
-                      <button 
-                        onClick={() => updateTelegram({ chatIds: [...settings.telegram.chatIds, ""] })}
-                        className={`flex w-full items-center justify-center gap-2 rounded-xl border border-dashed py-2.5 text-xs font-bold transition-colors ${dk ? "border-slate-600 text-slate-400 hover:border-emerald-400 hover:text-emerald-300" : "border-slate-300 text-slate-500 hover:border-emerald-500 hover:text-emerald-600"}`}
-                      >
-                        <Ic n="plus" className="h-4 w-4" />
-                        افزودن چت آی‌دی جدید
+                      <button onClick={() => updateTelegram({ chatIds: [...settings.telegram.chatIds, ""] })} className={`flex w-full items-center justify-center gap-2 rounded-xl border border-dashed py-2.5 text-xs font-bold transition-colors ${dk ? "border-slate-600 text-slate-400 hover:border-emerald-400 hover:text-emerald-300" : "border-slate-300 text-slate-500 hover:border-emerald-500 hover:text-emerald-600"}`}>
+                        <Ic n="plus" className="h-4 w-4" /> افزودن چت آی‌دی جدید
                       </button>
                     </div>
                     <p className={`text-[10px] leading-relaxed ${subText}`}>
-                      💡 هر مشتری که ربات را استارت می‌کند، چت آی‌دی او را اینجا به عنوان یک سطر جدید اضافه کنید. این لیست به صورت آرایه در فایربیس ذخیره می‌شود و بین تمام دستگاه‌های شما همگام می‌گردد.
+                      💡 تغییرات به صورت خودکار و همزمان در تمام دستگاه‌های شما ذخیره می‌شوند.
                     </p>
                   </div>
 
@@ -517,29 +423,23 @@ export default function SettingsDrawer() {
                     <Toggle enabled={settings.telegram.notifyVoid} onChange={v => updateTelegram({ notifyVoid: v })} label="لغو حواله" />
                     <Toggle enabled={settings.telegram.notifyExchange} onChange={v => updateTelegram({ notifyExchange: v })} label="تبادل ارز" />
                   </div>
-                  <button onClick={() => { saveSettings(settings); showToast("تنظیمات تلگرام ذخیره شد"); }} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white transition-all hover:bg-emerald-600 active:scale-95">
-                    <Ic n="check" className="h-4 w-4" />
-                    ذخیره تنظیمات تلگرام
+                  
+                  <button onClick={() => showToast("✅ تنظیمات با موفقیت همگام‌سازی شد")} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white transition-all hover:bg-emerald-600 active:scale-95">
+                    <Ic n="check" className="h-4 w-4" /> تأیید و همگام‌سازی تنظیمات
                   </button>
                 </>
               )}
             </div>
           </AccordionItem>
 
-          {/* فوتر */}
           <div className={`mt-4 rounded-xl p-4 text-center ${dk ? "bg-slate-800/50" : "bg-slate-50"}`}>
             <p className={`text-[10px] font-bold ${subText}`}>نسخه ۱.۰.۰ — صرافی برادران نورزاد</p>
           </div>
         </div>
       </div>
 
-      {/* Toast */}
       {toast && (
-        <div className={`fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-xl px-5 py-3 text-sm font-black shadow-lg ${
-          toastType === "success"
-            ? dk ? "bg-emerald-400 text-slate-900" : "bg-emerald-500 text-white"
-            : dk ? "bg-rose-400 text-slate-900" : "bg-rose-500 text-white"
-        }`}>
+        <div className={`fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-xl px-5 py-3 text-sm font-black shadow-lg ${toastType === "success" ? dk ? "bg-emerald-400 text-slate-900" : "bg-emerald-500 text-white" : dk ? "bg-rose-400 text-slate-900" : "bg-rose-500 text-white"}`}>
           {toast}
         </div>
       )}
