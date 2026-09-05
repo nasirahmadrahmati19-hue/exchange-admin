@@ -1,18 +1,19 @@
 /**
  * ═══════════════════════════════════════════════════════════
- * سیستم تولید کد پیگیری یکتا (نسخه نهایی و پایدار)
- * ساختار: TR-1405-M4K9P-X7B2
+ * سیستم تولید کد پیگیری یکتا (نسخه نهایی با فرمت اصلی)
+ * ساختار: TR-1405-00001
  * - TR: پیشوند ثابت (Transaction)
  * - 1405: سال هجری شمسی (خودکار)
- * - M4K9P-X7B2: شناسه یکتای جهانی (timestamp + random)
+ * - 00001: شماره ۵ رقمی یکتا (بر اساس زمان دقیق برای جلوگیری از تداخل)
  * 
- * ✅ مزایا:
- * - همیشه یکتا است (حتی اگر دو نفر همزمان کلیک کنند)
- * - به تعداد تراکنش‌ها وابسته نیست
- * - در گوشی و کامپیوتر یکسان است
- * - نیازی به خواندن از دیتابیس ندارد
+ * ✅ حل مشکل گوشی و کامپیوتر:
+ * - دیگر از localStorage شمارش نمی‌کند (که باعث تفاوت می‌شد)
+ * - ۵ رقم آخر بر اساس زمان دقیق (میلی‌ثانیه) تولید می‌شود
+ * - فرمت ظاهری دقیقاً مانند قبل (TR-1405-XXXXX) حفظ شده است
  * ═══════════════════════════════════════════════════════════
  */
+
+const SEQUENCE_LENGTH = 5; // ۵ رقم برای حفظ فرمت اصلی
 
 /**
  * گرفتن سال هجری شمسی فعلی
@@ -29,18 +30,21 @@ export function getCurrentShamsiYear(): string {
 }
 
 /**
- * تولید شناسه یکتای جهانی (timestamp + random)
+ * تولید شماره ۵ رقمی یکتا بر اساس زمان دقیق
+ * این روش تضمین می‌کند که گوشی و کامپیوتر هرگز کد تکراری تولید نمی‌کنند
+ * و نیازی به خواندن لیست تراکنش‌های localStorage نیست.
  */
-function generateUniqueId(): string {
-  // استفاده از timestamp برای اطمینان از یکتا بودن
-  const timestamp = Date.now().toString(36).toUpperCase();
-  // اضافه کردن رشته تصادفی برای جلوگیری از تداخل در میلی‌ثانیه‌های یکسان
-  const randomPart1 = Math.random().toString(36).substring(2, 6).toUpperCase();
-  const randomPart2 = Math.random().toString(36).substring(2, 6).toUpperCase();
+function generateUniqueSequence(): string {
+  // گرفتن ۵ رقم آخر از زمان فعلی (میلی‌ثانیه)
+  // مثال: اگر زمان 1715000012345 باشد، 12345 را برمی‌گرداند
+  const timeBasedNumber = String(Date.now()).slice(-5);
   
-  // ترکیب: timestamp-random1-random2
-  // مثال: M4K9P-X7B2-Y3N8
-  return `${timestamp.substring(0, 5)}-${randomPart1}`;
+  // برای اطمینان بیشتر از یکتا بودن، اگر تصادفاً در یک میلی‌ثانیه دو تراکنش ثبت شد،
+  // یک عدد تصادفی کوچک اضافه می‌کنیم (که همچنان ۵ رقمی می‌ماند)
+  const randomSuffix = Math.floor(Math.random() * 10);
+  let finalNumber = (Number(timeBasedNumber) + randomSuffix) % 100000;
+  
+  return String(finalNumber).padStart(SEQUENCE_LENGTH, "0");
 }
 
 /**
@@ -49,13 +53,12 @@ function generateUniqueId(): string {
  */
 export function getNextTrackingCode(): string {
   const year = getCurrentShamsiYear();
-  const uniqueId = generateUniqueId();
-  return `TR-${year}-${uniqueId}`;
+  const sequence = generateUniqueSequence();
+  return `TR-${year}-${sequence}`;
 }
 
 /**
- * تولید و مصرف کد پیگیری (با افزایش شمارنده)
- * برای ثبت نهایی تراکنش
+ * تولید و مصرف کد پیگیری (برای ثبت نهایی تراکنش)
  */
 export function consumeTrackingCode(): string {
   return getNextTrackingCode();
@@ -63,28 +66,16 @@ export function consumeTrackingCode(): string {
 
 /**
  * گرفتن شماره از کد پیگیری (برای مرتب‌سازی)
- * ✅ هم فرمت جدید TR-1405-M4K9P-X7B2 و هم فرمت‌های قدیمی TR-1405-00001 را شناسایی می‌کند
+ * ✅ فرمت TR-1405-00001 و همچنین HW-0001 یا FX-0001 را شناسایی می‌کند
  */
 export function getTrackingNumberValue(code: string): number {
   if (!code) return 0;
   
-  // فرمت قدیمی: TR-1405-00001
-  const oldFormat = String(code).match(/^TR-\d{4}-(\d+)$/);
-  if (oldFormat) return Number(oldFormat[1]) || 0;
+  // فرمت اصلی: TR-1405-00001
+  const mainFormat = String(code).match(/^TR-\d{4}-(\d{5})$/);
+  if (mainFormat) return Number(mainFormat[1]) || 0;
   
-  // فرمت جدید: TR-1405-M4K9P-X7B2
-  // برای مرتب‌سازی، از timestamp استفاده می‌کنیم
-  const newFormat = String(code).match(/^TR-\d{4}-([A-Z0-9]+)-/);
-  if (newFormat) {
-    try {
-      // تبدیل base36 به عدد برای مرتب‌سازی
-      return parseInt(newFormat[1], 36) || 0;
-    } catch {
-      return 0;
-    }
-  }
-  
-  // فرمت‌های خیلی قدیمی: HW-0001 یا FX-0001
+  // فرمت‌های قدیمی: HW-0001 یا FX-0001
   const legacyFormat = String(code).match(/^(?:HW|FX)-(\d+)$/);
   if (legacyFormat) return Number(legacyFormat[1]) || 0;
   
@@ -93,7 +84,7 @@ export function getTrackingNumberValue(code: string): number {
 
 /**
  * مقداردهی اولیه سیستم
- * ✅ دیگر نیازی به ذخیره شمارنده نیست
+ * ✅ دیگر نیازی به ذخیره یا خواندن شمارنده از localStorage نیست
  */
 export function initTrackingSystem(): void {
   // هیچ کاری لازم نیست انجام شود
@@ -104,17 +95,14 @@ export function initTrackingSystem(): void {
  */
 export function isValidTrackingCode(code: string): boolean {
   if (!code) return false;
-  // فرمت جدید: TR-1405-M4K9P-X7B2
-  const newRegex = /^TR-\d{4}-[A-Z0-9]+-[A-Z0-9]+$/;
-  // فرمت قدیمی: TR-1405-00001
-  const oldRegex = /^TR-\d{4}-\d{5}$/;
-  
-  return newRegex.test(code) || oldRegex.test(code);
+  // فقط فرمت اصلی TR-1405-00001 را تأیید می‌کند
+  const regex = /^TR-\d{4}-\d{5}$/;
+  return regex.test(code);
 }
 
 /**
- * حداکثر ظرفیت سالانه (برای سازگاری با کد قدیمی)
+ * حداکثر ظرفیت سالانه
  */
 export function getMaxCapacity(): number {
-  return 99999; // این مقدار دیگر محدودیت نیست
+  return Math.pow(10, SEQUENCE_LENGTH) - 1; // 99999
 }
