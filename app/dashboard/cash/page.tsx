@@ -534,15 +534,18 @@ export default function CashPage() {
       const updatedEntriesForEdit = recomputeCashBalances(entries.map(e => e.id === editingEntryId ? updated : e));
       setEntries(updatedEntriesForEdit);
       finalEntry = updated;
-    } else {
-      const entry = { ...previewData, trackingCode: consumeTrackingCode(), status: "active" as const };
-      if (entry.customerId && entry.customerId !== CASH_BOX_ID) { const cust = customers.find(c => c.id === entry.customerId); if (cust) { entry.customerPhone = cust.phone || ""; entry.customerTazkira = cust.tazkira || ""; } }
-      updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForCashEntry(entry, "register"));
-      
-      const updatedEntriesForNew = recomputeCashBalances([...entries, entry]);
-      setEntries(updatedEntriesForNew);
-      finalEntry = entry;
-    }
+} else {
+  // ✅ اضافه شدن await برای دریافت کد پیگیری از سرور فایربیس
+  const newTrackingCode = await consumeTrackingCode();
+  
+  const entry = { ...previewData, trackingCode: newTrackingCode, status: "active" as const };
+  if (entry.customerId && entry.customerId !== CASH_BOX_ID) { const cust = customers.find(c => c.id === entry.customerId); if (cust) { entry.customerPhone = cust.phone || ""; entry.customerTazkira = cust.tazkira || ""; } }
+  updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForCashEntry(entry, "register"));
+  
+  const updatedEntriesForNew = recomputeCashBalances([...entries, entry]);
+  setEntries(updatedEntriesForNew);
+  finalEntry = entry;
+}
     setCustomers(updatedCustomers);
     setForm(emptyForm); setErrors({}); setEditingEntryId(null); setPreviewOpen(false); setPreviewData(null);
     await sendCashReceipts({ entry: finalEntry, action: "register", customers: updatedCustomers });
