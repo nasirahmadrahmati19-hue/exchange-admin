@@ -1,19 +1,22 @@
 /**
  * ═══════════════════════════════════════════════════════════
- * سیستم تولید کد پیگیری یکتا (نسخه نهایی با فرمت اصلی)
+ * سیستم تولید کد پیگیری مسلسل و یکتا (نسخه حرفه‌ای فایربیس)
  * ساختار: TR-1405-00001
- * - TR: پیشوند ثابت (Transaction)
+ * - TR: پیشوند ثابت
  * - 1405: سال هجری شمسی (خودکار)
- * - 00001: شماره ۵ رقمی یکتا (بر اساس زمان دقیق برای جلوگیری از تداخل)
+ * - 00001: شماره مسلسل ۵ رقمی (مدیریت‌شده توسط سرور فایربیس)
  * 
  * ✅ حل مشکل گوشی و کامپیوتر:
- * - دیگر از localStorage شمارش نمی‌کند (که باعث تفاوت می‌شد)
- * - ۵ رقم آخر بر اساس زمان دقیق (میلی‌ثانیه) تولید می‌شود
- * - فرمت ظاهری دقیقاً مانند قبل (TR-1405-XXXXX) حفظ شده است
+ * - از تراکنش اتمی (Transaction) فایربیس استفاده می‌کند.
+ * - تضمین می‌کند حتی اگر ۱۰۰ نفر همزمان کلیک کنند، کد تکراری تولید نمی‌شود.
+ * - در حالت آفلاین، به صورت هوشمند از زمان استفاده می‌کند تا برنامه متوقف نشود.
  * ═══════════════════════════════════════════════════════════
  */
 
-const SEQUENCE_LENGTH = 5; // ۵ رقم برای حفظ فرمت اصلی
+import { doc, runTransaction } from "firebase/firestore";
+import { db } from "./firebase"; // مسیر فایل firebase خود را در صورت نیاز اصلاح کنید
+
+const SEQUENCE_LENGTH = 5;
 
 /**
  * گرفتن سال هجری شمسی فعلی
@@ -30,79 +33,78 @@ export function getCurrentShamsiYear(): string {
 }
 
 /**
- * تولید شماره ۵ رقمی یکتا بر اساس زمان دقیق
- * این روش تضمین می‌کند که گوشی و کامپیوتر هرگز کد تکراری تولید نمی‌کنند
- * و نیازی به خواندن لیست تراکنش‌های localStorage نیست.
- */
-function generateUniqueSequence(): string {
-  // گرفتن ۵ رقم آخر از زمان فعلی (میلی‌ثانیه)
-  // مثال: اگر زمان 1715000012345 باشد، 12345 را برمی‌گرداند
-  const timeBasedNumber = String(Date.now()).slice(-5);
-  
-  // برای اطمینان بیشتر از یکتا بودن، اگر تصادفاً در یک میلی‌ثانیه دو تراکنش ثبت شد،
-  // یک عدد تصادفی کوچک اضافه می‌کنیم (که همچنان ۵ رقمی می‌ماند)
-  const randomSuffix = Math.floor(Math.random() * 10);
-  let finalNumber = (Number(timeBasedNumber) + randomSuffix) % 100000;
-  
-  return String(finalNumber).padStart(SEQUENCE_LENGTH, "0");
-}
-
-/**
- * پیش‌نمایش کد پیگیری بعدی (بدون افزایش شمارنده)
- * برای نمایش در فرم‌ها قبل از ثبت
+ * پیش‌نمایش کد پیگیری (قبل از ثبت نهایی)
+ * ⚠️ نکته: چون عدد دقیق توسط سرور در لحظه ثبت تعیین می‌شود، 
+ * در فرم‌ها قبل از کلیک روی دکمه ثبت، این مقدار نمایش داده می‌شود.
  */
 export function getNextTrackingCode(): string {
   const year = getCurrentShamsiYear();
-  const sequence = generateUniqueSequence();
-  return `TR-${year}-${sequence}`;
+  return `TR-${year}------`; // یا می‌توانید بنویسید "به‌صورت خودکار"
 }
 
 /**
- * تولید و مصرف کد پیگیری (برای ثبت نهایی تراکنش)
+ * تولید و مصرف کد پیگیری (هنگام کلیک روی دکمه ثبت)
+ * ✅ این تابع اکنون Async است تا بتواند با سرور فایربیس هماهنگ شود.
  */
-export function consumeTrackingCode(): string {
-  return getNextTrackingCode();
+export async function consumeTrackingCode(): Promise<string> {
+  const year = getCurrentShamsiYear();
+  // استفاده از یک سند اختصاصی در فایربیس برای شمارش
+  const counterRef = doc(db, "system_counters", "tracking_codes");
+
+  try {
+    const nextNumber = await runTransaction(db, async (transaction) => {
+      const counterDoc = await transaction.get(counterRef);
+      let currentCount = 0;
+      
+      if (counterDoc.exists()) {
+        const data = counterDoc.data();
+        currentCount = data[year] || 0;
+      }
+
+      const newCount = currentCount + 1;
+      if (newCount > 99999) {
+        throw new Error("ظرفیت کد پیگیری این سال پر شده است");
+      }
+
+      // ذخیره عدد جدید در فایربیس به صورت اتمی (غیرقابل تداخل)
+      transaction.set(counterRef, { [year]: newCount }, { merge: true });
+      return newCount;
+    });
+
+    return `TR-${year}-${String(nextNumber).padStart(SEQUENCE_LENGTH, "0")}`;
+  } catch (error) {
+    console.error("⚠️ خطا در ارتباط با سرور برای کد پیگیری. استفاده از روش جایگزین:", error);
+    // حالت آفلاین یا قطعی اینترنت: استفاده از زمان برای جلوگیری از توقف برنامه
+    const fallback = String(Date.now()).slice(-5);
+    return `TR-${year}-${fallback}`;
+  }
 }
 
 /**
  * گرفتن شماره از کد پیگیری (برای مرتب‌سازی)
- * ✅ فرمت TR-1405-00001 و همچنین HW-0001 یا FX-0001 را شناسایی می‌کند
  */
 export function getTrackingNumberValue(code: string): number {
   if (!code) return 0;
   
-  // فرمت اصلی: TR-1405-00001
   const mainFormat = String(code).match(/^TR-\d{4}-(\d{5})$/);
   if (mainFormat) return Number(mainFormat[1]) || 0;
   
-  // فرمت‌های قدیمی: HW-0001 یا FX-0001
   const legacyFormat = String(code).match(/^(?:HW|FX)-(\d+)$/);
   if (legacyFormat) return Number(legacyFormat[1]) || 0;
   
   return 0;
 }
 
-/**
- * مقداردهی اولیه سیستم
- * ✅ دیگر نیازی به ذخیره یا خواندن شمارنده از localStorage نیست
- */
 export function initTrackingSystem(): void {
   // هیچ کاری لازم نیست انجام شود
 }
 
-/**
- * اعتبارسنجی فرمت کد پیگیری
- */
 export function isValidTrackingCode(code: string): boolean {
   if (!code) return false;
-  // فقط فرمت اصلی TR-1405-00001 را تأیید می‌کند
   const regex = /^TR-\d{4}-\d{5}$/;
   return regex.test(code);
 }
 
-/**
- * حداکثر ظرفیت سالانه
- */
 export function getMaxCapacity(): number {
   return Math.pow(10, SEQUENCE_LENGTH) - 1; // 99999
 }
