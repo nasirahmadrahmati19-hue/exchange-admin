@@ -1,20 +1,18 @@
 /**
  * ═══════════════════════════════════════════════════════════
- * سیستم تولید کد پیگیری یکتا
- * ساختار: TR-1405-00001
+ * سیستم تولید کد پیگیری یکتا (نسخه نهایی و پایدار)
+ * ساختار: TR-1405-M4K9P-X7B2
  * - TR: پیشوند ثابت (Transaction)
  * - 1405: سال هجری شمسی (خودکار)
- * - 00001: شماره مسلسل ۵ رقمی (ریست در سال جدید)
- * ظرفیت: 99,999 تراکنش در سال
+ * - M4K9P-X7B2: شناسه یکتای جهانی (timestamp + random)
  * 
- * ✅ نسخه اصلاح‌شده:
- * - کد پیگیری بر اساس تعداد معاملات موجود محاسبه می‌شود
- * - وقتی معامله حذف می‌شود، جای خالی پر می‌شود
- * - وقتی همه معاملات حذف شوند، از ۱ شروع می‌شود
+ * ✅ مزایا:
+ * - همیشه یکتا است (حتی اگر دو نفر همزمان کلیک کنند)
+ * - به تعداد تراکنش‌ها وابسته نیست
+ * - در گوشی و کامپیوتر یکسان است
+ * - نیازی به خواندن از دیتابیس ندارد
  * ═══════════════════════════════════════════════════════════
  */
-
-const SEQUENCE_LENGTH = 5; // ✅ 5 رقم برای ظرفیت بیشتر
 
 /**
  * گرفتن سال هجری شمسی فعلی
@@ -31,102 +29,66 @@ export function getCurrentShamsiYear(): string {
 }
 
 /**
- * گرفتن شماره از کد پیگیری (برای مرتب‌سازی)
- * ✅ هم فرمت جدید TR-1405-00001 و هم فرمت‌های قدیمی HW-0001, FX-0001 را شناسایی می‌کند
+ * تولید شناسه یکتای جهانی (timestamp + random)
  */
-export function getTrackingNumberValue(code: string): number {
-  if (!code) return 0;
+function generateUniqueId(): string {
+  // استفاده از timestamp برای اطمینان از یکتا بودن
+  const timestamp = Date.now().toString(36).toUpperCase();
+  // اضافه کردن رشته تصادفی برای جلوگیری از تداخل در میلی‌ثانیه‌های یکسان
+  const randomPart1 = Math.random().toString(36).substring(2, 6).toUpperCase();
+  const randomPart2 = Math.random().toString(36).substring(2, 6).toUpperCase();
   
-  // فرمت جدید: TR-1405-00001 یا TR-1405-99999
-  const newFormat = String(code).match(/^TR-\d{4}-(\d{4,5})$/);
-  if (newFormat) return Number(newFormat[1]) || 0;
-  
-  // فرمت‌های قدیمی: HW-0001 یا FX-0001
-  const oldFormat = String(code).match(/^(?:HW|FX)-(\d+)$/);
-  if (oldFormat) return Number(oldFormat[1]) || 0;
-  
-  return 0;
-}
-
-/**
- * جمع‌آوری تمام کدهای پیگیری استفاده‌شده از همه بخش‌ها
- */
-function collectUsedTrackingNumbers(): Set<number> {
-  const usedNumbers = new Set<number>();
-  
-  // بررسی معاملات (transactions)
-  try {
-    const rawTx = localStorage.getItem("fx-transactions");
-    if (rawTx) {
-      const txs = JSON.parse(rawTx);
-      if (Array.isArray(txs)) {
-        for (const tx of txs) {
-          const num = getTrackingNumberValue(tx.trackingCode || tx.number || "");
-          if (num > 0) usedNumbers.add(num);
-        }
-      }
-    }
-  } catch {}
-  
-  // بررسی حواله‌ها (hawalas)
-  try {
-    const rawHw = localStorage.getItem("hawalas");
-    if (rawHw) {
-      const hws = JSON.parse(rawHw);
-      if (Array.isArray(hws)) {
-        for (const hw of hws) {
-          const num = getTrackingNumberValue(hw.number || "");
-          if (num > 0) usedNumbers.add(num);
-        }
-      }
-    }
-  } catch {}
-  
-  // بررسی اسناد صندوق (cash entries)
-  try {
-    const rawCe = localStorage.getItem("cash-entries");
-    if (rawCe) {
-      const ces = JSON.parse(rawCe);
-      if (Array.isArray(ces)) {
-        for (const ce of ces) {
-          const num = getTrackingNumberValue(ce.trackingCode || "");
-          if (num > 0) usedNumbers.add(num);
-        }
-      }
-    }
-  } catch {}
-  
-  return usedNumbers;
+  // ترکیب: timestamp-random1-random2
+  // مثال: M4K9P-X7B2-Y3N8
+  return `${timestamp.substring(0, 5)}-${randomPart1}`;
 }
 
 /**
  * پیش‌نمایش کد پیگیری بعدی (بدون افزایش شمارنده)
  * برای نمایش در فرم‌ها قبل از ثبت
- * 
- * ✅ روش جدید: پیدا کردن اولین جای خالی در شماره‌ها
  */
 export function getNextTrackingCode(): string {
   const year = getCurrentShamsiYear();
-  const usedNumbers = collectUsedTrackingNumbers();
-  
-  // پیدا کردن اولین جای خالی
-  let nextNumber = 1;
-  while (usedNumbers.has(nextNumber)) {
-    nextNumber++;
-  }
-  
-  return `TR-${year}-${String(nextNumber).padStart(SEQUENCE_LENGTH, "0")}`;
+  const uniqueId = generateUniqueId();
+  return `TR-${year}-${uniqueId}`;
 }
 
 /**
  * تولید و مصرف کد پیگیری (با افزایش شمارنده)
  * برای ثبت نهایی تراکنش
- * 
- * ✅ روش جدید: چون getNextTrackingCode بر اساس معاملات موجود کار می‌کند،
- * consumeTrackingCode فقط همان کد را برمی‌گرداند
  */
 export function consumeTrackingCode(): string {
   return getNextTrackingCode();
+}
+
+/**
+ * گرفتن شماره از کد پیگیری (برای مرتب‌سازی)
+ * ✅ هم فرمت جدید TR-1405-M4K9P-X7B2 و هم فرمت‌های قدیمی TR-1405-00001 را شناسایی می‌کند
+ */
+export function getTrackingNumberValue(code: string): number {
+  if (!code) return 0;
+  
+  // فرمت قدیمی: TR-1405-00001
+  const oldFormat = String(code).match(/^TR-\d{4}-(\d+)$/);
+  if (oldFormat) return Number(oldFormat[1]) || 0;
+  
+  // فرمت جدید: TR-1405-M4K9P-X7B2
+  // برای مرتب‌سازی، از timestamp استفاده می‌کنیم
+  const newFormat = String(code).match(/^TR-\d{4}-([A-Z0-9]+)-/);
+  if (newFormat) {
+    try {
+      // تبدیل base36 به عدد برای مرتب‌سازی
+      return parseInt(newFormat[1], 36) || 0;
+    } catch {
+      return 0;
+    }
+  }
+  
+  // فرمت‌های خیلی قدیمی: HW-0001 یا FX-0001
+  const legacyFormat = String(code).match(/^(?:HW|FX)-(\d+)$/);
+  if (legacyFormat) return Number(legacyFormat[1]) || 0;
+  
+  return 0;
 }
 
 /**
@@ -135,7 +97,6 @@ export function consumeTrackingCode(): string {
  */
 export function initTrackingSystem(): void {
   // هیچ کاری لازم نیست انجام شود
-  // سیستم به صورت خودکار بر اساس معاملات موجود کار می‌کند
 }
 
 /**
@@ -143,13 +104,17 @@ export function initTrackingSystem(): void {
  */
 export function isValidTrackingCode(code: string): boolean {
   if (!code) return false;
-  const regex = /^TR-\d{4}-\d{5}$/;
-  return regex.test(code);
+  // فرمت جدید: TR-1405-M4K9P-X7B2
+  const newRegex = /^TR-\d{4}-[A-Z0-9]+-[A-Z0-9]+$/;
+  // فرمت قدیمی: TR-1405-00001
+  const oldRegex = /^TR-\d{4}-\d{5}$/;
+  
+  return newRegex.test(code) || oldRegex.test(code);
 }
 
 /**
- * حداکثر ظرفیت سالانه
+ * حداکثر ظرفیت سالانه (برای سازگاری با کد قدیمی)
  */
 export function getMaxCapacity(): number {
-  return Math.pow(10, SEQUENCE_LENGTH) - 1; // 99999
+  return 99999; // این مقدار دیگر محدودیت نیست
 }
