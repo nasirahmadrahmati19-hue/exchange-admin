@@ -6,14 +6,26 @@ import { db } from "./firebase";
 const channel = typeof window !== "undefined" ? new BroadcastChannel("exchange-app-sync-channel") : null;
 
 export function useSyncedState<T>(key: string, initialValue: T) {
+  // نگهداری timestamp محلی برای جلوگیری از override شدن داده‌های جدید
+  const localTimestampRef = useRef<number>(0);
+  
   // ۱. خواندن فوری از localStorage
   const [state, setState] = useState<T>(() => {
     if (typeof window === "undefined") return initialValue;
     try {
       const item = window.localStorage.getItem(key);
-      return item ? JSON.parse(item) : initialValue;
+      if (item) {
+        const parsed = JSON.parse(item);
+        // اگر داده timestamp داشت، آن را ذخیره کن
+        if (parsed && typeof parsed === 'object' && '_timestamp' in parsed) {
+          localTimestampRef.current = parsed._timestamp;
+          return parsed.value;
+        }
+        return parsed;
+      }
+      return initialValue;
     } catch (error) {
-      console.warn(`[useSyncedState] خطا در خواندن "${key}". استفاده از مقدار پیش‌فرض.`);
+      console.warn(`[useSyncedState] خطا در خواندن "${key}".`);
       return initialValue;
     }
   });
@@ -26,8 +38,20 @@ export function useSyncedState<T>(key: string, initialValue: T) {
       if (e.key === key && e.newValue !== null) {
         try {
           const parsed = JSON.parse(e.newValue);
-          if (JSON.stringify(latestState.current) !== JSON.stringify(parsed)) {
-            setState(parsed);
+          let value = parsed;
+          let timestamp = 0;
+          
+          if (parsed && typeof parsed === 'object' && '_timestamp' in parsed) {
+            value = parsed.value;
+            timestamp = parsed._timestamp;
+          }
+          
+          // فقط اگر timestamp جدیدتر بود، آپدیت کن
+          if (timestamp >= localTimestampRef.current) {
+            if (JSON.stringify(latestState.current) !== JSON.stringify(value)) {
+              setState(value);
+              localTimestampRef.current = timestamp;
+            }
           }
         } catch (error) {}
       }
@@ -35,8 +59,14 @@ export function useSyncedState<T>(key: string, initialValue: T) {
 
     const handleBroadcast = (event: MessageEvent) => {
       if (event.data.key === key && event.data.value !== undefined) {
-        if (JSON.stringify(latestState.current) !== JSON.stringify(event.data.value)) {
-          setState(event.data.value);
+        let value = event.data.value;
+        let timestamp = event.data.timestamp || 0;
+        
+        if (timestamp >= localTimestampRef.current) {
+          if (JSON.stringify(latestState.current) !== JSON.stringify(value)) {
+            setState(value);
+            localTimestampRef.current = timestamp;
+          }
         }
       }
     };
@@ -50,14 +80,24 @@ export function useSyncedState<T>(key: string, initialValue: T) {
         
         unsubscribeFirestore = onSnapshot(docRef, (snapshot) => {
           if (snapshot.exists()) {
-            const fbValue = snapshot.data().value;
-            if (fbValue !== undefined && JSON.stringify(latestState.current) !== JSON.stringify(fbValue)) {
-              setState(fbValue);
-              try {
-                window.localStorage.setItem(key, JSON.stringify(fbValue));
-              } catch (e) {
-                // اگر حافظه پر بود، فقط در کنسول هشدار بده ولی برنامه را متوقف نکن
-                console.warn("⚠️ حافظه مرورگر پر است. داده‌ها از فایربیس خوانده می‌شوند.");
+            const data = snapshot.data();
+            const fbValue = data.value;
+            const fbTimestamp = data._timestamp || 0;
+            
+            // ⚠️ حیاتی: فقط اگر timestamp فایربیس جدیدتر یا مساوی بود، اعمال کن
+            if (fbTimestamp >= localTimestampRef.current) {
+              if (fbValue !== undefined && JSON.stringify(latestState.current) !== JSON.stringify(fbValue)) {
+                setState(fbValue);
+                localTimestampRef.current = fbTimestamp;
+                
+                try {
+                  window.localStorage.setItem(key, JSON.stringify({
+                    value: fbValue,
+                    _timestamp: fbTimestamp
+                  }));
+                } catch (e) {
+                  console.warn("⚠️ حافظه مرورگر پر است.");
+                }
               }
             }
           }
@@ -83,40 +123,41 @@ export function useSyncedState<T>(key: string, initialValue: T) {
     };
   }, [key]);
 
-  // ۵. تابع به‌روزرسانی (با مدیریت خطای پر شدن حافظه)
+  // ۵. تابع به‌روزرسانی (با timestamp برای جلوگیری از override)
   const setSyncedState = useCallback((value: T | ((prev: T) => T)) => {
     setState((prev) => {
       const newValue = value instanceof Function ? value(prev) : value;
+      const timestamp = Date.now();
+      
+      // آپدیت timestamp محلی
+      localTimestampRef.current = timestamp;
       
       if (typeof window !== "undefined") {
         try {
-          const serialized = JSON.stringify(newValue);
+          const dataWithTimestamp = {
+            value: newValue,
+            _timestamp: timestamp
+          };
+          const serialized = JSON.stringify(dataWithTimestamp);
           
-          // تلاش برای ذخیره در localStorage
           try {
             window.localStorage.setItem(key, serialized);
           } catch (storageError: any) {
             if (storageError.name === 'QuotaExceededError') {
-              console.warn("⚠️ ظرفیت localStorage پر شده است! داده‌ها فقط در فایربیس ذخیره می‌شوند.");
-              // اختیاری: پاک کردن داده قدیمی برای آزاد کردن فضا
+              console.warn("⚠️ ظرفیت localStorage پر شده است!");
               window.localStorage.removeItem(key);
               try {
                 window.localStorage.setItem(key, serialized);
-              } catch (e) {
-                console.error("❌ همچنان نمی‌توان در localStorage ذخیره کرد.");
-              }
-            } else {
-              console.error("❌ خطای ناشناخته در localStorage:", storageError);
+              } catch (e) {}
             }
           }
           
-          channel?.postMessage({ key, value: newValue });
+          channel?.postMessage({ key, value: newValue, timestamp });
           
-          // ارسال به فایربیس (این بخش همیشه کار می‌کند حتی اگر localStorage پر باشد)
           import("./firebase").then(({ db }) => {
             import("firebase/firestore").then(({ doc: firestoreDoc, setDoc }) => {
               const docRef = firestoreDoc(db, "synced_states", key);
-              setDoc(docRef, { value: newValue }, { merge: true })
+              setDoc(docRef, dataWithTimestamp, { merge: true })
                 .catch((err) => console.error(`[useSyncedState] خطای فایربیس:`, err));
             });
           }).catch(() => {});
