@@ -1,32 +1,28 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { db } from "./firebase"; 
-import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import { doc, setDoc, onSnapshot } from "firebase/firestore";
+import { db } from "./firebase";
 
 const channel = typeof window !== "undefined" ? new BroadcastChannel("exchange-app-sync-channel") : null;
 
 export function useSyncedState<T>(key: string, initialValue: T) {
-  // ۱. خواندن مقدار اولیه از localStorage
+  // ۱. خواندن فوری از localStorage برای جلوگیری از صفحه سفید
   const [state, setState] = useState<T>(() => {
     if (typeof window === "undefined") return initialValue;
     try {
       const item = window.localStorage.getItem(key);
       return item ? JSON.parse(item) : initialValue;
     } catch (error) {
-      console.error(`[useSyncedState] خطا در خواندن کلید "${key}":`, error);
+      console.error(`[useSyncedState] خطا در خواندن "${key}":`, error);
       return initialValue;
     }
   });
 
-  // نگهداری آخرین مقدار برای جلوگیری از حلقه‌های بی‌نهایت
   const latestState = useRef(state);
   latestState.current = state;
 
-  // ✅ FIX: تعریف مرجع سند در اینجا تا هم در useEffect و هم در setSyncedState قابل دسترسی باشد
-  const stateDocRef = typeof window !== "undefined" ? doc(db, "synced_states", key) : null;
-
   useEffect(() => {
-    // ۲. گوش دادن به تغییرات localStorage (به عنوان پشتیبان آفلاین)
+    // ۲. گوش دادن به تغییرات localStorage (برای تب‌های دیگر در همین دستگاه)
     const handleStorage = (e: StorageEvent) => {
       if (e.key === key && e.newValue !== null) {
         try {
@@ -35,12 +31,12 @@ export function useSyncedState<T>(key: string, initialValue: T) {
             setState(parsed);
           }
         } catch (error) {
-          console.error(`[useSyncedState] خطا در پارس کردن کلید "${key}":`, error);
+          console.error(`[useSyncedState] خطا در پارس "${key}":`, error);
         }
       }
     };
 
-    // ۳. گوش دادن به پیام‌های BroadcastChannel (برای تب‌های مختلف در یک دستگاه)
+    // ۳. گوش دادن به BroadcastChannel
     const handleBroadcast = (event: MessageEvent) => {
       if (event.data.key === key && event.data.value !== undefined) {
         if (JSON.stringify(latestState.current) !== JSON.stringify(event.data.value)) {
@@ -49,61 +45,81 @@ export function useSyncedState<T>(key: string, initialValue: T) {
       }
     };
 
+    // ۴. ✅ گوش دادن زنده به فایربیس (با منطق ضد پاک‌شدن)
     let unsubscribeFirestore: (() => void) | undefined;
-
-    // ✅ ۴. گوش دادن زنده به تغییرات فایربیس (برای همگام‌سازی بین گوشی و کامپیوتر)
-    if (stateDocRef) {
-      unsubscribeFirestore = onSnapshot(stateDocRef, (snapshot) => {
-        if (snapshot.exists()) {
-          const firebaseValue = snapshot.data().value;
-          // فقط اگر مقدار واقعاً تغییر کرده بود، آپدیت کن (جلوگیری از رندر اضافی)
-          if (JSON.stringify(latestState.current) !== JSON.stringify(firebaseValue)) {
-            setState(firebaseValue);
+    
+    const setupFirestore = async () => {
+      try {
+        const { doc: firestoreDoc } = await import("firebase/firestore");
+        const docRef = firestoreDoc(db, "synced_states", key);
+        
+        unsubscribeFirestore = onSnapshot(docRef, (snapshot) => {
+          // ⚠️ نکته حیاتی: فقط اگر فایربیس واقعاً داده داشت، آن را اعمال کن
+          if (snapshot.exists()) {
+            const fbValue = snapshot.data().value;
+            
+            // اگر داده فایربیس با داده فعلی متفاوت بود، آپدیت کن
+            if (fbValue !== undefined && JSON.stringify(latestState.current) !== JSON.stringify(fbValue)) {
+              setState(fbValue);
+              // همگام‌سازی معکوس: داده فایربیس را در localStorage هم ذخیره کن
+              localStorage.setItem(key, JSON.stringify(fbValue));
+            }
           }
-        }
-      });
+          // ✅ اگر snapshot.exists() false بود (فایربیس خالی بود)، هیچ کاری نمی‌کنیم!
+          // این کار باعث می‌شود داده‌های localStorage پاک نشوند.
+        }, (error) => {
+          console.warn(`[useSyncedState] خطای شنود فایربیس برای "${key}":`, error.message);
+        });
+      } catch (error) {
+        console.warn(`[useSyncedState] فایربیس در دسترس نیست برای "${key}".`);
+      }
+    };
+
+    if (typeof window !== "undefined") {
+      setupFirestore();
     }
 
     window.addEventListener("storage", handleStorage);
     channel?.addEventListener("message", handleBroadcast);
 
-    // پاک‌سازی هنگام خروج از کامپوننت
     return () => {
       window.removeEventListener("storage", handleStorage);
       channel?.removeEventListener("message", handleBroadcast);
-      if (unsubscribeFirestore) unsubscribeFirestore(); // ✅ قطع اتصال فایربیس
+      if (unsubscribeFirestore) unsubscribeFirestore();
     };
-  }, [key, stateDocRef]);
+  }, [key]);
 
-  // ۵. تابع به‌روزرسانی که هم localStorage، هم تب‌ها و هم فایربیس را مطلع می‌کند
+  // ۵. تابع به‌روزرسانی (ذخیره همزمان در هر سه جا)
   const setSyncedState = useCallback((value: T | ((prev: T) => T)) => {
     setState((prev) => {
-      // پشتیبانی کامل از الگوی تابعی (prev => ...)
       const newValue = value instanceof Function ? value(prev) : value;
       
       if (typeof window !== "undefined") {
         try {
           const serialized = JSON.stringify(newValue);
           
-          // ذخیره در گوشی (آفلاین)
+          // ۱. ذخیره در حافظه دستگاه
           window.localStorage.setItem(key, serialized);
           
-          // اطلاع‌رسانی به سایر تب‌های همین دستگاه
+          // ۲. اطلاع‌رسانی به سایر تب‌ها
           channel?.postMessage({ key, value: newValue });
           
-          // ✅ ارسال تغییرات به سرور فایربیس (برای سایر دستگاه‌ها)
-          if (stateDocRef) {
-            setDoc(stateDocRef, { value: newValue }, { merge: true })
-              .catch((err) => console.error(`[useSyncedState] خطای فایربیس برای "${key}":`, err));
-          }
+          // ۳. ارسال به فایربیس (با مدیریت خطا)
+          import("./firebase").then(({ db }) => {
+            import("firebase/firestore").then(({ doc: firestoreDoc, setDoc }) => {
+              const docRef = firestoreDoc(db, "synced_states", key);
+              setDoc(docRef, { value: newValue }, { merge: true })
+                .catch((err) => console.warn(`[useSyncedState] خطای ذخیره فایربیس "${key}":`, err.message));
+            });
+          }).catch(() => {});
 
         } catch (error) {
-          console.error(`[useSyncedState] خطا در ذخیره کلید "${key}":`, error);
+          console.error(`[useSyncedState] خطا در ذخیره "${key}":`, error);
         }
       }
       return newValue;
     });
-  }, [key, stateDocRef]);
+  }, [key]);
 
   return [state, setSyncedState] as const;
 }
