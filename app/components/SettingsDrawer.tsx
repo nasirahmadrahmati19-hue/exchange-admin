@@ -1,6 +1,10 @@
 "use client";
 import { useEffect, useState, useRef, useCallback, type ReactNode } from "react";
 
+// ✅ اضافه شدن ایمپورت‌های فایربیس برای همگام‌سازی تنظیمات
+import { doc, setDoc, getDoc } from "firebase/firestore";
+import { db } from "../dashboard/lib/firebase";
+
 // ✅ کلیدهای localStorage - مستقیماً تعریف شده (بدون وابستگی به lib)
 const CUSTOMERS_KEY = "fx-customers";
 const TRANSACTIONS_KEY = "fx-transactions";
@@ -18,7 +22,7 @@ type Settings = {
   telegram: {
     enabled: boolean;
     botToken: string;
-    chatIds: string[]; // ✅ تغییر به آرایه برای پشتیبانی از لیست چندگانه
+    chatIds: string[];
     notifyNewHawala: boolean;
     notifySettlement: boolean;
     notifyVoid: boolean;
@@ -36,7 +40,7 @@ const defaultSettings: Settings = {
   telegram: {
     enabled: false,
     botToken: "",
-    chatIds: [], // ✅ مقدار پیش‌فرض آرایه
+    chatIds: [],
     notifyNewHawala: true,
     notifySettlement: true,
     notifyVoid: true,
@@ -51,7 +55,6 @@ function loadSettings(): Settings {
     if (!raw) return defaultSettings;
     const parsed = JSON.parse(raw);
     
-    // ✅ سیستم مهاجرت خودکار: اگر نسخه قدیمی (chatId) وجود داشت، آن را به آرایه تبدیل می‌کند
     let migratedChatIds: string[] = [];
     if (parsed.telegram?.chatIds && Array.isArray(parsed.telegram.chatIds)) {
       migratedChatIds = parsed.telegram.chatIds;
@@ -68,7 +71,7 @@ function loadSettings(): Settings {
       telegram: { 
         ...defaultSettings.telegram, 
         ...parsed.telegram,
-        chatIds: migratedChatIds // ✅ استفاده از لیست مهاجرت‌یافته
+        chatIds: migratedChatIds
       } 
     };
   } catch { 
@@ -76,9 +79,21 @@ function loadSettings(): Settings {
   }
 }
 
-function saveSettings(s: Settings) {
+// ✅ تابع اصلاح‌شده: ذخیره همزمان در localStorage و فایربیس
+async function saveSettings(s: Settings) {
   if (typeof window === "undefined") return;
-  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch {}
+  try {
+    // ۱. ذخیره در حافظه دستگاه (برای حالت آفلاین و سرعت)
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+    
+    // ۲. ✅ ذخیره در فایربیس برای همگام‌سازی بین گوشی و کامپیوتر
+    await setDoc(doc(db, "app_settings", "global_settings"), {
+      value: s,
+      updatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error("❌ خطا در ذخیره تنظیمات در فایربیس:", error);
+  }
 }
 
 const Ic = ({ n, className = "h-5 w-5" }: { n: string; className?: string }) => {
@@ -114,7 +129,47 @@ export default function SettingsDrawer() {
   useEffect(() => { try { window.localStorage.setItem("fx-theme", theme); } catch {} }, [theme]);
   const dk = theme === "dark";
 
-  useEffect(() => { setSettings(loadSettings()); setMounted(true); }, []);
+  // ✅ بارگذاری اولیه: اول از فایربیس، سپس از localStorage
+  useEffect(() => {
+    const loadInitialSettings = async () => {
+      try {
+        const docRef = doc(db, "app_settings", "global_settings");
+        const docSnap = await getDoc(docRef);
+        
+        if (docSnap.exists()) {
+          const fbSettings = docSnap.data().value as Settings;
+          // مهاجرت chatIds برای سازگاری با نسخه‌های قدیمی
+          let migratedChatIds: string[] = [];
+          if (fbSettings?.telegram?.chatIds && Array.isArray(fbSettings.telegram.chatIds)) {
+            migratedChatIds = fbSettings.telegram.chatIds;
+          }
+          
+          const finalSettings: Settings = {
+            ...defaultSettings,
+            ...fbSettings,
+            telegram: {
+              ...defaultSettings.telegram,
+              ...fbSettings?.telegram,
+              chatIds: migratedChatIds
+            }
+          };
+          
+          localStorage.setItem(SETTINGS_KEY, JSON.stringify(finalSettings));
+          setSettings(finalSettings);
+          setMounted(true);
+          return;
+        }
+      } catch (error) {
+        console.warn("⚠️ عدم دسترسی به فایربیس، استفاده از حافظه محلی:", error);
+      }
+      
+      // اگر در فایربیس نبود، از localStorage بخوان
+      setSettings(loadSettings());
+      setMounted(true);
+    };
+
+    loadInitialSettings();
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -418,7 +473,7 @@ export default function SettingsDrawer() {
                       </button>
                     </div>
                     <p className={`text-[10px] leading-relaxed ${subText}`}>
-                      💡 هر مشتری که ربات را استارت می‌کند، چت آی‌دی او را اینجا به عنوان یک سطر جدید اضافه کنید. این لیست به صورت آرایه در حافظه مرورگر ذخیره می‌شود و دیگر به صورت تصادفی پاک نخواهد شد.
+                      💡 هر مشتری که ربات را استارت می‌کند، چت آی‌دی او را اینجا به عنوان یک سطر جدید اضافه کنید. این لیست به صورت آرایه در فایربیس ذخیره می‌شود و بین تمام دستگاه‌های شما همگام می‌گردد.
                     </p>
                   </div>
 
