@@ -338,10 +338,8 @@ function buildCashBoxLedger(cashEntries: any[]): LedgerEntry[] {
 export default function CustomersPage() {
   const [mounted, setMounted] = useState(false);
   
-  // ✅ استفاده از useSyncedState برای هماهنگی کامل بین تمام تب‌ها
   const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
 
-  // ✅ اطمینان از وجود حساب صرافی در لیست مشتریان (اگر وجود نداشت اضافه می‌شود)
   useEffect(() => {
     if (!customers.find(c => c.id === EXCHANGE_ACCOUNT_ID)) {
       setCustomers(prev => [EXCHANGE_ACCOUNT_CUSTOMER, ...prev]);
@@ -398,8 +396,58 @@ export default function CustomersPage() {
   const ledger = useMemo(() => { try { return buildLedger(customers, transactions, hawalas, cashEntries); } catch { return []; } }, [customers, transactions, hawalas, cashEntries]);
   const cashBoxLedger = useMemo(() => { try { return buildCashBoxLedger(cashEntries); } catch { return []; } }, [cashEntries]);
 
-const allBalances = useMemo(() => {
+  const allBalances = useMemo(() => {
+    const map: Record<string, Record<Currency, number>> = {};
+    
+    // ۱. مقداردهی اولیه برای همه مشتریان عادی
+    customers.forEach(c => { 
+      if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) {
+        map[c.id] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+      }
+    });
+    
+    map[CASH_BOX_ID] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+    map[EXCHANGE_ACCOUNT_ID] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
 
+    // ۲. محاسبه موجودی تک‌تک مشتریان عادی
+    for (const c of customers) {
+      if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) {
+        for (const cur of currencies) {
+          map[c.id][cur] = getLedgerBalance(c.id, cur, cashEntries, ledger);
+        }
+      }
+    }
+
+    // ۳. محاسبه موجودی حساب صرافی
+    map[EXCHANGE_ACCOUNT_ID] = {
+      AFN: getLedgerBalance(EXCHANGE_ACCOUNT_ID, "AFN", cashEntries, ledger),
+      USD: getLedgerBalance(EXCHANGE_ACCOUNT_ID, "USD", cashEntries, ledger),
+      EUR: getLedgerBalance(EXCHANGE_ACCOUNT_ID, "EUR", cashEntries, ledger),
+      IRR: getLedgerBalance(EXCHANGE_ACCOUNT_ID, "IRR", cashEntries, ledger),
+      PKR: getLedgerBalance(EXCHANGE_ACCOUNT_ID, "PKR", cashEntries, ledger),
+    };
+
+    // ۴. ✅ محاسبه موجودی صندوق دقیقاً مطابق فرمول داشبورد:
+    // صندوق = مجموع طلب مشتریان + موجودی حساب صرافی
+    for (const cur of currencies) {
+      let cashBoxTotal = 0;
+      
+      // جمع زدن موجودی همه مشتریان عادی
+      for (const c of customers) {
+        if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) {
+          cashBoxTotal += map[c.id][cur];
+        }
+      }
+      
+      // اضافه کردن موجودی حساب صرافی
+      cashBoxTotal += map[EXCHANGE_ACCOUNT_ID][cur];
+      
+      // ذخیره نهایی موجودی صندوق
+      map[CASH_BOX_ID][cur] = cashBoxTotal;
+    }
+
+    return map;
+  }, [customers, cashEntries, ledger]);
 
   const filteredCustomers = useMemo(() => {
     const cashBoxOption = CASH_BOX_CUSTOMER;
