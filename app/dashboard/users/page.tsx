@@ -679,9 +679,10 @@ profit: convertCommissionValue, profitCurrency: convertCommissionCurrency
 setPreviewData(tx);
 setPreviewOpen(true);
 }, [validateConvert, convertFromAmount, convertToAmount, convertMode, convertRateValue, convertForeign, convertDirectCounter, convertDirectBaseValue, convertDescription, convertCommissionValue, convertCommissionCurrency, editingConvertId, transactions, convertCustomer, convertFromCurrency, convertToCurrency, customers]);
+
+// ✅ اصلاح نهایی: اضافه شدن await برای حل مشکل Promise<string>
 const confirmRegister = useCallback(async () => {
 if (!previewData) return;
-// ✅ تنها تغییر: اضافه شدن await برای رفع خطای Promise<string>
 const tx = { ...previewData, trackingCode: await consumeTrackingCode() };
 if (editingExchangeId) {
 const oldTx = transactions.find(t => t.id === editingExchangeId);
@@ -750,60 +751,39 @@ changeCurrency = tx.toCurrency;
 const isReceipt = changeAmount >= 0;
 const docType = isReceipt ? "🟢 سند رسید" : "🔴 سند برداشت";
 const amountDisplay = Math.abs(changeAmount);
-let text = `${docType}
-`;
-text += `🗓 تاریخ: ${formatDateTime(new Date(tx.date))}
-`;
-text += `🛅 پیگیری: ${tx.trackingCode}
-`;
+let text = `${docType}\n`;
+text += `🗓 تاریخ: ${formatDateTime(new Date(tx.date))}\n`;
+text += `🛅 پیگیری: ${tx.trackingCode}\n`;
 if (tx.type === "exchange") {
-text += `👤 مشتری: ${tx.customerName}
-`;
-text += `📑 شرح: ${tx.description || `تبادل ارز (${tx.dealType === "buy" ? "خرید" : "فروش"})`}
-`;
-text += `💰 مبلغ: ${fmt(amountDisplay)} ${labels[changeCurrency]}
-`;
-text += `📝 به حروف: ${numberToPersianWords(amountDisplay)}
-`;
+text += `👤 مشتری: ${tx.customerName}\n`;
+text += `📑 شرح: ${tx.description || `تبادل ارز (${tx.dealType === "buy" ? "خرید" : "فروش"})`}\n`;
+text += `💰 مبلغ: ${fmt(amountDisplay)} ${labels[changeCurrency]}\n`;
+text += `📝 به حروف: ${numberToPersianWords(amountDisplay)}\n`;
 } else if (tx.type === "transfer") {
 const isSender = custId === tx.senderId;
-text += `👤 ${isSender ? "فرستنده" : "گیرنده"}: ${isSender ? tx.senderName : tx.receiverName}
-`;
-text += `📑 شرح: ${tx.description || `انتقال ${isSender ? "از حساب شما به" : "به حساب شما از"} ${isSender ? tx.receiverName : tx.senderName}`}
-`;
-text += `💰 مبلغ: ${fmt(amountDisplay)} ${labels[changeCurrency]}
-`;
-text += `📝 به حروف: ${numberToPersianWords(amountDisplay)}
-`;
+text += `👤 ${isSender ? "فرستنده" : "گیرنده"}: ${isSender ? tx.senderName : tx.receiverName}\n`;
+text += `📑 شرح: ${tx.description || `انتقال ${isSender ? "از حساب شما به" : "به حساب شما از"} ${isSender ? tx.receiverName : tx.senderName}`}\n`;
+text += `💰 مبلغ: ${fmt(amountDisplay)} ${labels[changeCurrency]}\n`;
+text += `📝 به حروف: ${numberToPersianWords(amountDisplay)}\n`;
 } else if (tx.type === "convert") {
-text += `👤 مشتری: ${tx.customerName}
-`;
-text += `📑 شرح: ${tx.description || "تبدیل ارز"}
-`;
-text += `💰 مبلغ: ${fmt(amountDisplay)} ${labels[changeCurrency]}
-`;
-text += `📝 به حروف: ${numberToPersianWords(amountDisplay)}
-`;
+text += `👤 مشتری: ${tx.customerName}\n`;
+text += `📑 شرح: ${tx.description || "تبدیل ارز"}\n`;
+text += `💰 مبلغ: ${fmt(amountDisplay)} ${labels[changeCurrency]}\n`;
+text += `📝 به حروف: ${numberToPersianWords(amountDisplay)}\n`;
 }
-text += `
--------------بیلانس فعلی شما--------------
-`;
+text += `\n-------------بیلانس فعلی شما--------------\n`;
 for (const cur of currencies) {
 const b = bals[cur];
 const label = labels[cur];
 if (b > 0) {
-text += `${label}: ${fmt(b)} طلب
-`;
+text += `${label}: ${fmt(b)} طلب\n`;
 } else if (b < 0) {
-text += `${label}: ${fmt(Math.abs(b))} قرض
-`;
+text += `${label}: ${fmt(Math.abs(b))} قرض\n`;
 } else {
-text += `${label}: 0
-`;
+text += `${label}: 0\n`;
 }
 }
-text += `
-🏦 صرافی برادران نورزاد — هرات`;
+text += `\n🏦 صرافی برادران نورزاد — هرات`;
 await sendTelegramMessage(settings.botToken, chatId, text);
 }
 }
@@ -816,6 +796,7 @@ resetConvertForm();
 setPreviewOpen(false);
 setPreviewData(null);
 }, [previewData, editingExchangeId, editingTransferId, editingConvertId, transactions, customers, resetExchangeForm, resetTransferForm, resetConvertForm, setCustomers, setTransactions, setCashEntries]);
+
 const customerName = useCallback((id?: string) => {
 if (id === EXCHANGE_ACCOUNT_ID) return EXCHANGE_ACCOUNT_NAME;
 return customers.find(c => c.id === id)?.name || id || "-";
