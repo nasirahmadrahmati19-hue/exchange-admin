@@ -1832,3 +1832,4 @@ else if (entry.type === "loan_received") balances[cur] += Number(entry.amount ||
 }
 return balances;
 }
+  
