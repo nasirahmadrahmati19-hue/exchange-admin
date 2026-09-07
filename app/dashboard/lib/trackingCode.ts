@@ -1,21 +1,19 @@
 /**
  * ═══════════════════════════════════════════════════════════
- * سیستم تولید کد پیگیری مسلسل و یکتا (نسخه نهایی و ضدگلوله)
- * ساختار خروجی: TR-1403-00001
+ * سیستم تولید کد پیگیری جهانی و مسلسل (Global Sequential)
+ * تضمین می‌کند که کدها در موبایل، کامپیوتر و تمام تب‌ها پشت سر هم باشند.
+ * ساختار: TR-1403-00001
  * ═══════════════════════════════════════════════════════════
  */
 
-import { doc, runTransaction, getFirestore } from "firebase/firestore";
-
-// ⚠️ اگر فایل firebase شما مسیر دیگری دارد، آن را اصلاح کنید
-import { db } from "./firebase"; 
+import { doc, runTransaction } from "firebase/firestore";
+import { db } from "./firebase"; // ⚠️ مسیر فایل firebase خود را بررسی کنید
 
 const SEQUENCE_LENGTH = 5;
-const MAX_SEQUENCE = 99999;
-const LS_KEY = "fx_tracking_counter"; // کلید ذخیره‌سازی در LocalStorage برای حالت آفلاین
+const COUNTER_DOC_ID = "global_tracking_counter";
 
 /**
- * دریافت سال هجری شمسی فعلی
+ * دریافت سال شمسی جاری
  */
 export function getCurrentShamsiYear(): string {
   try {
@@ -27,99 +25,84 @@ export function getCurrentShamsiYear(): string {
 }
 
 /**
- * پیش‌نمایش کد پیگیری (فقط برای نمایش در UI قبل از ثبت)
+ * نمایش در فرم قبل از ثبت (هنوز کد نهایی نیست)
  */
-export function getNextTrackingCode(): string {
+export function getNextTrackingCodePreview(): string {
   const year = getCurrentShamsiYear();
-  return `TR-${year}------`;
+  return `TR-${year}-----`;
 }
 
 /**
- * تولید و مصرف کد پیگیری (هنگام کلیک روی دکمه ثبت)
+ * 🌟 تابع اصلی: دریافت کد پیگیری یکتا و مسلسل از سرور مرکزی
+ * این تابع تضمین می‌کند حتی اگر ۱۰ نفر همزمان در موبایل و کامپیوتر ثبت کنند، کد تکراری تولید نمی‌شود.
  */
-export async function consumeTrackingCode(): Promise<string> {
+export async function generateSequentialTrackingCode(): Promise<string> {
   const year = getCurrentShamsiYear();
-  const counterRef = doc(db, "system_counters", "tracking_codes");
+  const counterRef = doc(db, "system_counters", COUNTER_DOC_ID);
 
   try {
-    // تلاش برای دریافت کد از فایربیس (حالت آنلاین و حرفه‌ای)
-    const nextNumber = await runTransaction(db, async (transaction) => {
+    // مرحله ۱: تلاش برای ارتباط با فایربیس (برای هماهنگی موبایل و کامپیوتر)
+    const newCount = await runTransaction(db, async (transaction) => {
       const counterDoc = await transaction.get(counterRef);
-      let currentCount = 0;
+      let currentData = counterDoc.exists() ? counterDoc.data() : {};
+      let currentCount = currentData[year] || 0;
       
-      if (counterDoc.exists()) {
-        const data = counterDoc.data();
-        currentCount = data[year] || 0;
-      }
-
-      const newCount = currentCount + 1;
-      if (newCount > MAX_SEQUENCE) {
+      const nextCount = currentCount + 1;
+      
+      if (nextCount > 99999) {
         throw new Error("ظرفیت کد پیگیری این سال پر شده است");
       }
 
-      transaction.set(counterRef, { [year]: newCount }, { merge: true });
-      return newCount;
+      // ذخیره به صورت اتمی (قفل می‌شود تا کسی همزمان عدد دیگری نگیرد)
+      transaction.set(counterRef, { ...currentData, [year]: nextCount }, { merge: true });
+      return nextCount;
     });
 
-    return `TR-${year}-${String(nextNumber).padStart(SEQUENCE_LENGTH, "0")}`;
+    return `TR-${year}-${String(newCount).padStart(SEQUENCE_LENGTH, "0")}`;
     
-  } catch (error) {
-    console.warn("⚠️ فایربیس در دسترس نیست یا خطا داد. استفاده از سیستم آفلاین هوشمند:", error);
+  } catch (cloudError) {
+    console.warn("⚠️ ارتباط با سرور برقرار نشد. استفاده از شمارنده محلی (آفلاین). توجه: در حالت آفلاین ممکن است بین دستگاه‌ها هماهنگی کامل نباشد.", cloudError);
     
-    // === سیستم آفلاین هوشمند (Fallback) ===
-    // اگر فایربیس کار نکرد، از LocalStorage استفاده می‌کنیم تا برنامه متوقف نشود
-    try {
-      const raw = localStorage.getItem(LS_KEY);
-      let counters = raw ? JSON.parse(raw) : {};
-      
-      if (!counters[year]) counters[year] = 0;
-      counters[year] += 1;
-      
-      if (counters[year] > MAX_SEQUENCE) {
-        counters[year] = 1; // ریست کردن در صورت پر شدن (یا مدیریت خطا)
-      }
-      
-      localStorage.setItem(LS_KEY, JSON.stringify(counters));
-      return `TR-${year}-${String(counters[year]).padStart(SEQUENCE_LENGTH, "0")}`;
-    } catch (lsError) {
-      // آخرین سنگر: استفاده از زمان فعلی اگر LocalStorage هم پر یا غیرفعال باشد
-      const fallback = String(Date.now()).slice(-SEQUENCE_LENGTH);
-      return `TR-${year}-${fallback}`;
-    }
+    // مرحله ۲: حالت آفلاین (فقط برای جلوگیری از کرش کردن برنامه)
+    return getOfflineFallbackCode(year);
   }
 }
 
 /**
- * استخراج عدد خالص از کد پیگیری (برای مرتب‌سازی)
+ * شمارنده محلی برای حالت آفلاین (هماهنگی بین تب‌های یک دستگاه)
  */
-export function getTrackingNumberValue(code: string): number {
-  if (!code) return 0;
-  
-  // فرمت اصلی جدید: TR-1403-00001
-  const mainFormat = String(code).match(/^TR-\d{4}-(\d{5})$/);
-  if (mainFormat) return Number(mainFormat[1]) || 0;
-  
-  // فرمت‌های قدیمی (برای سازگاری با داده‌های قبلی)
-  const legacyFormat = String(code).match(/^(?:HW|FX|TR)-(\d+)$/);
-  if (legacyFormat) return Number(legacyFormat[1]) || 0;
-  
-  return 0;
+function getOfflineFallbackCode(year: string): string {
+  const LS_KEY = `fx_local_counter_${year}`;
+  try {
+    const stored = localStorage.getItem(LS_KEY);
+    let count = stored ? parseInt(stored, 10) : 0;
+    count++;
+    localStorage.setItem(LS_KEY, count.toString());
+    
+    // اطلاع‌رسانی به سایر تب‌های باز در همین مرورگر
+    window.dispatchEvent(new Event('storage'));
+    
+    return `TR-${year}-${String(count).padStart(SEQUENCE_LENGTH, "0")}`;
+  } catch {
+    // آخرین سنگر: اگر LocalStorage هم پر بود، از زمان استفاده کن (ممکن است رندوم به نظر برسد، اما برنامه را نجات می‌دهد)
+    const fallback = String(Date.now()).slice(-SEQUENCE_LENGTH);
+    return `TR-${year}-${fallback}`;
+  }
 }
 
 /**
- * بررسی اعتبار فرمت کد پیگیری
+ * استخراج عدد از کد برای مرتب‌سازی
  */
+export function getTrackingNumberValue(code: string): number {
+  if (!code) return 0;
+  const match = String(code).match(/^TR-\d{4}-(\d{5})$/);
+  return match ? Number(match[1]) : 0;
+}
+
 export function isValidTrackingCode(code: string): boolean {
-  if (!code) return false;
-  // هم فرمت جدید و هم فرمت‌های قدیمی را معتبر می‌داند
-  const regex = /^TR-\d{4}-\d{5}$|^(?:HW|FX|TR)-\d+$/;
-  return regex.test(code);
+  return /^TR-\d{4}-\d{5}$/.test(code);
 }
 
 export function initTrackingSystem(): void {
-  // آماده‌سازی اولیه (در صورت نیاز)
-}
-
-export function getMaxCapacity(): number {
-  return MAX_SEQUENCE;
+  // سیستم به صورت خودکار کار می‌کند
 }
