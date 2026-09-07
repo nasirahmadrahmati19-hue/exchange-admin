@@ -3,6 +3,8 @@
  * سیستم تولید کد پیگیری جهانی و مسلسل (Global Sequential)
  * تضمین می‌کند که کدها در موبایل، کامپیوتر و تمام تب‌ها پشت سر هم باشند.
  * ساختار: TR-1403-00001
+ * 
+ * ✅ سازگاری کامل با نام‌های قدیمی (consumeTrackingCode و getNextTrackingCode)
  * ═══════════════════════════════════════════════════════════
  */
 
@@ -10,6 +12,7 @@ import { doc, runTransaction } from "firebase/firestore";
 import { db } from "./firebase"; // ⚠️ مسیر فایل firebase خود را بررسی کنید
 
 const SEQUENCE_LENGTH = 5;
+const MAX_SEQUENCE = 99999;
 const COUNTER_DOC_ID = "global_tracking_counter";
 
 /**
@@ -22,14 +25,6 @@ export function getCurrentShamsiYear(): string {
   } catch {
     return "1403";
   }
-}
-
-/**
- * نمایش در فرم قبل از ثبت (هنوز کد نهایی نیست)
- */
-export function getNextTrackingCodePreview(): string {
-  const year = getCurrentShamsiYear();
-  return `TR-${year}-----`;
 }
 
 /**
@@ -49,7 +44,7 @@ export async function generateSequentialTrackingCode(): Promise<string> {
       
       const nextCount = currentCount + 1;
       
-      if (nextCount > 99999) {
+      if (nextCount > MAX_SEQUENCE) {
         throw new Error("ظرفیت کد پیگیری این سال پر شده است");
       }
 
@@ -61,7 +56,7 @@ export async function generateSequentialTrackingCode(): Promise<string> {
     return `TR-${year}-${String(newCount).padStart(SEQUENCE_LENGTH, "0")}`;
     
   } catch (cloudError) {
-    console.warn("⚠️ ارتباط با سرور برقرار نشد. استفاده از شمارنده محلی (آفلاین). توجه: در حالت آفلاین ممکن است بین دستگاه‌ها هماهنگی کامل نباشد.", cloudError);
+    console.warn("⚠️ ارتباط با سرور برقرار نشد. استفاده از شمارنده محلی (آفلاین).", cloudError);
     
     // مرحله ۲: حالت آفلاین (فقط برای جلوگیری از کرش کردن برنامه)
     return getOfflineFallbackCode(year);
@@ -84,10 +79,39 @@ function getOfflineFallbackCode(year: string): string {
     
     return `TR-${year}-${String(count).padStart(SEQUENCE_LENGTH, "0")}`;
   } catch {
-    // آخرین سنگر: اگر LocalStorage هم پر بود، از زمان استفاده کن (ممکن است رندوم به نظر برسد، اما برنامه را نجات می‌دهد)
+    // آخرین سنگر: اگر LocalStorage هم پر بود، از زمان استفاده کن
     const fallback = String(Date.now()).slice(-SEQUENCE_LENGTH);
     return `TR-${year}-${fallback}`;
   }
+}
+
+/**
+ * نمایش در فرم قبل از ثبت (هنوز کد نهایی نیست)
+ */
+export function getNextTrackingCodePreview(): string {
+  const year = getCurrentShamsiYear();
+  return `TR-${year}-----`;
+}
+
+// ═══════════════════════════════════════════════════════════
+// 🔧 توابع سازگار با نسخه‌های قبلی (برای جلوگیری از خطای import)
+// این بخش باعث می‌شود کدهای قدیمی شما بدون هیچ تغییری کار کنند.
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * ✅ نام قدیمی (سازگار با trades/page.tsx و cash/page.tsx)
+ * دقیقاً همان کار generateSequentialTrackingCode را انجام می‌دهد.
+ */
+export async function consumeTrackingCode(): Promise<string> {
+  return generateSequentialTrackingCode();
+}
+
+/**
+ * ✅ نام قدیمی (سازگار با فرم‌ها برای پیش‌نمایش)
+ * دقیقاً همان کار getNextTrackingCodePreview را انجام می‌دهد.
+ */
+export function getNextTrackingCode(): string {
+  return getNextTrackingCodePreview();
 }
 
 /**
@@ -96,13 +120,33 @@ function getOfflineFallbackCode(year: string): string {
 export function getTrackingNumberValue(code: string): number {
   if (!code) return 0;
   const match = String(code).match(/^TR-\d{4}-(\d{5})$/);
-  return match ? Number(match[1]) : 0;
+  if (match) return Number(match[1]) || 0;
+  
+  // پشتیبانی از فرمت‌های قدیمی
+  const legacyFormat = String(code).match(/^(?:HW|FX|TR)-(\d+)$/);
+  if (legacyFormat) return Number(legacyFormat[1]) || 0;
+  
+  return 0;
 }
 
+/**
+ * بررسی اعتبار فرمت کد پیگیری
+ */
 export function isValidTrackingCode(code: string): boolean {
-  return /^TR-\d{4}-\d{5}$/.test(code);
+  if (!code) return false;
+  return /^TR-\d{4}-\d{5}$|^(?:HW|FX|TR)-\d+$/.test(code);
 }
 
+/**
+ * مقداردهی اولیه سیستم (برای سازگاری با سایر ماژول‌ها)
+ */
 export function initTrackingSystem(): void {
   // سیستم به صورت خودکار کار می‌کند
+}
+
+/**
+ * دریافت حداکثر ظرفیت ممکن برای کد پیگیری
+ */
+export function getMaxCapacity(): number {
+  return MAX_SEQUENCE;
 }
