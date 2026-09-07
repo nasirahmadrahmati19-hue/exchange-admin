@@ -1,13 +1,13 @@
 /**
  * ═══════════════════════════════════════════════════════════
- * سیستم تولید کد پیگیری جهانی (نسخه نهایی)
- * ✅ آنلاین: فایربیس (هماهنگ بین موبایل و کامپیوتر)
- * ✅ آفلاین: localStorage (سریع و بدون انتظار)
- * ✅ بدون رندوم: همیشه عدد مسلسل تولید می‌کند
+ * سیستم تولید کد پیگیری جهانی (هماهنگ بین همه دستگاه‌ها)
+ * ✅ آنلاین: فایربیس (منبع اصلی - هماهنگ بین موبایل و کامپیوتر)
+ * ✅ آفلاین: localStorage (فقط برای جلوگیری از توقف برنامه)
+ * ✅ همه تب‌ها از یک شمارنده مشترک استفاده می‌کنند
  * ═══════════════════════════════════════════════════════════
  */
 
-import { doc, runTransaction } from "firebase/firestore";
+import { doc, runTransaction, getDoc, setDoc } from "firebase/firestore";
 import { db } from "./firebase";
 
 const SEQUENCE_LENGTH = 5;
@@ -30,7 +30,7 @@ function isOnline(): boolean {
 }
 
 /**
- * 🔥 تولید کد از localStorage (همیشه عدد مسلسل، نه رندوم)
+ * 🔥 تولید کد از localStorage (فقط برای حالت آفلاین)
  */
 function generateFromLocalStorage(year: string): string {
   const LS_KEY = `${LS_KEY_PREFIX}${year}`;
@@ -49,57 +49,61 @@ function generateFromLocalStorage(year: string): string {
     localStorage.setItem(LS_KEY, count.toString());
     
     const code = `TR-${year}-${String(count).padStart(SEQUENCE_LENGTH, "0")}`;
-    console.log(`✅ کد پیگیری آفلاین: ${code}`);
+    console.log(`✅ کد پیگیری آفلاین (محلی): ${code}`);
     return code;
   } catch (err) {
     console.error("❌ خطا در localStorage:", err);
-    // ❌ دیگه از Date.now() استفاده نمی‌کنیم!
-    // به جای آن، یک عدد ثابت برمی‌گردانیم
     return `TR-${year}-00001`;
   }
 }
 
 /**
- * 🌟 تابع اصلی: دریافت کد پیگیری
+ * 🌟 تابع اصلی: دریافت کد پیگیری از فایربیس (هماهنگ بین همه دستگاه‌ها)
  */
 export async function consumeTrackingCode(): Promise<string> {
   const year = getCurrentShamsiYear();
   
-  // ✅ اگر آفلاین هستیم، مستقیم از localStorage استفاده کن
-  if (!isOnline()) {
-    console.log("📡 حالت آفلاین");
-    return generateFromLocalStorage(year);
+  // ✅ اگر آنلاین هستیم، از فایربیس استفاده کن (منبع اصلی)
+  if (isOnline()) {
+    try {
+      const counterRef = doc(db, "system_counters", COUNTER_DOC_ID);
+      
+      console.log("🌐 تلاش برای ارتباط با فایربیس...");
+      
+      const newCount = await runTransaction(db, async (transaction) => {
+        const counterDoc = await transaction.get(counterRef);
+        let currentData = counterDoc.exists() ? counterDoc.data() : {};
+        let currentCount = currentData[year] || 0;
+        
+        const nextCount = currentCount + 1;
+        if (nextCount > MAX_SEQUENCE) {
+          throw new Error("ظرفیت پر شده");
+        }
+        
+        transaction.set(counterRef, { ...currentData, [year]: nextCount }, { merge: true });
+        return nextCount;
+      });
+      
+      const code = `TR-${year}-${String(newCount).padStart(SEQUENCE_LENGTH, "0")}`;
+      console.log(`✅ کد پیگیری آنلاین (فایربیس): ${code}`);
+      
+      // ✅ ذخیره در localStorage برای پیش‌نمایش
+      try {
+        const LS_KEY = `${LS_KEY_PREFIX}${year}`;
+        localStorage.setItem(LS_KEY, newCount.toString());
+      } catch {}
+      
+      return code;
+      
+    } catch (cloudError) {
+      console.warn("⚠️ فایربیس کار نکرد. استفاده از localStorage:", (cloudError as Error).message);
+      return generateFromLocalStorage(year);
+    }
   }
   
-  // ✅ اگر آنلاین هستیم، از فایربیس استفاده کن
-  try {
-    const counterRef = doc(db, "system_counters", COUNTER_DOC_ID);
-    
-    console.log("🌐 تلاش برای ارتباط با فایربیس...");
-    
-    const newCount = await runTransaction(db, async (transaction) => {
-      const counterDoc = await transaction.get(counterRef);
-      let currentData = counterDoc.exists() ? counterDoc.data() : {};
-      let currentCount = currentData[year] || 0;
-      
-      const nextCount = currentCount + 1;
-      if (nextCount > MAX_SEQUENCE) {
-        throw new Error("ظرفیت پر شده");
-      }
-      
-      transaction.set(counterRef, { ...currentData, [year]: nextCount }, { merge: true });
-      return nextCount;
-    });
-    
-    const code = `TR-${year}-${String(newCount).padStart(SEQUENCE_LENGTH, "0")}`;
-    console.log(`✅ کد پیگیری آنلاین (فایربیس): ${code}`);
-    return code;
-    
-  } catch (cloudError) {
-    console.warn("⚠️ فایربیس کار نکرد. استفاده از localStorage:", (cloudError as Error).message);
-    // ✅ به جای Date.now()، از localStorage استفاده می‌کنیم
-    return generateFromLocalStorage(year);
-  }
+  // ✅ اگر آفلاین هستیم، از localStorage استفاده کن
+  console.log("📡 حالت آفلاین");
+  return generateFromLocalStorage(year);
 }
 
 /**
