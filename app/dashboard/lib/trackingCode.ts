@@ -1,9 +1,9 @@
 /**
  * ═══════════════════════════════════════════════════════════
- * سیستم تولید کد پیگیری (نسخه ضدگلوله - کار در آفلاین)
- * ✅ اول وضعیت اینترنت چک می‌شود
- * ✅ اگر آفلاین باشد، مستقیم از localStorage استفاده می‌کند (بدون انتظار)
- * ✅ اگر آنلاین باشد، از فایربیس استفاده می‌کند
+ * سیستم تولید کد پیگیری جهانی (کار در تمام تب‌ها - آنلاین و آفلاین)
+ * ✅ در حالت آفلاین: بلافاصله از localStorage استفاده می‌کند
+ * ✅ در حالت آنلاین: از فایربیس استفاده می‌کند (هماهنگ بین موبایل و کامپیوتر)
+ * ✅ در تمام تب‌ها به صورت خودکار کار می‌کند
  * ═══════════════════════════════════════════════════════════
  */
 
@@ -36,7 +36,7 @@ function isOnline(): boolean {
 }
 
 /**
- * 🔥 تابع کمکی: تولید کد از localStorage (سریع و بدون انتظار)
+ * 🔥 تولید کد از localStorage (سریع و بدون انتظار - برای حالت آفلاین)
  */
 function generateFromLocalStorage(year: string): string {
   const LS_KEY = `${LS_KEY_PREFIX}${year}`;
@@ -69,8 +69,10 @@ function generateFromLocalStorage(year: string): string {
 }
 
 /**
- * 🌟 تابع اصلی: دریافت کد پیگیری
+ * 🌟 تابع اصلی: دریافت کد پیگیری (در تمام تب‌ها کار می‌کند)
  * ✅ اول اینترنت را چک می‌کند
+ * ✅ اگر آفلاین باشد، بلافاصله از localStorage استفاده می‌کند
+ * ✅ اگر آنلاین باشد، از فایربیس استفاده می‌کند (با timeout)
  */
 export async function consumeTrackingCode(): Promise<string> {
   const year = getCurrentShamsiYear();
@@ -81,11 +83,11 @@ export async function consumeTrackingCode(): Promise<string> {
     return generateFromLocalStorage(year);
   }
   
-  // ✅ اگر آنلاین هستیم، از فایربیس استفاده کن (با timeout)
+  // ✅ اگر آنلاین هستیم، از فایربیس استفاده کن (با timeout 5 ثانیه)
   try {
     const counterRef = doc(db, "system_counters", COUNTER_DOC_ID);
     
-    // timeout 5 ثانیه‌ای برای جلوگیری از هنگ کردن
+    // timeout برای جلوگیری از هنگ کردن
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => reject(new Error("Timeout: فایربیس پاسخ نداد")), 5000);
     });
