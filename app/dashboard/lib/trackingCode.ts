@@ -1,47 +1,33 @@
 /**
  * ═══════════════════════════════════════════════════════════
- * سیستم تولید کد پیگیری مسلسل و یکتا (نسخه حرفه‌ای)
+ * سیستم تولید کد پیگیری مسلسل و یکتا (نسخه نهایی و ضدگلوله)
  * ساختار خروجی: TR-1403-00001
- * 
- * - TR: پیشوند ثابت (مخفف Transaction)
- * - 1403: سال هجری شمسی جاری (تشخیص خودکار)
- * - 00001: شماره مسلسل ۵ رقمی (با صفرهای پیش‌رو)
- * 
- * ✅ ویژگی‌ها:
- * - استفاده از تراکنش اتمی (Transaction) فایربیس برای تضمین یکتایی مطلق.
- * - جلوگیری از تولید کد تکراری حتی در صورت کلیک همزمان چندین کاربر.
- * - حالت آفلاین هوشمند (Fallback) برای جلوگیری از توقف برنامه در صورت قطعی اینترنت.
  * ═══════════════════════════════════════════════════════════
  */
 
 import { doc, runTransaction, getFirestore } from "firebase/firestore";
 
-// ⚠️ نکته: مسیر ایمپورت db را بر اساس ساختار پروژه خود تنظیم کنید.
-// اگر فایل firebase.ts در همان پوشه است: import { db } from "./firebase";
+// ⚠️ اگر فایل firebase شما مسیر دیگری دارد، آن را اصلاح کنید
 import { db } from "./firebase"; 
 
 const SEQUENCE_LENGTH = 5;
 const MAX_SEQUENCE = 99999;
+const LS_KEY = "fx_tracking_counter"; // کلید ذخیره‌سازی در LocalStorage برای حالت آفلاین
 
 /**
- * دریافت سال هجری شمسی فعلی به صورت داینامیک
+ * دریافت سال هجری شمسی فعلی
  */
 export function getCurrentShamsiYear(): string {
   try {
-    const parts = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", {
-      year: "numeric",
-    }).formatToParts(new Date());
+    const parts = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", { year: "numeric" }).formatToParts(new Date());
     return parts.find((p) => p.type === "year")?.value || "1403";
-  } catch (error) {
-    console.warn("خطا در تشخیص سال شمسی، مقدار پیش‌فرض استفاده شد:", error);
+  } catch {
     return "1403";
   }
 }
 
 /**
- * پیش‌نمایش کد پیگیری (برای نمایش در فرم قبل از ثبت نهایی)
- * ⚠️ نکته: چون عدد دقیق توسط سرور در لحظه ثبت (Submit) تعیین می‌شود، 
- * در فرم‌ها قبل از کلیک روی دکمه ثبت، این مقدار به صورت خط‌چین نمایش داده می‌شود.
+ * پیش‌نمایش کد پیگیری (فقط برای نمایش در UI قبل از ثبت)
  */
 export function getNextTrackingCode(): string {
   const year = getCurrentShamsiYear();
@@ -49,15 +35,14 @@ export function getNextTrackingCode(): string {
 }
 
 /**
- * تولید و مصرف کد پیگیری (هنگام کلیک روی دکمه ثبت نهایی)
- * ✅ این تابع Async است تا بتواند با سرور فایربیس هماهنگ شود و کد یکتا بگیرد.
+ * تولید و مصرف کد پیگیری (هنگام کلیک روی دکمه ثبت)
  */
 export async function consumeTrackingCode(): Promise<string> {
   const year = getCurrentShamsiYear();
-  // استفاده از یک سند اختصاصی در فایربیس برای مدیریت شمارنده
   const counterRef = doc(db, "system_counters", "tracking_codes");
 
   try {
+    // تلاش برای دریافت کد از فایربیس (حالت آنلاین و حرفه‌ای)
     const nextNumber = await runTransaction(db, async (transaction) => {
       const counterDoc = await transaction.get(counterRef);
       let currentCount = 0;
@@ -68,41 +53,54 @@ export async function consumeTrackingCode(): Promise<string> {
       }
 
       const newCount = currentCount + 1;
-      
       if (newCount > MAX_SEQUENCE) {
-        throw new Error("ظرفیت کد پیگیری برای سال جاری پر شده است");
+        throw new Error("ظرفیت کد پیگیری این سال پر شده است");
       }
 
-      // ذخیره عدد جدید در فایربیس به صورت اتمی (غیرقابل تداخل)
       transaction.set(counterRef, { [year]: newCount }, { merge: true });
       return newCount;
     });
 
-    // فرمت‌دهی نهایی: اضافه کردن صفرهای پیش‌رو تا ۵ رقم
     return `TR-${year}-${String(nextNumber).padStart(SEQUENCE_LENGTH, "0")}`;
     
   } catch (error) {
-    console.error("⚠️ خطا در ارتباط با سرور برای کد پیگیری. استفاده از روش جایگزین (آفلاین):", error);
+    console.warn("⚠️ فایربیس در دسترس نیست یا خطا داد. استفاده از سیستم آفلاین هوشمند:", error);
     
-    // حالت آفلاین یا قطعی اینترنت: استفاده از زمان برای جلوگیری از توقف برنامه
-    // ۵ رقم آخر Timestamp فعلی را برمی‌گرداند
-    const fallback = String(Date.now()).slice(-SEQUENCE_LENGTH);
-    return `TR-${year}-${fallback}`;
+    // === سیستم آفلاین هوشمند (Fallback) ===
+    // اگر فایربیس کار نکرد، از LocalStorage استفاده می‌کنیم تا برنامه متوقف نشود
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      let counters = raw ? JSON.parse(raw) : {};
+      
+      if (!counters[year]) counters[year] = 0;
+      counters[year] += 1;
+      
+      if (counters[year] > MAX_SEQUENCE) {
+        counters[year] = 1; // ریست کردن در صورت پر شدن (یا مدیریت خطا)
+      }
+      
+      localStorage.setItem(LS_KEY, JSON.stringify(counters));
+      return `TR-${year}-${String(counters[year]).padStart(SEQUENCE_LENGTH, "0")}`;
+    } catch (lsError) {
+      // آخرین سنگر: استفاده از زمان فعلی اگر LocalStorage هم پر یا غیرفعال باشد
+      const fallback = String(Date.now()).slice(-SEQUENCE_LENGTH);
+      return `TR-${year}-${fallback}`;
+    }
   }
 }
 
 /**
- * استخراج عدد خالص از کد پیگیری (برای مرتب‌سازی یا مقایسه)
+ * استخراج عدد خالص از کد پیگیری (برای مرتب‌سازی)
  */
 export function getTrackingNumberValue(code: string): number {
   if (!code) return 0;
   
-  // فرمت اصلی: TR-1403-00001
+  // فرمت اصلی جدید: TR-1403-00001
   const mainFormat = String(code).match(/^TR-\d{4}-(\d{5})$/);
   if (mainFormat) return Number(mainFormat[1]) || 0;
   
-  // فرمت‌های قدیمی (در صورت وجود در دیتابیس)
-  const legacyFormat = String(code).match(/^(?:HW|FX)-(\d+)$/);
+  // فرمت‌های قدیمی (برای سازگاری با داده‌های قبلی)
+  const legacyFormat = String(code).match(/^(?:HW|FX|TR)-(\d+)$/);
   if (legacyFormat) return Number(legacyFormat[1]) || 0;
   
   return 0;
@@ -113,21 +111,15 @@ export function getTrackingNumberValue(code: string): number {
  */
 export function isValidTrackingCode(code: string): boolean {
   if (!code) return false;
-  const regex = /^TR-\d{4}-\d{5}$/;
+  // هم فرمت جدید و هم فرمت‌های قدیمی را معتبر می‌داند
+  const regex = /^TR-\d{4}-\d{5}$|^(?:HW|FX|TR)-\d+$/;
   return regex.test(code);
 }
 
-/**
- * مقداردهی اولیه سیستم (در صورت نیاز به اجرای کدی در شروع برنامه)
- */
 export function initTrackingSystem(): void {
-  // در حال حاضر نیاز به اقدام خاصی در شروع برنامه نیست.
-  // این تابع برای سازگاری با سایر ماژول‌ها حفظ شده است.
+  // آماده‌سازی اولیه (در صورت نیاز)
 }
 
-/**
- * دریافت حداکثر ظرفیت ممکن برای کد پیگیری
- */
 export function getMaxCapacity(): number {
   return MAX_SEQUENCE;
 }
