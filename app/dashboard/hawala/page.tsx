@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState, useRef, useCallback, memo, type ReactNode, type ChangeEvent } from "react";
 import { useSyncedState } from "../lib/useSyncedState";
-import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem, getTrackingNumberValue } from "../lib/trackingCode";
+import { getNextTrackingCode, consumeTrackingCode, initTrackingCode, getTrackingNumberValue } from "../lib/trackingCode";
 import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY } from "../lib/defaultData";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
@@ -55,13 +55,8 @@ const statusColors: Record<HawalaStatus, { light: string; dark: string }> = { pe
 const formatDestination = (province: string, district: string) => province === "هرات" ? `${province} — ${district}` : province;
 const sortByHawalaNumber = (items: Hawala[], order: "asc" | "desc") => [...items].sort((a, b) => { const an = getTrackingNumberValue(a.number), bn = getTrackingNumberValue(b.number); return order === "asc" ? an - bn : bn - an; });
 
-// ✅ اصلاح شده: جلوگیری از شمارش دوگانه (Double Counting)
 function getLedgerBalance(customerId: string, currency: Currency, entries: any[], transactions: any[] = [], hawalas: any[] = []): number {
   let balance = 0;
-  
-  // ۱. محاسبه از صندوق (entries)
-  // نکته کلیدی: توابع syncCashEntriesForHawala از قبل اثر مالی حواله (برداشت/واریز) را به آرایه entries اضافه کرده‌اند.
-  // بنابراین، محاسبه موجودی مشتری از طریق entries، اثر حواله را به درستی و فقط یک بار اعمال می‌کند.
   for (const entry of entries) {
     if (entry.status === "voided" || entry.currency !== currency) continue;
     if (customerId === CASH_BOX_ID) {
@@ -85,11 +80,6 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: any[]
       }
     }
   }
-
-  // ۲. محاسبه از معاملات (فقط برای مشتریان عادی)
-  // نکته: معاملات (Transactions) توسط سیستم تبادل ارز به entries مشتری اضافه نمی‌شوند (فقط برای حساب صرافی اضافه می‌شوند).
-  // بنابراین، برای محاسبه دقیق موجودی مشتری، باید آرایه transactions را هم بررسی کنیم.
-  // اما برای حواله‌ها (Hawalas)، چون قبلاً در مرحله ۱ از طریق entries محاسبه شده‌اند، اینجا دیگر نباید محاسبه شوند تا از کسر/اضافه شدن دو برابری جلوگیری شود.
   if (customerId !== CASH_BOX_ID && customerId !== EXCHANGE_ACCOUNT_ID) {
     for (const tx of transactions) {
       if (tx.status === "voided") continue;
@@ -115,7 +105,6 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: any[]
       }
     }
   }
-  
   return balance;
 }
 
@@ -191,7 +180,6 @@ function syncCashEntriesForHawalaSettlement(action: "add" | "remove", h: Hawala,
   return recomputeCashBalances(entries);
 }
 
-// ✅ اصلاح شده: پارامترها حفظ شده‌اند اما getLedgerBalance خودش از شمارش دوگانه جلوگیری می‌کند
 function getUpdatedCustomerBalances(currentCustomers: Customer[], latestEntries: any[], currentTransactions: any[], currentHawalas: any[]): Customer[] {
   return currentCustomers.map(c => {
     if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) return c;
@@ -437,6 +425,19 @@ export default function HawalaPage() {
   const selectedSender = useMemo(() => { if (isSenderCashBox) return CASH_BOX_CUSTOMER; if (isSenderExchangeAccount) return EXCHANGE_ACCOUNT_CUSTOMER; return customers.find(c => c.id === form.senderId) || customers.find(c => c.name === form.senderName.trim()) || null; }, [customers, form.senderId, form.senderName, isSenderCashBox, isSenderExchangeAccount]);
   const selectedReceiver = useMemo(() => { if (isReceiverCashBox) return CASH_BOX_CUSTOMER; if (isReceiverExchangeAccount) return EXCHANGE_ACCOUNT_CUSTOMER; return customers.find(c => c.id === form.receiverId) || customers.find(c => c.name === form.receiverName.trim()) || null; }, [customers, form.receiverId, form.receiverName, isReceiverCashBox, isReceiverExchangeAccount]);
 
+  // ✅ رفع باگ رندر: محاسبه موجودی در سطح کامپوننت اصلی تا وابستگی‌ها به درستی ردیابی شوند
+  const getCalculatedBalances = useCallback((c: Customer | null, isCashBox: boolean) => {
+    if (!c) return { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+    if (isCashBox) return cashBoxBalances;
+    if (c.id === EXCHANGE_ACCOUNT_ID) return exchangeAccountBalances;
+    
+    const newBalances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+    for (const cur of currencies) {
+      newBalances[cur] = getLedgerBalance(c.id, cur, cashEntries, transactions, hawalas);
+    }
+    return newBalances;
+  }, [cashEntries, transactions, hawalas, cashBoxBalances, exchangeAccountBalances]);
+
   const matchesSearch = (item: Hawala, query: string) => { const q = normalizeDigits(query).trim().toLowerCase(); if (!q) return true; const fields = [item.senderName, item.receiverName, item.number, item.senderPhone, item.receiverPhone, item.receiverTazkira]; return fields.some(f => f && normalizeDigits(String(f)).toLowerCase().includes(q)); };
   const matchesAmount = (item: Hawala, query: string) => { const raw = normalizeDigits(query).replace(/[,،\s]/g, ""); if (!raw) return true; const queryNumber = Number(raw); const values = [item.amountFrom, item.finalAmount, item.paidAmount]; if (!Number.isNaN(queryNumber)) return values.some(v => typeof v === "number" && (v === queryNumber || String(v).includes(raw))); return values.some(v => String(v ?? "").includes(raw)); };
   const currentHawalas = useMemo(() => { try { let filtered = hawalas.filter(item => item.status === "pending" || item.status === "sent"); if (nameSearch) filtered = filtered.filter(item => matchesSearch(item, nameSearch)); if (amountSearch) filtered = filtered.filter(item => matchesAmount(item, amountSearch)); return sortByHawalaNumber(filtered, sortOrder); } catch { return []; } }, [hawalas, nameSearch, amountSearch, sortOrder]);
@@ -479,7 +480,6 @@ export default function HawalaPage() {
         }
       }
       
-      // ✅ تنها تغییر: اضافه شدن await برای رفع خطای Promise<string>
       const trackingNumber = await consumeTrackingCode();
       const newHawala: Hawala = { id: generateId(), number: trackingNumber, date: nowDate.toISOString(), time: "", type: form.type, destinationCountry: "افغانستان", province: form.province, district: form.province === "هرات" ? form.district : form.province, destinationText, currencyFrom: form.currencyFrom, currencyTo: form.currencyTo, amountFrom, rate: txRate, rateLabel, rateBase: rateMode === "direct" ? directBaseValue : undefined, fee: feeValue, feeCurrency: form.feeCurrency, feePayer: form.feePayer, finalAmount, balance: form.balance, note: form.note, profit: feeValue, profitCurrency: form.feeCurrency, senderId: sender?.id, senderName, senderPhone: form.senderPhone, senderTelegram: form.senderTelegram, receiverId: receiver?.id, receiverName, receiverTazkira: form.receiverTazkira, receiverPhone: form.receiverPhone, receiverAddress: form.receiverAddress, status: "pending" as HawalaStatus };
       
@@ -617,20 +617,59 @@ export default function HawalaPage() {
   const rateBox = (c: { wrap: string; icon: string; title: string }, title: string, formContent: ReactNode, badges: ReactNode) => (<div className={`space-y-4 rounded-2xl border p-4 transition-colors md:p-5 ${c.wrap}`}><div className="flex items-center gap-2.5"><span className={`grid h-9 w-9 place-items-center rounded-xl ${c.icon}`}><Ic n="rate" className="h-4 w-4" /></span><b className={`text-sm font-black ${c.title}`}>{title}</b></div>{formContent}<div className="flex flex-wrap items-center gap-2.5">{badges}</div></div>);
   const pill = (cls: string, txt: string, check = false) => !txt ? null : (<span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black ${cls}`}>{check && <Ic n="check" className="h-3.5 w-3.5" />}{txt}</span>);
 
-  const CustomerBalanceCard = memo(({ customer, color, isCashBox }: { customer: Customer | null; color: "blue" | "orange" | "emerald"; isCashBox?: boolean }) => {
+  // ✅ رفع باگ رندر: دریافت balances به عنوان prop برای شکستن قفل React.memo
+  const CustomerBalanceCard = memo(({ customer, balances, color, isCashBox }: { 
+    customer: Customer | null; 
+    balances: Record<Currency, number>; 
+    color: "blue" | "orange" | "emerald"; 
+    isCashBox?: boolean 
+  }) => {
     if (!customer) return null;
     const isExchange = customer.id === EXCHANGE_ACCOUNT_ID;
-    const customerLedgerBalances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-    if (!isCashBox && !isExchange) {
-      for (const cur of currencies) {
-        customerLedgerBalances[cur] = getLedgerBalance(customer.id, cur, cashEntries, transactions, hawalas);
-      }
-    }
-    const balances = isCashBox ? cashBoxBalances : isExchange ? exchangeAccountBalances : customerLedgerBalances;
     const title = isCashBox ? "💰 موجودی فیزیکی صندوق" : isExchange ? "💼 موجودی حساب صرافی" : `موجودی حساب ${customer.name}`;
-    const colors = { blue: { border: dk ? "border-blue-400/30 bg-blue-400/10" : "border-blue-200 bg-blue-50", text: dk ? "text-blue-300" : "text-blue-700", icon: dk ? "text-blue-300" : "text-blue-600" }, orange: { border: dk ? "border-orange-400/30 bg-orange-400/10" : "border-orange-200 bg-orange-50", text: dk ? "text-orange-300" : "text-orange-700", icon: dk ? "text-orange-300" : "text-orange-600" }, emerald: { border: dk ? "border-emerald-400/30 bg-emerald-400/10" : "border-emerald-200 bg-emerald-50", text: dk ? "text-emerald-300" : "text-emerald-700", icon: dk ? "text-emerald-300" : "text-emerald-600" } };
+    const colors = { 
+      blue: { border: dk ? "border-blue-400/30 bg-blue-400/10" : "border-blue-200 bg-blue-50", text: dk ? "text-blue-300" : "text-blue-700", icon: dk ? "text-blue-300" : "text-blue-600" }, 
+      orange: { border: dk ? "border-orange-400/30 bg-orange-400/10" : "border-orange-200 bg-orange-50", text: dk ? "text-orange-300" : "text-orange-700", icon: dk ? "text-orange-300" : "text-orange-600" }, 
+      emerald: { border: dk ? "border-emerald-400/30 bg-emerald-400/10" : "border-emerald-200 bg-emerald-50", text: dk ? "text-emerald-300" : "text-emerald-700", icon: dk ? "text-emerald-300" : "text-emerald-600" } 
+    };
     const c = colors[color];
-    return (<div className={`rounded-xl border p-3 ${c.border}`}><div className="flex items-center gap-2 mb-2"><Ic n="wallet" className={`h-4 w-4 ${c.icon}`} /><b className={`text-xs font-black ${c.text}`}>{title}</b></div><div className="grid grid-cols-3 md:grid-cols-5 gap-2 text-[10px] font-bold">{currencies.map(cur => { const bal = balances[cur] || 0; const isDebt = bal < 0, isCredit = bal > 0; return (<div key={cur} className={`rounded-lg px-2 py-1.5 ${dk ? "bg-slate-900/50" : "bg-white"}`}><div className={subText}>{labels[cur]}</div><div className={`font-black tabular-nums ${isDebt ? "text-rose-500" : isCredit ? (dk ? "text-emerald-300" : "text-emerald-600") : dk ? "text-slate-400" : "text-slate-500"}`}>{fmt(bal)}</div><div className="min-h-[12px] mt-0.5">{isCashBox ? (<>{isDebt && <div className="text-[8px] font-black text-rose-500">⚠️ کسری صندوق</div>}{isCredit && <div className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>✅ موجودی نقدی</div>}{bal === 0 && <div className={`text-[8px] font-bold ${subText}`}>⚪ خالی</div>}</>) : (<>{isDebt && <div className="text-[8px] font-black text-rose-500">قرض از صرافی</div>}{isCredit && <div className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>طلب از صرافی</div>}{bal === 0 && <div className={`text-[8px] font-bold ${subText}`}>بدون بدهی</div>}</>)}</div></div>); })}</div></div>);
+    return (
+      <div className={`rounded-xl border p-3 ${c.border}`}>
+        <div className="flex items-center gap-2 mb-2">
+          <Ic n="wallet" className={`h-4 w-4 ${c.icon}`} />
+          <b className={`text-xs font-black ${c.text}`}>{title}</b>
+        </div>
+        <div className="grid grid-cols-3 md:grid-cols-5 gap-2 text-[10px] font-bold">
+          {currencies.map(cur => { 
+            const bal = balances[cur] || 0; 
+            const isDebt = bal < 0, isCredit = bal > 0; 
+            return (
+              <div key={cur} className={`rounded-lg px-2 py-1.5 ${dk ? "bg-slate-900/50" : "bg-white"}`}>
+                <div className={subText}>{labels[cur]}</div>
+                <div className={`font-black tabular-nums ${isDebt ? "text-rose-500" : isCredit ? (dk ? "text-emerald-300" : "text-emerald-600") : dk ? "text-slate-400" : "text-slate-500"}`}>
+                  {fmt(bal)}
+                </div>
+                <div className="min-h-[12px] mt-0.5">
+                  {isCashBox ? (
+                    <>
+                      {isDebt && <div className="text-[8px] font-black text-rose-500">⚠️ کسری صندوق</div>}
+                      {isCredit && <div className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>✅ موجودی نقدی</div>}
+                      {bal === 0 && <div className={`text-[8px] font-bold ${subText}`}>⚪ خالی</div>}
+                    </>
+                  ) : (
+                    <>
+                      {isDebt && <div className="text-[8px] font-black text-rose-500">قرض از صرافی</div>}
+                      {isCredit && <div className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>طلب از صرافی</div>}
+                      {bal === 0 && <div className={`text-[8px] font-bold ${subText}`}>بدون بدهی</div>}
+                    </>
+                  )}
+                </div>
+              </div>
+            ); 
+          })}
+        </div>
+      </div>
+    );
   });
 
   const ActionButtons = memo(function ActionButtons({ item, isInHistory }: { item: Hawala; isInHistory: boolean }) {
@@ -670,7 +709,11 @@ export default function HawalaPage() {
           {activeTab === "new" && (
             <section className={`hw-up space-y-4 md:space-y-5 p-4 md:p-7 ${uiCard}`}>
               <div className="flex flex-wrap items-center gap-3"><span className={`grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${identHwIcon}`}><Ic n="send" className="h-5 w-5" /></span><div className="flex-1 min-w-0"><h2 className={`hw-display text-xl md:text-2xl leading-none ${heading}`}>ثبت حواله جدید</h2><p className={`mt-1 text-[11px] font-bold ${subText}`}>معلومات حواله‌دهنده، مقصد و حواله‌گیرنده</p></div></div>
-              <div className="grid gap-3 md:grid-cols-2"><CustomerBalanceCard customer={selectedSender} color="blue" isCashBox={isSenderCashBox} /><CustomerBalanceCard customer={selectedReceiver} color="orange" isCashBox={isReceiverCashBox} /></div>
+              <div className="grid gap-3 md:grid-cols-2">
+                {/* ✅ ارسال balances به عنوان prop برای رفع باگ رندر */}
+                <CustomerBalanceCard customer={selectedSender} balances={getCalculatedBalances(selectedSender, isSenderCashBox)} color="blue" isCashBox={isSenderCashBox} />
+                <CustomerBalanceCard customer={selectedReceiver} balances={getCalculatedBalances(selectedReceiver, isReceiverCashBox)} color="orange" isCashBox={isReceiverCashBox} />
+              </div>
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4"><span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-600"}`}><Ic n="send" className="h-4 w-4" /></span><b className={`text-sm font-black ${dk ? "text-blue-300" : "text-blue-700"}`}>معلومات حواله‌دهنده و حواله</b></div>
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-3 mb-4">
