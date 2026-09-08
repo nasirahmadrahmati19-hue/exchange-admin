@@ -1,7 +1,8 @@
 "use client";
+
 import { useState } from "react";
-// استفاده از مسیر نسبی قطعی بر اساس ساختار پوشه‌های شما
-import { useSyncedState } from "../../../lib/useSyncedState"; 
+// ✅ این مسیر دقیقاً به پوشه lib که در کنار wallets است اشاره می‌کند
+import { useSyncedState } from "../lib/useSyncedState"; 
 
 interface Wallet { id: number; currency: string; balance: string; address: string; }
 
