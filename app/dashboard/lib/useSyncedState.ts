@@ -59,12 +59,8 @@ export function useSyncedState<T>(key: string, initialValue: T) {
           const data = snapshot.data();
           const fbValue = data.value;
 
-          // بررسی تغییر واقعی برای جلوگیری از رندر بیهوده
           if (fbValue !== undefined && JSON.stringify(latestState.current) !== JSON.stringify(fbValue)) {
             console.warn(`[useSyncedState] ⚠️ داده‌ی سرور برای "${key}" با داده‌ی محلی تفاوت داشت و بازنویسی شد.`);
-            console.log("داده‌ی سرور:", fbValue);
-            console.log("داده‌ی محلی قبل از بازنویسی:", latestState.current);
-            
             setState(fbValue);
             try {
               window.localStorage.setItem(key, JSON.stringify({ value: fbValue }));
