@@ -350,43 +350,107 @@ const DetailRow = memo(function DetailRow({ label, value, valueClass = "", dark 
   );
 });
 
-// ✅ کامپوننت جدید برای نمایش زیبا در موبایل
-const MobileTransactionCard = memo(({ tx, index }: { tx: Transaction; index: number }) => {
+// ✅ کامپوننت‌های فرعی اصلاح‌شده با دریافت prop به نام isDark
+const MobileTransactionCard = memo(({ tx, index, isDark }: { tx: Transaction; index: number; isDark: boolean }) => {
   const dt = splitDateTime(tx.date);
+  const subTextLocal = isDark ? "text-slate-500" : "text-slate-400";
   return (
-    <div className={`rounded-xl border p-4 mb-3 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-white"}`}>
+    <div className={`rounded-xl border p-4 mb-3 ${isDark ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-white"}`}>
       <div className="flex items-center justify-between mb-3">
-        <span className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-black ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-cyan-300 bg-cyan-50 text-cyan-700"}`} dir="ltr">
+        <span className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-black ${isDark ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-cyan-300 bg-cyan-50 text-cyan-700"}`} dir="ltr">
           <Ic n="tag" className="h-3 w-3" />{tx.trackingCode}
         </span>
-        <span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${typeChipClass(tx)}`}>{transactionTypeLabel(tx)}</span>
+        <span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${typeChipClass(tx, isDark)}`}>{transactionTypeLabel(tx)}</span>
       </div>
       <div className="space-y-2 text-sm">
         <div className="flex justify-between">
-          <span className={subText}>مشتری:</span>
-          <span className={`font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>{transactionCustomerLabel(tx)}</span>
+          <span className={subTextLocal}>مشتری:</span>
+          <span className={`font-bold ${isDark ? "text-slate-200" : "text-slate-700"}`}>{transactionCustomerLabel(tx)}</span>
         </div>
         <div className="flex justify-between">
-          <span className={subText}>تاریخ:</span>
-          <span className={`font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`} dir="ltr">{dt.datePart} {dt.timePart}</span>
+          <span className={subTextLocal}>تاریخ:</span>
+          <span className={`font-bold tabular-nums ${isDark ? "text-slate-200" : "text-slate-700"}`} dir="ltr">{dt.datePart} {dt.timePart}</span>
         </div>
         <div className="flex justify-between">
-          <span className={subText}>دریافت:</span>
+          <span className={subTextLocal}>دریافت:</span>
           <span className="font-black text-emerald-500" dir="ltr">{fmt(tx.fromAmount)} {labels[tx.fromCurrency]}</span>
         </div>
         <div className="flex justify-between">
-          <span className={subText}>پرداخت:</span>
+          <span className={subTextLocal}>پرداخت:</span>
           <span className="font-black text-sky-500" dir="ltr">{fmt(tx.toAmount)} {labels[tx.toCurrency]}</span>
         </div>
         <div className="flex justify-between">
-          <span className={subText}>کارمزد:</span>
+          <span className={subTextLocal}>کارمزد:</span>
           <span className="font-bold" dir="ltr">{transactionCommissionLabel(tx)} ({commissionPayerLabel(tx)})</span>
         </div>
       </div>
       <div className="mt-3 pt-3 border-t border-dashed border-slate-300/30 flex justify-end">
-        <ActionButtons tx={tx} />
+        <ActionButtons tx={tx} isDark={isDark} />
       </div>
     </div>
+  );
+});
+
+const ActionButtons = memo(function ActionButtons({ tx, isDark }: { tx: Transaction; isDark: boolean }) {
+  const isVoided = tx.status === "voided";
+  const isOpen = openActionId === tx.id;
+  const btn = "flex w-full items-center gap-2 px-3 py-2 text-right text-xs font-bold transition";
+  const btnBase = isDark ? "text-slate-200 hover:bg-slate-700/60" : "text-slate-700 hover:bg-slate-100";
+  return (
+    <div className="relative action-dropdown flex justify-center">
+      <button onClick={(e) => { e.stopPropagation(); setOpenActionId(isOpen ? null : tx.id); }} className={`grid h-8 w-8 place-items-center rounded-lg border transition-all duration-150 active:scale-90 cursor-pointer ${isDark ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-200 text-slate-500 hover:bg-slate-100"}`} title="عملیات">
+        <Ic n="more" className="h-4 w-4" />
+      </button>
+      {isOpen && (
+        <div className={`absolute left-1/2 -translate-x-1/2 top-full z-50 mt-1.5 w-44 overflow-hidden rounded-xl border shadow-xl ${isDark ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
+          <button onClick={() => { viewTransaction(tx); setOpenActionId(null); }} className={`${btn} ${btnBase} ${isDark ? "text-cyan-300 hover:bg-cyan-400/15" : "text-cyan-600 hover:bg-cyan-50"}`}>
+            <Ic n="eye" className="h-3.5 w-3.5" /> مشاهده
+          </button>
+          {!isVoided && (
+            <>
+              <button onClick={() => { editTransaction(tx); setOpenActionId(null); }} className={`${btn} ${btnBase} ${isDark ? "text-sky-300 hover:bg-sky-400/15" : "text-sky-600 hover:bg-sky-50"}`}>
+                <Ic n="pencil" className="h-3.5 w-3.5" /> ویرایش
+              </button>
+              <button onClick={() => { voidTransaction(tx); setOpenActionId(null); }} className={`${btn} ${btnBase} ${isDark ? "text-amber-300 hover:bg-amber-400/15" : "text-amber-600 hover:bg-amber-50"}`}>
+                <Ic n="xCircle" className="h-3.5 w-3.5" /> لغو
+              </button>
+            </>
+          )}
+          <button onClick={() => { printReceipt(tx); setOpenActionId(null); }} className={`${btn} ${btnBase} ${isDark ? "text-emerald-300 hover:bg-emerald-400/15" : "text-emerald-600 hover:bg-emerald-50"}`}>
+            <Ic n="printer" className="h-3.5 w-3.5" /> چاپ رسید
+          </button>
+          <div className={`my-1 h-px ${isDark ? "bg-slate-700" : "bg-slate-100"}`} />
+          <button onClick={() => { deleteTransaction(tx); setOpenActionId(null); }} className={`${btn} ${isDark ? "text-rose-300 hover:bg-rose-400/15" : "text-rose-500 hover:bg-rose-50"}`}>
+            <Ic n="trash" className="h-3.5 w-3.5" /> حذف
+          </button>
+        </div>
+      )}
+    </div>
+  );
+});
+
+const TransactionRow = memo(({ tx, index, isSearching, isDark }: { tx: Transaction; index: number; isSearching: boolean; isDark: boolean }) => {
+  const ms = transactionMatchesSearch(tx);
+  let rc = isDark ? "hover:bg-slate-700/30" : "hover:bg-sky-50/70";
+  if (isSearching) rc += ms ? isDark ? " bg-amber-400/10" : " bg-amber-100" : " opacity-30";
+  if (tx.status === "voided") rc += isDark ? " bg-rose-400/[0.05]" : " bg-rose-50";
+  const cellClass = "px-4 py-3.5 text-center";
+  const dt = splitDateTime(tx.date);
+  const subTextLocal = isDark ? "text-slate-500" : "text-slate-400";
+  return (
+    <tr className={rc}>
+      <td className={cellClass}><span className={`inline-grid h-7 w-7 place-items-center rounded-lg text-[11px] font-black tabular-nums ${isDark ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>{index + 1}</span></td>
+      <td className={cellClass}><span className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-black ${isDark ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-cyan-300 bg-cyan-50 text-cyan-700"}`} dir="ltr"><Ic n="tag" className="h-3 w-3" />{tx.trackingCode}</span></td>
+      <td className={`${cellClass} text-[13px] font-bold ${isDark ? "text-slate-200" : "text-slate-700"}`}>{transactionCustomerLabel(tx)}</td>
+      <td className={cellClass}><div className="flex flex-col items-center gap-0.5"><span dir="ltr" className={`text-xs font-bold tabular-nums ${isDark ? "text-slate-200" : "text-slate-700"}`}>{dt.datePart}</span><span dir="ltr" className={`text-[10px] tabular-nums ${subTextLocal}`}>{dt.timePart}</span></div></td>
+      <td className={cellClass}><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${typeChipClass(tx, isDark)}`}>{transactionTypeLabel(tx)}</span></td>
+      <td className={cellClass}><div className="text-[13px] font-black tabular-nums">{fmt(tx.fromAmount)}</div><div className={`text-[10px] ${subTextLocal}`}>{labels[tx.fromCurrency]}</div></td>
+      <td className={cellClass}><div className="text-[13px] font-black tabular-nums">{fmt(tx.toAmount)}</div><div className={`text-[10px] ${subTextLocal}`}>{labels[tx.toCurrency]}</div></td>
+      <td className={`${cellClass} text-[11px] ${subTextLocal}`}>{tx.rateLabel}</td>
+      <td className={`${cellClass} text-xs font-bold tabular-nums`}>{transactionCommissionLabel(tx)}</td>
+      <td className={`${cellClass} text-xs ${isDark ? "text-slate-300" : "text-slate-600"}`}>{commissionPayerLabel(tx)}</td>
+      <td className={cellClass}><ActionButtons tx={tx} isDark={isDark} /></td>
+    </tr>
   );
 });
 
@@ -1029,13 +1093,14 @@ export default function CurrencyExchangePage() {
   const identCvIcon = dk ? "from-violet-400/20 to-violet-400/5 text-violet-300 ring-violet-400/25" : "from-violet-400/20 to-purple-400/10 text-violet-600 ring-violet-400/30";
   const identCvChip = dk ? "bg-violet-400/10 text-violet-300 ring-violet-400/25" : "bg-violet-100 text-violet-700 ring-violet-300/60";
 
-  const typeChipClass = useCallback((tx: Transaction) => {
-    if (tx.type === "transfer") return dk ? "bg-orange-400/15 text-orange-300" : "bg-orange-100 text-orange-700";
-    if (tx.type === "convert") return dk ? "bg-violet-400/15 text-violet-300" : "bg-violet-100 text-violet-700";
-    if (tx.dealType === "buy") return dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-700";
-    if (tx.dealType === "sell") return dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-700";
-    return dk ? "bg-slate-400/10 text-slate-300" : "bg-slate-100 text-slate-600";
-  }, [dk]);
+  // ✅ تابع typeChipClass اصلاح‌شده برای دریافت isDark
+  const typeChipClass = useCallback((tx: Transaction, isDark: boolean) => {
+    if (tx.type === "transfer") return isDark ? "bg-orange-400/15 text-orange-300" : "bg-orange-100 text-orange-700";
+    if (tx.type === "convert") return isDark ? "bg-violet-400/15 text-violet-300" : "bg-violet-100 text-violet-700";
+    if (tx.dealType === "buy") return isDark ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-700";
+    if (tx.dealType === "sell") return isDark ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-700";
+    return isDark ? "bg-slate-400/10 text-slate-300" : "bg-slate-100 text-slate-600";
+  }, []);
 
   const fld = (l: string, n: ReactNode) => (<div><label className={uiLabel}>{l}</label>{n}</div>);
   const sel = (v: string, onCh: (v: string) => void, opts: string[][], cls = "") => (
@@ -1246,69 +1311,6 @@ export default function CurrencyExchangePage() {
     );
   });
 
-  const ActionButtons = memo(function ActionButtons({ tx }: { tx: Transaction }) {
-    const isVoided = tx.status === "voided";
-    const isOpen = openActionId === tx.id;
-    const btn = "flex w-full items-center gap-2 px-3 py-2 text-right text-xs font-bold transition";
-    const btnBase = dk ? "text-slate-200 hover:bg-slate-700/60" : "text-slate-700 hover:bg-slate-100";
-    return (
-      <div className="relative action-dropdown flex justify-center">
-        <button onClick={(e) => { e.stopPropagation(); setOpenActionId(isOpen ? null : tx.id); }} className={`grid h-8 w-8 place-items-center rounded-lg border transition-all duration-150 active:scale-90 cursor-pointer ${dk ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-200 text-slate-500 hover:bg-slate-100"}`} title="عملیات">
-          <Ic n="more" className="h-4 w-4" />
-        </button>
-        {isOpen && (
-          <div className={`absolute left-1/2 -translate-x-1/2 top-full z-50 mt-1.5 w-44 overflow-hidden rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
-            <button onClick={() => { viewTransaction(tx); setOpenActionId(null); }} className={`${btn} ${btnBase} ${dk ? "text-cyan-300 hover:bg-cyan-400/15" : "text-cyan-600 hover:bg-cyan-50"}`}>
-              <Ic n="eye" className="h-3.5 w-3.5" /> مشاهده
-            </button>
-            {!isVoided && (
-              <>
-                <button onClick={() => { editTransaction(tx); setOpenActionId(null); }} className={`${btn} ${btnBase} ${dk ? "text-sky-300 hover:bg-sky-400/15" : "text-sky-600 hover:bg-sky-50"}`}>
-                  <Ic n="pencil" className="h-3.5 w-3.5" /> ویرایش
-                </button>
-                <button onClick={() => { voidTransaction(tx); setOpenActionId(null); }} className={`${btn} ${btnBase} ${dk ? "text-amber-300 hover:bg-amber-400/15" : "text-amber-600 hover:bg-amber-50"}`}>
-                  <Ic n="xCircle" className="h-3.5 w-3.5" /> لغو
-                </button>
-              </>
-            )}
-            <button onClick={() => { printReceipt(tx); setOpenActionId(null); }} className={`${btn} ${btnBase} ${dk ? "text-emerald-300 hover:bg-emerald-400/15" : "text-emerald-600 hover:bg-emerald-50"}`}>
-              <Ic n="printer" className="h-3.5 w-3.5" /> چاپ رسید
-            </button>
-            <div className={`my-1 h-px ${dk ? "bg-slate-700" : "bg-slate-100"}`} />
-            <button onClick={() => { deleteTransaction(tx); setOpenActionId(null); }} className={`${btn} ${dk ? "text-rose-300 hover:bg-rose-400/15" : "text-rose-500 hover:bg-rose-50"}`}>
-              <Ic n="trash" className="h-3.5 w-3.5" /> حذف
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  });
-
-  const TransactionRow = memo(({ tx, index, isSearching }: { tx: Transaction; index: number; isSearching: boolean }) => {
-    const ms = transactionMatchesSearch(tx);
-    let rc = dk ? "hover:bg-slate-700/30" : "hover:bg-sky-50/70";
-    if (isSearching) rc += ms ? dk ? " bg-amber-400/10" : " bg-amber-100" : " opacity-30";
-    if (tx.status === "voided") rc += dk ? " bg-rose-400/[0.05]" : " bg-rose-50";
-    const cellClass = "px-4 py-3.5 text-center";
-    const dt = splitDateTime(tx.date);
-    return (
-      <tr className={rc}>
-        <td className={cellClass}><span className={`inline-grid h-7 w-7 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>{index + 1}</span></td>
-        <td className={cellClass}><span className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-black ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-cyan-300 bg-cyan-50 text-cyan-700"}`} dir="ltr"><Ic n="tag" className="h-3 w-3" />{tx.trackingCode}</span></td>
-        <td className={`${cellClass} text-[13px] font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>{transactionCustomerLabel(tx)}</td>
-        <td className={cellClass}><div className="flex flex-col items-center gap-0.5"><span dir="ltr" className={`text-xs font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`}>{dt.datePart}</span><span dir="ltr" className={`text-[10px] tabular-nums ${subText}`}>{dt.timePart}</span></div></td>
-        <td className={cellClass}><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${typeChipClass(tx)}`}>{transactionTypeLabel(tx)}</span></td>
-        <td className={cellClass}><div className="text-[13px] font-black tabular-nums">{fmt(tx.fromAmount)}</div><div className={`text-[10px] ${subText}`}>{labels[tx.fromCurrency]}</div></td>
-        <td className={cellClass}><div className="text-[13px] font-black tabular-nums">{fmt(tx.toAmount)}</div><div className={`text-[10px] ${subText}`}>{labels[tx.toCurrency]}</div></td>
-        <td className={`${cellClass} text-[11px] ${dk ? "text-slate-400" : "text-slate-500"}`}>{tx.rateLabel}</td>
-        <td className={`${cellClass} text-xs font-bold tabular-nums`}>{transactionCommissionLabel(tx)}</td>
-        <td className={`${cellClass} text-xs ${dk ? "text-slate-300" : "text-slate-600"}`}>{commissionPayerLabel(tx)}</td>
-        <td className={cellClass}><ActionButtons tx={tx} /></td>
-      </tr>
-    );
-  });
-
-  const tableMaxHeight = "max-h-[672px]";
   const renderCustomerItem = (c: Customer, idx: number, onSelect: (c: Customer) => void, hoverClass: string, gradientClass: string) => {
     const isExchangeAcc = c.id === EXCHANGE_ACCOUNT_ID;
     return (
@@ -1366,7 +1368,7 @@ export default function CurrencyExchangePage() {
             <button onClick={() => setTab("convert")} className={`flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-black ${tab === "convert" ? dk ? "bg-violet-400 text-slate-950" : "bg-violet-500 text-white" : dk ? "text-slate-400" : "text-slate-500"}`}><Ic n="user" className="h-4 w-4" />تبدیل ارز</button>
           </div>
 
-          {/* ... (بخش‌های فرم تبادل، انتقال و تبدیل بدون تغییر باقی مانده‌اند تا کد کامل باشد) ... */}
+          {/* ... (بخش‌های فرم تبادل، انتقال و تبدیل بدون تغییر باقی مانده‌اند) ... */}
           {tab === "exchange" && (
             <section className={`space-y-4 p-4 md:p-7 ${uiCard}`}>
               {secHead(identExIcon, "swap", "تبادل ارز", "دریافت و پرداخت ارز", identExChip, editingExchangeId ? `ویرایش ${shortId(editingExchangeId)}` : "جدید")}
@@ -1772,7 +1774,7 @@ export default function CurrencyExchangePage() {
                   <p className="text-sm font-black">معامله‌ای ثبت نشده</p>
                 </div>
               ) : (
-                displayTransactions.map((tx, index) => <MobileTransactionCard key={tx.id} tx={tx} index={index} />)
+                displayTransactions.map((tx, index) => <MobileTransactionCard key={tx.id} tx={tx} index={index} isDark={dk} />)
               )}
             </div>
 
@@ -1798,7 +1800,7 @@ export default function CurrencyExchangePage() {
                         </td>
                       </tr>
                     ) : (
-                      displayTransactions.map((tx, index) => <TransactionRow key={tx.id} tx={tx} index={index} isSearching={isSearching} />)
+                      displayTransactions.map((tx, index) => <TransactionRow key={tx.id} tx={tx} index={index} isSearching={isSearching} isDark={dk} />)
                     )}
                   </tbody>
                 </table>
