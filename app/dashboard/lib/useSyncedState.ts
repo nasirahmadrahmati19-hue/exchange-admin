@@ -60,7 +60,7 @@ export function useSyncedState<T>(key: string, initialValue: T) {
           const fbValue = data.value;
 
           if (fbValue !== undefined && JSON.stringify(latestState.current) !== JSON.stringify(fbValue)) {
-            console.warn(`[useSyncedState] ⚠️ داده‌ی سرور برای "${key}" با داده‌ی محلی تفاوت داشت و بازنویسی شد.`);
+            console.warn(`[useSyncedState] ⚠️ داده‌ی سرور برای "${key}" با داده‌ی محلی تفاوت داشت.`);
             setState(fbValue);
             try {
               window.localStorage.setItem(key, JSON.stringify({ value: fbValue }));
