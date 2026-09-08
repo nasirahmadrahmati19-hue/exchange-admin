@@ -171,7 +171,7 @@ const isCurrency = (v: any): v is Currency => typeof v === "string" && (currenci
 const normalizeDigits = (v: string) => { const pd = "۰۱۲۳۴۵۶۷۸۹", ad = "٠١٢٣٤٥٦٧٨٩"; return String(v || "").replace(/[۰-۹]/g, d => String(pd.indexOf(d))).replace(/[٠-٩]/g, d => String(ad.indexOf(d))); };
 const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 2 }) : "0";
 
-function shamsiParts(d: Date) { try { const p = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", { year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(d); const g = (t: string) => p.find(x => x.type === t)?.value || "0"; return { year: g("year"), month: g("month"), day: g("day") }; } catch { return { year: "0", month: "0", day: "0" }; } }
+function shamsiParts(d: Date) { try { const p = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", { year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(d); const g = (t: string) => p.find(x => x.type === t)?.value || "0"; return { year: g("year"), month: g("month"), day: g("day") }; } catch { return { year: "0", month: "0", day: "0"; } } }
 function formatDateTime(d: Date) { const pad = (n: number) => String(n).padStart(2, "0"); const s = shamsiParts(d); return `${s.year}/${s.month}/${s.day} ${pad(d.getHours())}:${pad(d.getMinutes())}`; }
 function formatShamsiDate(d: Date) { const s = shamsiParts(d); return `${s.year}/${s.month}/${s.day}`; }
 function dateLabel(s: string) { try { const d = new Date(s); return Number.isNaN(d.getTime()) ? "-" : formatDateTime(d); } catch { return "-"; } }
@@ -180,25 +180,21 @@ function timeLabel(s: string) { try { const d = new Date(s); if (Number.isNaN(d.
 
 const emptyForm: FormState = { name: "", tazkira: "", phone: "", address: "", note: "", telegram: "" };
 
+// ✅ اصلاح شده: محاسبه دقیق موجودی برای همه حساب‌ها بر اساس دفتر کل
 function getLedgerBalance(customerId: string, currency: Currency, cashEntries: any[], ledger: LedgerEntry[]): number {
-  let balance = 0;
   if (customerId === CASH_BOX_ID) {
+    let balance = 0;
     for (const e of cashEntries) {
       if (e.status === "voided" || e.currency !== currency) continue;
       balance += e.direction === "in" ? e.amount : -e.amount;
     }
-  } else if (customerId === EXCHANGE_ACCOUNT_ID) {
-    for (const e of cashEntries) {
-      if (e.status === "voided" || e.currency !== currency) continue;
-      if (e.customerId === EXCHANGE_ACCOUNT_ID) {
-        balance += e.direction === "in" ? e.amount : -e.amount;
-      }
-    }
-  } else {
-    for (const e of ledger) {
-      if (e.customerId === customerId && e.currency === currency) {
-        balance += e.direction === "in" ? e.amount : -e.amount;
-      }
+    return balance;
+  }
+
+  let balance = 0;
+  for (const e of ledger) {
+    if (e.customerId === customerId && e.currency === currency) {
+      balance += e.direction === "in" ? e.amount : -e.amount;
     }
   }
   return balance;
@@ -266,34 +262,56 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
     }
   }
 
+  // ✅ اصلاح شده: پردازش صحیح تمام ورودی‌های صندوق شامل واریز/برداشت مالک
   for (const ce of cashEntries) {
     if (!ce || typeof ce !== "object") continue;
+    if (ce.status === "voided") continue;
     if (ce.linkedHawalaId || ce.linkedHawalaSettleId || ce.linkedExchangeId || ce.linkedTransferId || ce.linkedConvertId) continue;
-    if (ce.type !== "customer_deposit" && ce.type !== "customer_withdraw" && ce.type !== "loan_given" && ce.type !== "loan_received") continue;
-    if (!ce.customerId) continue;
-    if (!customers.find(c => c.id === ce.customerId) && ce.customerId !== EXCHANGE_ACCOUNT_ID) continue;
 
-    const cur = ce.currency as Currency; if (!isCurrency(cur)) continue;
-    const amt = Number(ce.amount || 0) || 0; if (amt <= 0) continue;
+    const isValidType = [
+      "customer_deposit", "customer_withdraw",
+      "owner_deposit", "owner_withdraw",
+      "loan_given", "loan_received", "adjustment", "fee", "commission_withdraw"
+    ].includes(ce.type);
 
-    const counterPartyId = ce.counterPartyId || (
-      ce.type === "loan_given" || ce.type === "loan_received" ? EXCHANGE_ACCOUNT_ID : CASH_BOX_ID
-    );
+    if (!isValidType) continue;
 
-    const isIn = ce.type === "customer_deposit" || ce.type === "loan_received";
+    const cur = ce.currency as Currency;
+    if (!isCurrency(cur)) continue;
+    const amt = Number(ce.amount || 0) || 0;
+    if (amt <= 0) continue;
+
+    // ✅ اگر عملیات مربوط به مالک است، مستقیماً به حساب صرافی متصل شود
+    let targetCustomerId = ce.customerId;
+    if (ce.type === "owner_deposit" || ce.type === "owner_withdraw" || ce.type === "commission_withdraw") {
+      targetCustomerId = EXCHANGE_ACCOUNT_ID;
+    }
+
+    if (!targetCustomerId) continue;
+    if (!customers.find(c => c.id === targetCustomerId) && targetCustomerId !== EXCHANGE_ACCOUNT_ID && targetCustomerId !== CASH_BOX_ID) continue;
+
+    const isDirectionIn = ce.direction === "in" || ce.type === "owner_deposit" || ce.type === "customer_deposit" || ce.type === "loan_received";
+
+    let txType: TxType = "correction";
+    if (ce.type === "customer_deposit" || ce.type === "owner_deposit") txType = "deposit";
+    else if (ce.type === "customer_withdraw" || ce.type === "owner_withdraw" || ce.type === "commission_withdraw") txType = "withdraw";
+    else if (ce.type === "loan_given" || ce.type === "loan_received") txType = "transfer";
+    else if (ce.type === "fee") txType = "fee";
+    else if (ce.type === "adjustment") txType = "correction";
 
     entries.push({
       id: `${ce.id}-cash`,
       date: ce.date || new Date().toISOString(),
-      customerId: ce.customerId,
-      type: isIn ? "deposit" : "withdraw",
+      customerId: targetCustomerId,
+      type: txType,
       description: ce.reason || entryTypeLabels[ce.type as CashEntryType] || "عملیات",
-      currency: cur, amount: amt,
-      direction: isIn ? "in" : "out",
+      currency: cur,
+      amount: amt,
+      direction: isDirectionIn ? "in" : "out",
       balanceAfter: 0,
       referenceId: ce.id,
       referenceNumber: ce.trackingCode || "",
-      counterPartyId
+      counterPartyId: ce.counterPartyId || CASH_BOX_ID
     });
   }
 
@@ -399,7 +417,6 @@ export default function CustomersPage() {
   const allBalances = useMemo(() => {
     const map: Record<string, Record<Currency, number>> = {};
     
-    // ۱. مقداردهی اولیه برای همه مشتریان عادی
     customers.forEach(c => { 
       if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) {
         map[c.id] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
@@ -409,7 +426,6 @@ export default function CustomersPage() {
     map[CASH_BOX_ID] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     map[EXCHANGE_ACCOUNT_ID] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
 
-    // ۲. محاسبه موجودی تک‌تک مشتریان عادی
     for (const c of customers) {
       if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) {
         for (const cur of currencies) {
@@ -418,7 +434,6 @@ export default function CustomersPage() {
       }
     }
 
-    // ۳. محاسبه موجودی حساب صرافی
     map[EXCHANGE_ACCOUNT_ID] = {
       AFN: getLedgerBalance(EXCHANGE_ACCOUNT_ID, "AFN", cashEntries, ledger),
       USD: getLedgerBalance(EXCHANGE_ACCOUNT_ID, "USD", cashEntries, ledger),
@@ -427,22 +442,14 @@ export default function CustomersPage() {
       PKR: getLedgerBalance(EXCHANGE_ACCOUNT_ID, "PKR", cashEntries, ledger),
     };
 
-    // ۴. ✅ محاسبه موجودی صندوق دقیقاً مطابق فرمول داشبورد:
-    // صندوق = مجموع طلب مشتریان + موجودی حساب صرافی
     for (const cur of currencies) {
       let cashBoxTotal = 0;
-      
-      // جمع زدن موجودی همه مشتریان عادی
       for (const c of customers) {
         if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) {
           cashBoxTotal += map[c.id][cur];
         }
       }
-      
-      // اضافه کردن موجودی حساب صرافی
       cashBoxTotal += map[EXCHANGE_ACCOUNT_ID][cur];
-      
-      // ذخیره نهایی موجودی صندوق
       map[CASH_BOX_ID][cur] = cashBoxTotal;
     }
 
