@@ -1,12 +1,27 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { doc, setDoc, onSnapshot } from "firebase/firestore";
-import { db } from "./firebase"; // این مسیر درست است چون هر دو در پوشه lib هستند
+import { db } from "./firebase";
 
 const channel = typeof window !== "undefined" ? new BroadcastChannel("exchange-app-sync-channel") : null;
 
+// ✅ تابع جدید: حذف فیلدهای undefined از آبجکت (برای جلوگیری از خطای فایربیس)
+function removeUndefinedFields(obj: any): any {
+  if (obj === null || typeof obj !== "object") return obj;
+  if (Array.isArray(obj)) return obj.map(removeUndefinedFields);
+  
+  const cleaned: any = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined) {
+      cleaned[key] = removeUndefinedFields(value);
+    }
+  }
+  return cleaned;
+}
+
 export function useSyncedState<T>(key: string, initialValue: T) {
   const latestState = useRef<T>(initialValue);
+
   const [state, setState] = useState<T>(() => {
     if (typeof window === "undefined") return initialValue;
     try {
@@ -19,6 +34,7 @@ export function useSyncedState<T>(key: string, initialValue: T) {
       }
       return initialValue;
     } catch (error) {
+      console.warn(`[useSyncedState] خطا در خواندن "${key}".`, error);
       return initialValue;
     }
   });
@@ -26,32 +42,94 @@ export function useSyncedState<T>(key: string, initialValue: T) {
   latestState.current = state;
 
   useEffect(() => {
-    const docRef = doc(db, "synced_states", key);
-    const unsubscribe = onSnapshot(docRef, (snapshot) => {
-      if (snapshot.metadata.hasPendingWrites) return;
-      if (snapshot.exists()) {
-        const fbValue = snapshot.data().value;
-        if (fbValue !== undefined && JSON.stringify(latestState.current) !== JSON.stringify(fbValue)) {
-          setState(fbValue);
-          window.localStorage.setItem(key, JSON.stringify({ value: fbValue }));
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === key && e.newValue !== null) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          const value = parsed && typeof parsed === "object" && "value" in parsed ? parsed.value : parsed;
+          if (JSON.stringify(latestState.current) !== JSON.stringify(value)) {
+            setState(value);
+          }
+        } catch (error) {}
+      }
+    };
+
+    const handleBroadcast = (event: MessageEvent) => {
+      if (event.data.key === key && event.data.value !== undefined) {
+        const value = event.data.value;
+        if (JSON.stringify(latestState.current) !== JSON.stringify(value)) {
+          setState(value);
         }
       }
-    }, (error) => console.error(`[useSyncedState] خطای فایربیس "${key}":`, error));
+    };
 
-    return () => { unsubscribe(); };
-  }, [key]);
+    const docRef = doc(db, "synced_states", key);
+    const unsubscribe = onSnapshot(
+      docRef,
+      (snapshot) => {
+        if (snapshot.metadata.hasPendingWrites) return;
 
-  const setSyncedState = useCallback((value: T | ((prev: T) => T)) => {
-    setState((prev) => {
-      const newValue = value instanceof Function ? value(prev) : value;
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(key, JSON.stringify({ value: newValue }));
-        channel?.postMessage({ key, value: newValue });
-        setDoc(doc(db, "synced_states", key), { value: newValue }, { merge: true }).catch(console.error);
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          const fbValue = data.value;
+
+          if (fbValue !== undefined && JSON.stringify(latestState.current) !== JSON.stringify(fbValue)) {
+            setState(fbValue);
+            try {
+              window.localStorage.setItem(key, JSON.stringify({ value: fbValue }));
+            } catch (e) {
+              console.warn("⚠️ حافظه مرورگر پر است.");
+            }
+          }
+        }
+      },
+      (error) => {
+        console.error(`[useSyncedState] ❌ خطای شنود فایربیس برای "${key}":`, error);
       }
-      return newValue;
-    });
+    );
+
+    window.addEventListener("storage", handleStorage);
+    channel?.addEventListener("message", handleBroadcast);
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      channel?.removeEventListener("message", handleBroadcast);
+      unsubscribe();
+    };
   }, [key]);
+
+  const setSyncedState = useCallback(
+    (value: T | ((prev: T) => T)) => {
+      setState((prev) => {
+        const newValue = value instanceof Function ? value(prev) : value;
+
+        if (typeof window !== "undefined") {
+          try {
+            // ✅ اصلاح حیاتی: حذف فیلدهای undefined قبل از ذخیره
+            const cleanedValue = removeUndefinedFields(newValue);
+            const serialized = JSON.stringify({ value: cleanedValue });
+
+            window.localStorage.setItem(key, serialized);
+            channel?.postMessage({ key, value: cleanedValue });
+
+            const docRef = doc(db, "synced_states", key);
+            setDoc(docRef, { value: cleanedValue }, { merge: true })
+              .then(() => {
+                console.log(`[useSyncedState] ✅ ذخیره موفق در فایربیس برای: "${key}"`);
+              })
+              .catch((err) => {
+                console.error(`[useSyncedState] ❌❌❌ شکست در نوشتن فایربیس برای "${key}":`, err);
+                console.error("مقداری که سعی شد ذخیره شود:", cleanedValue);
+              });
+          } catch (error) {
+            console.error(`[useSyncedState] خطای کلی در ذخیره "${key}":`, error);
+          }
+        }
+        return newValue;
+      });
+    },
+    [key]
+  );
 
   return [state, setSyncedState] as const;
 }
