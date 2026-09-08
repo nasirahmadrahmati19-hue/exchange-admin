@@ -171,7 +171,17 @@ const isCurrency = (v: any): v is Currency => typeof v === "string" && (currenci
 const normalizeDigits = (v: string) => { const pd = "۰۱۲۳۴۵۶۷۸۹", ad = "٠١٢٣٤٥٦٧٨٩"; return String(v || "").replace(/[۰-۹]/g, d => String(pd.indexOf(d))).replace(/[٠-٩]/g, d => String(ad.indexOf(d))); };
 const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 2 }) : "0";
 
-function shamsiParts(d: Date) { try { const p = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", { year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(d); const g = (t: string) => p.find(x => x.type === t)?.value || "0"; return { year: g("year"), month: g("month"), day: g("day") }; } catch { return { year: "0", month: "0", day: "0"; } } }
+// ✅ اصلاح سینتکس: نقطه ویرگول به بیرون از آکولاد شیء منتقل شد
+function shamsiParts(d: Date) { 
+  try { 
+    const p = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", { year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(d); 
+    const g = (t: string) => p.find(x => x.type === t)?.value || "0"; 
+    return { year: g("year"), month: g("month"), day: g("day") }; 
+  } catch { 
+    return { year: "0", month: "0", day: "0" }; 
+  } 
+}
+
 function formatDateTime(d: Date) { const pad = (n: number) => String(n).padStart(2, "0"); const s = shamsiParts(d); return `${s.year}/${s.month}/${s.day} ${pad(d.getHours())}:${pad(d.getMinutes())}`; }
 function formatShamsiDate(d: Date) { const s = shamsiParts(d); return `${s.year}/${s.month}/${s.day}`; }
 function dateLabel(s: string) { try { const d = new Date(s); return Number.isNaN(d.getTime()) ? "-" : formatDateTime(d); } catch { return "-"; } }
@@ -180,7 +190,6 @@ function timeLabel(s: string) { try { const d = new Date(s); if (Number.isNaN(d.
 
 const emptyForm: FormState = { name: "", tazkira: "", phone: "", address: "", note: "", telegram: "" };
 
-// ✅ اصلاح شده: محاسبه دقیق موجودی برای همه حساب‌ها بر اساس دفتر کل
 function getLedgerBalance(customerId: string, currency: Currency, cashEntries: any[], ledger: LedgerEntry[]): number {
   if (customerId === CASH_BOX_ID) {
     let balance = 0;
@@ -262,7 +271,6 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
     }
   }
 
-  // ✅ اصلاح شده: پردازش صحیح تمام ورودی‌های صندوق شامل واریز/برداشت مالک
   for (const ce of cashEntries) {
     if (!ce || typeof ce !== "object") continue;
     if (ce.status === "voided") continue;
@@ -281,7 +289,6 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
     const amt = Number(ce.amount || 0) || 0;
     if (amt <= 0) continue;
 
-    // ✅ اگر عملیات مربوط به مالک است، مستقیماً به حساب صرافی متصل شود
     let targetCustomerId = ce.customerId;
     if (ce.type === "owner_deposit" || ce.type === "owner_withdraw" || ce.type === "commission_withdraw") {
       targetCustomerId = EXCHANGE_ACCOUNT_ID;
