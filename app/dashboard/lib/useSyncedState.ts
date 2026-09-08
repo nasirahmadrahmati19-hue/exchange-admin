@@ -6,7 +6,6 @@ import { db } from "./firebase";
 const channel = typeof window !== "undefined" ? new BroadcastChannel("exchange-app-sync-channel") : null;
 
 export function useSyncedState<T>(key: string, initialValue: T) {
-  // برای جلوگیری از رندر مجدد با داده‌ی تکراری
   const latestState = useRef<T>(initialValue);
 
   const [state, setState] = useState<T>(() => {
@@ -29,7 +28,6 @@ export function useSyncedState<T>(key: string, initialValue: T) {
   latestState.current = state;
 
   useEffect(() => {
-    // ۱. همگام‌سازی بین تب‌های یک مرورگر (LocalStorage)
     const handleStorage = (e: StorageEvent) => {
       if (e.key === key && e.newValue !== null) {
         try {
@@ -42,7 +40,6 @@ export function useSyncedState<T>(key: string, initialValue: T) {
       }
     };
 
-    // ۲. همگام‌سازی سریع بین تب‌ها (BroadcastChannel)
     const handleBroadcast = (event: MessageEvent) => {
       if (event.data.key === key && event.data.value !== undefined) {
         const value = event.data.value;
@@ -52,20 +49,22 @@ export function useSyncedState<T>(key: string, initialValue: T) {
       }
     };
 
-    // ۳. همگام‌سازی لحظه‌ای بین دستگاه‌ها (فایربیس) — بدون وابستگی به ساعت دستگاه
     const docRef = doc(db, "synced_states", key);
     const unsubscribe = onSnapshot(
       docRef,
       (snapshot) => {
-        // اگر این تغییر نتیجه‌ی نوشتن محلی خودمونه (هنوز روی سرور تأیید نشده)، نادیده بگیر
-        // این باعث میشه دیگه به مقایسه‌ی Date.now() بین دستگاه‌ها نیازی نباشه
         if (snapshot.metadata.hasPendingWrites) return;
 
         if (snapshot.exists()) {
           const data = snapshot.data();
           const fbValue = data.value;
 
+          // بررسی تغییر واقعی برای جلوگیری از رندر بیهوده
           if (fbValue !== undefined && JSON.stringify(latestState.current) !== JSON.stringify(fbValue)) {
+            console.warn(`[useSyncedState] ⚠️ داده‌ی سرور برای "${key}" با داده‌ی محلی تفاوت داشت و بازنویسی شد.`);
+            console.log("داده‌ی سرور:", fbValue);
+            console.log("داده‌ی محلی قبل از بازنویسی:", latestState.current);
+            
             setState(fbValue);
             try {
               window.localStorage.setItem(key, JSON.stringify({ value: fbValue }));
@@ -90,7 +89,6 @@ export function useSyncedState<T>(key: string, initialValue: T) {
     };
   }, [key]);
 
-  // ۴. تابع به‌روزرسانی داده (نوشتن هم‌زمان در همه‌جا)
   const setSyncedState = useCallback(
     (value: T | ((prev: T) => T)) => {
       setState((prev) => {
@@ -99,18 +97,18 @@ export function useSyncedState<T>(key: string, initialValue: T) {
         if (typeof window !== "undefined") {
           try {
             const serialized = JSON.stringify({ value: newValue });
-
-            // الف: ذخیره در مرورگر
             window.localStorage.setItem(key, serialized);
-
-            // ب: ارسال به سایر تب‌های باز همین مرورگر
             channel?.postMessage({ key, value: newValue });
 
-            // ج: ذخیره در فایربیس
             const docRef = doc(db, "synced_states", key);
-            setDoc(docRef, { value: newValue }, { merge: true }).catch((err) =>
-              console.error(`[useSyncedState] ❌ خطای نوشتن در فایربیس برای "${key}":`, err)
-            );
+            setDoc(docRef, { value: newValue }, { merge: true })
+              .then(() => {
+                console.log(`[useSyncedState] ✅ ذخیره موفق در فایربیس برای: "${key}"`);
+              })
+              .catch((err) => {
+                console.error(`[useSyncedState] ❌❌❌ شکست در نوشتن فایربیس برای "${key}":`, err);
+                console.error("مقداری که سعی شد ذخیره شود:", newValue);
+              });
           } catch (error) {
             console.error(`[useSyncedState] خطای کلی در ذخیره "${key}":`, error);
           }
