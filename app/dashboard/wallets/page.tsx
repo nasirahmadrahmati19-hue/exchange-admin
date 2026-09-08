@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
-import { useSyncedState } from "@/lib/useSyncedState"; 
+// استفاده از مسیر نسبی قطعی بر اساس ساختار پوشه‌های شما
+import { useSyncedState } from "../../../lib/useSyncedState"; 
 
 interface Wallet { id: number; currency: string; balance: string; address: string; }
 
