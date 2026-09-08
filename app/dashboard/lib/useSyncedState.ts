@@ -5,11 +5,23 @@ import { db } from "./firebase";
 
 const channel = typeof window !== "undefined" ? new BroadcastChannel("exchange-app-sync-channel") : null;
 
-// ✅ تابع جدید: حذف فیلدهای undefined از آبجکت (برای جلوگیری از خطای فایربیس)
+// ✅ تابع بهبودیافته: حذف undefined + محافظت از Date و انواع خاص
 function removeUndefinedFields(obj: any): any {
-  if (obj === null || typeof obj !== "object") return obj;
-  if (Array.isArray(obj)) return obj.map(removeUndefinedFields);
+  if (obj === null) return null;
+  if (obj === undefined) return null;
   
+  // محافظت از Date
+  if (obj instanceof Date) return obj;
+  
+  // محافظت از انواع اولیه
+  if (typeof obj !== "object") return obj;
+  
+  // آرایه‌ها
+  if (Array.isArray(obj)) {
+    return obj.map(item => removeUndefinedFields(item)).filter(item => item !== undefined);
+  }
+  
+  // آبجکت‌ها
   const cleaned: any = {};
   for (const [key, value] of Object.entries(obj)) {
     if (value !== undefined) {
@@ -105,7 +117,7 @@ export function useSyncedState<T>(key: string, initialValue: T) {
 
         if (typeof window !== "undefined") {
           try {
-            // ✅ اصلاح حیاتی: حذف فیلدهای undefined قبل از ذخیره
+            // ✅ حذف فیلدهای undefined با نسخه‌ی امن
             const cleanedValue = removeUndefinedFields(newValue);
             const serialized = JSON.stringify({ value: cleanedValue });
 
@@ -115,11 +127,10 @@ export function useSyncedState<T>(key: string, initialValue: T) {
             const docRef = doc(db, "synced_states", key);
             setDoc(docRef, { value: cleanedValue }, { merge: true })
               .then(() => {
-                console.log(`[useSyncedState] ✅ ذخیره موفق در فایربیس برای: "${key}"`);
+                console.log(`[useSyncedState] ✅ ذخیره موفق: "${key}"`);
               })
               .catch((err) => {
-                console.error(`[useSyncedState] ❌❌❌ شکست در نوشتن فایربیس برای "${key}":`, err);
-                console.error("مقداری که سعی شد ذخیره شود:", cleanedValue);
+                console.error(`[useSyncedState] ❌ شکست در نوشتن فایربیس برای "${key}":`, err);
               });
           } catch (error) {
             console.error(`[useSyncedState] خطای کلی در ذخیره "${key}":`, error);
