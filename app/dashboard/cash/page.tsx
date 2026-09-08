@@ -381,20 +381,46 @@ export default function CashPage() {
     return totals;
   }, [customers, entries, transactions]);
 
-  // ۳. موجودی حساب صرافی (واریز/برداشت مالک - بدهی مشتریان)
+  // ✅ ۳. موجودی حساب صرافی (واریز/برداشت مالک + اثر مستقیم معاملات - بدهی مشتریان)
   const exchangeBalance = useMemo(() => {
     const bal: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const cur of currencies) {
-      let ownerBalance = 0;
+      let balance = 0;
+      
+      // الف) واریز و برداشت دستی مالک و قرض‌ها
       for (const entry of entries) {
         if (entry.status === "voided" || entry.currency !== cur) continue;
-        if (entry.type === "owner_deposit") ownerBalance += entry.amount;
-        else if (entry.type === "owner_withdraw") ownerBalance -= entry.amount;
+        if (entry.type === "owner_deposit") balance += entry.amount;
+        else if (entry.type === "owner_withdraw") balance -= entry.amount;
+        else if (entry.type === "loan_given") balance -= entry.amount;
+        else if (entry.type === "loan_received") balance += entry.amount;
       }
-      bal[cur] = ownerBalance - (customerDebts[cur] || 0);
+
+      // ب) ✅ اصلاح حیاتی: افزودن اثر مستقیم معاملات صرافی (Transactions)
+      for (const tx of transactions) {
+        if (tx.status === "voided") continue;
+        
+        // در معامله، صرافی ارز مبدأ (from) را از مشتری دریافت می‌کند (موجودی صرافی زیاد می‌شود)
+        if (tx.fromCurrency === cur) {
+          balance += tx.fromAmount;
+        }
+        
+        // در معامله، صرافی ارز مقصد (to) را به مشتری پرداخت می‌کند (موجودی صرافی کم می‌شود)
+        if (tx.toCurrency === cur) {
+          balance -= tx.toAmount;
+        }
+
+        // کارمزد معامله به نفع صرافی است (موجودی صرافی زیاد می‌شود)
+        if (tx.commission && tx.commissionCurrency === cur) {
+          balance += tx.commission;
+        }
+      }
+
+      // ج) کسر بدهی مشتریان (طبق فرمول قبلی شما حفظ شد)
+      bal[cur] = balance - (customerDebts[cur] || 0);
     }
     return bal;
-  }, [entries, customerDebts]);
+  }, [entries, transactions, customerDebts]);
 
   // ✅ ۴. موجودی فیزیکی صندوق = حساب صرافی + طلب مشتریان (دقیقاً مطابق فرمول داشبورد)
   const physicalCashBalances = useMemo(() => {
@@ -535,9 +561,7 @@ export default function CashPage() {
       setEntries(updatedEntriesForEdit);
       finalEntry = updated;
 } else {
-  // ✅ اضافه شدن await برای دریافت کد پیگیری از سرور فایربیس
   const newTrackingCode = await consumeTrackingCode();
-  
   const entry = { ...previewData, trackingCode: newTrackingCode, status: "active" as const };
   if (entry.customerId && entry.customerId !== CASH_BOX_ID) { const cust = customers.find(c => c.id === entry.customerId); if (cust) { entry.customerPhone = cust.phone || ""; entry.customerTazkira = cust.tazkira || ""; } }
   updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForCashEntry(entry, "register"));
@@ -610,7 +634,7 @@ export default function CashPage() {
                     <div key={cur} className={`group relative overflow-hidden rounded-xl p-2.5 md:p-3 text-center transition-all duration-300 ${dk ? "bg-slate-950/60 ring-1 ring-slate-700/50" : "bg-white/90 ring-1 ring-emerald-100 shadow-sm"}`}>
                       <div className={`text-[11px] md:text-[12px] font-black mb-1 ${dk ? "text-slate-400" : "text-slate-500"}`}>{labels[cur]}</div>
                       <div className={`text-lg md:text-xl font-black tabular-nums leading-tight ${isNeg ? "text-rose-500" : dk ? "text-emerald-300" : "text-emerald-700"}`}>{fmt(bal)}</div>
-                      <div className={`mt-1 text-[8px] md:text-[9px] font-black ${isNeg ? "text-rose-500" : dk ? "text-emerald-400/70" : "text-emerald-600/70"}`}>{isNeg ? "⚠️ کسری" : "✅ نقدی"}</div>
+                      <div className={`mt-1 text-[8px] md:text-[9px] font-black ${isNeg ? "⚠️ کسری" : "✅ نقدی"}`}>{isNeg ? "⚠️ کسری" : "✅ نقدی"}</div>
                     </div>
                   );
                 })}
@@ -635,7 +659,7 @@ export default function CashPage() {
                     <div key={cur} className={`group relative overflow-hidden rounded-xl p-2.5 md:p-3 text-center transition-all duration-300 ${dk ? "bg-slate-950/60 ring-1 ring-slate-700/50" : "bg-white/90 ring-1 ring-violet-100 shadow-sm"}`}>
                       <div className={`text-[11px] md:text-[12px] font-black mb-1 ${dk ? "text-slate-400" : "text-slate-500"}`}>{labels[cur]}</div>
                       <div className={`text-lg md:text-xl font-black tabular-nums leading-tight ${isNeg ? "text-rose-500" : dk ? "text-violet-300" : "text-violet-700"}`}>{fmt(bal)}</div>
-                      <div className={`mt-1 text-[8px] md:text-[9px] font-black ${isNeg ? "text-rose-500" : dk ? "text-violet-400/70" : "text-violet-600/70"}`}>{isNeg ? "⚠️ منفی" : "✅ مثبت"}</div>
+                      <div className={`mt-1 text-[8px] md:text-[9px] font-black ${isNeg ? "⚠️ منفی" : "✅ مثبت"}`}>{isNeg ? "⚠️ منفی" : "✅ مثبت"}</div>
                     </div>
                   );
                 })}
