@@ -1,6 +1,4 @@
-// app/dashboard/users/page.tsx
 "use client";
-
 import { useEffect, useMemo, useState, useRef, useCallback, type ReactNode } from "react";
 import { useSyncedState } from "../lib/useSyncedState";
 import { initTrackingSystem } from "../lib/trackingCode";
@@ -170,7 +168,7 @@ const EXCHANGE_ACCOUNT_CUSTOMER: Customer = {
 
 const generateId = (): string => { if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") { try { return crypto.randomUUID(); } catch {} } return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = (Math.random() * 16) | 0; return (c === "x" ? r : (r & 0x3) | 0x8).toString(16); }); };
 const isCurrency = (v: any): v is Currency => typeof v === "string" && (currencies as string[]).includes(v);
-const normalizeDigits = (v: string) => { const pd = "۰۱۲۳۴۵۶۷۸۹", ad = "٠١٢٣٤٥٦٧٨٩"; return String(v || "").replace(/[۰-۹]/g, d => String(pd.indexOf(d))).replace(/[٠-]/g, d => String(ad.indexOf(d))); };
+const normalizeDigits = (v: string) => { const pd = "۰۱۲۳۴۵۶۷۸۹", ad = "٠١٢٣٤٥٦٧٨٩"; return String(v || "").replace(/[۰-۹]/g, d => String(pd.indexOf(d))).replace(/[٠-٩]/g, d => String(ad.indexOf(d))); };
 const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 2 }) : "0";
 
 function shamsiParts(d: Date) { 
@@ -368,8 +366,16 @@ function buildCashBoxLedger(cashEntries: any[]): LedgerEntry[] {
 
 export default function CustomersPage() {
   const [mounted, setMounted] = useState(false);
-  // ✅ استفاده از آرایه اصلی بدون تغییر (حذف useEffect قبلی که باعث حلقه بی‌نهایت می‌شد)
   const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
+
+  useEffect(() => {
+    setCustomers(prev => {
+      if (!prev.find(c => c.id === EXCHANGE_ACCOUNT_ID)) {
+        return [EXCHANGE_ACCOUNT_CUSTOMER, ...prev];
+      }
+      return prev;
+    });
+  }, []);
 
   const [transactions, setTransactions] = useSyncedState<any[]>(TRANSACTIONS_KEY, []);
   const [hawalas, setHawalas] = useSyncedState<any[]>(HAWALAS_KEY, []);
@@ -416,27 +422,16 @@ export default function CustomersPage() {
     return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); };
   }, [openMenuId]);
 
-  // ✅ اضافه کردن مشتریان مجازی فقط برای محاسبات (بدون دستکاری state)
-  const safeCustomers = useMemo(() => {
-    const next = [...customers];
-    const hasExchange = next.some(c => c.id === EXCHANGE_ACCOUNT_ID);
-    const hasCashBox = next.some(c => c.id === CASH_BOX_ID);
-    
-    if (!hasCashBox) next.unshift(CASH_BOX_CUSTOMER);
-    if (!hasExchange) next.unshift(EXCHANGE_ACCOUNT_CUSTOMER);
-    return next;
-  }, [customers]);
-
-  const ledger = useMemo(() => { try { return buildLedger(safeCustomers, transactions, hawalas, cashEntries); } catch { return []; } }, [safeCustomers, transactions, hawalas, cashEntries]);
+  const ledger = useMemo(() => { try { return buildLedger(customers, transactions, hawalas, cashEntries); } catch { return []; } }, [customers, transactions, hawalas, cashEntries]);
   const cashBoxLedger = useMemo(() => { try { return buildCashBoxLedger(cashEntries); } catch { return []; } }, [cashEntries]);
 
   const allBalances = useMemo(() => {
     const map: Record<string, Record<Currency, number>> = {};
-    safeCustomers.forEach(c => { if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) map[c.id] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; });
+    customers.forEach(c => { if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) map[c.id] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; });
     map[CASH_BOX_ID] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     map[EXCHANGE_ACCOUNT_ID] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
 
-    for (const c of safeCustomers) {
+    for (const c of customers) {
       if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) {
         for (const cur of currencies) {
           let balance = 0;
@@ -458,20 +453,17 @@ export default function CustomersPage() {
       map[CASH_BOX_ID][cur] = cashBoxBalance;
     }
     return map;
-  }, [safeCustomers, cashEntries, ledger]);
+  }, [customers, cashEntries, ledger]);
 
-  // ✅ فیلتر کردن مشتریان واقعی و اضافه کردن مجازی‌ها فقط برای نمایش
   const filteredCustomers = useMemo(() => {
     const cashBoxOption = CASH_BOX_CUSTOMER;
     const exchangeOption = EXCHANGE_ACCOUNT_CUSTOMER;
     const q = normalizeDigits(search.trim()).toLowerCase();
-    
     const filtered = customers.filter(c => {
-      if (c.id === EXCHANGE_ACCOUNT_ID || c.id === CASH_BOX_ID) return false; 
+      if (c.id === EXCHANGE_ACCOUNT_ID) return false; 
       if (!q) return true;
       return [c.name, c.phone || "", c.tazkira || "", c.telegram || "", c.id].some(f => normalizeDigits(String(f)).toLowerCase().includes(q));
     });
-    
     const result: Customer[] = [];
     if (!q || CASH_BOX_NAME.includes(q)) result.push(cashBoxOption);
     if (!q || EXCHANGE_ACCOUNT_NAME.includes(q)) result.push(exchangeOption);
@@ -482,8 +474,8 @@ export default function CustomersPage() {
   const selectedCustomer = useMemo(() => {
     if (selectedCustomerId === CASH_BOX_ID || selectedCustomerId === CASH_BOX_NAME) return CASH_BOX_CUSTOMER;
     if (selectedCustomerId === EXCHANGE_ACCOUNT_ID) return EXCHANGE_ACCOUNT_CUSTOMER;
-    return safeCustomers.find(c => c.id === selectedCustomerId) || null;
-  }, [safeCustomers, selectedCustomerId]);
+    return customers.find(c => c.id === selectedCustomerId) || null;
+  }, [customers, selectedCustomerId]);
 
   const isCashBox = selectedCustomer?.id === CASH_BOX_ID;
   const isExchangeAccount = selectedCustomer?.id === EXCHANGE_ACCOUNT_ID;
@@ -511,8 +503,8 @@ export default function CustomersPage() {
     }).reverse();
   }, [customerLedger, ledgerSearch, ledgerTypeFilter, ledgerCurrencyFilter, ledgerDirFilter]);
 
-  const negativeBalanceCount = safeCustomers.filter(c => c.id !== EXCHANGE_ACCOUNT_ID && currencies.some(cur => allBalances[c.id][cur] < 0)).length;
-  const zeroBalanceCount = safeCustomers.filter(c => c.id !== EXCHANGE_ACCOUNT_ID && currencies.every(cur => allBalances[c.id][cur] === 0)).length;
+  const negativeBalanceCount = customers.filter(c => c.id !== EXCHANGE_ACCOUNT_ID && currencies.some(cur => allBalances[c.id][cur] < 0)).length;
+  const zeroBalanceCount = customers.filter(c => c.id !== EXCHANGE_ACCOUNT_ID && currencies.every(cur => allBalances[c.id][cur] === 0)).length;
 
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(""), 3500); };
   const setField = (f: keyof FormState, v: string) => { setForm(p => ({ ...p, [f]: v })); setErrors(p => ({ ...p, [f]: undefined })); };
@@ -683,7 +675,7 @@ export default function CustomersPage() {
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 md:h-6 md:w-6"><path d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" /></svg>
                 <span className={`absolute -bottom-1 -left-1 grid h-4 min-w-4 md:h-5 md:min-w-5 place-items-center rounded-full bg-gradient-to-br from-amber-400 to-orange-400 px-1 text-[7px] md:text-[8px] font-black text-white ring-2 ${dk ? "ring-[#0f172a]" : "ring-[#ecfdf5]"}`}>CU</span>
               </div>
-              <div className="min-w-0"><h1 className={`cu-display text-2xl md:text-4xl leading-none ${headingText}`}>مدیریت مشتریان</h1><p className={`mt-1 text-[10px] md:text-xs font-bold ${subTextVar}`}>پرونده کامل، گردش حساب و سوابق مالی</p></div>
+              <div className="min-w-0"><h1 className={`cu-display text-2xl md:text-4xl leading-none ${headingText}`}>مدیریت مشتریان</h1><p className={`mt-1 text-[10px] md:text-xs font-bold ${subTextVar}`}>پروندهٔ کامل، گردش حساب و سوابق مالی</p></div>
             </div>
             <div className="flex items-center gap-1.5 md:gap-2.5">
               <label className={`hidden sm:flex items-center gap-2 rounded-xl border px-3 py-2 shadow-sm backdrop-blur cursor-pointer transition-all hover:brightness-110 ${glassChip}`}>
@@ -702,7 +694,7 @@ export default function CustomersPage() {
 
           <div className="cu-up grid grid-cols-2 md:grid-cols-4 gap-3" style={{ animationDelay: "70ms" }}>
             {[
-              { label: "کل مشتریان", value: safeCustomers.filter(c => c.id !== EXCHANGE_ACCOUNT_ID).length, icon: "users", color: "from-emerald-500 to-teal-500", text: dk ? "text-emerald-300" : "text-emerald-600" },
+              { label: "کل مشتریان", value: customers.filter(c => c.id !== EXCHANGE_ACCOUNT_ID).length, icon: "users", color: "from-emerald-500 to-teal-500", text: dk ? "text-emerald-300" : "text-emerald-600" },
               { label: "رویدادهای مالی", value: ledger.length + cashBoxLedger.length, icon: "history", color: "from-amber-500 to-orange-500", text: dk ? "text-amber-300" : "text-amber-600" },
               { label: "مشتریان بدهکار", value: negativeBalanceCount, icon: "x", color: "from-rose-500 to-pink-500", text: dk ? "text-rose-300" : "text-rose-600" },
               { label: "مانده صفر", value: zeroBalanceCount, icon: "wallet", color: "from-sky-500 to-cyan-500", text: dk ? "text-sky-300" : "text-sky-600" },
@@ -723,7 +715,7 @@ export default function CustomersPage() {
           </div>
 
           <div className={`cu-up flex gap-1.5 md:gap-2 rounded-xl md:rounded-2xl border p-1.5 md:p-2 shadow-sm backdrop-blur ${glassChip}`} style={{ animationDelay: "140ms" }}>
-            {[{ id: "list" as const, label: "فهرست مشتریان", icon: "users", count: safeCustomers.length }, { id: "new" as const, label: "ثبت مشتری جدید", icon: "plus", count: null }].map(tab => (
+            {[{ id: "list" as const, label: "فهرست مشتریان", icon: "users", count: customers.length }, { id: "new" as const, label: "ثبت مشتری جدید", icon: "plus", count: null }].map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 md:gap-2 rounded-lg md:rounded-xl px-3 md:px-5 py-2.5 md:py-3 text-xs md:text-sm font-black transition-all duration-300 active:scale-[0.97] ${activeTab === tab.id ? `bg-gradient-to-l shadow-lg ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 to-teal-500 text-white"}` : dk ? "text-slate-400 hover:bg-slate-700/60 hover:text-slate-100" : "text-slate-500 hover:bg-emerald-50 hover:text-slate-800"}`}>
                 {tab.icon === "users" && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" /></svg>}
                 {tab.icon === "plus" && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M12 4.5v15m7.5-7.5h-15" /></svg>}
@@ -740,12 +732,12 @@ export default function CustomersPage() {
                 </span>
                 <div className="flex-1 min-w-0">
                   <h2 className={`cu-display text-xl md:text-2xl leading-none ${headingText}`}>فهرست مشتریان</h2>
-                  <p className={`mt-1 text-[11px] font-bold ${subTextVar}`}>{safeCustomers.length} مشتری ثبت‌شده + صندوق + حساب صرافی</p>
+                  <p className={`mt-1 text-[11px] font-bold ${subTextVar}`}>{customers.length} مشتری ثبت‌شده + صندوق + حساب صرافی</p>
                 </div>
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="جستجو..." className={`${uiInput} w-auto md:w-64`} />
               </div>
-              
-              {/* Desktop Table with Scrollbar */}
+
+              {/* ✅ Desktop Table with Scrollbar for >12 items */}
               <div className={`hidden md:block overflow-auto cu-scroll max-h-[65vh] rounded-xl border ${dk ? "border-slate-700" : "border-slate-200"}`}>
                 <table className="w-full min-w-[900px] text-sm">
                   <thead className="sticky top-0 z-10">
@@ -776,7 +768,7 @@ export default function CustomersPage() {
                             {!isCashBoxRow && !isExchRow && c.address && <div className={`text-[10px] mt-1 ${subTextVar}`}>📍 {c.address}</div>}
                           </td>
                           <td className="px-4 py-3.5 text-center align-middle">
-                            {!isCashBoxRow && !isExchRow ? (<><div className={`text-[12px] font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`} dir="ltr"> {c.phone || "-"}</div><div className={`text-[10px] tabular-nums mt-1 ${subTextVar}`} dir="ltr"> {c.tazkira || "-"}</div></>) : (<div className={`text-[10px] ${subTextVar}`}>—</div>)}
+                            {!isCashBoxRow && !isExchRow ? (<><div className={`text-[12px] font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`} dir="ltr">📱 {c.phone || "-"}</div><div className={`text-[10px] tabular-nums mt-1 ${subTextVar}`} dir="ltr">🆔 {c.tazkira || "-"}</div></>) : (<div className={`text-[10px] ${subTextVar}`}>—</div>)}
                           </td>
                           <td className="px-4 py-3.5 text-center align-middle">
                             {!isCashBoxRow && !isExchRow ? (<><div className={`text-[11px] tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`}>{c.registeredAt ? shortDateLabel(c.registeredAt) : "-"}</div><div className={`text-[10px] mt-1 ${subTextVar}`}>{ledger.filter(e => e.customerId === c.id).length} رویداد</div></>) : (<>
@@ -811,7 +803,7 @@ export default function CustomersPage() {
                 </table>
               </div>
 
-              {/* Mobile List (Cards) with Scrollbar */}
+              {/* ✅ Mobile List (Cards) with Scrollbar for >12 items */}
               <div className={`md:hidden space-y-3 overflow-y-auto max-h-[70vh] cu-scroll pr-1`}>
                 {filteredCustomers.map((c, idx) => {
                   const isCashBoxRow = c.id === CASH_BOX_ID;
@@ -943,7 +935,7 @@ export default function CustomersPage() {
                 <div className="flex items-center gap-2 mb-3">
                   <span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M21 12a2.25 2.25 0 0 0-2.25-2.25H15a3 3 0 1 1-6 0H5.25A2.25 2.25 0 0 0 3 12m18 0v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 9m18 0V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v3" /></svg></span>
                   <b className={`text-sm font-black ${headingText}`}>
-                    {isCashBox ? "💰 موجودی فیزیکی صندوق" : isExchangeAccount ? " موجودی حساب صرافی" : "موجودی فعلی"}
+                    {isCashBox ? "💰 موجودی فیزیکی صندوق" : isExchangeAccount ? "🏦 موجودی حساب صرافی" : "موجودی فعلی"}
                   </b>
                   <span className={`ml-auto text-[10px] font-bold ${subTextVar}`}>
                     {isCashBox ? "فرمول: مجموع ورودی‌ها - خروجی‌ها" : isExchangeAccount ? "از تراکنش‌های مالک و قرض" : "محاسبه‌شده از دفتر کل (Ledger)"}
@@ -994,7 +986,7 @@ export default function CustomersPage() {
                     <div className={`rounded-xl border p-4 ${dk ? "border-violet-400/25 bg-violet-400/[0.07]" : "border-violet-200 bg-violet-50"}`}>
                       <div className="flex items-center gap-3 mb-3">
                         <span className={`grid h-10 w-10 place-items-center rounded-xl ${dk ? "bg-violet-400/15 text-violet-300" : "bg-violet-100 text-violet-600"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 21h.008v.008H6.75V21Zm0 0V7.5M6.75 21h.008v.008H6.75V21Zm0 0V7.5M6.75 21h.008v.008H6.75V21Z" /></svg></span>
-                        <div><b className={`block text-sm font-black ${dk ? "text-violet-300" : "text-violet-700"}`}> حساب داخلی صرافی</b><span className={`text-[10px] font-bold ${subTextVar}`}>مدیریت قرض و اعتبار</span></div>
+                        <div><b className={`block text-sm font-black ${dk ? "text-violet-300" : "text-violet-700"}`}>🏦 حساب داخلی صرافی</b><span className={`text-[10px] font-bold ${subTextVar}`}>مدیریت قرض و اعتبار</span></div>
                       </div>
                       <p className={`text-sm leading-6 ${dk ? "text-slate-300" : "text-slate-600"}`}>این حساب به عنوان واسطه بین صرافی و مشتریان برای عملیات قرض عمل می‌کند. وقتی به مشتری قرض می‌دهید، این حساب بدهکار می‌شود و وقتی مشتری قرض را پس می‌دهد، این حساب بستانکار می‌شود.</p>
                     </div>
@@ -1036,7 +1028,7 @@ export default function CustomersPage() {
                           <div className={`mt-2 text-center text-[10px] font-black ${bal < 0 ? "text-rose-500" : bal > 0 ? (dk ? "text-emerald-300" : "text-emerald-600") : subTextVar}`}>
                             {isCashBox ? (bal < 0 ? "⚠️ کسری صندوق" : bal > 0 ? "✅ موجودی نقدی در صندوق" : "⚪ صندوق خالی")
                               : isExchangeAccount ? (bal < 0 ? "🔴 مجموع قرض‌های داده‌شده به مشتریان" : bal > 0 ? "🟢 موجودی اعتباری" : "⚪ خنثی")
-                              : (bal < 0 ? " قرض از صرافی" : bal > 0 ? "🟢 طلب از صرافی" : "⚪ بدون بدهی")}
+                              : (bal < 0 ? "🔴 قرض از صرافی" : bal > 0 ? "🟢 طلب از صرافی" : "⚪ بدون بدهی")}
                           </div>
                         </div>
                       );
