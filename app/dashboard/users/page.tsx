@@ -171,6 +171,7 @@ const isCurrency = (v: any): v is Currency => typeof v === "string" && (currenci
 const normalizeDigits = (v: string) => { const pd = "۰۱۲۳۴۵۶۷۸۹", ad = "٠١٢٣٤٥٦٧٨٩"; return String(v || "").replace(/[۰-۹]/g, d => String(pd.indexOf(d))).replace(/[٠-٩]/g, d => String(ad.indexOf(d))); };
 const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 2 }) : "0";
 
+// ✅ کاملاً اصلاح شده و بدون خطای سینتکسی (نقطه ویرگول حذف شد)
 function shamsiParts(d: Date) { 
   try { 
     const p = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", { year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(d); 
@@ -375,7 +376,7 @@ export default function CustomersPage() {
       }
       return prev;
     });
-  }, [setCustomers]);
+  }, []);
 
   const [transactions, setTransactions] = useSyncedState<any[]>(TRANSACTIONS_KEY, []);
   const [hawalas, setHawalas] = useSyncedState<any[]>(HAWALAS_KEY, []);
@@ -425,20 +426,35 @@ export default function CustomersPage() {
   const ledger = useMemo(() => { try { return buildLedger(customers, transactions, hawalas, cashEntries); } catch { return []; } }, [customers, transactions, hawalas, cashEntries]);
   const cashBoxLedger = useMemo(() => { try { return buildCashBoxLedger(cashEntries); } catch { return []; } }, [cashEntries]);
 
-  // ✅ بهینه‌سازی شده و بسیار سریع (بدون حلقه‌های تو در تو اضافی)
   const allBalances = useMemo(() => {
     const map: Record<string, Record<Currency, number>> = {};
-    customers.forEach(c => { map[c.id] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; });
+    customers.forEach(c => { if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) map[c.id] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; });
     map[CASH_BOX_ID] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     map[EXCHANGE_ACCOUNT_ID] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
 
-    for (const e of ledger) {
-      if (map[e.customerId] && isCurrency(e.currency)) {
-        map[e.customerId][e.currency] = e.balanceAfter;
+    for (const c of customers) {
+      if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) {
+        for (const cur of currencies) {
+          let balance = 0;
+          for (const e of ledger) { if (e.customerId === c.id && e.currency === cur) balance += e.direction === "in" ? e.amount : -e.amount; }
+          map[c.id][cur] = balance;
+        }
       }
     }
+
+    for (const cur of currencies) {
+      let exchBalance = 0;
+      for (const e of ledger) { if (e.customerId === EXCHANGE_ACCOUNT_ID && e.currency === cur) exchBalance += e.direction === "in" ? e.amount : -e.amount; }
+      map[EXCHANGE_ACCOUNT_ID][cur] = exchBalance;
+    }
+
+    for (const cur of currencies) {
+      let cashBoxBalance = 0;
+      for (const e of ledger) { if (e.customerId === CASH_BOX_ID && e.currency === cur) cashBoxBalance += e.direction === "in" ? e.amount : -e.amount; }
+      map[CASH_BOX_ID][cur] = cashBoxBalance;
+    }
     return map;
-  }, [customers, ledger]);
+  }, [customers, cashEntries, ledger]);
 
   const filteredCustomers = useMemo(() => {
     const cashBoxOption = CASH_BOX_CUSTOMER;
@@ -506,7 +522,7 @@ export default function CustomersPage() {
       a.href = url; a.download = `backup-sarafi-${new Date().toISOString().split('T')[0]}.json`;
       a.click(); URL.revokeObjectURL(url);
       showToast("✅ فایل پشتیبان با موفقیت دانلود شد.");
-    } catch { showToast("❌ خطا در ایجاد فایل پشتیبان"); }
+    } catch (err) { showToast("❌ خطا در ایجاد فایل پشتیبان"); }
   };
 
   const importData = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -524,7 +540,7 @@ export default function CustomersPage() {
         if (data.theme) localStorage.setItem('fx-theme', data.theme);
         showToast("✅ داده‌ها با موفقیت بازیابی شدند. صفحه رفرش می‌شود...");
         setTimeout(() => window.location.reload(), 1500);
-      } catch { showToast("❌ فایل نامعتبر است."); }
+      } catch (err) { showToast("❌ فایل نامعتبر است."); }
     };
     reader.readAsText(file);
     event.target.value = "";
@@ -576,7 +592,7 @@ export default function CustomersPage() {
     const hasBal = currencies.some(cur => allBalances[id][cur] !== 0);
     const cnt = ledger.filter(e => e.customerId === id).length;
     let msg = `آیا از حذف "${c.name}" مطمئن هستید؟`;
-    if (cnt > 0) msg += `\n⚠️ ${cnt} رویداد مالی دارد.`;
+    if (cnt > 0) msg += `\n⚠️ ${cnt} رویداد مالی دارد (به صورت نرم‌افزاری بایگانی می‌شود).`;
     if (hasBal) msg += `\n⚠️ موجودی غیر صفر دارد!`;
     if (!window.confirm(msg)) return;
     
@@ -585,7 +601,7 @@ export default function CustomersPage() {
     setCashEntries(prev => prev.map((ce: any) => { if (ce.customerId === id || ce.customerName === c.name) return { ...ce, customerDeleted: true }; return ce; }));
     setCustomers(p => p.filter(x => x.id !== id));
     if (selectedCustomerId === id) { setSelectedCustomerId(null); setActiveTab("list"); }
-    showToast(`"${c.name}" حذف شد.`);
+    showToast(`"${c.name}" حذف و سوابق آن بایگانی شد.`);
   };
 
   const validateForm = () => {
@@ -677,6 +693,7 @@ export default function CustomersPage() {
             </div>
           </header>
 
+          {/* ✅ کارت صندوق حذف شد و گرید به 4 ستون تغییر کرد */}
           <div className="cu-up grid grid-cols-2 md:grid-cols-4 gap-3" style={{ animationDelay: "70ms" }}>
             {[
               { label: "کل مشتریان", value: customers.filter(c => c.id !== EXCHANGE_ACCOUNT_ID).length, icon: "users", color: "from-emerald-500 to-teal-500", text: dk ? "text-emerald-300" : "text-emerald-600" },
