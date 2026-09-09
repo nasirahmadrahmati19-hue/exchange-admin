@@ -133,6 +133,7 @@ function fa(n: number) {
   return (Number.isFinite(n) ? n.toLocaleString("fa-IR", { maximumFractionDigits: 0 }) : "۰");
 }
 
+// ✅ تابع shamsiParts کاملاً صحیح و بدون خطای سینتکسی
 function shamsiParts(d: Date) {
   try {
     const parts = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", {
@@ -225,7 +226,7 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: any[]
 }
 
 // ============================================================
-// کامپوننت اصلی
+// کامپوننت اصلی داشبورد
 // ============================================================
 export default function DashboardPage() {
   const [mounted, setMounted] = useState(false);
@@ -458,7 +459,7 @@ export default function DashboardPage() {
             </div>
           </header>
 
-          {/* ═══════════ آمار امروز (نسخه بزرگ‌تر و حرفه‌ای‌تر) ═══════════ */}
+          {/* ═══════════ آمار امروز (نسخه بزرگ‌تر، حرفه‌ای‌تر و ۵ ارز افقی) ═══════════ */}
           <section className="cs-up space-y-4 md:space-y-6" style={{ animationDelay: "70ms" }}>
             <div className="flex items-center gap-3 mb-1">
               <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl shadow-md ${dk ? "bg-gradient-to-br from-blue-500 to-sky-500 text-white" : "bg-gradient-to-br from-blue-500 to-cyan-500 text-white"}`}>
@@ -470,7 +471,7 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* ✅ چیدمان ۲ ستونه در دسکتاپ برای فضای بیشتر */}
+            {/* ✅ چیدمان ۲ ستونه در دسکتاپ برای فضای بیشتر و خوانایی بهتر */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
               
               {/* 💱 مجموع مبلغ تبادل ارز */}
