@@ -322,7 +322,8 @@ export default function ReportsPage() {
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [transactions]);
 
-  const searchResults = useMemo(() => {
+  // ✅ جستجوی مشتریان
+  const customerSearchResults = useMemo(() => {
     if (!search.trim()) return [];
     const q = normalizeDigits(search.trim()).toLowerCase();
     return customers.filter(c => {
@@ -332,6 +333,15 @@ export default function ReportsPage() {
       return name.includes(q) || phone.includes(q) || tazkira.includes(q);
     });
   }, [customers, search]);
+
+  // ✅ جستجوی معاملات بر اساس کد پیگیری
+  const trackingSearchResults = useMemo(() => {
+    if (!search.trim()) return [];
+    const q = normalizeDigits(search.trim()).toLowerCase();
+    return transactions.filter(tx => 
+      tx.status !== "voided" && normalizeDigits(tx.trackingCode).toLowerCase().includes(q)
+    );
+  }, [transactions, search]);
 
   // ✅ اصلاح شده: محاسبه بدهکاران با استفاده از getLedgerBalance برای هماهنگی ۱۰۰٪ با داشبورد
   const debtorCustomers = useMemo(() => {
@@ -508,22 +518,105 @@ export default function ReportsPage() {
               <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
                 <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${dk ? "from-blue-400/20 to-sky-400/5 text-blue-300 ring-blue-400/25" : "from-blue-400/20 to-sky-400/10 text-blue-600 ring-blue-400/30"}`}><Ic n="search" className="h-5 w-5" /></span>
                 <div className="flex-1 min-w-0">
-                  <h2 className={`rp-display text-xl md:text-2xl leading-none ${heading}`}>جستجوی مشتری</h2>
+                  <h2 className={`rp-display text-xl md:text-2xl leading-none ${heading}`}>جستجوی مشتری و کد پیگیری</h2>
                 </div>
               </div>
               <div className="px-4 md:px-7 pb-4 space-y-3">
                 <div className="relative">
-                  <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="نام، تلفن یا شماره تذکره را وارد کنید..." className={`${uiInput} pr-10`} />
+                  <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="نام، تلفن، شماره تذکره یا کد پیگیری را وارد کنید..." className={`${uiInput} pr-10`} />
                   <span className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 ${subText}`}><Ic n="search" className="h-4 w-4" /></span>
                 </div>
-                {search && searchResults.length === 0 && (
+                
+                {search && customerSearchResults.length === 0 && trackingSearchResults.length === 0 && (
                   <div className={`text-center py-12 ${subText}`}>
                     <div className={`grid h-16 w-16 place-items-center rounded-2xl border border-dashed mx-auto mb-3 ${dk ? "border-slate-600 bg-slate-800/40" : "border-slate-300 bg-slate-50"}`}><Ic n="inbox" className="h-7 w-7 opacity-70" /></div>
-                    <p className="text-sm font-black">مشتری‌ای یافت نشد</p>
+                    <p className="text-sm font-black">موردی یافت نشد</p>
                   </div>
                 )}
-                {search && searchResults.length > 0 && (
+
+                {/* Tracking Code Results */}
+                {search && trackingSearchResults.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className={`text-sm font-black flex items-center gap-2 ${dk ? "text-cyan-300" : "text-cyan-700"}`}>
+                      <Ic n="tag" className="h-4 w-4" />
+                      معاملات یافت شده بر اساس کد پیگیری ({fa(trackingSearchResults.length)})
+                    </h3>
+                    <div className="hidden md:block overflow-x-auto rp-scroll">
+                      <div className="max-h-[500px] overflow-y-auto rp-scroll">
+                        <table className="w-full min-w-[1100px] text-sm">
+                          <thead className="sticky top-0 z-10">
+                            <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
+                              {["شماره", "کد پیگیری", "مشتری", "تاریخ", "نوع", "دریافت", "پرداخت", "نرخ", "کارمزد", "وضعیت"].map(h => (
+                                <th key={h} className="px-4 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
+                            {trackingSearchResults.map((tx, idx) => {
+                              const dt = splitDateTime(tx.date);
+                              return (
+                                <tr key={tx.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-cyan-50/50"}`}>
+                                  <td className={cellClass}><span className={`inline-grid h-7 w-7 place-items-center rounded-lg text-[11px] font-black tabular-nums ${dk ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>{idx + 1}</span></td>
+                                  <td className={cellClass}><span className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-black ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-cyan-300 bg-cyan-50 text-cyan-700"}`} dir="ltr"><Ic n="tag" className="h-3 w-3" />{tx.trackingCode}</span></td>
+                                  <td className={`${cellClass} text-[12px] font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>{transactionCustomerLabel(tx)}</td>
+                                  <td className={cellClass}><div className="flex flex-col items-center gap-0.5"><span dir="ltr" className={`text-xs font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`}>{dt.datePart}</span><span dir="ltr" className={`text-[10px] tabular-nums ${subText}`}>{dt.timePart}</span></div></td>
+                                  <td className={cellClass}><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${typeChipClass(tx, dk)}`}>{transactionTypeLabel(tx)}</span></td>
+                                  <td className={cellClass}><div className={`text-[13px] font-black tabular-nums ${dk ? "text-emerald-300" : "text-emerald-700"}`}>{fmt(tx.toAmount)}</div><div className={`text-[10px] ${subText}`}>{labels[tx.toCurrency]}</div></td>
+                                  <td className={cellClass}><div className={`text-[13px] font-black tabular-nums ${dk ? "text-rose-300" : "text-rose-700"}`}>{fmt(tx.fromAmount)}</div><div className={`text-[10px] ${subText}`}>{labels[tx.fromCurrency]}</div></td>
+                                  <td className={`${cellClass} text-[11px] ${dk ? "text-slate-400" : "text-slate-500"}`}>{tx.rateLabel}</td>
+                                  <td className={`${cellClass} text-xs font-bold tabular-nums ${tx.commission && tx.commission > 0 ? (dk ? "text-amber-300" : "text-amber-700") : subText}`}>{transactionCommissionLabel(tx)}</td>
+                                  <td className={cellClass}>
+                                    <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${tx.status === "active" ? (dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-700") : (dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-700")}`}>
+                                      {tx.status === "active" ? "فعال" : "باطل"}
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                    <div className="md:hidden space-y-2">
+                      {trackingSearchResults.map((tx, idx) => {
+                        const dt = splitDateTime(tx.date);
+                        return (
+                          <div key={tx.id} className={`p-4 rounded-xl border ${dk ? "border-cyan-400/20 bg-cyan-400/[0.03]" : "border-cyan-200 bg-cyan-50/30"}`}>
+                            <div className="flex items-center justify-between mb-2">
+                              <span className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-black ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-cyan-300 bg-cyan-50 text-cyan-700"}`} dir="ltr"><Ic n="tag" className="h-3 w-3" />{tx.trackingCode}</span>
+                              <span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${typeChipClass(tx, dk)}`}>{transactionTypeLabel(tx)}</span>
+                            </div>
+                            <div className="text-xs font-bold mb-2">{transactionCustomerLabel(tx)}</div>
+                            <div className="grid grid-cols-2 gap-2 text-[11px]">
+                              <div className={`rounded-lg p-2 ${dk ? "bg-slate-900/50" : "bg-white"}`}>
+                                <div className={subText}>دریافت</div>
+                                <div className={`font-black tabular-nums ${dk ? "text-emerald-300" : "text-emerald-700"}`}>{fmt(tx.toAmount)} {labels[tx.toCurrency]}</div>
+                              </div>
+                              <div className={`rounded-lg p-2 ${dk ? "bg-slate-900/50" : "bg-white"}`}>
+                                <div className={subText}>پرداخت</div>
+                                <div className={`font-black tabular-nums ${dk ? "text-rose-300" : "text-rose-700"}`}>{fmt(tx.fromAmount)} {labels[tx.fromCurrency]}</div>
+                              </div>
+                            </div>
+                            <div className="flex justify-between items-center mt-2 text-[10px]">
+                              <span className={subText}>{dt.datePart} {dt.timePart}</span>
+                              <span className={tx.commission && tx.commission > 0 ? (dk ? "text-amber-300" : "text-amber-700") : subText}>
+                                کارمزد: {transactionCommissionLabel(tx)}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Customer Results */}
+                {search && customerSearchResults.length > 0 && (
                   <>
+                    <h3 className={`text-sm font-black flex items-center gap-2 ${dk ? "text-blue-300" : "text-blue-700"}`}>
+                      <Ic n="users" className="h-4 w-4" />
+                      مشتریان یافت شده ({fa(customerSearchResults.length)})
+                    </h3>
                     <div className="hidden md:block overflow-x-auto rp-scroll">
                       <div className="max-h-[500px] overflow-y-auto rp-scroll">
                         <table className="w-full min-w-[1100px] text-sm">
@@ -535,7 +628,7 @@ export default function ReportsPage() {
                             </tr>
                           </thead>
                           <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
-                            {searchResults.map((c, idx) => {
+                            {customerSearchResults.map((c, idx) => {
                               // ✅ اصلاح شده: استفاده از getLedgerBalance برای نمایش دقیق موجودی
                               const hasDebt = currencies.some(cur => getLedgerBalance(c.id, cur, cashEntries, transactions) < 0);
                               const hasCredit = currencies.some(cur => getLedgerBalance(c.id, cur, cashEntries, transactions) > 0);
@@ -580,7 +673,7 @@ export default function ReportsPage() {
                       </div>
                     </div>
                     <div className="md:hidden space-y-2">
-                      {searchResults.map(c => {
+                      {customerSearchResults.map(c => {
                         const hasDebt = currencies.some(cur => getLedgerBalance(c.id, cur, cashEntries, transactions) < 0);
                         return (
                           <div key={c.id} className={`p-4 rounded-xl border ${hasDebt ? (dk ? "border-rose-400/30 bg-rose-400/[0.03]" : "border-rose-200 bg-rose-50/30") : (dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-white")}`}>
