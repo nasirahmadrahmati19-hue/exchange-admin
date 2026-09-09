@@ -171,14 +171,13 @@ const isCurrency = (v: any): v is Currency => typeof v === "string" && (currenci
 const normalizeDigits = (v: string) => { const pd = "۰۱۲۳۴۵۶۷۸۹", ad = "٠١٢٣٤٥٦٧٨٩"; return String(v || "").replace(/[۰-۹]/g, d => String(pd.indexOf(d))).replace(/[٠-٩]/g, d => String(ad.indexOf(d))); };
 const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 2 }) : "0";
 
-// ✅ اصلاح سینتکس: نقطه ویرگول به بیرون از آکولاد شیء منتقل شد
 function shamsiParts(d: Date) { 
   try { 
     const p = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", { year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(d); 
     const g = (t: string) => p.find(x => x.type === t)?.value || "0"; 
     return { year: g("year"), month: g("month"), day: g("day") }; 
   } catch { 
-    return { year: "0", month: "0", day: "0" }; 
+    return { year: "0", month: "0", day: "0"; } 
   } 
 }
 
@@ -682,13 +681,13 @@ export default function CustomersPage() {
             </div>
           </header>
 
-          <div className="cu-up grid grid-cols-2 md:grid-cols-5 gap-3" style={{ animationDelay: "70ms" }}>
+          {/* ✅ کارت "موجودی فیزیکی صندوق" از اینجا حذف شد و grid به 4 ستون تغییر کرد */}
+          <div className="cu-up grid grid-cols-2 md:grid-cols-4 gap-3" style={{ animationDelay: "70ms" }}>
             {[
               { label: "کل مشتریان", value: customers.filter(c => c.id !== EXCHANGE_ACCOUNT_ID).length, icon: "users", color: "from-emerald-500 to-teal-500", text: dk ? "text-emerald-300" : "text-emerald-600" },
               { label: "رویدادهای مالی", value: ledger.length + cashBoxLedger.length, icon: "history", color: "from-amber-500 to-orange-500", text: dk ? "text-amber-300" : "text-amber-600" },
               { label: "با موجودی", value: withBalanceCount, icon: "wallet", color: "from-sky-500 to-cyan-500", text: dk ? "text-sky-300" : "text-sky-600" },
               { label: "بدون موجودی", value: withoutBalanceCount, icon: "x", color: "from-rose-500 to-pink-500", text: dk ? "text-rose-300" : "text-rose-600" },
-              { label: "💰 موجودی فیزیکی صندوق", value: fmt((Object.values(allBalances[CASH_BOX_ID] || {}) as number[]).reduce((a, b) => a + Math.abs(b), 0)), icon: "cash", color: "from-violet-500 to-purple-500", text: dk ? "text-violet-300" : "text-violet-600" },
             ].map((s, i) => (
               <div key={i} className={`group relative overflow-hidden rounded-2xl border p-4 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${glassCard}`}>
                 <div className={`absolute inset-0 bg-gradient-to-br ${s.color} opacity-0 transition-opacity group-hover:opacity-10`} />
@@ -699,7 +698,6 @@ export default function CustomersPage() {
                     {s.icon === "history" && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 md:h-6 md:w-6"><path d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>}
                     {s.icon === "wallet" && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 md:h-6 md:w-6"><path d="M21 12a2.25 2.25 0 0 0-2.25-2.25H15a3 3 0 1 1-6 0H5.25A2.25 2.25 0 0 0 3 12m18 0v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 9m18 0V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v3" /></svg>}
                     {s.icon === "x" && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 md:h-6 md:w-6"><path d="M6 18 18 6M6 6l12 12" /></svg>}
-                    {s.icon === "cash" && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 md:h-6 md:w-6"><path d="M2.25 18.75a48.622 48.622 0 0 0 19.5 0v-13.5a48.622 48.622 0 0 0-19.5 0v13.5Zm10.5-4.5v-4.5M10.5 16.5h4.5" /></svg>}
                   </div>
                 </div>
               </div>
