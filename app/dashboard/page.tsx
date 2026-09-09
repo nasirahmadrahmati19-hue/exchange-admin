@@ -168,7 +168,6 @@ function isToday(dateStr: string | number | undefined | null): boolean {
   return false;
 }
 
-// ✅ تابع جامع محاسبه موجودی (برای مشتریان عادی و صندوق)
 function getLedgerBalance(customerId: string, currency: Currency, entries: any[], transactions: any[] = []): number {
   let balance = 0;
   
@@ -248,9 +247,6 @@ export default function DashboardPage() {
     setLastUpdated(new Date());
   }, []);
 
-  // ── محاسبات مبتنی بر Ledger ──
-  
-  // ۱. مجموع طلب مشتریان (فقط مقادیر مثبت)
   const customerDeposits = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
@@ -263,7 +259,6 @@ export default function DashboardPage() {
     return totals;
   }, [customers, entries, transactions]);
 
-  // ۲. مجموع بدهی مشتریان (فقط مقادیر منفی)
   const customerDebts = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
@@ -276,7 +271,6 @@ export default function DashboardPage() {
     return totals;
   }, [customers, entries, transactions]);
 
-  // ✅ ۳. موجودی حساب صرافی = واریز/برداشت مالک − بدهی مشتریان
   const exchangeBalance = useMemo(() => {
     const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const cur of currencies) {
@@ -291,7 +285,6 @@ export default function DashboardPage() {
     return balances;
   }, [entries, customerDebts]);
 
-  // ✅ ۴. موجودی فیزیکی صندوق = حساب صرافی + طلب مشتریان
   const physicalCashBalances = useMemo(() => {
     const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const cur of currencies) {
@@ -300,7 +293,6 @@ export default function DashboardPage() {
     return balances;
   }, [customerDeposits, exchangeBalance]);
 
-  // ۵. کارمزدها
   const totalCommissionEarned = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const tx of transactions) {
@@ -336,7 +328,6 @@ export default function DashboardPage() {
     return totals;
   }, [totalCommissionEarned, commissionWithdrawn]);
 
-  // ۶. آمار کلی روزانه (برای نمایش تعداد)
   const todayStats = useMemo(() => {
     let tradeCount = 0, hawalaCount = 0;
     for (const tx of transactions) {
@@ -350,7 +341,6 @@ export default function DashboardPage() {
     return { tradeCount, hawalaCount };
   }, [transactions, hawalas]);
 
-  // ✅ ۷. آمار امروز به تفکیک ارز - تبادل ارز
   const todayTradeByCurrency = useMemo(() => {
     const result: Record<Currency, { amount: number; count: number; commission: number }> = {
       AFN: { amount: 0, count: 0, commission: 0 },
@@ -372,7 +362,6 @@ export default function DashboardPage() {
     return result;
   }, [transactions]);
 
-  // ✅ ۸. آمار امروز به تفکیک ارز - حواله‌جات
   const todayHawalaByCurrency = useMemo(() => {
     const result: Record<Currency, { amount: number; count: number; fee: number }> = {
       AFN: { amount: 0, count: 0, fee: 0 },
@@ -394,7 +383,6 @@ export default function DashboardPage() {
     return result;
   }, [hawalas]);
 
-  // ۹. تعداد مشتریان بدهکار
   const debtorsCount = useMemo(() => {
     return customers.filter(c => {
       if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) return false;
@@ -402,7 +390,6 @@ export default function DashboardPage() {
     }).length;
   }, [customers, entries, transactions]);
 
-  // ── استایل‌ها ──
   const dk = theme === "dark";
   const heading = dk ? "text-white" : "text-slate-900";
   const subText = dk ? "text-slate-500" : "text-slate-400";
@@ -471,8 +458,8 @@ export default function DashboardPage() {
             </div>
           </header>
 
-          {/* ═══════════ آمار امروز ═══════════ */}
-          <section className="cs-up space-y-4 md:space-y-5" style={{ animationDelay: "70ms" }}>
+          {/* ═══════════ آمار امروز (نسخه بزرگ‌تر و حرفه‌ای‌تر) ═══════════ */}
+          <section className="cs-up space-y-4 md:space-y-6" style={{ animationDelay: "70ms" }}>
             <div className="flex items-center gap-3 mb-1">
               <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl shadow-md ${dk ? "bg-gradient-to-br from-blue-500 to-sky-500 text-white" : "bg-gradient-to-br from-blue-500 to-cyan-500 text-white"}`}>
                 <span className="text-xl">🗓️</span>
@@ -483,27 +470,28 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+            {/* ✅ چیدمان ۲ ستونه در دسکتاپ برای فضای بیشتر */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
               
-              {/* 💱 مجموع مبلغ تبادل ارز (نسخه افقی ۵ ارز) */}
-              <div className={`group relative overflow-hidden rounded-2xl border p-4 transition-all duration-300 hover:shadow-lg hover:scale-[1.02] ${dk ? "border-blue-400/25 bg-gradient-to-br from-blue-900/30 to-slate-900/50" : "border-blue-200 bg-gradient-to-br from-blue-50 to-white"}`}>
-                <div className="relative flex items-center gap-2.5 mb-3">
-                  <span className={`grid h-10 w-10 place-items-center rounded-xl shadow-sm ${dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-600"}`}>
-                    <span className="text-xl">💱</span>
+              {/* 💱 مجموع مبلغ تبادل ارز */}
+              <div className={`group relative overflow-hidden rounded-2xl border p-5 md:p-6 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-blue-400/25 bg-gradient-to-br from-blue-900/30 to-slate-900/50" : "border-blue-200 bg-gradient-to-br from-blue-50 to-white"}`}>
+                <div className="relative flex items-center gap-3 mb-4">
+                  <span className={`grid h-12 w-12 place-items-center rounded-xl shadow-sm ${dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-600"}`}>
+                    <span className="text-2xl">💱</span>
                   </span>
                   <div>
-                    <span className={`text-[12px] font-black ${dk ? "text-blue-300" : "text-blue-700"}`}>مجموع تبادل ارز</span>
-                    <div className={`text-[9px] font-bold ${dk ? "text-blue-400/70" : "text-blue-600/70"}`}>{fa(todayStats.tradeCount)} معامله امروز</div>
+                    <span className={`block text-sm md:text-base font-black ${dk ? "text-blue-300" : "text-blue-700"}`}>مجموع تبادل ارز</span>
+                    <div className={`text-[10px] md:text-xs font-bold ${dk ? "text-blue-400/70" : "text-blue-600/70"}`}>{fa(todayStats.tradeCount)} معامله امروز</div>
                   </div>
                 </div>
-                <div className="grid grid-cols-5 gap-1.5">
+                <div className="grid grid-cols-5 gap-2">
                   {currencies.map(cur => {
                     const data = todayTradeByCurrency[cur];
                     const hasValue = data.amount > 0;
                     return (
-                      <div key={cur} className={`rounded-lg px-1.5 py-2 text-center transition-colors ${hasValue ? (dk ? "bg-blue-500/10" : "bg-blue-100/60") : (dk ? "bg-slate-800/40" : "bg-slate-50")}`}>
-                        <div className={`text-[8px] font-black mb-0.5 ${hasValue ? (dk ? "text-blue-300" : "text-blue-700") : subText}`}>{labels[cur]}</div>
-                        <div className={`text-[10px] md:text-[11px] font-black tabular-nums leading-tight ${hasValue ? (dk ? "text-blue-200" : "text-blue-800") : subText}`}>
+                      <div key={cur} className={`rounded-xl px-2 py-3 text-center transition-all duration-300 ${hasValue ? (dk ? "bg-blue-500/10 ring-1 ring-blue-400/20" : "bg-blue-100/80 ring-1 ring-blue-200") : (dk ? "bg-slate-800/40" : "bg-slate-50")}`}>
+                        <div className={`text-[10px] md:text-xs font-black mb-1 ${hasValue ? (dk ? "text-blue-300" : "text-blue-700") : subText}`}>{labels[cur]}</div>
+                        <div className={`text-sm md:text-base font-black tabular-nums leading-tight ${hasValue ? (dk ? "text-blue-200" : "text-blue-800") : subText}`}>
                           {hasValue ? fmt(data.amount) : "—"}
                         </div>
                       </div>
@@ -512,25 +500,25 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* 💸 مجموع مبلغ حواله‌ها (نسخه افقی ۵ ارز) */}
-              <div className={`group relative overflow-hidden rounded-2xl border p-4 transition-all duration-300 hover:shadow-lg hover:scale-[1.02] ${dk ? "border-purple-400/25 bg-gradient-to-br from-purple-900/30 to-slate-900/50" : "border-purple-200 bg-gradient-to-br from-purple-50 to-white"}`}>
-                <div className="relative flex items-center gap-2.5 mb-3">
-                  <span className={`grid h-10 w-10 place-items-center rounded-xl shadow-sm ${dk ? "bg-purple-400/15 text-purple-300" : "bg-purple-100 text-purple-600"}`}>
-                    <span className="text-xl">💸</span>
+              {/* 💸 مجموع مبلغ حواله‌ها */}
+              <div className={`group relative overflow-hidden rounded-2xl border p-5 md:p-6 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-purple-400/25 bg-gradient-to-br from-purple-900/30 to-slate-900/50" : "border-purple-200 bg-gradient-to-br from-purple-50 to-white"}`}>
+                <div className="relative flex items-center gap-3 mb-4">
+                  <span className={`grid h-12 w-12 place-items-center rounded-xl shadow-sm ${dk ? "bg-purple-400/15 text-purple-300" : "bg-purple-100 text-purple-600"}`}>
+                    <span className="text-2xl">💸</span>
                   </span>
                   <div>
-                    <span className={`text-[12px] font-black ${dk ? "text-purple-300" : "text-purple-700"}`}>مجموع حواله‌ها</span>
-                    <div className={`text-[9px] font-bold ${dk ? "text-purple-400/70" : "text-purple-600/70"}`}>{fa(todayStats.hawalaCount)} حواله امروز</div>
+                    <span className={`block text-sm md:text-base font-black ${dk ? "text-purple-300" : "text-purple-700"}`}>مجموع حواله‌ها</span>
+                    <div className={`text-[10px] md:text-xs font-bold ${dk ? "text-purple-400/70" : "text-purple-600/70"}`}>{fa(todayStats.hawalaCount)} حواله امروز</div>
                   </div>
                 </div>
-                <div className="grid grid-cols-5 gap-1.5">
+                <div className="grid grid-cols-5 gap-2">
                   {currencies.map(cur => {
                     const data = todayHawalaByCurrency[cur];
                     const hasValue = data.amount > 0;
                     return (
-                      <div key={cur} className={`rounded-lg px-1.5 py-2 text-center transition-colors ${hasValue ? (dk ? "bg-purple-500/10" : "bg-purple-100/60") : (dk ? "bg-slate-800/40" : "bg-slate-50")}`}>
-                        <div className={`text-[8px] font-black mb-0.5 ${hasValue ? (dk ? "text-purple-300" : "text-purple-700") : subText}`}>{labels[cur]}</div>
-                        <div className={`text-[10px] md:text-[11px] font-black tabular-nums leading-tight ${hasValue ? (dk ? "text-purple-200" : "text-purple-800") : subText}`}>
+                      <div key={cur} className={`rounded-xl px-2 py-3 text-center transition-all duration-300 ${hasValue ? (dk ? "bg-purple-500/10 ring-1 ring-purple-400/20" : "bg-purple-100/80 ring-1 ring-purple-200") : (dk ? "bg-slate-800/40" : "bg-slate-50")}`}>
+                        <div className={`text-[10px] md:text-xs font-black mb-1 ${hasValue ? (dk ? "text-purple-300" : "text-purple-700") : subText}`}>{labels[cur]}</div>
+                        <div className={`text-sm md:text-base font-black tabular-nums leading-tight ${hasValue ? (dk ? "text-purple-200" : "text-purple-800") : subText}`}>
                           {hasValue ? fmt(data.amount) : "—"}
                         </div>
                       </div>
@@ -540,47 +528,47 @@ export default function DashboardPage() {
               </div>
 
               {/* 💰 کارمزد تبادل ارز */}
-              <div className={`group relative overflow-hidden rounded-2xl border p-4 transition-all duration-300 hover:shadow-lg hover:scale-[1.02] ${dk ? "border-amber-400/25 bg-gradient-to-br from-amber-900/30 to-slate-900/50" : "border-amber-200 bg-gradient-to-br from-amber-50 to-white"}`}>
-                <div className="relative flex items-center gap-2.5 mb-2">
-                  <span className={`grid h-10 w-10 place-items-center rounded-xl shadow-sm ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}>
-                    <span className="text-xl">💰</span>
+              <div className={`group relative overflow-hidden rounded-2xl border p-5 md:p-6 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-amber-400/25 bg-gradient-to-br from-amber-900/30 to-slate-900/50" : "border-amber-200 bg-gradient-to-br from-amber-50 to-white"}`}>
+                <div className="relative flex items-center gap-3 mb-4">
+                  <span className={`grid h-12 w-12 place-items-center rounded-xl shadow-sm ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}>
+                    <span className="text-2xl">💰</span>
                   </span>
-                  <span className={`text-[11px] md:text-[12px] font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>کارمزد تبادل ارز</span>
+                  <span className={`text-sm md:text-base font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>کارمزد تبادل ارز</span>
                 </div>
-                <div className="relative flex items-center justify-between gap-2">
-                  <div className="text-center flex-1">
-                    <div className={`text-xl md:text-2xl font-black tabular-nums leading-none ${dk ? "text-amber-300" : "text-amber-700"}`}>{fa(todayStats.tradeCount)}</div>
-                    <div className={`mt-1 text-[9px] font-bold ${dk ? "text-amber-400/70" : "text-amber-600/70"}`}>تعداد</div>
+                <div className="relative flex items-center justify-between gap-4 mt-2">
+                  <div className={`text-center flex-1 p-3 rounded-xl ${dk ? "bg-white/5" : "bg-black/5"}`}>
+                    <div className={`text-2xl md:text-3xl font-black tabular-nums leading-none ${dk ? "text-amber-300" : "text-amber-700"}`}>{fa(todayStats.tradeCount)}</div>
+                    <div className={`mt-1.5 text-xs font-bold ${dk ? "text-amber-400/70" : "text-amber-600/70"}`}>تعداد معامله</div>
                   </div>
-                  <div className={`w-px h-10 ${dk ? "bg-amber-400/20" : "bg-amber-200"}`} />
-                  <div className="text-center flex-1">
-                    <div className={`text-xl md:text-2xl font-black tabular-nums leading-none ${dk ? "text-amber-300" : "text-amber-700"}`}>
+                  <div className={`w-px h-16 ${dk ? "bg-amber-400/20" : "bg-amber-200"}`} />
+                  <div className={`text-center flex-1 p-3 rounded-xl ${dk ? "bg-white/5" : "bg-black/5"}`}>
+                    <div className={`text-2xl md:text-3xl font-black tabular-nums leading-none ${dk ? "text-amber-300" : "text-amber-700"}`}>
                       {fmt(Object.values(todayTradeByCurrency).reduce((sum, item) => sum + item.commission, 0))}
                     </div>
-                    <div className={`mt-1 text-[9px] font-bold ${dk ? "text-amber-400/70" : "text-amber-600/70"}`}>مجموع کارمزد</div>
+                    <div className={`mt-1.5 text-xs font-bold ${dk ? "text-amber-400/70" : "text-amber-600/70"}`}>مجموع کارمزد</div>
                   </div>
                 </div>
               </div>
 
               {/* 🎯 کارمزد حواله‌جات */}
-              <div className={`group relative overflow-hidden rounded-2xl border p-4 transition-all duration-300 hover:shadow-lg hover:scale-[1.02] ${dk ? "border-rose-400/25 bg-gradient-to-br from-rose-900/30 to-slate-900/50" : "border-rose-200 bg-gradient-to-br from-rose-50 to-white"}`}>
-                <div className="relative flex items-center gap-2.5 mb-2">
-                  <span className={`grid h-10 w-10 place-items-center rounded-xl shadow-sm ${dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600"}`}>
-                    <span className="text-xl">🎯</span>
+              <div className={`group relative overflow-hidden rounded-2xl border p-5 md:p-6 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-rose-400/25 bg-gradient-to-br from-rose-900/30 to-slate-900/50" : "border-rose-200 bg-gradient-to-br from-rose-50 to-white"}`}>
+                <div className="relative flex items-center gap-3 mb-4">
+                  <span className={`grid h-12 w-12 place-items-center rounded-xl shadow-sm ${dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600"}`}>
+                    <span className="text-2xl">🎯</span>
                   </span>
-                  <span className={`text-[11px] md:text-[12px] font-black ${dk ? "text-rose-300" : "text-rose-700"}`}>کارمزد حواله‌جات</span>
+                  <span className={`text-sm md:text-base font-black ${dk ? "text-rose-300" : "text-rose-700"}`}>کارمزد حواله‌جات</span>
                 </div>
-                <div className="relative flex items-center justify-between gap-2">
-                  <div className="text-center flex-1">
-                    <div className={`text-xl md:text-2xl font-black tabular-nums leading-none ${dk ? "text-rose-300" : "text-rose-700"}`}>{fa(todayStats.hawalaCount)}</div>
-                    <div className={`mt-1 text-[9px] font-bold ${dk ? "text-rose-400/70" : "text-rose-600/70"}`}>تعداد</div>
+                <div className="relative flex items-center justify-between gap-4 mt-2">
+                  <div className={`text-center flex-1 p-3 rounded-xl ${dk ? "bg-white/5" : "bg-black/5"}`}>
+                    <div className={`text-2xl md:text-3xl font-black tabular-nums leading-none ${dk ? "text-rose-300" : "text-rose-700"}`}>{fa(todayStats.hawalaCount)}</div>
+                    <div className={`mt-1.5 text-xs font-bold ${dk ? "text-rose-400/70" : "text-rose-600/70"}`}>تعداد حواله</div>
                   </div>
-                  <div className={`w-px h-10 ${dk ? "bg-rose-400/20" : "bg-rose-200"}`} />
-                  <div className="text-center flex-1">
-                    <div className={`text-xl md:text-2xl font-black tabular-nums leading-none ${dk ? "text-rose-300" : "text-rose-700"}`}>
+                  <div className={`w-px h-16 ${dk ? "bg-rose-400/20" : "bg-rose-200"}`} />
+                  <div className={`text-center flex-1 p-3 rounded-xl ${dk ? "bg-white/5" : "bg-black/5"}`}>
+                    <div className={`text-2xl md:text-3xl font-black tabular-nums leading-none ${dk ? "text-rose-300" : "text-rose-700"}`}>
                       {fmt(Object.values(todayHawalaByCurrency).reduce((sum, item) => sum + item.fee, 0))}
                     </div>
-                    <div className={`mt-1 text-[9px] font-bold ${dk ? "text-rose-400/70" : "text-rose-600/70"}`}>مجموع کارمزد</div>
+                    <div className={`mt-1.5 text-xs font-bold ${dk ? "text-rose-400/70" : "text-rose-600/70"}`}>مجموع کارمزد</div>
                   </div>
                 </div>
               </div>
@@ -624,7 +612,6 @@ export default function DashboardPage() {
           {/* ═══════════ چهار کارت حساب‌ها ═══════════ */}
           <section className="cs-up grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4" style={{ animationDelay: "210ms" }}>
 
-            {/* ۱. موجودی مشتریان */}
             <div className={`group relative overflow-hidden rounded-2xl border p-4 md:p-5 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-sky-400/25 bg-gradient-to-br from-sky-900/30 to-slate-900/50" : "border-sky-200 bg-gradient-to-br from-sky-50 to-white"}`}>
               <div className={`absolute top-0 right-0 h-24 w-24 rounded-full blur-2xl opacity-10 ${dk ? "bg-sky-400" : "bg-sky-300"}`} />
               <div className="relative flex items-center gap-3 mb-4">
@@ -653,7 +640,6 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* ۲. بدهی مشتریان */}
             <div className={`group relative overflow-hidden rounded-2xl border p-4 md:p-5 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-rose-400/25 bg-gradient-to-br from-rose-900/30 to-slate-900/50" : "border-rose-200 bg-gradient-to-br from-rose-50 to-white"}`}>
               <div className={`absolute top-0 right-0 h-24 w-24 rounded-full blur-2xl opacity-10 ${dk ? "bg-rose-400" : "bg-rose-300"}`} />
               <div className="relative flex items-center gap-3 mb-4">
@@ -682,7 +668,6 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* ۳. موجودی حساب صرافی */}
             <div className={`group relative overflow-hidden rounded-2xl border p-4 md:p-5 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-violet-400/25 bg-gradient-to-br from-violet-900/30 to-slate-900/50" : "border-violet-200 bg-gradient-to-br from-violet-50 to-white"}`}>
               <div className={`absolute top-0 right-0 h-24 w-24 rounded-full blur-2xl opacity-10 ${dk ? "bg-violet-400" : "bg-violet-300"}`} />
               <div className="relative flex items-center gap-3 mb-4">
@@ -711,7 +696,6 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* ۴. وضعیت مشتریان */}
             <div className={`group relative overflow-hidden rounded-2xl border p-4 md:p-5 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-cyan-400/25 bg-gradient-to-br from-cyan-900/30 to-slate-900/50" : "border-cyan-200 bg-gradient-to-br from-cyan-50 to-white"}`}>
               <div className={`absolute top-0 right-0 h-24 w-24 rounded-full blur-2xl opacity-10 ${dk ? "bg-cyan-400" : "bg-cyan-300"}`} />
               <div className="relative flex items-center gap-3 mb-3">
