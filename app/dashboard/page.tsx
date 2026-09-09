@@ -485,14 +485,15 @@ export default function DashboardPage() {
                     <div className={`text-[10px] md:text-xs font-bold ${dk ? "text-blue-400/70" : "text-blue-600/70"}`}>{fa(todayStats.tradeCount)} معامله امروز</div>
                   </div>
                 </div>
-                <div className="grid grid-cols-5 gap-2">
+                {/* ✅ اصلاح شده: چیدمان واکنش‌گرا برای موبایل */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-3">
                   {currencies.map(cur => {
                     const data = todayTradeByCurrency[cur];
                     const hasValue = data.amount > 0;
                     return (
-                      <div key={cur} className={`rounded-xl px-2 py-3 text-center transition-all duration-300 ${hasValue ? (dk ? "bg-blue-500/10 ring-1 ring-blue-400/20" : "bg-blue-100/80 ring-1 ring-blue-200") : (dk ? "bg-slate-800/40" : "bg-slate-50")}`}>
+                      <div key={cur} className={`rounded-xl px-1.5 md:px-2 py-3 text-center transition-all duration-300 min-h-[70px] flex flex-col justify-center ${hasValue ? (dk ? "bg-blue-500/10 ring-1 ring-blue-400/20" : "bg-blue-100/80 ring-1 ring-blue-200") : (dk ? "bg-slate-800/40" : "bg-slate-50")}`}>
                         <div className={`text-[10px] md:text-xs font-black mb-1 ${hasValue ? (dk ? "text-blue-300" : "text-blue-700") : subText}`}>{labels[cur]}</div>
-                        <div className={`text-sm md:text-base font-black tabular-nums leading-tight ${hasValue ? (dk ? "text-blue-200" : "text-blue-800") : subText}`}>
+                        <div className={`text-xs md:text-sm lg:text-base font-black tabular-nums leading-tight break-all whitespace-nowrap ${hasValue ? (dk ? "text-blue-200" : "text-blue-800") : subText}`}>
                           {hasValue ? fmt(data.amount) : "—"}
                         </div>
                       </div>
@@ -512,14 +513,15 @@ export default function DashboardPage() {
                     <div className={`text-[10px] md:text-xs font-bold ${dk ? "text-purple-400/70" : "text-purple-600/70"}`}>{fa(todayStats.hawalaCount)} حواله امروز</div>
                   </div>
                 </div>
-                <div className="grid grid-cols-5 gap-2">
+                {/* ✅ اصلاح شده: چیدمان واکنش‌گرا برای موبایل */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-3">
                   {currencies.map(cur => {
                     const data = todayHawalaByCurrency[cur];
                     const hasValue = data.amount > 0;
                     return (
-                      <div key={cur} className={`rounded-xl px-2 py-3 text-center transition-all duration-300 ${hasValue ? (dk ? "bg-purple-500/10 ring-1 ring-purple-400/20" : "bg-purple-100/80 ring-1 ring-purple-200") : (dk ? "bg-slate-800/40" : "bg-slate-50")}`}>
+                      <div key={cur} className={`rounded-xl px-1.5 md:px-2 py-3 text-center transition-all duration-300 min-h-[70px] flex flex-col justify-center ${hasValue ? (dk ? "bg-purple-500/10 ring-1 ring-purple-400/20" : "bg-purple-100/80 ring-1 ring-purple-200") : (dk ? "bg-slate-800/40" : "bg-slate-50")}`}>
                         <div className={`text-[10px] md:text-xs font-black mb-1 ${hasValue ? (dk ? "text-purple-300" : "text-purple-700") : subText}`}>{labels[cur]}</div>
-                        <div className={`text-sm md:text-base font-black tabular-nums leading-tight ${hasValue ? (dk ? "text-purple-200" : "text-purple-800") : subText}`}>
+                        <div className={`text-xs md:text-sm lg:text-base font-black tabular-nums leading-tight break-all whitespace-nowrap ${hasValue ? (dk ? "text-purple-200" : "text-purple-800") : subText}`}>
                           {hasValue ? fmt(data.amount) : "—"}
                         </div>
                       </div>
