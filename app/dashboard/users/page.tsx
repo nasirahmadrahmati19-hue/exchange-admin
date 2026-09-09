@@ -368,22 +368,14 @@ export default function CustomersPage() {
   const [mounted, setMounted] = useState(false);
   const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
 
-  // ✅ اصلاح حیاتی: تضمین حضور همیشگی مشتریان مجازی (صندوق و حساب صرافی)
-  // این افکت هر بار که آرایه customers تغییر کند اجرا می‌شود و اگر این دو مورد حذف شده باشند (مثلاً توسط useSyncedState پس از رستور)، دوباره آن‌ها را اضافه می‌کند.
   useEffect(() => {
     setCustomers(prev => {
-      const hasExchange = prev.some(c => c.id === EXCHANGE_ACCOUNT_ID);
-      const hasCashBox = prev.some(c => c.id === CASH_BOX_ID);
-      
-      if (!hasExchange || !hasCashBox) {
-        const next = [...prev];
-        if (!hasCashBox) next.unshift(CASH_BOX_CUSTOMER);
-        if (!hasExchange) next.unshift(EXCHANGE_ACCOUNT_CUSTOMER);
-        return next;
+      if (!prev.find(c => c.id === EXCHANGE_ACCOUNT_ID)) {
+        return [EXCHANGE_ACCOUNT_CUSTOMER, ...prev];
       }
       return prev;
     });
-  }, [customers]);
+  }, []);
 
   const [transactions, setTransactions] = useSyncedState<any[]>(TRANSACTIONS_KEY, []);
   const [hawalas, setHawalas] = useSyncedState<any[]>(HAWALAS_KEY, []);
@@ -463,19 +455,15 @@ export default function CustomersPage() {
     return map;
   }, [customers, cashEntries, ledger]);
 
-  // ✅ اصلاح حیاتی: جلوگیری از تکرار مشتریان مجازی در لیست فیلترشده
   const filteredCustomers = useMemo(() => {
     const cashBoxOption = CASH_BOX_CUSTOMER;
     const exchangeOption = EXCHANGE_ACCOUNT_CUSTOMER;
     const q = normalizeDigits(search.trim()).toLowerCase();
-    
     const filtered = customers.filter(c => {
-      // حذف صریح مشتریان مجازی از فیلتر معمولی برای جلوگیری از نمایش تکراری
-      if (c.id === EXCHANGE_ACCOUNT_ID || c.id === CASH_BOX_ID) return false; 
+      if (c.id === EXCHANGE_ACCOUNT_ID) return false; 
       if (!q) return true;
       return [c.name, c.phone || "", c.tazkira || "", c.telegram || "", c.id].some(f => normalizeDigits(String(f)).toLowerCase().includes(q));
     });
-    
     const result: Customer[] = [];
     if (!q || CASH_BOX_NAME.includes(q)) result.push(cashBoxOption);
     if (!q || EXCHANGE_ACCOUNT_NAME.includes(q)) result.push(exchangeOption);
@@ -748,8 +736,8 @@ export default function CustomersPage() {
                 </div>
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="جستجو..." className={`${uiInput} w-auto md:w-64`} />
               </div>
-              
-              {/* Desktop Table with Scrollbar */}
+
+              {/* ✅ Desktop Table with Scrollbar for >12 items */}
               <div className={`hidden md:block overflow-auto cu-scroll max-h-[65vh] rounded-xl border ${dk ? "border-slate-700" : "border-slate-200"}`}>
                 <table className="w-full min-w-[900px] text-sm">
                   <thead className="sticky top-0 z-10">
@@ -815,7 +803,7 @@ export default function CustomersPage() {
                 </table>
               </div>
 
-              {/* Mobile List (Cards) with Scrollbar */}
+              {/* ✅ Mobile List (Cards) with Scrollbar for >12 items */}
               <div className={`md:hidden space-y-3 overflow-y-auto max-h-[70vh] cu-scroll pr-1`}>
                 {filteredCustomers.map((c, idx) => {
                   const isCashBoxRow = c.id === CASH_BOX_ID;
