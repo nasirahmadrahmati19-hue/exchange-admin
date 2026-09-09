@@ -1,4 +1,6 @@
+// app/dashboard/users/page.tsx
 "use client";
+
 import { useEffect, useMemo, useState, useRef, useCallback, type ReactNode } from "react";
 import { useSyncedState } from "../lib/useSyncedState";
 import { initTrackingSystem } from "../lib/trackingCode";
@@ -118,7 +120,7 @@ function TelegramChatIdSelector({ value, onChange, uiInput, dk }: { value: strin
           <div className="max-h-56 overflow-y-auto cu-scroll">
             {!hasBotToken ? <div className="px-4 py-6 text-center"><div className={`text-[11px] font-bold ${subText}`}>⚠️ تلگرام فعال نیست</div></div>
             : loading && users.length === 0 ? <div className="px-4 py-6 text-center"><div className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-sky-500" /><div className={`mt-2 text-[11px] font-bold ${subText}`}>در حال بارگذاری...</div></div>
-            : lastError ? <div className="px-4 py-6 text-center"><div className={`text-[11px] font-bold ${dk ? "text-amber-300" : "text-amber-600"}`}>️ {lastError}</div></div>
+            : lastError ? <div className="px-4 py-6 text-center"><div className={`text-[11px] font-bold ${dk ? "text-amber-300" : "text-amber-600"}`}>⚠️ {lastError}</div></div>
             : filteredUsers.length === 0 ? <div className="px-4 py-6 text-center"><div className={`text-[11px] font-bold ${subText}`}>{search ? "کاربری با این مشخصات یافت نشد" : "هنوز کاربری ربات را start نکرده"}</div></div>
             : filteredUsers.map(user => (
                 <button key={user.id} type="button" onClick={() => selectUser(user)} className={`flex w-full items-center justify-between gap-2 border-b px-3 py-2.5 text-right transition-all ${dk ? "border-slate-700/50 hover:bg-sky-500/10" : "border-slate-50 hover:bg-sky-50"}`}>
@@ -168,7 +170,7 @@ const EXCHANGE_ACCOUNT_CUSTOMER: Customer = {
 
 const generateId = (): string => { if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") { try { return crypto.randomUUID(); } catch {} } return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = (Math.random() * 16) | 0; return (c === "x" ? r : (r & 0x3) | 0x8).toString(16); }); };
 const isCurrency = (v: any): v is Currency => typeof v === "string" && (currencies as string[]).includes(v);
-const normalizeDigits = (v: string) => { const pd = "۰۱۲۳۴۵۶۷۸۹", ad = "٠١٢٣٤٥٦٧٨٩"; return String(v || "").replace(/[۰-۹]/g, d => String(pd.indexOf(d))).replace(/[٠-]/g, d => String(ad.indexOf(d))); };
+const normalizeDigits = (v: string) => { const pd = "۰۱۲۳۴۵۶۷۸۹", ad = "٠١٢٣٤٥٦٧٨٩"; return String(v || "").replace(/[۰-۹]/g, d => String(pd.indexOf(d))).replace(/[٠-٩]/g, d => String(ad.indexOf(d))); };
 const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 2 }) : "0";
 
 function shamsiParts(d: Date) { 
@@ -366,24 +368,8 @@ function buildCashBoxLedger(cashEntries: any[]): LedgerEntry[] {
 
 export default function CustomersPage() {
   const [mounted, setMounted] = useState(false);
+  // ✅ استفاده از آرایه اصلی بدون تغییر (حذف useEffect قبلی که باعث حلقه بی‌نهایت می‌شد)
   const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
-
-  // ✅ اصلاح حیاتی: تضمین حضور همیشگی مشتریان مجازی (صندوق و حساب صرافی)
-  // این افکت هر بار که آرایه customers تغییر کند اجرا می‌شود و اگر این دو مورد حذف شده باشند (مثلاً توسط useSyncedState پس از رستور)، دوباره آن‌ها را اضافه می‌کند.
-  useEffect(() => {
-    setCustomers(prev => {
-      const hasExchange = prev.some(c => c.id === EXCHANGE_ACCOUNT_ID);
-      const hasCashBox = prev.some(c => c.id === CASH_BOX_ID);
-      
-      if (!hasExchange || !hasCashBox) {
-        const next = [...prev];
-        if (!hasCashBox) next.unshift(CASH_BOX_CUSTOMER);
-        if (!hasExchange) next.unshift(EXCHANGE_ACCOUNT_CUSTOMER);
-        return next;
-      }
-      return prev;
-    });
-  }, [customers]);
 
   const [transactions, setTransactions] = useSyncedState<any[]>(TRANSACTIONS_KEY, []);
   const [hawalas, setHawalas] = useSyncedState<any[]>(HAWALAS_KEY, []);
@@ -430,16 +416,27 @@ export default function CustomersPage() {
     return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); };
   }, [openMenuId]);
 
-  const ledger = useMemo(() => { try { return buildLedger(customers, transactions, hawalas, cashEntries); } catch { return []; } }, [customers, transactions, hawalas, cashEntries]);
+  // ✅ اضافه کردن مشتریان مجازی فقط برای محاسبات (بدون دستکاری state)
+  const safeCustomers = useMemo(() => {
+    const next = [...customers];
+    const hasExchange = next.some(c => c.id === EXCHANGE_ACCOUNT_ID);
+    const hasCashBox = next.some(c => c.id === CASH_BOX_ID);
+    
+    if (!hasCashBox) next.unshift(CASH_BOX_CUSTOMER);
+    if (!hasExchange) next.unshift(EXCHANGE_ACCOUNT_CUSTOMER);
+    return next;
+  }, [customers]);
+
+  const ledger = useMemo(() => { try { return buildLedger(safeCustomers, transactions, hawalas, cashEntries); } catch { return []; } }, [safeCustomers, transactions, hawalas, cashEntries]);
   const cashBoxLedger = useMemo(() => { try { return buildCashBoxLedger(cashEntries); } catch { return []; } }, [cashEntries]);
 
   const allBalances = useMemo(() => {
     const map: Record<string, Record<Currency, number>> = {};
-    customers.forEach(c => { if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) map[c.id] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; });
+    safeCustomers.forEach(c => { if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) map[c.id] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; });
     map[CASH_BOX_ID] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     map[EXCHANGE_ACCOUNT_ID] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
 
-    for (const c of customers) {
+    for (const c of safeCustomers) {
       if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) {
         for (const cur of currencies) {
           let balance = 0;
@@ -461,16 +458,15 @@ export default function CustomersPage() {
       map[CASH_BOX_ID][cur] = cashBoxBalance;
     }
     return map;
-  }, [customers, cashEntries, ledger]);
+  }, [safeCustomers, cashEntries, ledger]);
 
-  // ✅ اصلاح حیاتی: جلوگیری از تکرار مشتریان مجازی در لیست فیلترشده
+  // ✅ فیلتر کردن مشتریان واقعی و اضافه کردن مجازی‌ها فقط برای نمایش
   const filteredCustomers = useMemo(() => {
     const cashBoxOption = CASH_BOX_CUSTOMER;
     const exchangeOption = EXCHANGE_ACCOUNT_CUSTOMER;
     const q = normalizeDigits(search.trim()).toLowerCase();
     
     const filtered = customers.filter(c => {
-      // حذف صریح مشتریان مجازی از فیلتر معمولی برای جلوگیری از نمایش تکراری
       if (c.id === EXCHANGE_ACCOUNT_ID || c.id === CASH_BOX_ID) return false; 
       if (!q) return true;
       return [c.name, c.phone || "", c.tazkira || "", c.telegram || "", c.id].some(f => normalizeDigits(String(f)).toLowerCase().includes(q));
@@ -486,8 +482,8 @@ export default function CustomersPage() {
   const selectedCustomer = useMemo(() => {
     if (selectedCustomerId === CASH_BOX_ID || selectedCustomerId === CASH_BOX_NAME) return CASH_BOX_CUSTOMER;
     if (selectedCustomerId === EXCHANGE_ACCOUNT_ID) return EXCHANGE_ACCOUNT_CUSTOMER;
-    return customers.find(c => c.id === selectedCustomerId) || null;
-  }, [customers, selectedCustomerId]);
+    return safeCustomers.find(c => c.id === selectedCustomerId) || null;
+  }, [safeCustomers, selectedCustomerId]);
 
   const isCashBox = selectedCustomer?.id === CASH_BOX_ID;
   const isExchangeAccount = selectedCustomer?.id === EXCHANGE_ACCOUNT_ID;
@@ -515,8 +511,8 @@ export default function CustomersPage() {
     }).reverse();
   }, [customerLedger, ledgerSearch, ledgerTypeFilter, ledgerCurrencyFilter, ledgerDirFilter]);
 
-  const negativeBalanceCount = customers.filter(c => c.id !== EXCHANGE_ACCOUNT_ID && currencies.some(cur => allBalances[c.id][cur] < 0)).length;
-  const zeroBalanceCount = customers.filter(c => c.id !== EXCHANGE_ACCOUNT_ID && currencies.every(cur => allBalances[c.id][cur] === 0)).length;
+  const negativeBalanceCount = safeCustomers.filter(c => c.id !== EXCHANGE_ACCOUNT_ID && currencies.some(cur => allBalances[c.id][cur] < 0)).length;
+  const zeroBalanceCount = safeCustomers.filter(c => c.id !== EXCHANGE_ACCOUNT_ID && currencies.every(cur => allBalances[c.id][cur] === 0)).length;
 
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(""), 3500); };
   const setField = (f: keyof FormState, v: string) => { setForm(p => ({ ...p, [f]: v })); setErrors(p => ({ ...p, [f]: undefined })); };
@@ -572,7 +568,7 @@ export default function CustomersPage() {
     if (loanModalType === "give") {
       const cashBalance = allBalances[CASH_BOX_ID][loanCurrency];
       if (cashBalance < amt) {
-        showToast(`⚠️ موجودی صندوق برای ${labels[loanCurrency]} کافی نیست! (موجودی: ${fmt(cashBalance)})`);
+        showToast(`️ موجودی صندوق برای ${labels[loanCurrency]} کافی نیست! (موجودی: ${fmt(cashBalance)})`);
         return;
       }
     }
@@ -603,7 +599,7 @@ export default function CustomersPage() {
     const hasBal = currencies.some(cur => allBalances[id][cur] !== 0);
     const cnt = ledger.filter(e => e.customerId === id).length;
     let msg = `آیا از حذف "${c.name}" مطمئن هستید؟`;
-    if (cnt > 0) msg += `\n️ ${cnt} رویداد مالی دارد (به صورت نرم‌افزاری بایگانی می‌شود).`;
+    if (cnt > 0) msg += `\n⚠️ ${cnt} رویداد مالی دارد (به صورت نرم‌افزاری بایگانی می‌شود).`;
     if (hasBal) msg += `\n⚠️ موجودی غیر صفر دارد!`;
     if (!window.confirm(msg)) return;
     
@@ -706,7 +702,7 @@ export default function CustomersPage() {
 
           <div className="cu-up grid grid-cols-2 md:grid-cols-4 gap-3" style={{ animationDelay: "70ms" }}>
             {[
-              { label: "کل مشتریان", value: customers.filter(c => c.id !== EXCHANGE_ACCOUNT_ID).length, icon: "users", color: "from-emerald-500 to-teal-500", text: dk ? "text-emerald-300" : "text-emerald-600" },
+              { label: "کل مشتریان", value: safeCustomers.filter(c => c.id !== EXCHANGE_ACCOUNT_ID).length, icon: "users", color: "from-emerald-500 to-teal-500", text: dk ? "text-emerald-300" : "text-emerald-600" },
               { label: "رویدادهای مالی", value: ledger.length + cashBoxLedger.length, icon: "history", color: "from-amber-500 to-orange-500", text: dk ? "text-amber-300" : "text-amber-600" },
               { label: "مشتریان بدهکار", value: negativeBalanceCount, icon: "x", color: "from-rose-500 to-pink-500", text: dk ? "text-rose-300" : "text-rose-600" },
               { label: "مانده صفر", value: zeroBalanceCount, icon: "wallet", color: "from-sky-500 to-cyan-500", text: dk ? "text-sky-300" : "text-sky-600" },
@@ -727,7 +723,7 @@ export default function CustomersPage() {
           </div>
 
           <div className={`cu-up flex gap-1.5 md:gap-2 rounded-xl md:rounded-2xl border p-1.5 md:p-2 shadow-sm backdrop-blur ${glassChip}`} style={{ animationDelay: "140ms" }}>
-            {[{ id: "list" as const, label: "فهرست مشتریان", icon: "users", count: customers.length }, { id: "new" as const, label: "ثبت مشتری جدید", icon: "plus", count: null }].map(tab => (
+            {[{ id: "list" as const, label: "فهرست مشتریان", icon: "users", count: safeCustomers.length }, { id: "new" as const, label: "ثبت مشتری جدید", icon: "plus", count: null }].map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 md:gap-2 rounded-lg md:rounded-xl px-3 md:px-5 py-2.5 md:py-3 text-xs md:text-sm font-black transition-all duration-300 active:scale-[0.97] ${activeTab === tab.id ? `bg-gradient-to-l shadow-lg ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 to-teal-500 text-white"}` : dk ? "text-slate-400 hover:bg-slate-700/60 hover:text-slate-100" : "text-slate-500 hover:bg-emerald-50 hover:text-slate-800"}`}>
                 {tab.icon === "users" && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" /></svg>}
                 {tab.icon === "plus" && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M12 4.5v15m7.5-7.5h-15" /></svg>}
@@ -744,7 +740,7 @@ export default function CustomersPage() {
                 </span>
                 <div className="flex-1 min-w-0">
                   <h2 className={`cu-display text-xl md:text-2xl leading-none ${headingText}`}>فهرست مشتریان</h2>
-                  <p className={`mt-1 text-[11px] font-bold ${subTextVar}`}>{customers.length} مشتری ثبت‌شده + صندوق + حساب صرافی</p>
+                  <p className={`mt-1 text-[11px] font-bold ${subTextVar}`}>{safeCustomers.length} مشتری ثبت‌شده + صندوق + حساب صرافی</p>
                 </div>
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="جستجو..." className={`${uiInput} w-auto md:w-64`} />
               </div>
@@ -780,7 +776,7 @@ export default function CustomersPage() {
                             {!isCashBoxRow && !isExchRow && c.address && <div className={`text-[10px] mt-1 ${subTextVar}`}>📍 {c.address}</div>}
                           </td>
                           <td className="px-4 py-3.5 text-center align-middle">
-                            {!isCashBoxRow && !isExchRow ? (<><div className={`text-[12px] font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`} dir="ltr">📱 {c.phone || "-"}</div><div className={`text-[10px] tabular-nums mt-1 ${subTextVar}`} dir="ltr">🆔 {c.tazkira || "-"}</div></>) : (<div className={`text-[10px] ${subTextVar}`}>—</div>)}
+                            {!isCashBoxRow && !isExchRow ? (<><div className={`text-[12px] font-bold tabular-nums ${dk ? "text-slate-200" : "text-slate-700"}`} dir="ltr"> {c.phone || "-"}</div><div className={`text-[10px] tabular-nums mt-1 ${subTextVar}`} dir="ltr"> {c.tazkira || "-"}</div></>) : (<div className={`text-[10px] ${subTextVar}`}>—</div>)}
                           </td>
                           <td className="px-4 py-3.5 text-center align-middle">
                             {!isCashBoxRow && !isExchRow ? (<><div className={`text-[11px] tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`}>{c.registeredAt ? shortDateLabel(c.registeredAt) : "-"}</div><div className={`text-[10px] mt-1 ${subTextVar}`}>{ledger.filter(e => e.customerId === c.id).length} رویداد</div></>) : (<>
@@ -827,7 +823,7 @@ export default function CustomersPage() {
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex items-center gap-3">
                           <div className={`grid h-10 w-10 place-items-center rounded-lg text-white font-black text-sm shadow ${isCashBoxRow ? "bg-gradient-to-br from-emerald-500 to-teal-500" : isExchRow ? "bg-gradient-to-br from-violet-500 to-purple-500" : "bg-gradient-to-br from-emerald-500 to-teal-500"}`}>
-                            {isCashBoxRow ? "💰" : isExchRow ? "🏦" : c.name.charAt(0)}
+                            {isCashBoxRow ? "" : isExchRow ? "🏦" : c.name.charAt(0)}
                           </div>
                           <div>
                             <div className={`text-sm font-black ${dk ? "text-slate-100" : "text-slate-800"}`}>
@@ -963,7 +959,7 @@ export default function CustomersPage() {
                         <div className="min-h-[14px] mt-1">
                           {isCashBox ? (<>{bal < 0 && <span className="text-[8px] font-black text-rose-500">⚠️ کسری صندوق</span>}{bal > 0 && <span className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>✅ موجودی نقدی</span>}{bal === 0 && <span className={`text-[8px] font-bold ${subTextVar}`}>⚪ خالی</span>}</>)
                             : isExchangeAccount ? (<>{bal < 0 && <span className="text-[8px] font-black text-rose-500">🔴 قرض‌های داده‌شده</span>}{bal > 0 && <span className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>🟢 موجودی داخلی</span>}{bal === 0 && <span className={`text-[8px] font-bold ${subTextVar}`}>⚪ خنثی</span>}</>)
-                            : (<>{bal < 0 && <span className="text-[8px] font-black text-rose-500">🔴 قرض</span>}{bal > 0 && <span className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>🟢 طلب</span>}{bal === 0 && <span className={`text-[8px] font-bold ${subTextVar}`}> صفر</span>}</>)}
+                            : (<>{bal < 0 && <span className="text-[8px] font-black text-rose-500"> قرض</span>}{bal > 0 && <span className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>🟢 طلب</span>}{bal === 0 && <span className={`text-[8px] font-bold ${subTextVar}`}>⚪ صفر</span>}</>)}
                         </div>
                       </div>
                     );
@@ -990,7 +986,7 @@ export default function CustomersPage() {
                     <div className={`rounded-xl border p-4 ${dk ? "border-emerald-400/25 bg-emerald-400/[0.07]" : "border-emerald-200 bg-emerald-50"}`}>
                       <div className="flex items-center gap-3 mb-3">
                         <span className={`grid h-10 w-10 place-items-center rounded-xl ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M21 12a2.25 2.25 0 0 0-2.25-2.25H15a3 3 0 1 1-6 0H5.25A2.25 2.25 0 0 0 3 12m18 0v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 9m18 0V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v3" /></svg></span>
-                        <div><b className={`block text-sm font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}>💰 موجودی فیزیکی صندوق</b><span className={`text-[10px] font-bold ${subTextVar}`}>این بخش قابل ویرایش نیست</span></div>
+                        <div><b className={`block text-sm font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}> موجودی فیزیکی صندوق</b><span className={`text-[10px] font-bold ${subTextVar}`}>این بخش قابل ویرایش نیست</span></div>
                       </div>
                       <p className={`text-sm leading-6 ${dk ? "text-slate-300" : "text-slate-600"}`}>موجودی فیزیکی صندوق به صورت خودکار از مجموع موجودی تمام مشتریان و حساب صرافی محاسبه می‌شود. این عدد نشان‌دهنده دارایی نقدی واقعی صرافی است.</p>
                     </div>
@@ -1038,9 +1034,9 @@ export default function CustomersPage() {
                             <div className={`flex items-center gap-2 rounded-lg px-3 py-2 ${dk ? "bg-rose-400/10" : "bg-rose-50"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={`h-4 w-4 ${dk ? "text-rose-300" : "text-rose-600"}`}><path d="M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18" /></svg><div><div className={`text-[10px] ${subTextVar}`}>پرداخت</div><div className={`text-sm font-black tabular-nums ${dk ? "text-rose-300" : "text-rose-700"}`}>{fmt(tOut)}</div></div></div>
                           </div>
                           <div className={`mt-2 text-center text-[10px] font-black ${bal < 0 ? "text-rose-500" : bal > 0 ? (dk ? "text-emerald-300" : "text-emerald-600") : subTextVar}`}>
-                            {isCashBox ? (bal < 0 ? "⚠️ کسری صندوق" : bal > 0 ? "✅ موجودی نقدی در صندوق" : "⚪ صندوق خالی")
-                              : isExchangeAccount ? (bal < 0 ? "🔴 مجموع قرض‌های داده‌شده به مشتریان" : bal > 0 ? "🟢 موجودی اعتباری" : "⚪ خنثی")
-                              : (bal < 0 ? " قرض از صرافی" : bal > 0 ? "🟢 طلب از صرافی" : "⚪ بدون بدهی")}
+                            {isCashBox ? (bal < 0 ? "️ کسری صندوق" : bal > 0 ? "✅ موجودی نقدی در صندوق" : "⚪ صندوق خالی")
+                              : isExchangeAccount ? (bal < 0 ? " مجموع قرض‌های داده‌شده به مشتریان" : bal > 0 ? "🟢 موجودی اعتباری" : "⚪ خنثی")
+                              : (bal < 0 ? "🔴 قرض از صرافی" : bal > 0 ? "🟢 طلب از صرافی" : "⚪ بدون بدهی")}
                           </div>
                         </div>
                       );
