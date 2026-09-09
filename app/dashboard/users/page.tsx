@@ -171,13 +171,14 @@ const isCurrency = (v: any): v is Currency => typeof v === "string" && (currenci
 const normalizeDigits = (v: string) => { const pd = "۰۱۲۳۴۵۶۷۸۹", ad = "٠١٢٣٤٥٦٧٨٩"; return String(v || "").replace(/[۰-۹]/g, d => String(pd.indexOf(d))).replace(/[٠-٩]/g, d => String(ad.indexOf(d))); };
 const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 2 }) : "0";
 
+// ✅ کاملاً اصلاح شده و بدون خطای سینتکسی (نقطه ویرگول حذف شد)
 function shamsiParts(d: Date) { 
   try { 
     const p = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", { year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(d); 
     const g = (t: string) => p.find(x => x.type === t)?.value || "0"; 
     return { year: g("year"), month: g("month"), day: g("day") }; 
   } catch { 
-    return { year: "0", month: "0", day: "0"; } 
+    return { year: "0", month: "0", day: "0" }; 
   } 
 }
 
@@ -188,25 +189,6 @@ function shortDateLabel(s: string) { try { const d = new Date(s); return Number.
 function timeLabel(s: string) { try { const d = new Date(s); if (Number.isNaN(d.getTime())) return "-"; const p = (n: number) => String(n).padStart(2, "0"); return `${p(d.getHours())}:${p(d.getMinutes())}`; } catch { return "-"; } }
 
 const emptyForm: FormState = { name: "", tazkira: "", phone: "", address: "", note: "", telegram: "" };
-
-function getLedgerBalance(customerId: string, currency: Currency, cashEntries: any[], ledger: LedgerEntry[]): number {
-  if (customerId === CASH_BOX_ID) {
-    let balance = 0;
-    for (const e of cashEntries) {
-      if (e.status === "voided" || e.currency !== currency) continue;
-      balance += e.direction === "in" ? e.amount : -e.amount;
-    }
-    return balance;
-  }
-
-  let balance = 0;
-  for (const e of ledger) {
-    if (e.customerId === customerId && e.currency === currency) {
-      balance += e.direction === "in" ? e.amount : -e.amount;
-    }
-  }
-  return balance;
-}
 
 function buildLedger(customers: Customer[], transactions: any[], hawalas: any[], cashEntries: any[]): LedgerEntry[] {
   const entries: LedgerEntry[] = [];
@@ -226,7 +208,12 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
       if (cid && isCurrency(fromCur) && isCurrency(toCur)) {
         entries.push({ id: `${tx.id}-out`, date, customerId: cid, type: "exchange", description: `فروش ${labels[fromCur]} - ${tx.rateLabel || ""}`, currency: fromCur, amount: fromAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum, counterPartyId: CASH_BOX_ID });
         entries.push({ id: `${tx.id}-in`, date, customerId: cid, type: "exchange", description: `خرید ${labels[toCur]} - ${tx.rateLabel || ""}`, currency: toCur, amount: toAmt, direction: "in", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum, counterPartyId: CASH_BOX_ID });
-        if (commAmt > 0 && isCurrency(commCur)) entries.push({ id: `${tx.id}-fee`, date, customerId: cid, type: "fee", description: "کارمزد معامله", currency: commCur, amount: commAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
+        entries.push({ id: `${tx.id}-cash-in`, date, customerId: CASH_BOX_ID, type: "exchange", description: `دریافت ${labels[fromCur]} از مشتری`, currency: fromCur, amount: fromAmt, direction: "in", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum, counterPartyId: cid });
+        entries.push({ id: `${tx.id}-cash-out`, date, customerId: CASH_BOX_ID, type: "exchange", description: `پرداخت ${labels[toCur]} به مشتری`, currency: toCur, amount: toAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum, counterPartyId: cid });
+        if (commAmt > 0 && isCurrency(commCur)) {
+          entries.push({ id: `${tx.id}-fee`, date, customerId: cid, type: "fee", description: "کارمزد معامله", currency: commCur, amount: commAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum, counterPartyId: CASH_BOX_ID });
+          entries.push({ id: `${tx.id}-cash-fee`, date, customerId: CASH_BOX_ID, type: "fee", description: "دریافت کارمزد معامله", currency: commCur, amount: commAmt, direction: "in", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum, counterPartyId: cid });
+        }
       }
     }
     if (tx.type === "transfer") {
@@ -234,19 +221,28 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
       const rId = tx.receiverId || customers.find(c => c.name === (tx.receiverName || tx.receiverId))?.id;
       if (sId && isCurrency(fromCur)) {
         entries.push({ id: `${tx.id}-s-out`, date, customerId: sId, type: "transfer", description: `انتقال ${labels[fromCur]} به ${customers.find(c => c.id === rId)?.name || tx.receiverName || "—"}`, currency: fromCur, amount: fromAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum, counterPartyId: rId });
-        if (tx.commissionPayer === "sender" && commAmt > 0 && isCurrency(commCur)) entries.push({ id: `${tx.id}-s-fee`, date, customerId: sId, type: "fee", description: "کارمزد انتقال", currency: commCur, amount: commAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
+        if (tx.commissionPayer === "sender" && commAmt > 0 && isCurrency(commCur)) {
+          entries.push({ id: `${tx.id}-s-fee`, date, customerId: sId, type: "fee", description: "کارمزد انتقال", currency: commCur, amount: commAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum, counterPartyId: CASH_BOX_ID });
+          entries.push({ id: `${tx.id}-cash-s-fee`, date, customerId: CASH_BOX_ID, type: "fee", description: "دریافت کارمزد انتقال از فرستنده", currency: commCur, amount: commAmt, direction: "in", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum, counterPartyId: sId });
+        }
       }
       if (rId && isCurrency(toCur)) {
         entries.push({ id: `${tx.id}-r-in`, date, customerId: rId, type: "transfer", description: `دریافت ${labels[toCur]} از ${customers.find(c => c.id === sId)?.name || tx.senderName || "—"}`, currency: toCur, amount: toAmt, direction: "in", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum, counterPartyId: sId });
-        if (tx.commissionPayer === "receiver" && commAmt > 0 && isCurrency(commCur)) entries.push({ id: `${tx.id}-r-fee`, date, customerId: rId, type: "fee", description: "کارمزد انتقال", currency: commCur, amount: commAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
+        if (tx.commissionPayer === "receiver" && commAmt > 0 && isCurrency(commCur)) {
+          entries.push({ id: `${tx.id}-r-fee`, date, customerId: rId, type: "fee", description: "کارمزد انتقال", currency: commCur, amount: commAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum, counterPartyId: CASH_BOX_ID });
+          entries.push({ id: `${tx.id}-cash-r-fee`, date, customerId: CASH_BOX_ID, type: "fee", description: "دریافت کارمزد انتقال از گیرنده", currency: commCur, amount: commAmt, direction: "in", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum, counterPartyId: rId });
+        }
       }
     }
     if (tx.type === "convert") {
       const cid = tx.customerId || customers.find(c => c.name === (tx.customerName || tx.customerId))?.id;
       if (cid && isCurrency(fromCur) && isCurrency(toCur)) {
-        entries.push({ id: `${tx.id}-c-out`, date, customerId: cid, type: "convert", description: `تبدیل از ${labels[fromCur]}`, currency: fromCur, amount: fromAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
-        entries.push({ id: `${tx.id}-c-in`, date, customerId: cid, type: "convert", description: `تبدیل به ${labels[toCur]}`, currency: toCur, amount: toAmt, direction: "in", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
-        if (commAmt > 0 && isCurrency(commCur)) entries.push({ id: `${tx.id}-c-fee`, date, customerId: cid, type: "fee", description: "کارمزد تبدیل", currency: commCur, amount: commAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
+        entries.push({ id: `${tx.id}-c-out`, date, customerId: cid, type: "convert", description: `تبدیل از ${labels[fromCur]}`, currency: fromCur, amount: fromAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum, counterPartyId: CASH_BOX_ID });
+        entries.push({ id: `${tx.id}-c-in`, date, customerId: cid, type: "convert", description: `تبدیل به ${labels[toCur]}`, currency: toCur, amount: toAmt, direction: "in", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum, counterPartyId: CASH_BOX_ID });
+        if (commAmt > 0 && isCurrency(commCur)) {
+          entries.push({ id: `${tx.id}-c-fee`, date, customerId: cid, type: "fee", description: "کارمزد تبدیل", currency: commCur, amount: commAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum, counterPartyId: CASH_BOX_ID });
+          entries.push({ id: `${tx.id}-cash-c-fee`, date, customerId: CASH_BOX_ID, type: "fee", description: "دریافت کارمزد تبدیل", currency: commCur, amount: commAmt, direction: "in", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum, counterPartyId: cid });
+        }
       }
     }
   }
@@ -262,11 +258,19 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
 
     if (sender && isCurrency(hFromCur)) {
       entries.push({ id: `${h.id}-hs-out`, date, customerId: sender.id, type: "hawala", description: `حواله ارسالی به ${h.receiverName || "—"} (${h.destinationText || ""})`, currency: hFromCur, amount: hAmt, direction: "out", balanceAfter: 0, referenceId: h.id, referenceNumber: refNum, counterPartyId: receiver?.id });
-      if (h.feePayer === "sender" && hFee > 0 && isCurrency(hFeeCur)) entries.push({ id: `${h.id}-hs-fee`, date, customerId: sender.id, type: "fee", description: "کارمزد حواله", currency: hFeeCur, amount: hFee, direction: "out", balanceAfter: 0, referenceId: h.id, referenceNumber: refNum });
+      entries.push({ id: `${h.id}-cash-hs-in`, date, customerId: CASH_BOX_ID, type: "hawala", description: `دریافت وجه حواله از ${sender.name}`, currency: hFromCur, amount: hAmt, direction: "in", balanceAfter: 0, referenceId: h.id, referenceNumber: refNum, counterPartyId: sender.id });
+      if (h.feePayer === "sender" && hFee > 0 && isCurrency(hFeeCur)) {
+        entries.push({ id: `${h.id}-hs-fee`, date, customerId: sender.id, type: "fee", description: "کارمزد حواله", currency: hFeeCur, amount: hFee, direction: "out", balanceAfter: 0, referenceId: h.id, referenceNumber: refNum, counterPartyId: CASH_BOX_ID });
+        entries.push({ id: `${h.id}-cash-hs-fee`, date, customerId: CASH_BOX_ID, type: "fee", description: "دریافت کارمزد حواله", currency: hFeeCur, amount: hFee, direction: "in", balanceAfter: 0, referenceId: h.id, referenceNumber: refNum, counterPartyId: sender.id });
+      }
     }
     if (receiver && h.status === "paid" && isCurrency(hToCur)) {
       entries.push({ id: `${h.id}-hr-in`, date: h.paidAt || h.date || date, customerId: receiver.id, type: "hawala", description: `دریافت حواله از ${h.senderName || "—"}`, currency: hToCur, amount: hFinal, direction: "in", balanceAfter: 0, referenceId: h.id, referenceNumber: refNum, counterPartyId: sender?.id });
-      if (h.feePayer === "receiver" && hFee > 0 && isCurrency(hFeeCur)) entries.push({ id: `${h.id}-hr-fee`, date: h.paidAt || h.date || date, customerId: receiver.id, type: "fee", description: "کارمزد حواله", currency: hFeeCur, amount: hFee, direction: "out", balanceAfter: 0, referenceId: h.id, referenceNumber: refNum });
+      entries.push({ id: `${h.id}-cash-hr-out`, date: h.paidAt || h.date || date, customerId: CASH_BOX_ID, type: "hawala", description: `پرداخت وجه حواله به ${receiver.name}`, currency: hToCur, amount: hFinal, direction: "out", balanceAfter: 0, referenceId: h.id, referenceNumber: refNum, counterPartyId: receiver.id });
+      if (h.feePayer === "receiver" && hFee > 0 && isCurrency(hFeeCur)) {
+        entries.push({ id: `${h.id}-hr-fee`, date: h.paidAt || h.date || date, customerId: receiver.id, type: "fee", description: "کارمزد حواله", currency: hFeeCur, amount: hFee, direction: "out", balanceAfter: 0, referenceId: h.id, referenceNumber: refNum, counterPartyId: CASH_BOX_ID });
+        entries.push({ id: `${h.id}-cash-hr-fee`, date: h.paidAt || h.date || date, customerId: CASH_BOX_ID, type: "fee", description: "دریافت کارمزد حواله از گیرنده", currency: hFeeCur, amount: hFee, direction: "in", balanceAfter: 0, referenceId: h.id, referenceNumber: refNum, counterPartyId: receiver.id });
+      }
     }
   }
 
@@ -326,6 +330,8 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
   const rb: Record<string, Record<Currency, number>> = {};
   for (const c of customers) rb[c.id] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
   rb[EXCHANGE_ACCOUNT_ID] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+  rb[CASH_BOX_ID] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+  
   for (const e of entries) {
     if (!rb[e.customerId]) rb[e.customerId] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     if (!isCurrency(e.currency)) continue;
@@ -361,13 +367,15 @@ function buildCashBoxLedger(cashEntries: any[]): LedgerEntry[] {
 
 export default function CustomersPage() {
   const [mounted, setMounted] = useState(false);
-  
   const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
 
   useEffect(() => {
-    if (!customers.find(c => c.id === EXCHANGE_ACCOUNT_ID)) {
-      setCustomers(prev => [EXCHANGE_ACCOUNT_CUSTOMER, ...prev]);
-    }
+    setCustomers(prev => {
+      if (!prev.find(c => c.id === EXCHANGE_ACCOUNT_ID)) {
+        return [EXCHANGE_ACCOUNT_CUSTOMER, ...prev];
+      }
+      return prev;
+    });
   }, []);
 
   const [transactions, setTransactions] = useSyncedState<any[]>(TRANSACTIONS_KEY, []);
@@ -400,9 +408,7 @@ export default function CustomersPage() {
   const dk = theme === "dark";
 
   useEffect(() => {
-    try {
-      initTrackingSystem();
-    } catch (err) { console.error(err); }
+    try { initTrackingSystem(); } catch (err) { console.error(err); }
     setMounted(true);
   }, []);
 
@@ -422,43 +428,31 @@ export default function CustomersPage() {
 
   const allBalances = useMemo(() => {
     const map: Record<string, Record<Currency, number>> = {};
-    
-    customers.forEach(c => { 
-      if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) {
-        map[c.id] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-      }
-    });
-    
+    customers.forEach(c => { if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) map[c.id] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; });
     map[CASH_BOX_ID] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     map[EXCHANGE_ACCOUNT_ID] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
 
     for (const c of customers) {
       if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) {
         for (const cur of currencies) {
-          map[c.id][cur] = getLedgerBalance(c.id, cur, cashEntries, ledger);
+          let balance = 0;
+          for (const e of ledger) { if (e.customerId === c.id && e.currency === cur) balance += e.direction === "in" ? e.amount : -e.amount; }
+          map[c.id][cur] = balance;
         }
       }
     }
-
-    map[EXCHANGE_ACCOUNT_ID] = {
-      AFN: getLedgerBalance(EXCHANGE_ACCOUNT_ID, "AFN", cashEntries, ledger),
-      USD: getLedgerBalance(EXCHANGE_ACCOUNT_ID, "USD", cashEntries, ledger),
-      EUR: getLedgerBalance(EXCHANGE_ACCOUNT_ID, "EUR", cashEntries, ledger),
-      IRR: getLedgerBalance(EXCHANGE_ACCOUNT_ID, "IRR", cashEntries, ledger),
-      PKR: getLedgerBalance(EXCHANGE_ACCOUNT_ID, "PKR", cashEntries, ledger),
-    };
 
     for (const cur of currencies) {
-      let cashBoxTotal = 0;
-      for (const c of customers) {
-        if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) {
-          cashBoxTotal += map[c.id][cur];
-        }
-      }
-      cashBoxTotal += map[EXCHANGE_ACCOUNT_ID][cur];
-      map[CASH_BOX_ID][cur] = cashBoxTotal;
+      let exchBalance = 0;
+      for (const e of ledger) { if (e.customerId === EXCHANGE_ACCOUNT_ID && e.currency === cur) exchBalance += e.direction === "in" ? e.amount : -e.amount; }
+      map[EXCHANGE_ACCOUNT_ID][cur] = exchBalance;
     }
 
+    for (const cur of currencies) {
+      let cashBoxBalance = 0;
+      for (const e of ledger) { if (e.customerId === CASH_BOX_ID && e.currency === cur) cashBoxBalance += e.direction === "in" ? e.amount : -e.amount; }
+      map[CASH_BOX_ID][cur] = cashBoxBalance;
+    }
     return map;
   }, [customers, cashEntries, ledger]);
 
@@ -466,17 +460,14 @@ export default function CustomersPage() {
     const cashBoxOption = CASH_BOX_CUSTOMER;
     const exchangeOption = EXCHANGE_ACCOUNT_CUSTOMER;
     const q = normalizeDigits(search.trim()).toLowerCase();
-    
     const filtered = customers.filter(c => {
       if (c.id === EXCHANGE_ACCOUNT_ID) return false; 
       if (!q) return true;
       return [c.name, c.phone || "", c.tazkira || "", c.telegram || "", c.id].some(f => normalizeDigits(String(f)).toLowerCase().includes(q));
     });
-
     const result: Customer[] = [];
     if (!q || CASH_BOX_NAME.includes(q)) result.push(cashBoxOption);
     if (!q || EXCHANGE_ACCOUNT_NAME.includes(q)) result.push(exchangeOption);
-    
     result.push(...filtered);
     return result;
   }, [customers, search]);
@@ -509,14 +500,12 @@ export default function CustomersPage() {
       if (ledgerDirFilter !== "all" && e.direction !== ledgerDirFilter) return false;
       if (!q) return true;
       const rawAmount = String(e.amount).replace(/[,،\s]/g, "");
-      return [e.description, e.referenceNumber || "", labels[e.currency], rawAmount].some(f => 
-        normalizeDigits(String(f)).replace(/[,،\s]/g, "").toLowerCase().includes(q)
-      );
+      return [e.description, e.referenceNumber || "", labels[e.currency], rawAmount].some(f => normalizeDigits(String(f)).replace(/[,،\s]/g, "").toLowerCase().includes(q));
     }).reverse();
   }, [customerLedger, ledgerSearch, ledgerTypeFilter, ledgerCurrencyFilter, ledgerDirFilter]);
 
-  const withBalanceCount = customers.filter(c => c.id !== EXCHANGE_ACCOUNT_ID && currencies.some(cur => allBalances[c.id][cur] !== 0)).length;
-  const withoutBalanceCount = customers.filter(c => c.id !== EXCHANGE_ACCOUNT_ID && currencies.every(cur => allBalances[c.id][cur] === 0)).length;
+  const negativeBalanceCount = customers.filter(c => c.id !== EXCHANGE_ACCOUNT_ID && currencies.some(cur => allBalances[c.id][cur] < 0)).length;
+  const zeroBalanceCount = customers.filter(c => c.id !== EXCHANGE_ACCOUNT_ID && currencies.every(cur => allBalances[c.id][cur] === 0)).length;
 
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(""), 3500); };
   const setField = (f: keyof FormState, v: string) => { setForm(p => ({ ...p, [f]: v })); setErrors(p => ({ ...p, [f]: undefined })); };
@@ -524,54 +513,75 @@ export default function CustomersPage() {
   const openEdit = (id: string) => { setSelectedCustomerId(id); setProfileTab("info"); setActiveTab("profile"); setOpenMenuId(null); };
   const backToList = () => { setActiveTab("list"); setSelectedCustomerId(null); };
 
+  const exportData = () => {
+    try {
+      const data = { customers, transactions, hawalas, cashEntries, settings: localStorage.getItem('fx-settings'), theme: localStorage.getItem('fx-theme'), exportDate: new Date().toISOString() };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `backup-sarafi-${new Date().toISOString().split('T')[0]}.json`;
+      a.click(); URL.revokeObjectURL(url);
+      showToast("✅ فایل پشتیبان با موفقیت دانلود شد.");
+    } catch (err) { showToast("❌ خطا در ایجاد فایل پشتیبان"); }
+  };
+
+  const importData = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target?.result as string);
+        if (data.customers) setCustomers(data.customers);
+        if (data.transactions) setTransactions(data.transactions);
+        if (data.hawalas) setHawalas(data.hawalas);
+        if (data.cashEntries) setCashEntries(data.cashEntries);
+        if (data.settings) localStorage.setItem('fx-settings', data.settings);
+        if (data.theme) localStorage.setItem('fx-theme', data.theme);
+        showToast("✅ داده‌ها با موفقیت بازیابی شدند. صفحه رفرش می‌شود...");
+        setTimeout(() => window.location.reload(), 1500);
+      } catch (err) { showToast("❌ فایل نامعتبر است."); }
+    };
+    reader.readAsText(file);
+    event.target.value = "";
+  };
+
   const openLoanModal = (type: "give" | "receive") => {
-    setLoanModalType(type);
-    setLoanAmount("");
-    setLoanCurrency("AFN");
-    setLoanReason("");
-    setLoanModalOpen(true);
+    setLoanModalType(type); setLoanAmount(""); setLoanCurrency("AFN"); setLoanReason(""); setLoanModalOpen(true);
   };
 
   const processLoan = () => {
     if (!selectedCustomer || selectedCustomer.id === CASH_BOX_ID || selectedCustomer.id === EXCHANGE_ACCOUNT_ID) {
-      showToast("فقط برای مشتریان واقعی قابل انجام است.");
-      return;
+      showToast("فقط برای مشتریان واقعی قابل انجام است."); return;
     }
     const amt = Number(normalizeDigits(loanAmount).replace(/,/g, ""));
-    if (!Number.isFinite(amt) || amt <= 0) {
-      showToast("مبلغ معتبر وارد کنید.");
-      return;
-    }
+    if (!Number.isFinite(amt) || amt <= 0) { showToast("مبلغ معتبر وارد کنید."); return; }
     if (!isCurrency(loanCurrency)) return;
+
+    if (loanModalType === "give") {
+      const cashBalance = allBalances[CASH_BOX_ID][loanCurrency];
+      if (cashBalance < amt) {
+        showToast(`⚠️ موجودی صندوق برای ${labels[loanCurrency]} کافی نیست! (موجودی: ${fmt(cashBalance)})`);
+        return;
+      }
+    }
 
     const now = new Date().toISOString();
     const reason = loanReason.trim() || (loanModalType === "give" ? "قرض به مشتری" : "بازپرداخت قرض توسط مشتری");
     const trackingCode = `LN-${Date.now().toString(36).toUpperCase()}`;
-
     const newEntries: any[] = [];
 
     if (loanModalType === "give") {
-      newEntries.push({
-        id: generateId(), trackingCode: `${trackingCode}-CUST`, date: now, type: "loan_given", currency: loanCurrency, amount: amt, direction: "in", reason: `قرض داده‌شده - ${reason}`, balanceAfter: 0, customerId: selectedCustomer.id, customerName: selectedCustomer.name, counterPartyId: EXCHANGE_ACCOUNT_ID, status: "active"
-      });
-      newEntries.push({
-        id: generateId(), trackingCode: `${trackingCode}-EXCH`, date: now, type: "loan_given", currency: loanCurrency, amount: amt, direction: "out", reason: `قرض به ${selectedCustomer.name} - ${reason}`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, counterPartyId: selectedCustomer.id, status: "active"
-      });
+      newEntries.push({ id: generateId(), trackingCode: `${trackingCode}-CUST`, date: now, type: "loan_given", currency: loanCurrency, amount: amt, direction: "out", reason: `دریافت قرض از صرافی - ${reason}`, balanceAfter: 0, customerId: selectedCustomer.id, customerName: selectedCustomer.name, counterPartyId: EXCHANGE_ACCOUNT_ID, status: "active" });
+      newEntries.push({ id: generateId(), trackingCode: `${trackingCode}-EXCH`, date: now, type: "loan_given", currency: loanCurrency, amount: amt, direction: "out", reason: `پرداخت قرض به ${selectedCustomer.name}`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, counterPartyId: selectedCustomer.id, status: "active" });
     } else {
-      newEntries.push({
-        id: generateId(), trackingCode: `${trackingCode}-CUST`, date: now, type: "loan_received", currency: loanCurrency, amount: amt, direction: "out", reason: `بازپرداخت قرض - ${reason}`, balanceAfter: 0, customerId: selectedCustomer.id, customerName: selectedCustomer.name, counterPartyId: EXCHANGE_ACCOUNT_ID, status: "active"
-      });
-      newEntries.push({
-        id: generateId(), trackingCode: `${trackingCode}-EXCH`, date: now, type: "loan_received", currency: loanCurrency, amount: amt, direction: "in", reason: `دریافت قرض از ${selectedCustomer.name} - ${reason}`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, counterPartyId: selectedCustomer.id, status: "active"
-      });
+      newEntries.push({ id: generateId(), trackingCode: `${trackingCode}-CUST`, date: now, type: "loan_received", currency: loanCurrency, amount: amt, direction: "in", reason: `بازپرداخت قرض به صرافی - ${reason}`, balanceAfter: 0, customerId: selectedCustomer.id, customerName: selectedCustomer.name, counterPartyId: EXCHANGE_ACCOUNT_ID, status: "active" });
+      newEntries.push({ id: generateId(), trackingCode: `${trackingCode}-EXCH`, date: now, type: "loan_received", currency: loanCurrency, amount: amt, direction: "in", reason: `دریافت بازپرداخت قرض از ${selectedCustomer.name}`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, counterPartyId: selectedCustomer.id, status: "active" });
     }
 
     setCashEntries(prev => [...prev, ...newEntries]);
-
     setLoanModalOpen(false);
-    showToast(loanModalType === "give"
-      ? `✅ ${fmt(amt)} ${labels[loanCurrency]} به "${selectedCustomer.name}" قرض داده شد.`
-      : `✅ ${fmt(amt)} ${labels[loanCurrency]} از "${selectedCustomer.name}" دریافت شد.`);
+    showToast(loanModalType === "give" ? `✅ ${fmt(amt)} ${labels[loanCurrency]} به "${selectedCustomer.name}" قرض داده شد.` : `✅ ${fmt(amt)} ${labels[loanCurrency]} از "${selectedCustomer.name}" دریافت شد.`);
   };
 
   const deleteCustomer = (id: string) => {
@@ -582,7 +592,7 @@ export default function CustomersPage() {
     const hasBal = currencies.some(cur => allBalances[id][cur] !== 0);
     const cnt = ledger.filter(e => e.customerId === id).length;
     let msg = `آیا از حذف "${c.name}" مطمئن هستید؟`;
-    if (cnt > 0) msg += `\n⚠️ ${cnt} رویداد مالی دارد.`;
+    if (cnt > 0) msg += `\n⚠️ ${cnt} رویداد مالی دارد (به صورت نرم‌افزاری بایگانی می‌شود).`;
     if (hasBal) msg += `\n⚠️ موجودی غیر صفر دارد!`;
     if (!window.confirm(msg)) return;
     
@@ -590,23 +600,17 @@ export default function CustomersPage() {
     setHawalas(prev => prev.map((h: any) => { if (h.senderId === id || h.senderName === c.name || h.receiverId === id || h.receiverName === c.name) return { ...h, customerDeleted: true }; return h; }));
     setCashEntries(prev => prev.map((ce: any) => { if (ce.customerId === id || ce.customerName === c.name) return { ...ce, customerDeleted: true }; return ce; }));
     setCustomers(p => p.filter(x => x.id !== id));
-    
     if (selectedCustomerId === id) { setSelectedCustomerId(null); setActiveTab("list"); }
-    showToast(`"${c.name}" حذف شد.`);
+    showToast(`"${c.name}" حذف و سوابق آن بایگانی شد.`);
   };
 
   const validateForm = () => {
     const errs: FormErrors = {};
     if (!form.name.trim()) errs.name = "نام ضروری است.";
     if (!form.phone.trim()) errs.phone = "تماس ضروری است.";
-    
     const currentId = selectedCustomer?.id;
-    if (customers.find(c => c.phone === form.phone.trim() && c.id !== EXCHANGE_ACCOUNT_ID && c.id !== currentId)) {
-      errs.phone = "تکراری است.";
-    }
-    if (form.tazkira.trim() && customers.find(c => c.tazkira === form.tazkira.trim() && c.id !== EXCHANGE_ACCOUNT_ID && c.id !== currentId)) {
-      errs.tazkira = "تکراری است.";
-    }
+    if (customers.find(c => c.phone === form.phone.trim() && c.id !== EXCHANGE_ACCOUNT_ID && c.id !== currentId)) errs.phone = "تکراری است.";
+    if (form.tazkira.trim() && customers.find(c => c.tazkira === form.tazkira.trim() && c.id !== EXCHANGE_ACCOUNT_ID && c.id !== currentId)) errs.tazkira = "تکراری است.";
     return errs;
   };
 
@@ -648,7 +652,6 @@ export default function CustomersPage() {
 
   const headingText = dk ? "text-white" : "text-slate-900";
   const subTextVar = dk ? "text-slate-500" : "text-slate-400";
-  
   const uiCard = `rounded-2xl border backdrop-blur transition-colors duration-300 ${dk ? "border-slate-700 bg-slate-800/90 shadow-[0_16px_40px_-24px_rgba(0,0,0,0.6)]" : "border-emerald-100 bg-white/95 shadow-[0_16px_40px_-28px_rgba(16,185,129,0.35)]"}`;
   const glassCard = `rounded-2xl border backdrop-blur transition-all duration-300 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-200 bg-white/80"}`;
   const inputShell = `rounded-xl border text-sm font-medium shadow-sm outline-none transition-all duration-200 focus:ring-4 ${dk ? "border-slate-600 bg-slate-900 text-slate-100 placeholder:text-slate-500 hover:border-slate-500 focus:border-emerald-400 focus:ring-emerald-400/10" : "border-slate-200 bg-white text-slate-800 placeholder:text-slate-400 hover:border-emerald-400 focus:border-emerald-500 focus:ring-emerald-500/10"}`;
@@ -676,18 +679,27 @@ export default function CustomersPage() {
               <div className="min-w-0"><h1 className={`cu-display text-2xl md:text-4xl leading-none ${headingText}`}>مدیریت مشتریان</h1><p className={`mt-1 text-[10px] md:text-xs font-bold ${subTextVar}`}>پروندهٔ کامل، گردش حساب و سوابق مالی</p></div>
             </div>
             <div className="flex items-center gap-1.5 md:gap-2.5">
+              <label className={`hidden sm:flex items-center gap-2 rounded-xl border px-3 py-2 shadow-sm backdrop-blur cursor-pointer transition-all hover:brightness-110 ${glassChip}`}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-sky-600"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
+                <span className={`text-xs font-bold ${dk ? "text-slate-100" : "text-slate-700"}`}>بازیابی</span>
+                <input type="file" accept=".json" onChange={importData} className="hidden" />
+              </label>
+              <button onClick={exportData} className={`hidden sm:flex items-center gap-2 rounded-xl border px-3 py-2 shadow-sm backdrop-blur transition-all hover:brightness-110 ${glassChip}`}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-emerald-600"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" /></svg>
+                <span className={`text-xs font-bold ${dk ? "text-slate-100" : "text-slate-700"}`}>پشتیبان‌گیری</span>
+              </button>
               <div className={`hidden sm:flex items-center gap-2 rounded-xl border px-3 py-2 shadow-sm backdrop-blur ${glassChip}`}><span className="relative flex h-2.5 w-2.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-70" /><span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" /></span><span dir="ltr" className={`text-xs font-bold tabular-nums ${dk ? "text-slate-100" : "text-slate-700"}`}>{currentDateTime || "--:--"}</span></div>
               <button onClick={() => setTheme(dk ? "light" : "dark")} className={`group grid h-10 w-10 md:h-11 md:w-11 cursor-pointer place-items-center rounded-lg md:rounded-xl border shadow-sm backdrop-blur transition-all duration-300 active:scale-90 ${dk ? "border-slate-600 bg-slate-800/85 text-amber-300 hover:border-amber-300" : "border-slate-200 bg-white/85 text-slate-600 hover:border-emerald-400"}`}>{dk ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 group-hover:rotate-45 transition-transform duration-500"><path d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.375 3.375 0 1 1-7.5 0 3.375 3.375 0 0 1 7.5 0Z" /></svg> : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 group-hover:-rotate-12 transition-transform duration-500"><path d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" /></svg>}</button>
             </div>
           </header>
 
-          {/* ✅ کارت "موجودی فیزیکی صندوق" از اینجا حذف شد و grid به 4 ستون تغییر کرد */}
+          {/* ✅ کارت صندوق حذف شد و گرید به 4 ستون تغییر کرد */}
           <div className="cu-up grid grid-cols-2 md:grid-cols-4 gap-3" style={{ animationDelay: "70ms" }}>
             {[
               { label: "کل مشتریان", value: customers.filter(c => c.id !== EXCHANGE_ACCOUNT_ID).length, icon: "users", color: "from-emerald-500 to-teal-500", text: dk ? "text-emerald-300" : "text-emerald-600" },
               { label: "رویدادهای مالی", value: ledger.length + cashBoxLedger.length, icon: "history", color: "from-amber-500 to-orange-500", text: dk ? "text-amber-300" : "text-amber-600" },
-              { label: "با موجودی", value: withBalanceCount, icon: "wallet", color: "from-sky-500 to-cyan-500", text: dk ? "text-sky-300" : "text-sky-600" },
-              { label: "بدون موجودی", value: withoutBalanceCount, icon: "x", color: "from-rose-500 to-pink-500", text: dk ? "text-rose-300" : "text-rose-600" },
+              { label: "مشتریان بدهکار", value: negativeBalanceCount, icon: "x", color: "from-rose-500 to-pink-500", text: dk ? "text-rose-300" : "text-rose-600" },
+              { label: "مانده صفر", value: zeroBalanceCount, icon: "wallet", color: "from-sky-500 to-cyan-500", text: dk ? "text-sky-300" : "text-sky-600" },
             ].map((s, i) => (
               <div key={i} className={`group relative overflow-hidden rounded-2xl border p-4 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${glassCard}`}>
                 <div className={`absolute inset-0 bg-gradient-to-br ${s.color} opacity-0 transition-opacity group-hover:opacity-10`} />
@@ -696,8 +708,8 @@ export default function CustomersPage() {
                   <div className={`grid h-10 w-10 md:h-12 md:w-12 place-items-center rounded-xl bg-gradient-to-br ${s.color} text-white shadow-lg`}>
                     {s.icon === "users" && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 md:h-6 md:w-6"><path d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" /></svg>}
                     {s.icon === "history" && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 md:h-6 md:w-6"><path d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>}
-                    {s.icon === "wallet" && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 md:h-6 md:w-6"><path d="M21 12a2.25 2.25 0 0 0-2.25-2.25H15a3 3 0 1 1-6 0H5.25A2.25 2.25 0 0 0 3 12m18 0v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 9m18 0V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v3" /></svg>}
                     {s.icon === "x" && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 md:h-6 md:w-6"><path d="M6 18 18 6M6 6l12 12" /></svg>}
+                    {s.icon === "wallet" && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 md:h-6 md:w-6"><path d="M21 12a2.25 2.25 0 0 0-2.25-2.25H15a3 3 0 1 1-6 0H5.25A2.25 2.25 0 0 0 3 12m18 0v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 9m18 0V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v3" /></svg>}
                   </div>
                 </div>
               </div>
@@ -726,62 +738,6 @@ export default function CustomersPage() {
                 </div>
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="جستجو..." className={`${uiInput} w-auto md:w-64`} />
               </div>
-
-              <div className="md:hidden space-y-2">
-                {filteredCustomers.map(c => {
-                  const isCashBoxRow = c.id === CASH_BOX_ID;
-                  const isExchRow = c.id === EXCHANGE_ACCOUNT_ID;
-                  const balSource = allBalances[c.id];
-                  return (
-                    <div key={c.id} className={`rounded-2xl border p-4 ${glassCard} ${isCashBoxRow ? (dk ? "border-emerald-400/30" : "border-emerald-200") : ""} ${isExchRow ? (dk ? "border-violet-400/30" : "border-violet-200") : ""}`}>
-                      <div className="flex items-start gap-3">
-                        <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-gradient-to-br ${isCashBoxRow ? "from-emerald-500 to-teal-500" : isExchRow ? "from-violet-500 to-purple-500" : "from-emerald-500 to-teal-500"} text-white font-black text-lg shadow-lg`}>
-                          {isCashBoxRow ? "💰" : isExchRow ? "🏦" : c.name.charAt(0)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <b className={`text-sm font-black ${dk ? "text-slate-100" : "text-slate-800"}`}>{c.name}</b>
-                          {isCashBoxRow && <span className={`mr-2 text-[9px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>موجودی فیزیکی صندوق</span>}
-                          {isExchRow && <span className={`mr-2 text-[9px] font-black ${dk ? "text-violet-300" : "text-violet-600"}`}>حساب داخلی صرافی</span>}
-                          {!isCashBoxRow && !isExchRow && (
-                            <div className={`text-[11px] ${subTextVar} mt-1 space-y-0.5`}>
-                              <div>📱 <span dir="ltr">{c.phone || "-"}</span></div>
-                              <div>🆔 <span dir="ltr">{c.tazkira || "-"}</span></div>
-                              {c.address && <div>📍 {c.address}</div>}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-5 gap-1 mt-3">
-                        {currencies.map(cur => (
-                          <div key={cur} className={`rounded-lg px-1.5 py-1.5 text-center ${dk ? "bg-slate-900/50" : "bg-slate-50"}`}>
-                            <div className={`text-[8px] font-black ${subTextVar}`}>{cur}</div>
-                            <div className={`text-[10px] font-black tabular-nums ${balSource[cur] >= 0 ? currencyColors[cur][dk ? "dark" : "light"] : "text-rose-500"}`}>{fmt(balSource[cur])}</div>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="flex flex-col gap-1.5 mt-3">
-                        <button onClick={() => openProfile(c.id)} className={`flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-bold cursor-pointer ${dk ? "border-emerald-400/30 text-emerald-300" : "border-emerald-300 text-emerald-600"}`}>
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
-                          مشاهده
-                        </button>
-                        {!isCashBoxRow && !isExchRow && (
-                          <>
-                            <button onClick={() => openEdit(c.id)} className={`flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-bold cursor-pointer ${dk ? "border-sky-400/30 text-sky-300" : "border-sky-300 text-sky-600"}`}>
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" /></svg>
-                              ویرایش
-                            </button>
-                            <button onClick={() => deleteCustomer(c.id)} className={`flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-bold cursor-pointer ${dk ? "border-rose-400/30 text-rose-300" : "border-rose-300 text-rose-600"}`}>
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
-                              حذف
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
               <div className="hidden md:block overflow-x-auto cu-scroll">
                 <table className="w-full min-w-[900px] text-sm">
                   <thead><tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>{["شماره", "مشتری", "تماس", "هویت", "موجودی", "عملیات"].map(h => (<th key={h} className="px-4 py-3 text-center text-[11px] font-black text-slate-400">{h}</th>))}</tr></thead>
