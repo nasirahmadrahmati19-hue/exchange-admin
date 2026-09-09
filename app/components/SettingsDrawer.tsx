@@ -105,7 +105,6 @@ export default function SettingsDrawer() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   
-  // ✅ نگهداری آخرین وضعیت برای مقایسه هوشمند و جلوگیری از حلقه بی‌نهایت
   const latestSettingsRef = useRef(settings);
   latestSettingsRef.current = settings;
 
@@ -113,7 +112,6 @@ export default function SettingsDrawer() {
   useEffect(() => { try { window.localStorage.setItem("fx-theme", theme); } catch {} }, [theme]);
   const dk = theme === "dark";
 
-  // ✅ ۱. بارگذاری اولیه تنظیمات
   useEffect(() => {
     const loadInitialSettings = async () => {
       try {
@@ -148,14 +146,11 @@ export default function SettingsDrawer() {
     loadInitialSettings();
   }, [db]);
 
-  // ✅ ۲. گوش دادن زنده به تغییرات فایربیس (با مقایسه هوشمند برای جلوگیری از تداخل)
   useEffect(() => {
     const docRef = doc(db, "app_settings", "global_settings");
     const unsubscribe = onSnapshot(docRef, (snapshot) => {
       if (snapshot.exists()) {
         const fbSettings = snapshot.data().value as Settings;
-        
-        // فقط اگر داده‌های فایربیس با داده‌های فعلی دستگاه متفاوت بود، آپدیت کن
         if (JSON.stringify(fbSettings) !== JSON.stringify(latestSettingsRef.current)) {
           let migratedChatIds: string[] = [];
           if (fbSettings?.telegram?.chatIds && Array.isArray(fbSettings.telegram.chatIds)) {
@@ -170,14 +165,12 @@ export default function SettingsDrawer() {
           
           localStorage.setItem(SETTINGS_KEY, JSON.stringify(finalSettings));
           setSettings(finalSettings);
-          console.log("✅ تنظیمات از فایربیس همگام‌سازی شد");
         }
       }
     });
     return () => unsubscribe();
   }, [db]);
 
-  // ✅ ۳. ذخیره هوشمند در فایربیس (Debounce: ۱ ثانیه بعد از اتمام تایپ)
   useEffect(() => {
     if (!mounted) return;
     const timer = setTimeout(async () => {
@@ -186,11 +179,10 @@ export default function SettingsDrawer() {
           value: settings,
           updatedAt: new Date().toISOString()
         }, { merge: true });
-        console.log("✅ تنظیمات در فایربیس ذخیره شد (Debounce)");
       } catch (error) {
         console.error("❌ خطا در ذخیره فایربیس:", error);
       }
-    }, 1000); // ۱۰۰۰ میلی‌ثانیه صبر می‌کند تا تایپ تمام شود
+    }, 1000);
 
     return () => clearTimeout(timer);
   }, [settings, mounted, db]);
@@ -241,31 +233,59 @@ export default function SettingsDrawer() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      showToast("پشتیبان با موفقیت دانلود شد");
+      showToast("✅ پشتیبان با موفقیت دانلود شد");
     } catch {
-      showToast("خطا در ایجاد پشتیبان", "error");
+      showToast("❌ خطا در ایجاد پشتیبان", "error");
     }
   }, [showToast]);
 
-  const handleRestore = useCallback((file: File) => {
+  // ✅ بخش اصلاح‌شده: بازیابی هوشمند با همگام‌سازی فایربیس و رفرش سخت
+  const handleRestore = useCallback(async (file: File) => {
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const data = JSON.parse(e.target?.result as string);
-        if (!data.version) { showToast("فایل نامعتبر است", "error"); return; }
-        if (data.customers) localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(data.customers));
-        if (data.transactions) localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(data.transactions));
-        if (data.hawalas) localStorage.setItem(HAWALAS_KEY, JSON.stringify(data.hawalas));
-        if (data.cashEntries) localStorage.setItem(CASH_KEY, JSON.stringify(data.cashEntries));
-        if (data.settings) localStorage.setItem(SETTINGS_KEY, JSON.stringify(data.settings));
-        showToast("داده‌ها بازیابی شدند. صفحه رفرش می‌شود...");
-        setTimeout(() => window.location.reload(), 2000);
-      } catch {
-        showToast("خطا در خواندن فایل", "error");
+        if (!data.version) { 
+          showToast("❌ فایل نامعتبر است", "error"); 
+          return; 
+        }
+        
+        // ۱. ذخیره قطعی داده‌ها در حافظه محلی (حتی اگر آرایه خالی باشند)
+        localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(data.customers || []));
+        localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(data.transactions || []));
+        localStorage.setItem(HAWALAS_KEY, JSON.stringify(data.hawalas || []));
+        localStorage.setItem(CASH_KEY, JSON.stringify(data.cashEntries || []));
+        
+        // ۲. همگام‌سازی تنظیمات بازیابی‌شده با فایربیس 
+        // (این کار جلوگیری می‌کند که پس از رفرش، فایربیس داده‌های قدیمی را جایگزین کند)
+        if (data.settings) {
+          localStorage.setItem(SETTINGS_KEY, JSON.stringify(data.settings));
+          try {
+            await setDoc(doc(db, "app_settings", "global_settings"), {
+              value: data.settings,
+              updatedAt: new Date().toISOString()
+            }, { merge: true });
+          } catch (fbErr) {
+            console.warn("⚠️ خطا در همگام‌سازی تنظیمات با فایربیس:", fbErr);
+          }
+        }
+        
+        showToast("✅ داده‌ها با موفقیت بازیابی و همگام‌سازی شدند. صفحه در حال بروزرسانی است...");
+        
+        // ۳. رفرش سخت (Hard Reload) برای دور زدن کش Next.js و خواندن داده‌های جدید از LocalStorage
+        setTimeout(() => {
+          window.location.href = window.location.href;
+        }, 1500);
+      } catch (err) {
+        console.error("❌ خطا در بازیابی:", err);
+        showToast("❌ خطا در خواندن فایل. لطفاً فرمت فایل را بررسی کنید.", "error");
       }
     };
+    reader.onerror = () => {
+      showToast("❌ خطا در خواندن فایل", "error");
+    };
     reader.readAsText(file);
-  }, [showToast]);
+  }, [showToast, db]);
 
   if (!mounted) return null;
 
