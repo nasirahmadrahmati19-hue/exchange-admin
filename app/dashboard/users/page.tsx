@@ -170,7 +170,7 @@ const EXCHANGE_ACCOUNT_CUSTOMER: Customer = {
 
 const generateId = (): string => { if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") { try { return crypto.randomUUID(); } catch {} } return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = (Math.random() * 16) | 0; return (c === "x" ? r : (r & 0x3) | 0x8).toString(16); }); };
 const isCurrency = (v: any): v is Currency => typeof v === "string" && (currencies as string[]).includes(v);
-const normalizeDigits = (v: string) => { const pd = "۰۱۲۳۴۵۶۷۸۹", ad = "٠١٢٣٤٥٦٧٨٩"; return String(v || "").replace(/[۰-۹]/g, d => String(pd.indexOf(d))).replace(/[٠-٩]/g, d => String(ad.indexOf(d))); };
+const normalizeDigits = (v: string) => { const pd = "۰۱۲۳۴۵۶۷۸۹", ad = "٠١٢٣٤٥٦٧٨٩"; return String(v || "").replace(/[۰-۹]/g, d => String(pd.indexOf(d))).replace(/[٠-]/g, d => String(ad.indexOf(d))); };
 const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 2 }) : "0";
 
 function shamsiParts(d: Date) { 
@@ -568,7 +568,7 @@ export default function CustomersPage() {
     if (loanModalType === "give") {
       const cashBalance = allBalances[CASH_BOX_ID][loanCurrency];
       if (cashBalance < amt) {
-        showToast(`️ موجودی صندوق برای ${labels[loanCurrency]} کافی نیست! (موجودی: ${fmt(cashBalance)})`);
+        showToast(`⚠️ موجودی صندوق برای ${labels[loanCurrency]} کافی نیست! (موجودی: ${fmt(cashBalance)})`);
         return;
       }
     }
@@ -683,7 +683,7 @@ export default function CustomersPage() {
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 md:h-6 md:w-6"><path d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" /></svg>
                 <span className={`absolute -bottom-1 -left-1 grid h-4 min-w-4 md:h-5 md:min-w-5 place-items-center rounded-full bg-gradient-to-br from-amber-400 to-orange-400 px-1 text-[7px] md:text-[8px] font-black text-white ring-2 ${dk ? "ring-[#0f172a]" : "ring-[#ecfdf5]"}`}>CU</span>
               </div>
-              <div className="min-w-0"><h1 className={`cu-display text-2xl md:text-4xl leading-none ${headingText}`}>مدیریت مشتریان</h1><p className={`mt-1 text-[10px] md:text-xs font-bold ${subTextVar}`}>پروندهٔ کامل، گردش حساب و سوابق مالی</p></div>
+              <div className="min-w-0"><h1 className={`cu-display text-2xl md:text-4xl leading-none ${headingText}`}>مدیریت مشتریان</h1><p className={`mt-1 text-[10px] md:text-xs font-bold ${subTextVar}`}>پرونده کامل، گردش حساب و سوابق مالی</p></div>
             </div>
             <div className="flex items-center gap-1.5 md:gap-2.5">
               <label className={`hidden sm:flex items-center gap-2 rounded-xl border px-3 py-2 shadow-sm backdrop-blur cursor-pointer transition-all hover:brightness-110 ${glassChip}`}>
@@ -823,7 +823,7 @@ export default function CustomersPage() {
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex items-center gap-3">
                           <div className={`grid h-10 w-10 place-items-center rounded-lg text-white font-black text-sm shadow ${isCashBoxRow ? "bg-gradient-to-br from-emerald-500 to-teal-500" : isExchRow ? "bg-gradient-to-br from-violet-500 to-purple-500" : "bg-gradient-to-br from-emerald-500 to-teal-500"}`}>
-                            {isCashBoxRow ? "" : isExchRow ? "🏦" : c.name.charAt(0)}
+                            {isCashBoxRow ? "💰" : isExchRow ? "🏦" : c.name.charAt(0)}
                           </div>
                           <div>
                             <div className={`text-sm font-black ${dk ? "text-slate-100" : "text-slate-800"}`}>
@@ -943,7 +943,7 @@ export default function CustomersPage() {
                 <div className="flex items-center gap-2 mb-3">
                   <span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M21 12a2.25 2.25 0 0 0-2.25-2.25H15a3 3 0 1 1-6 0H5.25A2.25 2.25 0 0 0 3 12m18 0v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 9m18 0V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v3" /></svg></span>
                   <b className={`text-sm font-black ${headingText}`}>
-                    {isCashBox ? "💰 موجودی فیزیکی صندوق" : isExchangeAccount ? "🏦 موجودی حساب صرافی" : "موجودی فعلی"}
+                    {isCashBox ? "💰 موجودی فیزیکی صندوق" : isExchangeAccount ? " موجودی حساب صرافی" : "موجودی فعلی"}
                   </b>
                   <span className={`ml-auto text-[10px] font-bold ${subTextVar}`}>
                     {isCashBox ? "فرمول: مجموع ورودی‌ها - خروجی‌ها" : isExchangeAccount ? "از تراکنش‌های مالک و قرض" : "محاسبه‌شده از دفتر کل (Ledger)"}
@@ -959,7 +959,7 @@ export default function CustomersPage() {
                         <div className="min-h-[14px] mt-1">
                           {isCashBox ? (<>{bal < 0 && <span className="text-[8px] font-black text-rose-500">⚠️ کسری صندوق</span>}{bal > 0 && <span className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>✅ موجودی نقدی</span>}{bal === 0 && <span className={`text-[8px] font-bold ${subTextVar}`}>⚪ خالی</span>}</>)
                             : isExchangeAccount ? (<>{bal < 0 && <span className="text-[8px] font-black text-rose-500">🔴 قرض‌های داده‌شده</span>}{bal > 0 && <span className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>🟢 موجودی داخلی</span>}{bal === 0 && <span className={`text-[8px] font-bold ${subTextVar}`}>⚪ خنثی</span>}</>)
-                            : (<>{bal < 0 && <span className="text-[8px] font-black text-rose-500"> قرض</span>}{bal > 0 && <span className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>🟢 طلب</span>}{bal === 0 && <span className={`text-[8px] font-bold ${subTextVar}`}>⚪ صفر</span>}</>)}
+                            : (<>{bal < 0 && <span className="text-[8px] font-black text-rose-500">🔴 قرض</span>}{bal > 0 && <span className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>🟢 طلب</span>}{bal === 0 && <span className={`text-[8px] font-bold ${subTextVar}`}>⚪ صفر</span>}</>)}
                         </div>
                       </div>
                     );
@@ -986,7 +986,7 @@ export default function CustomersPage() {
                     <div className={`rounded-xl border p-4 ${dk ? "border-emerald-400/25 bg-emerald-400/[0.07]" : "border-emerald-200 bg-emerald-50"}`}>
                       <div className="flex items-center gap-3 mb-3">
                         <span className={`grid h-10 w-10 place-items-center rounded-xl ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M21 12a2.25 2.25 0 0 0-2.25-2.25H15a3 3 0 1 1-6 0H5.25A2.25 2.25 0 0 0 3 12m18 0v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 9m18 0V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v3" /></svg></span>
-                        <div><b className={`block text-sm font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}> موجودی فیزیکی صندوق</b><span className={`text-[10px] font-bold ${subTextVar}`}>این بخش قابل ویرایش نیست</span></div>
+                        <div><b className={`block text-sm font-black ${dk ? "text-emerald-300" : "text-emerald-700"}`}>💰 موجودی فیزیکی صندوق</b><span className={`text-[10px] font-bold ${subTextVar}`}>این بخش قابل ویرایش نیست</span></div>
                       </div>
                       <p className={`text-sm leading-6 ${dk ? "text-slate-300" : "text-slate-600"}`}>موجودی فیزیکی صندوق به صورت خودکار از مجموع موجودی تمام مشتریان و حساب صرافی محاسبه می‌شود. این عدد نشان‌دهنده دارایی نقدی واقعی صرافی است.</p>
                     </div>
@@ -1034,9 +1034,9 @@ export default function CustomersPage() {
                             <div className={`flex items-center gap-2 rounded-lg px-3 py-2 ${dk ? "bg-rose-400/10" : "bg-rose-50"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={`h-4 w-4 ${dk ? "text-rose-300" : "text-rose-600"}`}><path d="M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18" /></svg><div><div className={`text-[10px] ${subTextVar}`}>پرداخت</div><div className={`text-sm font-black tabular-nums ${dk ? "text-rose-300" : "text-rose-700"}`}>{fmt(tOut)}</div></div></div>
                           </div>
                           <div className={`mt-2 text-center text-[10px] font-black ${bal < 0 ? "text-rose-500" : bal > 0 ? (dk ? "text-emerald-300" : "text-emerald-600") : subTextVar}`}>
-                            {isCashBox ? (bal < 0 ? "️ کسری صندوق" : bal > 0 ? "✅ موجودی نقدی در صندوق" : "⚪ صندوق خالی")
-                              : isExchangeAccount ? (bal < 0 ? " مجموع قرض‌های داده‌شده به مشتریان" : bal > 0 ? "🟢 موجودی اعتباری" : "⚪ خنثی")
-                              : (bal < 0 ? "🔴 قرض از صرافی" : bal > 0 ? "🟢 طلب از صرافی" : "⚪ بدون بدهی")}
+                            {isCashBox ? (bal < 0 ? "⚠️ کسری صندوق" : bal > 0 ? "✅ موجودی نقدی در صندوق" : "⚪ صندوق خالی")
+                              : isExchangeAccount ? (bal < 0 ? "🔴 مجموع قرض‌های داده‌شده به مشتریان" : bal > 0 ? "🟢 موجودی اعتباری" : "⚪ خنثی")
+                              : (bal < 0 ? " قرض از صرافی" : bal > 0 ? "🟢 طلب از صرافی" : "⚪ بدون بدهی")}
                           </div>
                         </div>
                       );
