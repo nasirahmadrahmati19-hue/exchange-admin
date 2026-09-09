@@ -171,7 +171,6 @@ const isCurrency = (v: any): v is Currency => typeof v === "string" && (currenci
 const normalizeDigits = (v: string) => { const pd = "۰۱۲۳۴۵۶۷۸۹", ad = "٠١٢٣٤٥٦٧٨٩"; return String(v || "").replace(/[۰-۹]/g, d => String(pd.indexOf(d))).replace(/[٠-٩]/g, d => String(ad.indexOf(d))); };
 const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 2 }) : "0";
 
-// ✅ کاملاً اصلاح شده و بدون خطای سینتکسی (نقطه ویرگول حذف شد)
 function shamsiParts(d: Date) { 
   try { 
     const p = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", { year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(d); 
@@ -693,7 +692,6 @@ export default function CustomersPage() {
             </div>
           </header>
 
-          {/* ✅ کارت صندوق حذف شد و گرید به 4 ستون تغییر کرد */}
           <div className="cu-up grid grid-cols-2 md:grid-cols-4 gap-3" style={{ animationDelay: "70ms" }}>
             {[
               { label: "کل مشتریان", value: customers.filter(c => c.id !== EXCHANGE_ACCOUNT_ID).length, icon: "users", color: "from-emerald-500 to-teal-500", text: dk ? "text-emerald-300" : "text-emerald-600" },
@@ -738,9 +736,17 @@ export default function CustomersPage() {
                 </div>
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="جستجو..." className={`${uiInput} w-auto md:w-64`} />
               </div>
-              <div className="hidden md:block overflow-x-auto cu-scroll">
+
+              {/* ✅ Desktop Table with Scrollbar for >12 items */}
+              <div className={`hidden md:block overflow-auto cu-scroll max-h-[65vh] rounded-xl border ${dk ? "border-slate-700" : "border-slate-200"}`}>
                 <table className="w-full min-w-[900px] text-sm">
-                  <thead><tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>{["شماره", "مشتری", "تماس", "هویت", "موجودی", "عملیات"].map(h => (<th key={h} className="px-4 py-3 text-center text-[11px] font-black text-slate-400">{h}</th>))}</tr></thead>
+                  <thead className="sticky top-0 z-10">
+                    <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/95" : "border-slate-100 bg-slate-50/95 backdrop-blur"}`}>
+                      {["شماره", "مشتری", "تماس", "هویت", "موجودی", "عملیات"].map(h => (
+                        <th key={h} className="px-4 py-3 text-center text-[11px] font-black text-slate-400">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
                   <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
                     {filteredCustomers.map((c, idx) => {
                       const isCashBoxRow = c.id === CASH_BOX_ID;
@@ -795,6 +801,67 @@ export default function CustomersPage() {
                     })}
                   </tbody>
                 </table>
+              </div>
+
+              {/* ✅ Mobile List (Cards) with Scrollbar for >12 items */}
+              <div className={`md:hidden space-y-3 overflow-y-auto max-h-[70vh] cu-scroll pr-1`}>
+                {filteredCustomers.map((c, idx) => {
+                  const isCashBoxRow = c.id === CASH_BOX_ID;
+                  const isExchRow = c.id === EXCHANGE_ACCOUNT_ID;
+                  const balSource = allBalances[c.id];
+                  const hasBal = currencies.some(cur => balSource[cur] !== 0);
+                  return (
+                    <div key={c.id} className={`rounded-xl border p-4 transition-all ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-200 bg-white"} ${isCashBoxRow ? (dk ? "border-emerald-500/30 bg-emerald-500/5" : "border-emerald-200 bg-emerald-50/50") : ""} ${isExchRow ? (dk ? "border-violet-500/30 bg-violet-500/5" : "border-violet-200 bg-violet-50/50") : ""}`}>
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className={`grid h-10 w-10 place-items-center rounded-lg text-white font-black text-sm shadow ${isCashBoxRow ? "bg-gradient-to-br from-emerald-500 to-teal-500" : isExchRow ? "bg-gradient-to-br from-violet-500 to-purple-500" : "bg-gradient-to-br from-emerald-500 to-teal-500"}`}>
+                            {isCashBoxRow ? "💰" : isExchRow ? "🏦" : c.name.charAt(0)}
+                          </div>
+                          <div>
+                            <div className={`text-sm font-black ${dk ? "text-slate-100" : "text-slate-800"}`}>
+                              {c.name}
+                              {isCashBoxRow && <span className={`mr-1 text-[9px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>صندوق</span>}
+                              {isExchRow && <span className={`mr-1 text-[9px] font-black ${dk ? "text-violet-300" : "text-violet-600"}`}>حساب صرافی</span>}
+                            </div>
+                            {!isCashBoxRow && !isExchRow && (
+                              <div className={`text-[11px] mt-0.5 ${subTextVar}`} dir="ltr">📱 {c.phone || "—"} | 🆔 {c.tazkira || "—"}</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {hasBal && (
+                        <div className="flex flex-wrap gap-2 mb-3">
+                          {currencies.map(cur => balSource[cur] !== 0 && (
+                            <div key={cur} className={`rounded-lg px-2 py-1 text-center ${dk ? "bg-slate-900/50" : "bg-slate-50"}`}>
+                              <div className={`text-[9px] font-black ${subTextVar}`}>{labels[cur]}</div>
+                              <div className={`text-xs font-black tabular-nums ${balSource[cur] < 0 ? "text-rose-500" : currencyColors[cur][dk ? "dark" : "light"]}`}>{fmt(balSource[cur])}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="flex gap-2 mt-2 pt-3 border-t border-dashed border-slate-300/30">
+                        <button onClick={() => openProfile(c.id)} className={`flex-1 py-2 rounded-lg text-[11px] font-black flex items-center justify-center gap-1 ${dk ? "bg-blue-500/20 text-blue-300" : "bg-blue-100 text-blue-700"}`}>
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
+                          مشاهده
+                        </button>
+                        {!isCashBoxRow && !isExchRow && (
+                          <>
+                            <button onClick={() => openEdit(c.id)} className={`flex-1 py-2 rounded-lg text-[11px] font-black flex items-center justify-center gap-1 ${dk ? "bg-sky-500/20 text-sky-300" : "bg-sky-100 text-sky-700"}`}>
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" /></svg>
+                              ویرایش
+                            </button>
+                            <button onClick={() => deleteCustomer(c.id)} className={`flex-1 py-2 rounded-lg text-[11px] font-black flex items-center justify-center gap-1 ${dk ? "bg-rose-500/20 text-rose-300" : "bg-rose-100 text-rose-700"}`}>
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
+                              حذف
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </section>
           )}
