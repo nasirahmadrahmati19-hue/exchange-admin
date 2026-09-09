@@ -118,7 +118,7 @@ function TelegramChatIdSelector({ value, onChange, uiInput, dk }: { value: strin
           <div className="max-h-56 overflow-y-auto cu-scroll">
             {!hasBotToken ? <div className="px-4 py-6 text-center"><div className={`text-[11px] font-bold ${subText}`}>⚠️ تلگرام فعال نیست</div></div>
             : loading && users.length === 0 ? <div className="px-4 py-6 text-center"><div className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-sky-500" /><div className={`mt-2 text-[11px] font-bold ${subText}`}>در حال بارگذاری...</div></div>
-            : lastError ? <div className="px-4 py-6 text-center"><div className={`text-[11px] font-bold ${dk ? "text-amber-300" : "text-amber-600"}`}>⚠️ {lastError}</div></div>
+            : lastError ? <div className="px-4 py-6 text-center"><div className={`text-[11px] font-bold ${dk ? "text-amber-300" : "text-amber-600"}`}>️ {lastError}</div></div>
             : filteredUsers.length === 0 ? <div className="px-4 py-6 text-center"><div className={`text-[11px] font-bold ${subText}`}>{search ? "کاربری با این مشخصات یافت نشد" : "هنوز کاربری ربات را start نکرده"}</div></div>
             : filteredUsers.map(user => (
                 <button key={user.id} type="button" onClick={() => selectUser(user)} className={`flex w-full items-center justify-between gap-2 border-b px-3 py-2.5 text-right transition-all ${dk ? "border-slate-700/50 hover:bg-sky-500/10" : "border-slate-50 hover:bg-sky-50"}`}>
@@ -168,7 +168,7 @@ const EXCHANGE_ACCOUNT_CUSTOMER: Customer = {
 
 const generateId = (): string => { if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") { try { return crypto.randomUUID(); } catch {} } return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = (Math.random() * 16) | 0; return (c === "x" ? r : (r & 0x3) | 0x8).toString(16); }); };
 const isCurrency = (v: any): v is Currency => typeof v === "string" && (currencies as string[]).includes(v);
-const normalizeDigits = (v: string) => { const pd = "۰۱۲۳۴۵۶۷۸۹", ad = "٠١٢٣٤٥٦٧٨٩"; return String(v || "").replace(/[۰-۹]/g, d => String(pd.indexOf(d))).replace(/[٠-٩]/g, d => String(ad.indexOf(d))); };
+const normalizeDigits = (v: string) => { const pd = "۰۱۲۳۴۵۶۷۸۹", ad = "٠١٢٣٤٥٦٧٨٩"; return String(v || "").replace(/[۰-۹]/g, d => String(pd.indexOf(d))).replace(/[٠-]/g, d => String(ad.indexOf(d))); };
 const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 2 }) : "0";
 
 function shamsiParts(d: Date) { 
@@ -368,14 +368,22 @@ export default function CustomersPage() {
   const [mounted, setMounted] = useState(false);
   const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
 
+  // ✅ اصلاح حیاتی: تضمین حضور همیشگی مشتریان مجازی (صندوق و حساب صرافی)
+  // این افکت هر بار که آرایه customers تغییر کند اجرا می‌شود و اگر این دو مورد حذف شده باشند (مثلاً توسط useSyncedState پس از رستور)، دوباره آن‌ها را اضافه می‌کند.
   useEffect(() => {
     setCustomers(prev => {
-      if (!prev.find(c => c.id === EXCHANGE_ACCOUNT_ID)) {
-        return [EXCHANGE_ACCOUNT_CUSTOMER, ...prev];
+      const hasExchange = prev.some(c => c.id === EXCHANGE_ACCOUNT_ID);
+      const hasCashBox = prev.some(c => c.id === CASH_BOX_ID);
+      
+      if (!hasExchange || !hasCashBox) {
+        const next = [...prev];
+        if (!hasCashBox) next.unshift(CASH_BOX_CUSTOMER);
+        if (!hasExchange) next.unshift(EXCHANGE_ACCOUNT_CUSTOMER);
+        return next;
       }
       return prev;
     });
-  }, []);
+  }, [customers]);
 
   const [transactions, setTransactions] = useSyncedState<any[]>(TRANSACTIONS_KEY, []);
   const [hawalas, setHawalas] = useSyncedState<any[]>(HAWALAS_KEY, []);
@@ -455,15 +463,19 @@ export default function CustomersPage() {
     return map;
   }, [customers, cashEntries, ledger]);
 
+  // ✅ اصلاح حیاتی: جلوگیری از تکرار مشتریان مجازی در لیست فیلترشده
   const filteredCustomers = useMemo(() => {
     const cashBoxOption = CASH_BOX_CUSTOMER;
     const exchangeOption = EXCHANGE_ACCOUNT_CUSTOMER;
     const q = normalizeDigits(search.trim()).toLowerCase();
+    
     const filtered = customers.filter(c => {
-      if (c.id === EXCHANGE_ACCOUNT_ID) return false; 
+      // حذف صریح مشتریان مجازی از فیلتر معمولی برای جلوگیری از نمایش تکراری
+      if (c.id === EXCHANGE_ACCOUNT_ID || c.id === CASH_BOX_ID) return false; 
       if (!q) return true;
       return [c.name, c.phone || "", c.tazkira || "", c.telegram || "", c.id].some(f => normalizeDigits(String(f)).toLowerCase().includes(q));
     });
+    
     const result: Customer[] = [];
     if (!q || CASH_BOX_NAME.includes(q)) result.push(cashBoxOption);
     if (!q || EXCHANGE_ACCOUNT_NAME.includes(q)) result.push(exchangeOption);
@@ -591,7 +603,7 @@ export default function CustomersPage() {
     const hasBal = currencies.some(cur => allBalances[id][cur] !== 0);
     const cnt = ledger.filter(e => e.customerId === id).length;
     let msg = `آیا از حذف "${c.name}" مطمئن هستید؟`;
-    if (cnt > 0) msg += `\n⚠️ ${cnt} رویداد مالی دارد (به صورت نرم‌افزاری بایگانی می‌شود).`;
+    if (cnt > 0) msg += `\n️ ${cnt} رویداد مالی دارد (به صورت نرم‌افزاری بایگانی می‌شود).`;
     if (hasBal) msg += `\n⚠️ موجودی غیر صفر دارد!`;
     if (!window.confirm(msg)) return;
     
@@ -736,8 +748,8 @@ export default function CustomersPage() {
                 </div>
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="جستجو..." className={`${uiInput} w-auto md:w-64`} />
               </div>
-
-              {/* ✅ Desktop Table with Scrollbar for >12 items */}
+              
+              {/* Desktop Table with Scrollbar */}
               <div className={`hidden md:block overflow-auto cu-scroll max-h-[65vh] rounded-xl border ${dk ? "border-slate-700" : "border-slate-200"}`}>
                 <table className="w-full min-w-[900px] text-sm">
                   <thead className="sticky top-0 z-10">
@@ -803,7 +815,7 @@ export default function CustomersPage() {
                 </table>
               </div>
 
-              {/* ✅ Mobile List (Cards) with Scrollbar for >12 items */}
+              {/* Mobile List (Cards) with Scrollbar */}
               <div className={`md:hidden space-y-3 overflow-y-auto max-h-[70vh] cu-scroll pr-1`}>
                 {filteredCustomers.map((c, idx) => {
                   const isCashBoxRow = c.id === CASH_BOX_ID;
@@ -951,7 +963,7 @@ export default function CustomersPage() {
                         <div className="min-h-[14px] mt-1">
                           {isCashBox ? (<>{bal < 0 && <span className="text-[8px] font-black text-rose-500">⚠️ کسری صندوق</span>}{bal > 0 && <span className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>✅ موجودی نقدی</span>}{bal === 0 && <span className={`text-[8px] font-bold ${subTextVar}`}>⚪ خالی</span>}</>)
                             : isExchangeAccount ? (<>{bal < 0 && <span className="text-[8px] font-black text-rose-500">🔴 قرض‌های داده‌شده</span>}{bal > 0 && <span className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>🟢 موجودی داخلی</span>}{bal === 0 && <span className={`text-[8px] font-bold ${subTextVar}`}>⚪ خنثی</span>}</>)
-                            : (<>{bal < 0 && <span className="text-[8px] font-black text-rose-500">🔴 قرض</span>}{bal > 0 && <span className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>🟢 طلب</span>}{bal === 0 && <span className={`text-[8px] font-bold ${subTextVar}`}>⚪ صفر</span>}</>)}
+                            : (<>{bal < 0 && <span className="text-[8px] font-black text-rose-500">🔴 قرض</span>}{bal > 0 && <span className={`text-[8px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>🟢 طلب</span>}{bal === 0 && <span className={`text-[8px] font-bold ${subTextVar}`}> صفر</span>}</>)}
                         </div>
                       </div>
                     );
@@ -986,7 +998,7 @@ export default function CustomersPage() {
                     <div className={`rounded-xl border p-4 ${dk ? "border-violet-400/25 bg-violet-400/[0.07]" : "border-violet-200 bg-violet-50"}`}>
                       <div className="flex items-center gap-3 mb-3">
                         <span className={`grid h-10 w-10 place-items-center rounded-xl ${dk ? "bg-violet-400/15 text-violet-300" : "bg-violet-100 text-violet-600"}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 21h.008v.008H6.75V21Zm0 0V7.5M6.75 21h.008v.008H6.75V21Zm0 0V7.5M6.75 21h.008v.008H6.75V21Z" /></svg></span>
-                        <div><b className={`block text-sm font-black ${dk ? "text-violet-300" : "text-violet-700"}`}>🏦 حساب داخلی صرافی</b><span className={`text-[10px] font-bold ${subTextVar}`}>مدیریت قرض و اعتبار</span></div>
+                        <div><b className={`block text-sm font-black ${dk ? "text-violet-300" : "text-violet-700"}`}> حساب داخلی صرافی</b><span className={`text-[10px] font-bold ${subTextVar}`}>مدیریت قرض و اعتبار</span></div>
                       </div>
                       <p className={`text-sm leading-6 ${dk ? "text-slate-300" : "text-slate-600"}`}>این حساب به عنوان واسطه بین صرافی و مشتریان برای عملیات قرض عمل می‌کند. وقتی به مشتری قرض می‌دهید، این حساب بدهکار می‌شود و وقتی مشتری قرض را پس می‌دهد، این حساب بستانکار می‌شود.</p>
                     </div>
@@ -1028,7 +1040,7 @@ export default function CustomersPage() {
                           <div className={`mt-2 text-center text-[10px] font-black ${bal < 0 ? "text-rose-500" : bal > 0 ? (dk ? "text-emerald-300" : "text-emerald-600") : subTextVar}`}>
                             {isCashBox ? (bal < 0 ? "⚠️ کسری صندوق" : bal > 0 ? "✅ موجودی نقدی در صندوق" : "⚪ صندوق خالی")
                               : isExchangeAccount ? (bal < 0 ? "🔴 مجموع قرض‌های داده‌شده به مشتریان" : bal > 0 ? "🟢 موجودی اعتباری" : "⚪ خنثی")
-                              : (bal < 0 ? "🔴 قرض از صرافی" : bal > 0 ? "🟢 طلب از صرافی" : "⚪ بدون بدهی")}
+                              : (bal < 0 ? " قرض از صرافی" : bal > 0 ? "🟢 طلب از صرافی" : "⚪ بدون بدهی")}
                           </div>
                         </div>
                       );
