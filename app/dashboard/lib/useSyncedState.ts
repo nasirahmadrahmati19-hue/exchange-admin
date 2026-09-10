@@ -1,146 +1,115 @@
 "use client";
-import { useState, useEffect, useCallback, useRef } from "react";
+
+import { useState, useEffect } from "react";
 import { doc, setDoc, onSnapshot } from "firebase/firestore";
 import { db } from "./firebase";
 
-const channel = typeof window !== "undefined" ? new BroadcastChannel("exchange-app-sync-channel") : null;
-
-// ✅ تابع بهبودیافته: حذف undefined + محافظت از Date و انواع خاص
+/**
+ * حذف فیلدهای undefined از آبجکت
+ * این تابع بسیار مهم است چون Firestore نمی‌تواند مقادیر undefined را ذخیره کند
+ */
 function removeUndefinedFields(obj: any): any {
-  if (obj === null) return null;
-  if (obj === undefined) return null;
-  
-  // محافظت از Date
-  if (obj instanceof Date) return obj;
-  
-  // محافظت از انواع اولیه
+  if (obj === null || obj === undefined) return obj;
   if (typeof obj !== "object") return obj;
+  if (Array.isArray(obj)) return obj.map(removeUndefinedFields);
   
-  // آرایه‌ها
-  if (Array.isArray(obj)) {
-    return obj.map(item => removeUndefinedFields(item)).filter(item => item !== undefined);
-  }
-  
-  // آبجکت‌ها
   const cleaned: any = {};
-  for (const [key, value] of Object.entries(obj)) {
-    if (value !== undefined) {
-      cleaned[key] = removeUndefinedFields(value);
+  for (const key in obj) {
+    if (obj[key] !== undefined) {
+      cleaned[key] = removeUndefinedFields(obj[key]);
     }
   }
   return cleaned;
 }
 
+/**
+ * هوک برای sync کردن یک state ساده با Firestore
+ * @param key - نام document در Firestore
+ * @param initialValue - مقدار اولیه
+ */
 export function useSyncedState<T>(key: string, initialValue: T) {
-  const latestState = useRef<T>(initialValue);
-
-  const [state, setState] = useState<T>(() => {
-    if (typeof window === "undefined") return initialValue;
-    try {
-      const item = window.localStorage.getItem(key);
-      if (item) {
-        const parsed = JSON.parse(item);
-        const value = parsed && typeof parsed === "object" && "value" in parsed ? parsed.value : parsed;
-        latestState.current = value;
-        return value;
-      }
-      return initialValue;
-    } catch (error) {
-      console.warn(`[useSyncedState] خطا در خواندن "${key}".`, error);
-      return initialValue;
-    }
-  });
-
-  latestState.current = state;
+  const [value, setValue] = useState<T>(initialValue);
 
   useEffect(() => {
-    const handleStorage = (e: StorageEvent) => {
-      if (e.key === key && e.newValue !== null) {
-        try {
-          const parsed = JSON.parse(e.newValue);
-          const value = parsed && typeof parsed === "object" && "value" in parsed ? parsed.value : parsed;
-          if (JSON.stringify(latestState.current) !== JSON.stringify(value)) {
-            setState(value);
-          }
-        } catch (error) {}
-      }
-    };
-
-    const handleBroadcast = (event: MessageEvent) => {
-      if (event.data.key === key && event.data.value !== undefined) {
-        const value = event.data.value;
-        if (JSON.stringify(latestState.current) !== JSON.stringify(value)) {
-          setState(value);
+    const docRef = doc(db, "appData", key);
+    
+    // گوش دادن به تغییرات Firestore
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data && data.value !== undefined) {
+          setValue(data.value);
         }
       }
-    };
+    }, (error) => {
+      console.error(`Error listening to ${key}:`, error);
+    });
 
-    const docRef = doc(db, "synced_states", key);
-    const unsubscribe = onSnapshot(
-      docRef,
-      (snapshot) => {
-        if (snapshot.metadata.hasPendingWrites) return;
-
-        if (snapshot.exists()) {
-          const data = snapshot.data();
-          const fbValue = data.value;
-
-          if (fbValue !== undefined && JSON.stringify(latestState.current) !== JSON.stringify(fbValue)) {
-            setState(fbValue);
-            try {
-              window.localStorage.setItem(key, JSON.stringify({ value: fbValue }));
-            } catch (e) {
-              console.warn("⚠️ حافظه مرورگر پر است.");
-            }
-          }
-        }
-      },
-      (error) => {
-        console.error(`[useSyncedState] ❌ خطای شنود فایربیس برای "${key}":`, error);
-      }
-    );
-
-    window.addEventListener("storage", handleStorage);
-    channel?.addEventListener("message", handleBroadcast);
-
-    return () => {
-      window.removeEventListener("storage", handleStorage);
-      channel?.removeEventListener("message", handleBroadcast);
-      unsubscribe();
-    };
+    return () => unsubscribe();
   }, [key]);
 
-  const setSyncedState = useCallback(
-    (value: T | ((prev: T) => T)) => {
-      setState((prev) => {
-        const newValue = value instanceof Function ? value(prev) : value;
+  // ذخیره در Firestore
+  const setSyncedValue = async (newValue: T | ((prev: T) => T)) => {
+    const resolvedValue = typeof newValue === "function" 
+      ? (newValue as (prev: T) => T)(value)
+      : newValue;
+    
+    setValue(resolvedValue);
+    
+    try {
+      const docRef = doc(db, "appData", key);
+      const cleanedValue = removeUndefinedFields(resolvedValue);
+      await setDoc(docRef, { value: cleanedValue }, { merge: true });
+    } catch (error) {
+      console.error(`Error saving ${key}:`, error);
+    }
+  };
 
-        if (typeof window !== "undefined") {
-          try {
-            // ✅ حذف فیلدهای undefined با نسخه‌ی امن
-            const cleanedValue = removeUndefinedFields(newValue);
-            const serialized = JSON.stringify({ value: cleanedValue });
+  return [value, setSyncedValue] as const;
+}
 
-            window.localStorage.setItem(key, serialized);
-            channel?.postMessage({ key, value: cleanedValue });
+/**
+ * هوک برای sync کردن یک collection (آرایه) با Firestore
+ * @param key - نام document در Firestore
+ * @param initialValue - آرایه اولیه
+ */
+export function useSyncedCollection<T>(key: string, initialValue: T[]) {
+  const [items, setItems] = useState<T[]>(initialValue);
 
-            const docRef = doc(db, "synced_states", key);
-            setDoc(docRef, { value: cleanedValue }, { merge: true })
-              .then(() => {
-                console.log(`[useSyncedState] ✅ ذخیره موفق: "${key}"`);
-              })
-              .catch((err) => {
-                console.error(`[useSyncedState] ❌ شکست در نوشتن فایربیس برای "${key}":`, err);
-              });
-          } catch (error) {
-            console.error(`[useSyncedState] خطای کلی در ذخیره "${key}":`, error);
-          }
+  useEffect(() => {
+    const docRef = doc(db, "appData", key);
+    
+    // گوش دادن به تغییرات Firestore
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data && Array.isArray(data.items)) {
+          setItems(data.items);
         }
-        return newValue;
-      });
-    },
-    [key]
-  );
+      }
+    }, (error) => {
+      console.error(`Error listening to collection ${key}:`, error);
+    });
 
-  return [state, setSyncedState] as const;
+    return () => unsubscribe();
+  }, [key]);
+
+  // ذخیره در Firestore
+  const setSyncedItems = async (newItems: T[] | ((prev: T[]) => T[])) => {
+    const resolvedItems = typeof newItems === "function"
+      ? (newItems as (prev: T[]) => T[])(items)
+      : newItems;
+    
+    setItems(resolvedItems);
+    
+    try {
+      const docRef = doc(db, "appData", key);
+      const cleanedItems = resolvedItems.map(removeUndefinedFields);
+      await setDoc(docRef, { items: cleanedItems }, { merge: true });
+    } catch (error) {
+      console.error(`Error saving collection ${key}:`, error);
+    }
+  };
+
+  return [items, setSyncedItems] as const;
 }
