@@ -1,16 +1,23 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 /**
  * هوک همگام‌سازی State با localStorage (نسخه نهایی و ضد خطای Next.js)
- * این نسخه از Hydration Mismatch و لوپ بی‌نهایت جلوگیری می‌کند.
+ * رفع باگ Stale Closure و جلوگیری از لوپ بی‌نهایت با استفاده از useRef
  */
 export function useSyncedState<T>(key: string, initialValue: T): [T, React.Dispatch<React.SetStateAction<T>>] {
-  // ۱. همیشه با مقدار اولیه شروع می‌کنیم تا رندر سرور و کلاینت در لحظه اول کاملاً یکسان باشد
-  // این کار جلوی خطای Hydration Mismatch را می‌گیرد
+  // ۱. شروع با مقدار اولیه برای یکسان بودن رندر سرور و کلاینت (جلوگیری از Hydration Mismatch)
   const [state, setState] = useState<T>(initialValue);
   const [isHydrated, setIsHydrated] = useState(false);
+  
+  // ۲. استفاده از useRef برای نگهداری آخرین مقدار initialValue بدون ایجاد رندر اضافی
+  const initialValueRef = useRef(initialValue);
 
-  // ۲. فقط بعد از اینکه کامپوننت در مرورگر کاملاً لود شد، مقدار را از localStorage می‌خوانیم
+  // به‌روزرسانی رفرنس هر بار که initialValue تغییر کند (بدون تریگر کردن لوپ)
+  useEffect(() => {
+    initialValueRef.current = initialValue;
+  }, [initialValue]);
+
+  // ۳. خواندن از localStorage فقط در سمت کلاینت
   useEffect(() => {
     if (typeof window !== "undefined") {
       try {
@@ -21,15 +28,14 @@ export function useSyncedState<T>(key: string, initialValue: T): [T, React.Dispa
       } catch (error) {
         console.error(`❌ خطا در خواندن کلید "${key}" از localStorage:`, error);
       } finally {
-        // علامت‌گذاری می‌کنیم که فرآیند خواندن اولیه تمام شده است
+        // اطمینان از اینکه فرآیند خواندن اولیه تمام شده است
         setIsHydrated(true);
       }
     }
-  }, [key]); // ✅ فقط key در وابستگی‌هاست (initialValue نیست تا لوپ ایجاد نشود)
+  }, [key]); // ✅ فقط key (جلوگیری از لوپ)
 
-  // ۳. هر بار که state تغییر کرد، آن را در localStorage ذخیره می‌کنیم
+  // ۴. ذخیره در localStorage هنگام تغییر state
   useEffect(() => {
-    // تا زمانی که هایدریشن اولیه تمام نشده، چیزی ذخیره نکن
     if (!isHydrated || typeof window === "undefined") return;
 
     try {
@@ -43,7 +49,7 @@ export function useSyncedState<T>(key: string, initialValue: T): [T, React.Dispa
     }
   }, [key, state, isHydrated]);
 
-  // ۴. همگام‌سازی بین تب‌های مختلف مرورگر
+  // ۵. همگام‌سازی بین تب‌های مختلف مرورگر
   useEffect(() => {
     if (!isHydrated || typeof window === "undefined") return;
 
@@ -51,9 +57,9 @@ export function useSyncedState<T>(key: string, initialValue: T): [T, React.Dispa
       if (e.key === key) {
         try {
           if (e.newValue === null) {
-            // اگر در تب دیگر پاک شد، به مقدار اولیه برگرد
-            // نکته: اینجا از initialValue استفاده می‌کنیم چون رفرنس آن توسط هوک مدیریت می‌شود
-            setState(initialValue); 
+            // ✅ FIX: استفاده از initialValueRef.current به جای initialValue
+            // این کار جلوی باگ Stale Closure و لوپ بی‌نهایت را می‌گیرد
+            setState(initialValueRef.current); 
           } else {
             setState(JSON.parse(e.newValue) as T);
           }
@@ -65,7 +71,7 @@ export function useSyncedState<T>(key: string, initialValue: T): [T, React.Dispa
 
     window.addEventListener("storage", handleStorageChange);
     return () => window.removeEventListener("storage", handleStorageChange);
-  }, [key, isHydrated]); // ✅ initialValue عمداً حذف شده تا اگر آرایه/آبجکت بود، باعث لوپ بی‌نهایت نشود
+  }, [key, isHydrated]); // ✅ initialValue عمداً حذف شده، چون از طریق Ref مدیریت می‌شود
 
   return [state, setState];
 }
