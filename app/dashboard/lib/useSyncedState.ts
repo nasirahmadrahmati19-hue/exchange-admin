@@ -1,115 +1,76 @@
-"use client";
-
 import { useState, useEffect } from "react";
-import { doc, setDoc, onSnapshot } from "firebase/firestore";
-import { db } from "./firebase";
 
 /**
- * حذف فیلدهای undefined از آبجکت
- * این تابع بسیار مهم است چون Firestore نمی‌تواند مقادیر undefined را ذخیره کند
+ * هوک سفارشی برای مدیریت State همگام‌شده با localStorage
+ * این هوک به طور خودکار داده‌ها را ذخیره، بازیابی و بین تب‌های مرورگر همگام می‌کند.
+ * 
+ * @param key کلید منحصر به فرد برای ذخیره در localStorage
+ * @param initialValue مقدار پیش‌فرض در صورتی که داده‌ای در حافظه وجود نداشته باشد
+ * @returns آرایه‌ای شامل [مقدار فعلی, تابع به‌روزرسانی]
  */
-function removeUndefinedFields(obj: any): any {
-  if (obj === null || obj === undefined) return obj;
-  if (typeof obj !== "object") return obj;
-  if (Array.isArray(obj)) return obj.map(removeUndefinedFields);
+export function useSyncedState<T>(
+  key: string, 
+  initialValue: T
+): [T, React.Dispatch<React.SetStateAction<T>>] {
   
-  const cleaned: any = {};
-  for (const key in obj) {
-    if (obj[key] !== undefined) {
-      cleaned[key] = removeUndefinedFields(obj[key]);
+  // ۱. مقداردهی اولیه ایمن (سازگار با SSR در Next.js)
+  const [state, setState] = useState<T>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const item = window.localStorage.getItem(key);
+        if (item) {
+          return JSON.parse(item) as T;
+        }
+      } catch (error) {
+        console.error(`❌ خطا در خواندن کلید "${key}" از localStorage:`, error);
+        // در صورت خرابی داده‌ها، مقدار پیش‌فرض را برمی‌گرداند تا برنامه کرش نکند
+        return initialValue;
+      }
     }
-  }
-  return cleaned;
-}
+    return initialValue;
+  });
 
-/**
- * هوک برای sync کردن یک state ساده با Firestore
- * @param key - نام document در Firestore
- * @param initialValue - مقدار اولیه
- */
-export function useSyncedState<T>(key: string, initialValue: T) {
-  const [value, setValue] = useState<T>(initialValue);
-
+  // ۲. ذخیره خودکار در localStorage هر بار که state تغییر می‌کند
   useEffect(() => {
-    const docRef = doc(db, "appData", key);
-    
-    // گوش دادن به تغییرات Firestore
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data && data.value !== undefined) {
-          setValue(data.value);
+    if (typeof window !== "undefined") {
+      try {
+        if (state !== undefined && state !== null) {
+          window.localStorage.setItem(key, JSON.stringify(state));
+        } else {
+          // اگر مقدار null یا undefined شد، کلید را از حافظه پاک کن
+          window.localStorage.removeItem(key);
+        }
+      } catch (error) {
+        console.error(`❌ خطا در ذخیره کلید "${key}" در localStorage:`, error);
+      }
+    }
+  }, [key, state]);
+
+  // ۳. همگام‌سازی بین تب‌های مختلف مرورگر (جلوگیری از بازنویسی داده‌ها)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleStorageChange = (e: StorageEvent) => {
+      // فقط اگر کلید تغییر یافته مربوط به همین هوک باشد
+      if (e.key === key) {
+        try {
+          if (e.newValue !== null) {
+            setState(JSON.parse(e.newValue) as T);
+          } else {
+            setState(initialValue);
+          }
+        } catch (error) {
+          console.error(`❌ خطا در پردازش تغییر حافظه برای کلید "${key}":`, error);
         }
       }
-    }, (error) => {
-      console.error(`Error listening to ${key}:`, error);
-    });
+    };
 
-    return () => unsubscribe();
-  }, [key]);
-
-  // ذخیره در Firestore
-  const setSyncedValue = async (newValue: T | ((prev: T) => T)) => {
-    const resolvedValue = typeof newValue === "function" 
-      ? (newValue as (prev: T) => T)(value)
-      : newValue;
+    // گوش دادن به رویداد تغییر localStorage در سایر تب‌ها
+    window.addEventListener("storage", handleStorageChange);
     
-    setValue(resolvedValue);
-    
-    try {
-      const docRef = doc(db, "appData", key);
-      const cleanedValue = removeUndefinedFields(resolvedValue);
-      await setDoc(docRef, { value: cleanedValue }, { merge: true });
-    } catch (error) {
-      console.error(`Error saving ${key}:`, error);
-    }
-  };
+    // پاکسازی گوش‌دهنده هنگام حذف کامپوننت
+    return () => window.removeEventListener("storage", handleStorageChange);
+  }, [key, initialValue]);
 
-  return [value, setSyncedValue] as const;
-}
-
-/**
- * هوک برای sync کردن یک collection (آرایه) با Firestore
- * @param key - نام document در Firestore
- * @param initialValue - آرایه اولیه
- */
-export function useSyncedCollection<T>(key: string, initialValue: T[]) {
-  const [items, setItems] = useState<T[]>(initialValue);
-
-  useEffect(() => {
-    const docRef = doc(db, "appData", key);
-    
-    // گوش دادن به تغییرات Firestore
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data && Array.isArray(data.items)) {
-          setItems(data.items);
-        }
-      }
-    }, (error) => {
-      console.error(`Error listening to collection ${key}:`, error);
-    });
-
-    return () => unsubscribe();
-  }, [key]);
-
-  // ذخیره در Firestore
-  const setSyncedItems = async (newItems: T[] | ((prev: T[]) => T[])) => {
-    const resolvedItems = typeof newItems === "function"
-      ? (newItems as (prev: T[]) => T[])(items)
-      : newItems;
-    
-    setItems(resolvedItems);
-    
-    try {
-      const docRef = doc(db, "appData", key);
-      const cleanedItems = resolvedItems.map(removeUndefinedFields);
-      await setDoc(docRef, { items: cleanedItems }, { merge: true });
-    } catch (error) {
-      console.error(`Error saving collection ${key}:`, error);
-    }
-  };
-
-  return [items, setSyncedItems] as const;
+  return [state, setState];
 }
