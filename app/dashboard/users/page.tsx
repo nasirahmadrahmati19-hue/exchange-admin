@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState, useRef, useCallback, type ReactNode } from "react";
-import { useSyncedState } from "../lib/useSyncedState"; // مطمئن شوید این فایل طبق کد بخش ۲ اصلاح شده است
+import { useSyncedState } from "../lib/useSyncedState";
 import { initTrackingSystem } from "../lib/trackingCode";
 import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY } from "../lib/defaultData";
 
@@ -182,7 +182,6 @@ const emptyForm: FormState = { name: "", tazkira: "", phone: "", address: "", no
 
 function buildLedger(customers: Customer[], transactions: any[], hawalas: any[], cashEntries: any[]): LedgerEntry[] {
   const entries: LedgerEntry[] = [];
-  // ✅ ایمن‌سازی در برابر داده‌های خراب یا null
   if (!Array.isArray(customers) || !Array.isArray(transactions) || !Array.isArray(hawalas) || !Array.isArray(cashEntries)) return entries;
 
   for (const tx of transactions) {
@@ -346,14 +345,17 @@ export default function CustomersPage() {
   const [mounted, setMounted] = useState(false);
   const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
 
+  // ✅ اصلاح شده: اضافه کردن حساب صرافی فقط پس از اطمینان از Mount شدن و آرایه بودن داده‌ها
   useEffect(() => {
+    if (!mounted) return;
     setCustomers(prev => {
-      if (!prev.find(c => c.id === EXCHANGE_ACCOUNT_ID)) {
-        return [EXCHANGE_ACCOUNT_CUSTOMER, ...prev];
+      const currentCustomers = Array.isArray(prev) ? prev : [];
+      if (!currentCustomers.find(c => c.id === EXCHANGE_ACCOUNT_ID)) {
+        return [EXCHANGE_ACCOUNT_CUSTOMER, ...currentCustomers];
       }
-      return prev;
+      return currentCustomers;
     });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mounted, setCustomers]);
 
   const [transactions, setTransactions] = useSyncedState<any[]>(TRANSACTIONS_KEY, []);
   const [hawalas, setHawalas] = useSyncedState<any[]>(HAWALAS_KEY, []);
@@ -403,13 +405,15 @@ export default function CustomersPage() {
   const ledger = useMemo(() => { try { return buildLedger(customers, transactions, hawalas, cashEntries); } catch { return []; } }, [customers, transactions, hawalas, cashEntries]);
   const cashBoxLedger = useMemo(() => { try { return buildCashBoxLedger(cashEntries); } catch { return []; } }, [cashEntries]);
 
+  // ✅ اصلاح شده: ایمن‌سازی در برابر null/undefined بودن customers
   const allBalances = useMemo(() => {
+    const safeCustomers = Array.isArray(customers) ? customers : [];
     const map: Record<string, Record<Currency, number>> = {};
-    customers.forEach(c => { if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) map[c.id] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; });
+    safeCustomers.forEach(c => { if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) map[c.id] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; });
     map[CASH_BOX_ID] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     map[EXCHANGE_ACCOUNT_ID] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
 
-    for (const c of customers) {
+    for (const c of safeCustomers) {
       if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) {
         for (const cur of currencies) {
           let balance = 0;
@@ -437,7 +441,8 @@ export default function CustomersPage() {
     const cashBoxOption = CASH_BOX_CUSTOMER;
     const exchangeOption = EXCHANGE_ACCOUNT_CUSTOMER;
     const q = normalizeDigits(search.trim()).toLowerCase();
-    const filtered = (customers || []).filter(c => {
+    const safeCustomers = Array.isArray(customers) ? customers : [];
+    const filtered = safeCustomers.filter(c => {
       if (c.id === EXCHANGE_ACCOUNT_ID) return false; 
       if (!q) return true;
       return [c.name, c.phone || "", c.tazkira || "", c.telegram || "", c.id].some(f => normalizeDigits(String(f)).toLowerCase().includes(q));
@@ -452,7 +457,8 @@ export default function CustomersPage() {
   const selectedCustomer = useMemo(() => {
     if (selectedCustomerId === CASH_BOX_ID || selectedCustomerId === CASH_BOX_NAME) return CASH_BOX_CUSTOMER;
     if (selectedCustomerId === EXCHANGE_ACCOUNT_ID) return EXCHANGE_ACCOUNT_CUSTOMER;
-    return (customers || []).find(c => c.id === selectedCustomerId) || null;
+    const safeCustomers = Array.isArray(customers) ? customers : [];
+    return safeCustomers.find(c => c.id === selectedCustomerId) || null;
   }, [customers, selectedCustomerId]);
 
   const isCashBox = selectedCustomer?.id === CASH_BOX_ID;
@@ -481,8 +487,9 @@ export default function CustomersPage() {
     }).reverse();
   }, [customerLedger, ledgerSearch, ledgerTypeFilter, ledgerCurrencyFilter, ledgerDirFilter]);
 
-  const negativeBalanceCount = (customers || []).filter(c => c.id !== EXCHANGE_ACCOUNT_ID && currencies.some(cur => allBalances[c.id][cur] < 0)).length;
-  const zeroBalanceCount = (customers || []).filter(c => c.id !== EXCHANGE_ACCOUNT_ID && currencies.every(cur => allBalances[c.id][cur] === 0)).length;
+  const safeCustomersForCount = Array.isArray(customers) ? customers : [];
+  const negativeBalanceCount = safeCustomersForCount.filter(c => c.id !== EXCHANGE_ACCOUNT_ID && currencies.some(cur => allBalances[c.id][cur] < 0)).length;
+  const zeroBalanceCount = safeCustomersForCount.filter(c => c.id !== EXCHANGE_ACCOUNT_ID && currencies.every(cur => allBalances[c.id][cur] === 0)).length;
 
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(""), 3500); };
   const setField = (f: keyof FormState, v: string) => { setForm(p => ({ ...p, [f]: v })); setErrors(p => ({ ...p, [f]: undefined })); };
@@ -502,7 +509,6 @@ export default function CustomersPage() {
     } catch (err) { showToast("❌ خطا در ایجاد فایل پشتیبان"); }
   };
 
-  // ✅ اصلاح شده: اعتبارسنجی دقیق قبل از جایگزینی داده‌ها
   const importData = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -510,8 +516,6 @@ export default function CustomersPage() {
     reader.onload = (e) => {
       try {
         const data = JSON.parse(e.target?.result as string);
-        
-        // ✅ بررسی اعتبار فایل بکاپ
         if (!data || !Array.isArray(data.customers)) {
           showToast("❌ فایل پشتیبان نامعتبر است یا ساختار آن خراب است.");
           return;
@@ -521,7 +525,7 @@ export default function CustomersPage() {
         if (data.transactions) setTransactions(data.transactions);
         if (data.hawalas) setHawalas(data.hawalas);
         if (data.cashEntries) setCashEntries(data.cashEntries);
-        if (data.settings) localStorage.setItem('fx-settings', JSON.stringify(data.settings)); // ✅ رفع باگ JSON.stringify
+        if (data.settings) localStorage.setItem('fx-settings', JSON.stringify(data.settings));
         if (data.theme) localStorage.setItem('fx-theme', data.theme);
         
         showToast("✅ داده‌ها با موفقیت بازیابی شدند. صفحه رفرش می‌شود...");
@@ -568,7 +572,7 @@ export default function CustomersPage() {
       newEntries.push({ id: generateId(), trackingCode: `${trackingCode}-EXCH`, date: now, type: "loan_received", currency: loanCurrency, amount: amt, direction: "in", reason: `دریافت بازپرداخت قرض از ${selectedCustomer.name}`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, counterPartyId: selectedCustomer.id, status: "active" });
     }
 
-    setCashEntries(prev => [...(prev || []), ...newEntries]);
+    setCashEntries(prev => [...(Array.isArray(prev) ? prev : []), ...newEntries]);
     setLoanModalOpen(false);
     showToast(loanModalType === "give" ? `✅ ${fmt(amt)} ${labels[loanCurrency]} به "${selectedCustomer.name}" قرض داده شد.` : `✅ ${fmt(amt)} ${labels[loanCurrency]} از "${selectedCustomer.name}" دریافت شد.`);
   };
@@ -576,7 +580,8 @@ export default function CustomersPage() {
   const deleteCustomer = (id: string) => {
     if (id === CASH_BOX_ID || id === EXCHANGE_ACCOUNT_ID) return;
     setOpenMenuId(null);
-    const c = (customers || []).find(x => x.id === id);
+    const safeCustomers = Array.isArray(customers) ? customers : [];
+    const c = safeCustomers.find(x => x.id === id);
     if (!c) return;
     const hasBal = currencies.some(cur => allBalances[id][cur] !== 0);
     const cnt = ledger.filter(e => e.customerId === id).length;
@@ -585,10 +590,10 @@ export default function CustomersPage() {
     if (hasBal) msg += `\n⚠️ موجودی غیر صفر دارد!`;
     if (!window.confirm(msg)) return;
     
-    setTransactions(prev => (prev || []).map((t: any) => { if (t.customerId === id || t.customerName === c.name || t.senderId === id || t.senderName === c.name || t.receiverId === id || t.receiverName === c.name) return { ...t, customerDeleted: true }; return t; }));
-    setHawalas(prev => (prev || []).map((h: any) => { if (h.senderId === id || h.senderName === c.name || h.receiverId === id || h.receiverName === c.name) return { ...h, customerDeleted: true }; return h; }));
-    setCashEntries(prev => (prev || []).map((ce: any) => { if (ce.customerId === id || ce.customerName === c.name) return { ...ce, customerDeleted: true }; return ce; }));
-    setCustomers(p => (p || []).filter(x => x.id !== id));
+    setTransactions(prev => (Array.isArray(prev) ? prev : []).map((t: any) => { if (t.customerId === id || t.customerName === c.name || t.senderId === id || t.senderName === c.name || t.receiverId === id || t.receiverName === c.name) return { ...t, customerDeleted: true }; return t; }));
+    setHawalas(prev => (Array.isArray(prev) ? prev : []).map((h: any) => { if (h.senderId === id || h.senderName === c.name || h.receiverId === id || h.receiverName === c.name) return { ...h, customerDeleted: true }; return h; }));
+    setCashEntries(prev => (Array.isArray(prev) ? prev : []).map((ce: any) => { if (ce.customerId === id || ce.customerName === c.name) return { ...ce, customerDeleted: true }; return ce; }));
+    setCustomers(p => (Array.isArray(p) ? p : []).filter(x => x.id !== id));
     if (selectedCustomerId === id) { setSelectedCustomerId(null); setActiveTab("list"); }
     showToast(`"${c.name}" حذف و سوابق آن بایگانی شد.`);
   };
@@ -598,8 +603,9 @@ export default function CustomersPage() {
     if (!form.name.trim()) errs.name = "نام ضروری است.";
     if (!form.phone.trim()) errs.phone = "تماس ضروری است.";
     const currentId = selectedCustomer?.id;
-    if ((customers || []).find(c => c.phone === form.phone.trim() && c.id !== EXCHANGE_ACCOUNT_ID && c.id !== currentId)) errs.phone = "تکراری است.";
-    if (form.tazkira.trim() && (customers || []).find(c => c.tazkira === form.tazkira.trim() && c.id !== EXCHANGE_ACCOUNT_ID && c.id !== currentId)) errs.tazkira = "تکراری است.";
+    const safeCustomers = Array.isArray(customers) ? customers : [];
+    if (safeCustomers.find(c => c.phone === form.phone.trim() && c.id !== EXCHANGE_ACCOUNT_ID && c.id !== currentId)) errs.phone = "تکراری است.";
+    if (form.tazkira.trim() && safeCustomers.find(c => c.tazkira === form.tazkira.trim() && c.id !== EXCHANGE_ACCOUNT_ID && c.id !== currentId)) errs.tazkira = "تکراری است.";
     return errs;
   };
 
@@ -607,7 +613,7 @@ export default function CustomersPage() {
     const errs = validateForm(); setErrors(errs);
     if (Object.keys(errs).length > 0) { showToast("فیلدها را تکمیل کنید."); return; }
     const nc: Customer = { id: generateId(), name: form.name.trim(), phone: form.phone.trim(), tazkira: form.tazkira.trim(), address: form.address.trim(), note: form.note.trim(), telegram: form.telegram.trim(), registeredAt: new Date().toISOString(), balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
-    setCustomers(p => [...(p || []), nc]); setForm(emptyForm); setErrors({}); setActiveTab("list");
+    setCustomers(p => [...(Array.isArray(p) ? p : []), nc]); setForm(emptyForm); setErrors({}); setActiveTab("list");
     showToast(`"${nc.name}" ثبت شد.`);
   };
 
@@ -615,11 +621,11 @@ export default function CustomersPage() {
     if (!selectedCustomer || isCashBox || isExchangeAccount) return;
     const oldName = selectedCustomer.name;
     const newName = form.name.trim();
-    setCustomers(p => (p || []).map(c => c.id === selectedCustomer.id ? { ...c, name: newName, phone: form.phone.trim(), tazkira: form.tazkira.trim(), address: form.address.trim(), note: form.note.trim(), telegram: form.telegram.trim() } : c));
+    setCustomers(p => (Array.isArray(p) ? p : []).map(c => c.id === selectedCustomer.id ? { ...c, name: newName, phone: form.phone.trim(), tazkira: form.tazkira.trim(), address: form.address.trim(), note: form.note.trim(), telegram: form.telegram.trim() } : c));
     if (oldName !== newName) {
-      setTransactions(prev => (prev || []).map((t: any) => { const u = { ...t }; if (t.customerName === oldName) u.customerName = newName; if (t.senderName === oldName) u.senderName = newName; if (t.receiverName === oldName) u.receiverName = newName; return u; }));
-      setHawalas(prev => (prev || []).map((h: any) => { const u = { ...h }; if (h.senderName === oldName) u.senderName = newName; if (h.receiverName === oldName) u.receiverName = newName; return u; }));
-      setCashEntries(prev => (prev || []).map((ce: any) => { const u = { ...ce }; if (ce.customerName === oldName) u.customerName = newName; return u; }));
+      setTransactions(prev => (Array.isArray(prev) ? prev : []).map((t: any) => { const u = { ...t }; if (t.customerName === oldName) u.customerName = newName; if (t.senderName === oldName) u.senderName = newName; if (t.receiverName === oldName) u.receiverName = newName; return u; }));
+      setHawalas(prev => (Array.isArray(prev) ? prev : []).map((h: any) => { const u = { ...h }; if (h.senderName === oldName) u.senderName = newName; if (h.receiverName === oldName) u.receiverName = newName; return u; }));
+      setCashEntries(prev => (Array.isArray(prev) ? prev : []).map((ce: any) => { const u = { ...ce }; if (ce.customerName === oldName) u.customerName = newName; return u; }));
     }
     showToast("به‌روز شد.");
   };
@@ -684,7 +690,7 @@ export default function CustomersPage() {
 
           <div className="cu-up grid grid-cols-2 md:grid-cols-4 gap-3" style={{ animationDelay: "70ms" }}>
             {[
-              { label: "کل مشتریان", value: (customers || []).filter(c => c.id !== EXCHANGE_ACCOUNT_ID).length, icon: "users", color: "from-emerald-500 to-teal-500", text: dk ? "text-emerald-300" : "text-emerald-600" },
+              { label: "کل مشتریان", value: safeCustomersForCount.filter(c => c.id !== EXCHANGE_ACCOUNT_ID).length, icon: "users", color: "from-emerald-500 to-teal-500", text: dk ? "text-emerald-300" : "text-emerald-600" },
               { label: "رویدادهای مالی", value: ledger.length + cashBoxLedger.length, icon: "history", color: "from-amber-500 to-orange-500", text: dk ? "text-amber-300" : "text-amber-600" },
               { label: "مشتریان بدهکار", value: negativeBalanceCount, icon: "x", color: "from-rose-500 to-pink-500", text: dk ? "text-rose-300" : "text-rose-600" },
               { label: "مانده صفر", value: zeroBalanceCount, icon: "wallet", color: "from-sky-500 to-cyan-500", text: dk ? "text-sky-300" : "text-sky-600" },
@@ -705,7 +711,7 @@ export default function CustomersPage() {
           </div>
 
           <div className={`cu-up flex gap-1.5 md:gap-2 rounded-xl md:rounded-2xl border p-1.5 md:p-2 shadow-sm backdrop-blur ${glassChip}`} style={{ animationDelay: "140ms" }}>
-            {[{ id: "list" as const, label: "فهرست مشتریان", icon: "users", count: (customers || []).length }, { id: "new" as const, label: "ثبت مشتری جدید", icon: "plus", count: null }].map(tab => (
+            {[{ id: "list" as const, label: "فهرست مشتریان", icon: "users", count: safeCustomersForCount.length }, { id: "new" as const, label: "ثبت مشتری جدید", icon: "plus", count: null }].map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 md:gap-2 rounded-lg md:rounded-xl px-3 md:px-5 py-2.5 md:py-3 text-xs md:text-sm font-black transition-all duration-300 active:scale-[0.97] ${activeTab === tab.id ? `bg-gradient-to-l shadow-lg ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 to-teal-500 text-white"}` : dk ? "text-slate-400 hover:bg-slate-700/60 hover:text-slate-100" : "text-slate-500 hover:bg-emerald-50 hover:text-slate-800"}`}>
                 {tab.icon === "users" && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" /></svg>}
                 {tab.icon === "plus" && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M12 4.5v15m7.5-7.5h-15" /></svg>}
@@ -722,7 +728,7 @@ export default function CustomersPage() {
                 </span>
                 <div className="flex-1 min-w-0">
                   <h2 className={`cu-display text-xl md:text-2xl leading-none ${headingText}`}>فهرست مشتریان</h2>
-                  <p className={`mt-1 text-[11px] font-bold ${subTextVar}`}>{(customers || []).length} مشتری ثبت‌شده + صندوق + حساب صرافی</p>
+                  <p className={`mt-1 text-[11px] font-bold ${subTextVar}`}>{safeCustomersForCount.length} مشتری ثبت‌شده + صندوق + حساب صرافی</p>
                 </div>
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="جستجو..." className={`${uiInput} w-auto md:w-64`} />
               </div>
