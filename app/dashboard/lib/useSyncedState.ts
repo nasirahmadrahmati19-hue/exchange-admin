@@ -1,31 +1,38 @@
 import { useState, useEffect, useRef } from "react";
 
 /**
- * هوک همگام‌سازی State با localStorage
- * نسخه پایدار و بدون باگ لوپ بی‌نهایت
+ * هوک همگام‌سازی State با localStorage (نسخه ضد خطای Next.js)
+ * این نسخه از Hydration Mismatch جلوگیری می‌کند.
  */
-export function useSyncedState<T>(key: string, initialValue: T): [T, React.Dispatch<React.SetStateAction<T>>] {
-  // استفاده از ref برای جلوگیری از لوپ بی‌نهایت
-  const initialValueRef = useRef(initialValue);
+export function useSyncedState<T>(
+  key: string, 
+  initialValue: T
+): [T, React.Dispatch<React.SetStateAction<T>>] {
   
-  // ۱. مقداردهی اولیه ایمن
-  const [state, setState] = useState<T>(() => {
-    if (typeof window === "undefined") return initialValue;
-    try {
-      const item = window.localStorage.getItem(key);
-      if (item !== null) {
-        const parsed = JSON.parse(item);
-        return parsed as T;
-      }
-    } catch (error) {
-      console.warn(`خطا در خواندن ${key}:`, error);
-    }
-    return initialValue;
-  });
+  // ۱. همیشه با مقدار اولیه شروع می‌کنیم تا رندر سرور و کلاینت در اولین لحظه یکسان باشد
+  const [state, setState] = useState<T>(initialValue);
+  const [isMounted, setIsMounted] = useState(false);
+  const initialValueRef = useRef(initialValue);
 
-  // ۲. ذخیره در localStorage
+  // ۲. فقط بعد از Mount شدن در مرورگر، مقدار واقعی را از localStorage می‌خوانیم
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    setIsMounted(true);
+    if (typeof window !== "undefined") {
+      try {
+        const item = window.localStorage.getItem(key);
+        if (item !== null) {
+          setState(JSON.parse(item) as T);
+        }
+      } catch (error) {
+        console.warn(`⚠️ خطا در خواندن کلید "${key}" از localStorage:`, error);
+      }
+    }
+  }, [key]);
+
+  // ۳. هر بار که state تغییر کرد، آن را در localStorage ذخیره می‌کنیم (فقط اگر Mount شده باشد)
+  useEffect(() => {
+    if (!isMounted || typeof window === "undefined") return;
+    
     try {
       if (state === undefined || state === null) {
         window.localStorage.removeItem(key);
@@ -33,31 +40,31 @@ export function useSyncedState<T>(key: string, initialValue: T): [T, React.Dispa
         window.localStorage.setItem(key, JSON.stringify(state));
       }
     } catch (error) {
-      console.warn(`خطا در ذخیره ${key}:`, error);
+      console.warn(`⚠️ خطا در ذخیره کلید "${key}" در localStorage:`, error);
     }
-  }, [key, state]);
+  }, [key, state, isMounted]);
 
-  // ۳. همگام‌سازی بین تب‌ها (بدون initialValue در dependency)
+  // ۴. همگام‌سازی بین تب‌های مختلف مرورگر
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (!isMounted || typeof window === "undefined") return;
 
     const handleStorage = (e: StorageEvent) => {
-      if (e.key === key && e.key !== null) {
+      if (e.key === key) {
         try {
           if (e.newValue === null) {
             setState(initialValueRef.current);
           } else {
             setState(JSON.parse(e.newValue) as T);
           }
-        } catch {
-          // نادیده گرفتن خطای parse
+        } catch (error) {
+          console.warn(`⚠️ خطا در پردازش تغییر حافظه برای کلید "${key}":`, error);
         }
       }
     };
 
     window.addEventListener("storage", handleStorage);
     return () => window.removeEventListener("storage", handleStorage);
-  }, [key]); // ✅ فقط key در dependency
+  }, [key, isMounted]);
 
   return [state, setState];
 }
