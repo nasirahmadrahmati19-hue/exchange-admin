@@ -13,6 +13,6 @@ const firebaseConfig = {
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
-// ✅ این دو خط حیاتی هستند. اگر نباشند، برنامه باز نمی‌شود:
+// ⚠️ این دو خط حیاتی هستند. بدون این‌ها، برنامه باز نمی‌شود:
 export const auth = getAuth(app);
 export const db = getFirestore(app);
