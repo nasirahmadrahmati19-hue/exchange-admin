@@ -345,7 +345,6 @@ export default function CustomersPage() {
   const [mounted, setMounted] = useState(false);
   const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
 
-  // ✅ اصلاح شده: اضافه کردن حساب صرافی فقط پس از اطمینان از Mount شدن و آرایه بودن داده‌ها
   useEffect(() => {
     if (!mounted) return;
     setCustomers(prev => {
@@ -405,7 +404,6 @@ export default function CustomersPage() {
   const ledger = useMemo(() => { try { return buildLedger(customers, transactions, hawalas, cashEntries); } catch { return []; } }, [customers, transactions, hawalas, cashEntries]);
   const cashBoxLedger = useMemo(() => { try { return buildCashBoxLedger(cashEntries); } catch { return []; } }, [cashEntries]);
 
-  // ✅ اصلاح شده: ایمن‌سازی در برابر null/undefined بودن customers
   const allBalances = useMemo(() => {
     const safeCustomers = Array.isArray(customers) ? customers : [];
     const map: Record<string, Record<Currency, number>> = {};
@@ -496,48 +494,6 @@ export default function CustomersPage() {
   const openProfile = (id: string) => { setSelectedCustomerId(id); setProfileTab("info"); setActiveTab("profile"); setOpenMenuId(null); };
   const openEdit = (id: string) => { setSelectedCustomerId(id); setProfileTab("info"); setActiveTab("profile"); setOpenMenuId(null); };
   const backToList = () => { setActiveTab("list"); setSelectedCustomerId(null); };
-
-  const exportData = () => {
-    try {
-      const data = { customers, transactions, hawalas, cashEntries, settings: localStorage.getItem('fx-settings'), theme: localStorage.getItem('fx-theme'), exportDate: new Date().toISOString() };
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = `backup-sarafi-${new Date().toISOString().split('T')[0]}.json`;
-      a.click(); URL.revokeObjectURL(url);
-      showToast("✅ فایل پشتیبان با موفقیت دانلود شد.");
-    } catch (err) { showToast("❌ خطا در ایجاد فایل پشتیبان"); }
-  };
-
-  const importData = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = JSON.parse(e.target?.result as string);
-        if (!data || !Array.isArray(data.customers)) {
-          showToast("❌ فایل پشتیبان نامعتبر است یا ساختار آن خراب است.");
-          return;
-        }
-
-        if (data.customers) setCustomers(data.customers);
-        if (data.transactions) setTransactions(data.transactions);
-        if (data.hawalas) setHawalas(data.hawalas);
-        if (data.cashEntries) setCashEntries(data.cashEntries);
-        if (data.settings) localStorage.setItem('fx-settings', JSON.stringify(data.settings));
-        if (data.theme) localStorage.setItem('fx-theme', data.theme);
-        
-        showToast("✅ داده‌ها با موفقیت بازیابی شدند. صفحه رفرش می‌شود...");
-        setTimeout(() => window.location.reload(), 1500);
-      } catch (err) { 
-        console.error("Import error:", err);
-        showToast("❌ فایل نامعتبر است یا فرمت JSON ندارد."); 
-      }
-    };
-    reader.readAsText(file);
-    event.target.value = "";
-  };
 
   const openLoanModal = (type: "give" | "receive") => {
     setLoanModalType(type); setLoanAmount(""); setLoanCurrency("AFN"); setLoanReason(""); setLoanModalOpen(true);
@@ -674,15 +630,6 @@ export default function CustomersPage() {
               <div className="min-w-0"><h1 className={`cu-display text-2xl md:text-4xl leading-none ${headingText}`}>مدیریت مشتریان</h1><p className={`mt-1 text-[10px] md:text-xs font-bold ${subTextVar}`}>پروندهٔ کامل، گردش حساب و سوابق مالی</p></div>
             </div>
             <div className="flex items-center gap-1.5 md:gap-2.5">
-              <label className={`hidden sm:flex items-center gap-2 rounded-xl border px-3 py-2 shadow-sm backdrop-blur cursor-pointer transition-all hover:brightness-110 ${glassChip}`}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-sky-600"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
-                <span className={`text-xs font-bold ${dk ? "text-slate-100" : "text-slate-700"}`}>بازیابی</span>
-                <input type="file" accept=".json" onChange={importData} className="hidden" />
-              </label>
-              <button onClick={exportData} className={`hidden sm:flex items-center gap-2 rounded-xl border px-3 py-2 shadow-sm backdrop-blur transition-all hover:brightness-110 ${glassChip}`}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-emerald-600"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" /></svg>
-                <span className={`text-xs font-bold ${dk ? "text-slate-100" : "text-slate-700"}`}>پشتیبان‌گیری</span>
-              </button>
               <div className={`hidden sm:flex items-center gap-2 rounded-xl border px-3 py-2 shadow-sm backdrop-blur ${glassChip}`}><span className="relative flex h-2.5 w-2.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-70" /><span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" /></span><span dir="ltr" className={`text-xs font-bold tabular-nums ${dk ? "text-slate-100" : "text-slate-700"}`}>{currentDateTime || "--:--"}</span></div>
               <button onClick={() => setTheme(dk ? "light" : "dark")} className={`group grid h-10 w-10 md:h-11 md:w-11 cursor-pointer place-items-center rounded-lg md:rounded-xl border shadow-sm backdrop-blur transition-all duration-300 active:scale-90 ${dk ? "border-slate-600 bg-slate-800/85 text-amber-300 hover:border-amber-300" : "border-slate-200 bg-white/85 text-slate-600 hover:border-emerald-400"}`}>{dk ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 group-hover:rotate-45 transition-transform duration-500"><path d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.375 3.375 0 1 1-7.5 0 3.375 3.375 0 0 1 7.5 0Z" /></svg> : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 group-hover:-rotate-12 transition-transform duration-500"><path d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" /></svg>}</button>
             </div>
