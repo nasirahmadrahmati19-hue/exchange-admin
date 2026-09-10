@@ -18,32 +18,43 @@ function removeUndefinedFields(obj: any): any {
   return cleaned;
 }
 
+// ✅ تابع کمکی برای خواندن از LocalStorage
+function readFromLocalStorage<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const cached = localStorage.getItem(`synced_${key}`);
+    if (cached !== null && cached !== "undefined") {
+      return JSON.parse(cached);
+    }
+  } catch (error) {
+    console.error(`[useSyncedState] Error reading LocalStorage for ${key}:`, error);
+  }
+  return fallback;
+}
+
+// ✅ تابع کمکی برای ذخیره در LocalStorage
+function saveToLocalStorage<T>(key: string, value: T): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(`synced_${key}`, JSON.stringify(value));
+  } catch (error) {
+    console.error(`[useSyncedState] Error saving LocalStorage for ${key}:`, error);
+  }
+}
+
 export function useSyncedState<T>(key: string, initialValue: T) {
   const isMounted = useRef(true);
+  const lastFirebaseValueRef = useRef<T | null>(null);
   
-  // ✅ ابتدا از LocalStorage بخوان (اگر موجود باشد)
-  const getInitialValue = (): T => {
-    if (typeof window === "undefined") return initialValue;
-    try {
-      const cached = localStorage.getItem(`synced_${key}`);
-      if (cached) {
-        console.log(`[useSyncedState] Loading ${key} from LocalStorage`);
-        return JSON.parse(cached);
-      }
-    } catch (error) {
-      console.error(`[useSyncedState] Error reading LocalStorage for ${key}:`, error);
-    }
-    return initialValue;
-  };
-
-  const [value, setValue] = useState<T>(getInitialValue);
+  // ✅ مقدار اولیه را از LocalStorage بخوان (نه initialValue خام)
+  const [value, setValue] = useState<T>(() => {
+    return readFromLocalStorage<T>(key, initialValue);
+  });
 
   // ✅ گوش دادن به تغییرات فایربیس
   useEffect(() => {
     isMounted.current = true;
     const docRef = doc(db, "appData", key);
-    
-    console.log(`[useSyncedState] Setting up listener for ${key}`);
     
     const unsubscribe = onSnapshot(
       docRef, 
@@ -53,18 +64,23 @@ export function useSyncedState<T>(key: string, initialValue: T) {
         if (docSnap.exists()) {
           const data = docSnap.data();
           if (data && data.value !== undefined) {
-            console.log(`[useSyncedState] Received update from Firebase for ${key}`);
-            setValue(data.value);
+            const firebaseValue = data.value as T;
+            lastFirebaseValueRef.current = firebaseValue;
             
-            // ✅ ذخیره در LocalStorage
-            try {
-              localStorage.setItem(`synced_${key}`, JSON.stringify(data.value));
-            } catch (error) {
-              console.error(`[useSyncedState] Error saving to LocalStorage for ${key}:`, error);
-            }
+            // ✅ فقط زمانی state را آپدیت کن که مقدار واقعاً متفاوت باشد
+            setValue(prevValue => {
+              // مقایسه ساده با JSON (برای آرایه‌ها و آبجکت‌ها)
+              const prevJson = JSON.stringify(prevValue);
+              const newJson = JSON.stringify(firebaseValue);
+              
+              if (prevJson !== newJson) {
+                // ✅ مقدار جدید فایربیس را در LocalStorage هم ذخیره کن
+                saveToLocalStorage(key, firebaseValue);
+                return firebaseValue;
+              }
+              return prevValue;
+            });
           }
-        } else {
-          console.log(`[useSyncedState] Document ${key} does not exist in Firebase`);
         }
       }, 
       (error) => {
@@ -73,44 +89,29 @@ export function useSyncedState<T>(key: string, initialValue: T) {
     );
 
     return () => {
-      console.log(`[useSyncedState] Cleaning up listener for ${key}`);
       isMounted.current = false;
       unsubscribe();
     };
   }, [key]);
 
-  // ✅ ذخیره در فایربیس و LocalStorage
+  // ✅ ذخیره در LocalStorage و فایربیس
   const setSyncedValue = useCallback(async (newValue: T | ((prev: T) => T)) => {
     setValue(prevValue => {
       const resolvedValue = typeof newValue === "function" 
         ? (newValue as (prev: T) => T)(prevValue)
         : newValue;
       
-      console.log(`[useSyncedState] Updating ${key} locally`);
+      // ✅ فوراً در LocalStorage ذخیره کن (این باعث می‌شود وقتی از تب خارج می‌شوید، داده حفظ شود)
+      saveToLocalStorage(key, resolvedValue);
       
-      // ✅ فوراً در LocalStorage ذخیره کن
-      try {
-        localStorage.setItem(`synced_${key}`, JSON.stringify(resolvedValue));
-      } catch (error) {
-        console.error(`[useSyncedState] Error saving to LocalStorage for ${key}:`, error);
-      }
-      
-      // ✅ سپس در فایربیس ذخیره کن
+      // ✅ سپس در فایربیس ذخیره کن (در پس‌زمینه)
       (async () => {
         try {
           const docRef = doc(db, "appData", key);
           const cleanedValue = removeUndefinedFields(resolvedValue);
-          console.log(`[useSyncedState] Saving ${key} to Firebase...`);
           await setDoc(docRef, { value: cleanedValue }, { merge: true });
-          console.log(`[useSyncedState] Successfully saved ${key} to Firebase`);
         } catch (error) {
           console.error(`[useSyncedState] ❌ Error saving ${key} to Firebase:`, error);
-          
-          // ✅ در صورت خطا، alert بده
-          if (isMounted.current) {
-            const errorMsg = error instanceof Error ? error.message : "Unknown error";
-            alert(`خطا در ذخیره‌سازی "${key}" در فایربیس:\n${errorMsg}\n\nلطفاً Security Rules فایربیس را بررسی کنید.`);
-          }
         }
       })();
       
