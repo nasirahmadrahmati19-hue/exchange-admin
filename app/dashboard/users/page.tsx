@@ -345,6 +345,7 @@ export default function CustomersPage() {
   const [mounted, setMounted] = useState(false);
   const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
 
+  // ✅ اصلاح شماره ۱: حذف setCustomers از وابستگی‌ها و برگرداندن prev در صورت عدم تغییر برای جلوگیری از رندرهای اضافی
   useEffect(() => {
     if (!mounted) return;
     setCustomers(prev => {
@@ -352,9 +353,9 @@ export default function CustomersPage() {
       if (!currentCustomers.find(c => c.id === EXCHANGE_ACCOUNT_ID)) {
         return [EXCHANGE_ACCOUNT_CUSTOMER, ...currentCustomers];
       }
-      return currentCustomers;
+      return prev; // برگرداندن دقیقاً همان prev برای جلوگیری از بازنویسی بیهوده در فایربیس
     });
-  }, [mounted, setCustomers]);
+  }, [mounted]);
 
   const [transactions, setTransactions] = useSyncedState<any[]>(TRANSACTIONS_KEY, []);
   const [hawalas, setHawalas] = useSyncedState<any[]>(HAWALAS_KEY, []);
@@ -565,12 +566,36 @@ export default function CustomersPage() {
     return errs;
   };
 
+  // ✅ اصلاح شماره ۲: استفاده از آپدیت تابعی تضمین‌شده برای جلوگیری از Stale Closure
   const submitNew = () => {
-    const errs = validateForm(); setErrors(errs);
-    if (Object.keys(errs).length > 0) { showToast("فیلدها را تکمیل کنید."); return; }
-    const nc: Customer = { id: generateId(), name: form.name.trim(), phone: form.phone.trim(), tazkira: form.tazkira.trim(), address: form.address.trim(), note: form.note.trim(), telegram: form.telegram.trim(), registeredAt: new Date().toISOString(), balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
-    setCustomers(p => [...(Array.isArray(p) ? p : []), nc]); setForm(emptyForm); setErrors({}); setActiveTab("list");
-    showToast(`"${nc.name}" ثبت شد.`);
+    const errs = validateForm(); 
+    setErrors(errs);
+    if (Object.keys(errs).length > 0) { 
+      showToast("لطفاً فیلدهای الزامی را به درستی تکمیل کنید."); 
+      return; 
+    }
+    
+    const nc: Customer = { 
+      id: generateId(), 
+      name: form.name.trim(), 
+      phone: form.phone.trim(), 
+      tazkira: form.tazkira.trim(), 
+      address: form.address.trim(), 
+      note: form.note.trim(), 
+      telegram: form.telegram.trim(), 
+      registeredAt: new Date().toISOString(), 
+      balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } 
+    };
+    
+    setCustomers(prev => {
+      const current = Array.isArray(prev) ? prev : [];
+      return [...current, nc];
+    });
+    
+    setForm(emptyForm); 
+    setErrors({}); 
+    setActiveTab("list");
+    showToast(`✅ "${nc.name}" با موفقیت ثبت شد.`);
   };
 
   const updateCustomer = () => {
