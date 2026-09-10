@@ -19,51 +19,97 @@ function removeUndefinedFields(obj: any): any {
 }
 
 export function useSyncedState<T>(key: string, initialValue: T) {
-  const [value, setValue] = useState<T>(initialValue);
   const isMounted = useRef(true);
+  
+  // ✅ ابتدا از LocalStorage بخوان (اگر موجود باشد)
+  const getInitialValue = (): T => {
+    if (typeof window === "undefined") return initialValue;
+    try {
+      const cached = localStorage.getItem(`synced_${key}`);
+      if (cached) {
+        console.log(`[useSyncedState] Loading ${key} from LocalStorage`);
+        return JSON.parse(cached);
+      }
+    } catch (error) {
+      console.error(`[useSyncedState] Error reading LocalStorage for ${key}:`, error);
+    }
+    return initialValue;
+  };
 
+  const [value, setValue] = useState<T>(getInitialValue);
+
+  // ✅ گوش دادن به تغییرات فایربیس
   useEffect(() => {
     isMounted.current = true;
     const docRef = doc(db, "appData", key);
     
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
-      if (!isMounted.current) return;
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data && data.value !== undefined) {
-          setValue(data.value);
+    console.log(`[useSyncedState] Setting up listener for ${key}`);
+    
+    const unsubscribe = onSnapshot(
+      docRef, 
+      (docSnap) => {
+        if (!isMounted.current) return;
+        
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data && data.value !== undefined) {
+            console.log(`[useSyncedState] Received update from Firebase for ${key}`);
+            setValue(data.value);
+            
+            // ✅ ذخیره در LocalStorage
+            try {
+              localStorage.setItem(`synced_${key}`, JSON.stringify(data.value));
+            } catch (error) {
+              console.error(`[useSyncedState] Error saving to LocalStorage for ${key}:`, error);
+            }
+          }
+        } else {
+          console.log(`[useSyncedState] Document ${key} does not exist in Firebase`);
         }
+      }, 
+      (error) => {
+        console.error(`[useSyncedState] Error listening to ${key}:`, error);
       }
-    }, (error) => {
-      console.error(`Error listening to ${key}:`, error);
-    });
+    );
 
     return () => {
+      console.log(`[useSyncedState] Cleaning up listener for ${key}`);
       isMounted.current = false;
       unsubscribe();
     };
   }, [key]);
 
+  // ✅ ذخیره در فایربیس و LocalStorage
   const setSyncedValue = useCallback(async (newValue: T | ((prev: T) => T)) => {
-    // استفاده از آپدیت تابعی برای دسترسی به آخرین مقدار state و جلوگیری از Stale Closure
     setValue(prevValue => {
       const resolvedValue = typeof newValue === "function" 
         ? (newValue as (prev: T) => T)(prevValue)
         : newValue;
       
-      // عملیات ذخیره‌سازی در پس‌زمینه
+      console.log(`[useSyncedState] Updating ${key} locally`);
+      
+      // ✅ فوراً در LocalStorage ذخیره کن
+      try {
+        localStorage.setItem(`synced_${key}`, JSON.stringify(resolvedValue));
+      } catch (error) {
+        console.error(`[useSyncedState] Error saving to LocalStorage for ${key}:`, error);
+      }
+      
+      // ✅ سپس در فایربیس ذخیره کن
       (async () => {
         try {
           const docRef = doc(db, "appData", key);
           const cleanedValue = removeUndefinedFields(resolvedValue);
+          console.log(`[useSyncedState] Saving ${key} to Firebase...`);
           await setDoc(docRef, { value: cleanedValue }, { merge: true });
+          console.log(`[useSyncedState] Successfully saved ${key} to Firebase`);
         } catch (error) {
-          console.error(`Error saving ${key}:`, error);
-          // ⚠️ حیاتی: در صورت خطا، state را به حالت قبل برمی‌گردانیم (Rollback)
-          // تا داده به صورت "شبح" در UI نماند و ناگهان غیب نشود
+          console.error(`[useSyncedState] ❌ Error saving ${key} to Firebase:`, error);
+          
+          // ✅ در صورت خطا، alert بده
           if (isMounted.current) {
-            setValue(prevValue);
-            alert("خطا در ذخیره‌سازی! لطفاً اتصال اینترنت یا دسترسی‌های فایربیس (Rules) را بررسی کنید.");
+            const errorMsg = error instanceof Error ? error.message : "Unknown error";
+            alert(`خطا در ذخیره‌سازی "${key}" در فایربیس:\n${errorMsg}\n\nلطفاً Security Rules فایربیس را بررسی کنید.`);
           }
         }
       })();
