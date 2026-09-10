@@ -1,76 +1,63 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 /**
- * هوک سفارشی برای مدیریت State همگام‌شده با localStorage
- * این هوک به طور خودکار داده‌ها را ذخیره، بازیابی و بین تب‌های مرورگر همگام می‌کند.
- * 
- * @param key کلید منحصر به فرد برای ذخیره در localStorage
- * @param initialValue مقدار پیش‌فرض در صورتی که داده‌ای در حافظه وجود نداشته باشد
- * @returns آرایه‌ای شامل [مقدار فعلی, تابع به‌روزرسانی]
+ * هوک همگام‌سازی State با localStorage
+ * نسخه پایدار و بدون باگ لوپ بی‌نهایت
  */
-export function useSyncedState<T>(
-  key: string, 
-  initialValue: T
-): [T, React.Dispatch<React.SetStateAction<T>>] {
+export function useSyncedState<T>(key: string, initialValue: T): [T, React.Dispatch<React.SetStateAction<T>>] {
+  // استفاده از ref برای جلوگیری از لوپ بی‌نهایت
+  const initialValueRef = useRef(initialValue);
   
-  // ۱. مقداردهی اولیه ایمن (سازگار با SSR در Next.js)
+  // ۱. مقداردهی اولیه ایمن
   const [state, setState] = useState<T>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const item = window.localStorage.getItem(key);
-        if (item) {
-          return JSON.parse(item) as T;
-        }
-      } catch (error) {
-        console.error(`❌ خطا در خواندن کلید "${key}" از localStorage:`, error);
-        // در صورت خرابی داده‌ها، مقدار پیش‌فرض را برمی‌گرداند تا برنامه کرش نکند
-        return initialValue;
+    if (typeof window === "undefined") return initialValue;
+    try {
+      const item = window.localStorage.getItem(key);
+      if (item !== null) {
+        const parsed = JSON.parse(item);
+        return parsed as T;
       }
+    } catch (error) {
+      console.warn(`خطا در خواندن ${key}:`, error);
     }
     return initialValue;
   });
 
-  // ۲. ذخیره خودکار در localStorage هر بار که state تغییر می‌کند
+  // ۲. ذخیره در localStorage
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      try {
-        if (state !== undefined && state !== null) {
-          window.localStorage.setItem(key, JSON.stringify(state));
-        } else {
-          // اگر مقدار null یا undefined شد، کلید را از حافظه پاک کن
-          window.localStorage.removeItem(key);
-        }
-      } catch (error) {
-        console.error(`❌ خطا در ذخیره کلید "${key}" در localStorage:`, error);
+    if (typeof window === "undefined") return;
+    try {
+      if (state === undefined || state === null) {
+        window.localStorage.removeItem(key);
+      } else {
+        window.localStorage.setItem(key, JSON.stringify(state));
       }
+    } catch (error) {
+      console.warn(`خطا در ذخیره ${key}:`, error);
     }
   }, [key, state]);
 
-  // ۳. همگام‌سازی بین تب‌های مختلف مرورگر (جلوگیری از بازنویسی داده‌ها)
+  // ۳. همگام‌سازی بین تب‌ها (بدون initialValue در dependency)
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const handleStorageChange = (e: StorageEvent) => {
-      // فقط اگر کلید تغییر یافته مربوط به همین هوک باشد
-      if (e.key === key) {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === key && e.key !== null) {
         try {
-          if (e.newValue !== null) {
-            setState(JSON.parse(e.newValue) as T);
+          if (e.newValue === null) {
+            setState(initialValueRef.current);
           } else {
-            setState(initialValue);
+            setState(JSON.parse(e.newValue) as T);
           }
-        } catch (error) {
-          console.error(`❌ خطا در پردازش تغییر حافظه برای کلید "${key}":`, error);
+        } catch {
+          // نادیده گرفتن خطای parse
         }
       }
     };
 
-    // گوش دادن به رویداد تغییر localStorage در سایر تب‌ها
-    window.addEventListener("storage", handleStorageChange);
-    
-    // پاکسازی گوش‌دهنده هنگام حذف کامپوننت
-    return () => window.removeEventListener("storage", handleStorageChange);
-  }, [key, initialValue]);
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, [key]); // ✅ فقط key در dependency
 
   return [state, setState];
 }
