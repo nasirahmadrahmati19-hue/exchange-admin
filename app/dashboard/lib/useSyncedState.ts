@@ -122,6 +122,7 @@ export function useSyncedCollection<T extends { id: string }>(
         setIsLoading(false);
       }
     );
+
     return () => unsubscribe();
   }, [key]);
 
@@ -131,56 +132,3 @@ export function useSyncedCollection<T extends { id: string }>(
    */
   const addOrUpdateItem = async (item: T) => {
     if (!item.id) {
-      console.error("Item must have an id field");
-      return;
-    }
-    try {
-      const itemRef = doc(db, "appData", key, "items", item.id);
-      const cleanedItem = removeUndefinedFields(item);
-      await setDoc(itemRef, cleanedItem, { merge: true });
-    } catch (error) {
-      console.error(Error saving item in ${key}:, error);
-    }
-  };
-
-  /**
-   * حذف یک آیتم بر اساس id
-   */
-  const removeItem = async (id: string) => {
-    try {
-      const itemRef = doc(db, "appData", key, "items", id);
-      await deleteDoc(itemRef);
-    } catch (error) {
-      console.error(Error deleting item in ${key}:, error);
-    }
-  };
-
-  /**
-   * جایگزین کردن کل لیست (فقط زمانی استفاده کنید که واقعاً نیاز
-   * دارید همه چیز را یک‌جا بازنویسی کنید - مثلاً برای import اولیه)
-   * توجه: این تابع به همان مشکل قدیمی race condition دچار می‌شود
-   * اگر بی‌دلیل زیاد صدا زده شود، پس با احتیاط استفاده کنید.
-   */
-  const replaceAllItems = async (newItems: T[]) => {
-    try {
-      await Promise.all(
-        newItems.map((item) => {
-          const itemRef = doc(db, "appData", key, "items", item.id);
-          return setDoc(itemRef, removeUndefinedFields(item), {
-            merge: true,
-          });
-        })
-      );
-    } catch (error) {
-      console.error(Error replacing items in ${key}:, error);
-    }
-  };
-
-  return {
-    items,
-    isLoading,
-    addOrUpdateItem,
-    removeItem,
-    replaceAllItems,
-  };
-}
