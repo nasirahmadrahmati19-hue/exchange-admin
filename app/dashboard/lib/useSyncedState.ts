@@ -1,13 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import {
-  doc,
-  setDoc,
-  deleteDoc,
-  onSnapshot,
-  collection,
-} from "firebase/firestore";
+import { doc, setDoc, onSnapshot } from "firebase/firestore";
 import { db } from "./firebase";
 
 /**
@@ -18,7 +12,7 @@ function removeUndefinedFields(obj: any): any {
   if (obj === null || obj === undefined) return obj;
   if (typeof obj !== "object") return obj;
   if (Array.isArray(obj)) return obj.map(removeUndefinedFields);
-
+  
   const cleaned: any = {};
   for (const key in obj) {
     if (obj[key] !== undefined) {
@@ -29,10 +23,8 @@ function removeUndefinedFields(obj: any): any {
 }
 
 /**
- * هوک برای sync کردن یک state ساده (یک آبجکت یا مقدار واحد) با Firestore
- * مناسب برای تنظیمات، پروفایل، یا هر مقدار غیرآرایه‌ای
- *
- * @param key - نام document در Firestore (داخل کالکشن appData)
+ * هوک برای sync کردن یک state ساده با Firestore
+ * @param key - نام document در Firestore
  * @param initialValue - مقدار اولیه
  */
 export function useSyncedState<T>(key: string, initialValue: T) {
@@ -40,41 +32,36 @@ export function useSyncedState<T>(key: string, initialValue: T) {
 
   useEffect(() => {
     const docRef = doc(db, "appData", key);
-
+    
     // گوش دادن به تغییرات Firestore
-    const unsubscribe = onSnapshot(
-      docRef,
-      (docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          if (data && data.value !== undefined) {
-            setValue(data.value);
-          }
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data && data.value !== undefined) {
+          setValue(data.value);
         }
-      },
-      (error) => {
-        console.error(Error listening to ${key}:, error);
       }
-    );
+    }, (error) => {
+      console.error(`Error listening to ${key}:`, error);
+    });
 
     return () => unsubscribe();
   }, [key]);
 
   // ذخیره در Firestore
   const setSyncedValue = async (newValue: T | ((prev: T) => T)) => {
-    const resolvedValue =
-      typeof newValue === "function"
-        ? (newValue as (prev: T) => T)(value)
-        : newValue;
-
+    const resolvedValue = typeof newValue === "function" 
+      ? (newValue as (prev: T) => T)(value)
+      : newValue;
+    
     setValue(resolvedValue);
-
+    
     try {
       const docRef = doc(db, "appData", key);
       const cleanedValue = removeUndefinedFields(resolvedValue);
       await setDoc(docRef, { value: cleanedValue }, { merge: true });
     } catch (error) {
-      console.error(Error saving ${key}:, error);
+      console.error(`Error saving ${key}:`, error);
     }
   };
 
@@ -82,53 +69,47 @@ export function useSyncedState<T>(key: string, initialValue: T) {
 }
 
 /**
- * هوک برای sync کردن یک لیست (collection) با Firestore
- *
- * ⚠️ نکته مهم درباره‌ی رفع باگ «پاک شدن دیتا بعد از چند لحظه»:
- * در نسخه‌ی قبلی، کل آرایه در یک فیلد از یک document ذخیره می‌شد.
- * اگر این هوک در چند کامپوننت مختلف صدا زده می‌شد، یا هر رندری با
- * state قدیمی (stale) دوباره ذخیره می‌کرد، کل آرایه Overwrite می‌شد
- * و آیتم‌های تازه‌اضافه‌شده از بین می‌رفتند.
- *
- * در این نسخه، هر آیتم (مثلاً هر مشتری) در یک document مجزا در یک
- * subcollection ذخیره می‌شود. بنابراین اضافه/ویرایش/حذف یک آیتم
- * هرگز روی آیتم‌های دیگر تاثیر نمی‌گذارد، حتی اگر چند نمونه از این
- * هوک به‌طور همزمان در جاهای مختلف اپلیکیشن استفاده شوند.
- *
- * نیازمندی: هر آیتم باید یک فیلد id از نوع string داشته باشد.
- *
- * @param key - نام مجموعه (مثلاً "customers")
- * @param initialValue - آرایه اولیه (پیش از دریافت داده از Firestore)
+ * هوک برای sync کردن یک collection (آرایه) با Firestore
+ * @param key - نام document در Firestore
+ * @param initialValue - آرایه اولیه
  */
-export function useSyncedCollection<T extends { id: string }>(
-  key: string,
-  initialValue: T[]
-) {
+export function useSyncedCollection<T>(key: string, initialValue: T[]) {
   const [items, setItems] = useState<T[]>(initialValue);
-  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const colRef = collection(db, "appData", key, "items");
-
-    const unsubscribe = onSnapshot(
-      colRef,
-      (snap) => {
-        const docs = snap.docs.map((d) => d.data() as T);
-        setItems(docs);
-        setIsLoading(false);
-      },
-      (error) => {
-        console.error(Error listening to collection ${key}:, error);
-        setIsLoading(false);
+    const docRef = doc(db, "appData", key);
+    
+    // گوش دادن به تغییرات Firestore
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data && Array.isArray(data.items)) {
+          setItems(data.items);
+        }
       }
-    );
+    }, (error) => {
+      console.error(`Error listening to collection ${key}:`, error);
+    });
 
     return () => unsubscribe();
   }, [key]);
 
-  /**
-   * اضافه کردن یک آیتم جدید یا به‌روزرسانی یک آیتم موجود
-   * (بر اساس item.id تشخیص می‌دهد)
-   */
-  const addOrUpdateItem = async (item: T) => {
-    if (!item.id) {
+  // ذخیره در Firestore
+  const setSyncedItems = async (newItems: T[] | ((prev: T[]) => T[])) => {
+    const resolvedItems = typeof newItems === "function"
+      ? (newItems as (prev: T[]) => T[])(items)
+      : newItems;
+    
+    setItems(resolvedItems);
+    
+    try {
+      const docRef = doc(db, "appData", key);
+      const cleanedItems = resolvedItems.map(removeUndefinedFields);
+      await setDoc(docRef, { items: cleanedItems }, { merge: true });
+    } catch (error) {
+      console.error(`Error saving collection ${key}:`, error);
+    }
+  };
+
+  return [items, setSyncedItems] as const;
+}
