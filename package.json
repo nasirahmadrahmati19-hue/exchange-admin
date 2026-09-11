@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@ducanh2912/next-pwa": "^10.2.9",
     "firebase": "^10.7.1",
     "next": "14.2.15",
     "react": "^18.2.0",
