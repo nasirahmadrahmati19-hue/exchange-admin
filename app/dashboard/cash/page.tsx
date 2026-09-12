@@ -353,9 +353,6 @@ export default function CashPage() {
     return () => document.removeEventListener("mousedown", handler);
   }, [openActionId]);
 
-  // ✅ اصلاح شده: ترتیب محاسبات دقیقاً مطابق داشبورد برای تضمین یکسانی اعداد
-  
-  // ۱. مجموع طلب مشتریان (فقط مقادیر مثبت)
   const customerDeposits = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
@@ -368,7 +365,6 @@ export default function CashPage() {
     return totals;
   }, [customers, entries, transactions]);
 
-  // ۲. مجموع بدهی مشتریان (فقط مقادیر منفی)
   const customerDebts = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
@@ -381,13 +377,10 @@ export default function CashPage() {
     return totals;
   }, [customers, entries, transactions]);
 
-  // ✅ ۳. موجودی حساب صرافی (واریز/برداشت مالک + اثر مستقیم معاملات - بدهی مشتریان)
   const exchangeBalance = useMemo(() => {
     const bal: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const cur of currencies) {
       let balance = 0;
-      
-      // الف) واریز و برداشت دستی مالک و قرض‌ها
       for (const entry of entries) {
         if (entry.status === "voided" || entry.currency !== cur) continue;
         if (entry.type === "owner_deposit") balance += entry.amount;
@@ -395,34 +388,17 @@ export default function CashPage() {
         else if (entry.type === "loan_given") balance -= entry.amount;
         else if (entry.type === "loan_received") balance += entry.amount;
       }
-
-      // ب) ✅ اصلاح حیاتی: افزودن اثر مستقیم معاملات صرافی (Transactions)
       for (const tx of transactions) {
         if (tx.status === "voided") continue;
-        
-        // در معامله، صرافی ارز مبدأ (from) را از مشتری دریافت می‌کند (موجودی صرافی زیاد می‌شود)
-        if (tx.fromCurrency === cur) {
-          balance += tx.fromAmount;
-        }
-        
-        // در معامله، صرافی ارز مقصد (to) را به مشتری پرداخت می‌کند (موجودی صرافی کم می‌شود)
-        if (tx.toCurrency === cur) {
-          balance -= tx.toAmount;
-        }
-
-        // کارمزد معامله به نفع صرافی است (موجودی صرافی زیاد می‌شود)
-        if (tx.commission && tx.commissionCurrency === cur) {
-          balance += tx.commission;
-        }
+        if (tx.fromCurrency === cur) balance += tx.fromAmount;
+        if (tx.toCurrency === cur) balance -= tx.toAmount;
+        if (tx.commission && tx.commissionCurrency === cur) balance += tx.commission;
       }
-
-      // ج) کسر بدهی مشتریان (طبق فرمول قبلی شما حفظ شد)
       bal[cur] = balance - (customerDebts[cur] || 0);
     }
     return bal;
   }, [entries, transactions, customerDebts]);
 
-  // ✅ ۴. موجودی فیزیکی صندوق = حساب صرافی + طلب مشتریان (دقیقاً مطابق فرمول داشبورد)
   const physicalCashBalances = useMemo(() => {
     const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const cur of currencies) {
@@ -483,13 +459,18 @@ export default function CashPage() {
   const showToast = useCallback((message: string) => { setToast(message); setTimeout(() => setToast(""), 3500); }, []);
   const setField = useCallback((field: keyof FormState, value: string) => { setForm(prev => ({ ...prev, [field]: value })); setErrors(prev => ({ ...prev, [field]: undefined })); }, []);
 
+  // ✅ اصلاح حیاتی: بررسی اجباری customerId به جای customerName
   const validateForm = useCallback(() => {
     const errs: FormErrors = {};
     if (!form.type) errs.type = "نوع عملیات را انتخاب کنید.";
     const amount = parseAmount(form.amount);
     if (!amount) errs.amount = "مبلغ خالی یا صفر است.";
     if (!form.reason.trim()) errs.reason = "دلیل / شرح ضروری است.";
-    if (isCustomerType && !form.customerName.trim()) errs.customerName = "انتخاب مشتری ضروری است.";
+    
+    if (isCustomerType && !form.customerId) {
+      errs.customerName = "لطفاً مشتری را از لیست پیشنهادی انتخاب کنید (تایپ دستی کافی نیست).";
+    }
+    
     if (form.type === "commission_withdraw") {
       const avail = availableCommission[form.currency] || 0;
       if (amount > avail) errs.amount = `کارمزد کافی نیست. قابل برداشت: ${fmt(avail)} ${labels[form.currency]}`;
@@ -560,16 +541,16 @@ export default function CashPage() {
       const updatedEntriesForEdit = recomputeCashBalances(entries.map(e => e.id === editingEntryId ? updated : e));
       setEntries(updatedEntriesForEdit);
       finalEntry = updated;
-} else {
-  const newTrackingCode = await consumeTrackingCode();
-  const entry = { ...previewData, trackingCode: newTrackingCode, status: "active" as const };
-  if (entry.customerId && entry.customerId !== CASH_BOX_ID) { const cust = customers.find(c => c.id === entry.customerId); if (cust) { entry.customerPhone = cust.phone || ""; entry.customerTazkira = cust.tazkira || ""; } }
-  updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForCashEntry(entry, "register"));
-  
-  const updatedEntriesForNew = recomputeCashBalances([...entries, entry]);
-  setEntries(updatedEntriesForNew);
-  finalEntry = entry;
-}
+    } else {
+      const newTrackingCode = await consumeTrackingCode();
+      const entry = { ...previewData, trackingCode: newTrackingCode, status: "active" as const };
+      if (entry.customerId && entry.customerId !== CASH_BOX_ID) { const cust = customers.find(c => c.id === entry.customerId); if (cust) { entry.customerPhone = cust.phone || ""; entry.customerTazkira = cust.tazkira || ""; } }
+      updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForCashEntry(entry, "register"));
+      
+      const updatedEntriesForNew = recomputeCashBalances([...entries, entry]);
+      setEntries(updatedEntriesForNew);
+      finalEntry = entry;
+    }
     setCustomers(updatedCustomers);
     setForm(emptyForm); setErrors({}); setEditingEntryId(null); setPreviewOpen(false); setPreviewData(null);
     await sendCashReceipts({ entry: finalEntry, action: "register", customers: updatedCustomers });
