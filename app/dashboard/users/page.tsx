@@ -345,7 +345,6 @@ export default function CustomersPage() {
   const [mounted, setMounted] = useState(false);
   const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
 
-  // ✅ اصلاح شماره ۱: حذف setCustomers از وابستگی‌ها و برگرداندن prev در صورت عدم تغییر برای جلوگیری از رندرهای اضافی
   useEffect(() => {
     if (!mounted) return;
     setCustomers(prev => {
@@ -353,7 +352,7 @@ export default function CustomersPage() {
       if (!currentCustomers.find(c => c.id === EXCHANGE_ACCOUNT_ID)) {
         return [EXCHANGE_ACCOUNT_CUSTOMER, ...currentCustomers];
       }
-      return prev; // برگرداندن دقیقاً همان prev برای جلوگیری از بازنویسی بیهوده در فایربیس
+      return prev;
     });
   }, [mounted]);
 
@@ -534,26 +533,76 @@ export default function CustomersPage() {
     showToast(loanModalType === "give" ? `✅ ${fmt(amt)} ${labels[loanCurrency]} به "${selectedCustomer.name}" قرض داده شد.` : `✅ ${fmt(amt)} ${labels[loanCurrency]} از "${selectedCustomer.name}" دریافت شد.`);
   };
 
-  const deleteCustomer = (id: string) => {
+  // ✅ تابع حذف مشتری با مدیریت کامل خطا و await برای اطمینان از نوشتن در فایربیس
+  const deleteCustomer = useCallback(async (id: string) => {
     if (id === CASH_BOX_ID || id === EXCHANGE_ACCOUNT_ID) return;
     setOpenMenuId(null);
+    
     const safeCustomers = Array.isArray(customers) ? customers : [];
     const c = safeCustomers.find(x => x.id === id);
     if (!c) return;
+    
     const hasBal = currencies.some(cur => allBalances[id][cur] !== 0);
     const cnt = ledger.filter(e => e.customerId === id).length;
     let msg = `آیا از حذف "${c.name}" مطمئن هستید؟`;
     if (cnt > 0) msg += `\n⚠️ ${cnt} رویداد مالی دارد (به صورت نرم‌افزاری بایگانی می‌شود).`;
     if (hasBal) msg += `\n⚠️ موجودی غیر صفر دارد!`;
-    if (!window.confirm(msg)) return;
     
-    setTransactions(prev => (Array.isArray(prev) ? prev : []).map((t: any) => { if (t.customerId === id || t.customerName === c.name || t.senderId === id || t.senderName === c.name || t.receiverId === id || t.receiverName === c.name) return { ...t, customerDeleted: true }; return t; }));
-    setHawalas(prev => (Array.isArray(prev) ? prev : []).map((h: any) => { if (h.senderId === id || h.senderName === c.name || h.receiverId === id || h.receiverName === c.name) return { ...h, customerDeleted: true }; return h; }));
-    setCashEntries(prev => (Array.isArray(prev) ? prev : []).map((ce: any) => { if (ce.customerId === id || ce.customerName === c.name) return { ...ce, customerDeleted: true }; return ce; }));
-    setCustomers(p => (Array.isArray(p) ? p : []).filter(x => x.id !== id));
-    if (selectedCustomerId === id) { setSelectedCustomerId(null); setActiveTab("list"); }
-    showToast(`"${c.name}" حذف و سوابق آن بایگانی شد.`);
-  };
+    if (!window.confirm(msg)) return;
+
+    try {
+      console.log(`⏳ [DEBUG] Starting deletion process for customer: ${c.name} (${id})`);
+
+      // ۱. بایگانی تراکنش‌ها
+      console.log("⏳ [DEBUG] Archiving transactions...");
+      await setTransactions(prev => (Array.isArray(prev) ? prev : []).map((t: any) => { 
+        if (t.customerId === id || t.customerName === c.name || t.senderId === id || t.senderName === c.name || t.receiverId === id || t.receiverName === c.name) {
+          return { ...t, customerDeleted: true }; 
+        }
+        return t; 
+      }));
+
+      // ۲. بایگانی حواله‌ها
+      console.log("⏳ [DEBUG] Archiving hawalas...");
+      await setHawalas(prev => (Array.isArray(prev) ? prev : []).map((h: any) => { 
+        if (h.senderId === id || h.senderName === c.name || h.receiverId === id || h.receiverName === c.name) {
+          return { ...h, customerDeleted: true }; 
+        }
+        return h; 
+      }));
+
+      // ۳. بایگانی سندهای صندوق
+      console.log("⏳ [DEBUG] Archiving cash entries...");
+      await setCashEntries(prev => (Array.isArray(prev) ? prev : []).map((ce: any) => { 
+        if (ce.customerId === id || ce.customerName === c.name) {
+          return { ...ce, customerDeleted: true }; 
+        }
+        return ce; 
+      }));
+
+      // ۴. حذف نهایی مشتری از لیست
+      console.log("⏳ [DEBUG] Removing customer from list...");
+      await setCustomers(p => (Array.isArray(p) ? p : []).filter(x => x.id !== id));
+
+      console.log("✅ [DEBUG] Customer deletion completed successfully in Firebase.");
+
+      if (selectedCustomerId === id) {
+        setSelectedCustomerId(null);
+        setActiveTab("list");
+      }
+      showToast(`"${c.name}" حذف و سوابق آن بایگانی شد.`);
+
+    } catch (error: any) {
+      // 🔥 مدیریت خطا و نمایش پیام واقعی فایربیس
+      console.error("🔥 🔥 🔥 خطای واقعی در حذف مشتری (Firebase Error): 🔥 🔥 🔥");
+      console.error("➡️ Error Code:", error?.code);
+      console.error("➡️ Error Message:", error?.message);
+      console.error("➡️ Full Error Object:", error);
+
+      const realMessage = error?.message || "خطای ناشناخته در ارتباط با دیتابیس";
+      alert(`❌ خطا در حذف مشتری: ${realMessage}\n\nلطفاً برای جزئیات بیشتر کنسول مرورگر (F12) را بررسی کنید.`);
+    }
+  }, [customers, allBalances, ledger, setTransactions, setHawalas, setCashEntries, setCustomers, selectedCustomerId, setActiveTab, showToast]);
 
   const validateForm = () => {
     const errs: FormErrors = {};
@@ -566,7 +615,6 @@ export default function CustomersPage() {
     return errs;
   };
 
-  // ✅ اصلاح شماره ۲: استفاده از آپدیت تابعی تضمین‌شده برای جلوگیری از Stale Closure
   const submitNew = () => {
     const errs = validateForm(); 
     setErrors(errs);
