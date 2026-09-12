@@ -2,6 +2,7 @@
 import type { Metadata, Viewport } from "next";
 import { AuthProvider } from "./AuthProvider";
 import InstallPWAButton from "./components/InstallPWAButton";
+import PWAUpdateNotifier from "./components/PWAUpdateNotifier"; // ✅ خط جدید اضافه شد
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -62,6 +63,10 @@ export default function RootLayout({
           {children}
           <InstallPWAButton />
         </AuthProvider>
+        
+        {/* ✅ کامپوننت اطلاع‌رسانی بروزرسانی PWA اضافه شد */}
+        <PWAUpdateNotifier />
+        
       </body>
     </html>
   );
