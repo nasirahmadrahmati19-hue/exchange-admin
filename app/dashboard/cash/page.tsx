@@ -459,7 +459,6 @@ export default function CashPage() {
   const showToast = useCallback((message: string) => { setToast(message); setTimeout(() => setToast(""), 3500); }, []);
   const setField = useCallback((field: keyof FormState, value: string) => { setForm(prev => ({ ...prev, [field]: value })); setErrors(prev => ({ ...prev, [field]: undefined })); }, []);
 
-  // ✅ اصلاح حیاتی: بررسی اجباری customerId به جای customerName
   const validateForm = useCallback(() => {
     const errs: FormErrors = {};
     if (!form.type) errs.type = "نوع عملیات را انتخاب کنید.";
@@ -509,52 +508,145 @@ export default function CashPage() {
     showToast(`سند ${entry.trackingCode} حذف شد.`);
   }, [showToast, customers, entries]);
 
+  // ✅ نسخه اصلاح‌شده با لاگ‌های دیباگ
   const handleSubmitClick = useCallback(() => {
-    const errs = validateForm(); setErrors(errs);
-    if (Object.keys(errs).length > 0) { showToast("لطفاً فیلدهای ضروری را تکمیل کنید."); return; }
+    console.log("🔵 [DEBUG] handleSubmitClick triggered");
+    const errs = validateForm(); 
+    setErrors(errs);
+    
+    if (Object.keys(errs).length > 0) { 
+      console.warn("🟡 [DEBUG] Validation failed:", errs);
+      showToast("لطفاً فیلدهای ضروری را تکمیل کنید."); 
+      return; 
+    }
+    
     const amount = parseAmount(form.amount);
     const direction: "in" | "out" = isInType ? "in" : "out";
     let entry: CashEntry;
+    
     if (editingEntryId) {
       const old = entries.find(e => e.id === editingEntryId);
-      entry = { id: editingEntryId, trackingCode: old?.trackingCode || getNextTrackingCode(), date: old?.date || new Date().toISOString(), type: form.type as CashEntryType, currency: form.currency, amount, direction, reason: form.reason.trim(), balanceAfter: 0, customerId: isCustomerType ? form.customerId : undefined, customerName: isCustomerType ? form.customerName : undefined, status: "active" };
+      entry = { 
+        id: editingEntryId, 
+        trackingCode: old?.trackingCode || getNextTrackingCode(), 
+        date: old?.date || new Date().toISOString(), 
+        type: form.type as CashEntryType, 
+        currency: form.currency, 
+        amount, 
+        direction, 
+        reason: form.reason.trim(), 
+        balanceAfter: 0, 
+        customerId: isCustomerType ? form.customerId : undefined, 
+        customerName: isCustomerType ? form.customerName : undefined, 
+        status: "active" 
+      };
     } else {
       const currentBal = physicalCashBalances[form.currency] || 0;
       const newBal = isInType ? currentBal + amount : currentBal - amount;
-      entry = { id: generateId(), trackingCode: getNextTrackingCode(), date: new Date().toISOString(), type: form.type as CashEntryType, currency: form.currency, amount, direction, reason: form.reason.trim(), balanceAfter: newBal, customerId: isCustomerType ? form.customerId : undefined, customerName: isCustomerType ? form.customerName : undefined, status: "active" };
+      entry = { 
+        id: generateId(), 
+        trackingCode: getNextTrackingCode(), 
+        date: new Date().toISOString(), 
+        type: form.type as CashEntryType, 
+        currency: form.currency, 
+        amount, 
+        direction, 
+        reason: form.reason.trim(), 
+        balanceAfter: newBal, 
+        customerId: isCustomerType ? form.customerId : undefined, 
+        customerName: isCustomerType ? form.customerName : undefined, 
+        status: "active" 
+      };
     }
-    setPreviewData(entry); setPreviewOpen(true);
+    
+    console.log("🟢 [DEBUG] Preview data prepared:", entry);
+    setPreviewData(entry); 
+    setPreviewOpen(true);
   }, [validateForm, form, physicalCashBalances, isInType, isCustomerType, showToast, editingEntryId, entries]);
 
+  // ✅ نسخه اصلاح‌شده با try/catch و لاگ‌های دیباگ برای جلوگیری از فریز شدن
   const confirmRegister = useCallback(async () => {
-    if (!previewData) return;
-    const wasEditing = !!editingEntryId;
-    let updatedCustomers = customers;
-    let finalEntry = previewData;
-    if (wasEditing) {
-      const oldEntry = entries.find(e => e.id === editingEntryId);
-      if (oldEntry) updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForCashEntry(oldEntry, "reverse"));
-      const updated: CashEntry = { ...previewData, id: editingEntryId!, trackingCode: oldEntry?.trackingCode || previewData.trackingCode, date: oldEntry?.date || previewData.date, status: "active" };
-      if (updated.customerId && updated.customerId !== CASH_BOX_ID) { const cust = customers.find(c => c.id === updated.customerId); if (cust) { updated.customerPhone = cust.phone || ""; updated.customerTazkira = cust.tazkira || ""; } }
-      updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForCashEntry(updated, "register"));
-      
-      const updatedEntriesForEdit = recomputeCashBalances(entries.map(e => e.id === editingEntryId ? updated : e));
-      setEntries(updatedEntriesForEdit);
-      finalEntry = updated;
-    } else {
-      const newTrackingCode = await consumeTrackingCode();
-      const entry = { ...previewData, trackingCode: newTrackingCode, status: "active" as const };
-      if (entry.customerId && entry.customerId !== CASH_BOX_ID) { const cust = customers.find(c => c.id === entry.customerId); if (cust) { entry.customerPhone = cust.phone || ""; entry.customerTazkira = cust.tazkira || ""; } }
-      updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForCashEntry(entry, "register"));
-      
-      const updatedEntriesForNew = recomputeCashBalances([...entries, entry]);
-      setEntries(updatedEntriesForNew);
-      finalEntry = entry;
+    console.log("🚀 [DEBUG] confirmRegister started. previewData:", previewData);
+    if (!previewData) {
+      console.error("❌ [DEBUG] CRITICAL: No previewData found!");
+      return;
     }
-    setCustomers(updatedCustomers);
-    setForm(emptyForm); setErrors({}); setEditingEntryId(null); setPreviewOpen(false); setPreviewData(null);
-    await sendCashReceipts({ entry: finalEntry, action: "register", customers: updatedCustomers });
-    showToast(wasEditing ? "سند با موفقیت ویرایش شد." : isCommissionType ? "کارمزد با موفقیت برداشت شد." : "عملیات صندوق با موفقیت ثبت شد.");
+
+    try {
+      const wasEditing = !!editingEntryId;
+      let updatedCustomers = customers;
+      let finalEntry = previewData;
+
+      if (wasEditing) {
+        console.log("⏳ [DEBUG] Processing EDIT mode...");
+        const oldEntry = entries.find(e => e.id === editingEntryId);
+        if (oldEntry) {
+          updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForCashEntry(oldEntry, "reverse"));
+        }
+        const updated: CashEntry = { 
+          ...previewData, 
+          id: editingEntryId!, 
+          trackingCode: oldEntry?.trackingCode || previewData.trackingCode, 
+          date: oldEntry?.date || previewData.date, 
+          status: "active" 
+        };
+        if (updated.customerId && updated.customerId !== CASH_BOX_ID) { 
+          const cust = customers.find(c => c.id === updated.customerId); 
+          if (cust) { 
+            updated.customerPhone = cust.phone || ""; 
+            updated.customerTazkira = cust.tazkira || ""; 
+          } 
+        }
+        updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForCashEntry(updated, "register"));
+        
+        const updatedEntriesForEdit = recomputeCashBalances(entries.map(e => e.id === editingEntryId ? updated : e));
+        setEntries(updatedEntriesForEdit);
+        finalEntry = updated;
+        console.log("✅ [DEBUG] Edit mode state updated");
+      } else {
+        console.log("⏳ [DEBUG] Fetching new tracking code (awaiting consumeTrackingCode)...");
+        const newTrackingCode = await consumeTrackingCode();
+        console.log("✅ [DEBUG] Tracking code received:", newTrackingCode);
+
+        const entry = { ...previewData, trackingCode: newTrackingCode, status: "active" as const };
+        if (entry.customerId && entry.customerId !== CASH_BOX_ID) { 
+          const cust = customers.find(c => c.id === entry.customerId); 
+          if (cust) { 
+            entry.customerPhone = cust.phone || ""; 
+            entry.customerTazkira = cust.tazkira || ""; 
+          } 
+        }
+        
+        console.log("⏳ [DEBUG] Calculating balance changes...");
+        updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForCashEntry(entry, "register"));
+        
+        console.log("⏳ [DEBUG] Recomputing cash balances and calling setEntries/setCustomers...");
+        const updatedEntriesForNew = recomputeCashBalances([...entries, entry]);
+        
+        setEntries(updatedEntriesForNew);
+        setCustomers(updatedCustomers);
+        console.log("✅ [DEBUG] Local state updated successfully. useSyncedState should now trigger Firestore write.");
+        finalEntry = entry;
+      }
+
+      setForm(emptyForm); 
+      setErrors({}); 
+      setEditingEntryId(null); 
+      setPreviewOpen(false); 
+      setPreviewData(null);
+
+      console.log("⏳ [DEBUG] Sending Telegram receipts (if applicable)...");
+      await sendCashReceipts({ entry: finalEntry, action: "register", customers: updatedCustomers });
+      console.log("✅ [DEBUG] Telegram process finished");
+
+      showToast(wasEditing ? "سند با موفقیت ویرایش شد." : isCommissionType ? "کارمزد با موفقیت برداشت شد." : "عملیات صندوق با موفقیت ثبت شد.");
+      console.log("🎉 [DEBUG] confirmRegister completed successfully!");
+
+    } catch (error) {
+      console.error("💥 [DEBUG] CRITICAL ERROR in confirmRegister:", error);
+      const errorMessage = error instanceof Error ? error.message : "خطای ناشناخته در ارتباط با دیتابیس";
+      showToast(`❌ خطا در ثبت: ${errorMessage}`);
+    }
   }, [previewData, editingEntryId, entries, customers, showToast, isCommissionType]);
 
   if (!mounted) return (<div className="min-h-screen flex items-center justify-center"><div className="text-center"><div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-slate-300 border-t-emerald-500" /><p className="mt-4 text-slate-500">در حال بارگذاری...</p></div></div>);
