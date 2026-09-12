@@ -5,23 +5,25 @@ const withPWA = withPWAInit({
   disable: process.env.NODE_ENV === 'development',
   register: true,
   skipWaiting: true,
+  clientsClaim: true, // حیاتی: باعث می‌شود SW جدید بلافاصله کنترل صفحه را به دست بگیرد
   runtimeCaching: [
     {
       // ۱. Firebase و Google APIs: کاملاً بدون کش (مستقیم به شبکه)
-      // این قانون باید اول باشد تا بر قوانین بعدی اولویت داشته باشد
-      urlPattern: /^https:\/\/(firestore\.googleapis\.com|firebaseio\.com|googleapis\.com|firebaseapp\.com|firebasestorage\.googleapis\.com)\//,
+      // این Regex تمام زیردامنه‌ها (مثل firestore, identitytoolkit, firebasestorage) را پوشش می‌دهد
+      urlPattern: /^https:\/\/(?:[a-zA-Z0-9-]+\.)?(?:googleapis\.com|firebaseio\.com|firebaseapp\.com)\//,
       handler: 'NetworkOnly',
-      options: {
-        cacheName: 'firebase-no-cache',
-      },
     },
     {
-      // ۲. صفحات HTML (Navigate requests): NetworkFirst با تایم‌اوت ۱۰ ثانیه
+      // ۲. صفحات HTML (درخواست‌های Navigation): NetworkFirst با تایم‌اوت ۱۰ ثانیه
       urlPattern: ({ request }) => request.mode === 'navigate',
       handler: 'NetworkFirst',
       options: {
         cacheName: 'pages-cache',
         networkTimeoutSeconds: 10,
+        expiration: {
+          maxEntries: 50, // حداکثر ۵۰ صفحه
+          maxAgeSeconds: 24 * 60 * 60, // اعتبار ۲۴ ساعت
+        },
       },
     },
     {
@@ -32,6 +34,10 @@ const withPWA = withPWAInit({
       handler: 'StaleWhileRevalidate',
       options: {
         cacheName: 'static-assets',
+        expiration: {
+          maxEntries: 100, // حداکثر ۱۰۰ فایل
+          maxAgeSeconds: 7 * 24 * 60 * 60, // اعتبار ۷ روز
+        },
       },
     },
   ],
