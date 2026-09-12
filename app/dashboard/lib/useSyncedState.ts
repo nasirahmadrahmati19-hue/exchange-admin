@@ -87,30 +87,36 @@ export function useSyncedState<T>(key: string, initialValue: T) {
     };
   }, [key]);
 
-  // ✅ تغییر کلیدی: حالا Promise برمی‌گرداند و خطا را throw می‌کند
+  // ✅ نسخه اصلاح‌شده و کاملاً سازگار با TypeScript
   const setSyncedValue = useCallback(async (newValue: T | ((prev: T) => T)): Promise<T> => {
-    let resolvedValue: T;
-    
-    // ۱. ابتدا state را آپدیت کن (مثل قبل)
+    let finalValue: T | undefined;
+
+    // ۱. محاسبه و ذخیره同步 (Synchronous)
     setValue(prevValue => {
-      resolvedValue = typeof newValue === "function" 
+      finalValue = typeof newValue === "function" 
         ? (newValue as (prev: T) => T)(prevValue)
         : newValue;
       
-      // فوراً در LocalStorage ذخیره کن
-      saveToLocalStorage(key, resolvedValue);
-      return resolvedValue;
+      if (finalValue !== undefined) {
+        saveToLocalStorage(key, finalValue);
+      }
+      return finalValue as T;
     });
-    
-    // ۲. سپس در Firebase ذخیره کن و Promise برگردان
+
+    // ۲. این چک کردن باعث می‌شود TypeScript مطمئن شود که finalValue حتماً مقدار دارد
+    if (finalValue === undefined) {
+      throw new Error("Failed to resolve new value");
+    }
+
+    // ۳. ذخیره در فایربیس
     try {
       const docRef = doc(db, "appData", key);
-      const cleanedValue = removeUndefinedFields(resolvedValue!);
+      const cleanedValue = removeUndefinedFields(finalValue);
       await setDoc(docRef, { value: cleanedValue }, { merge: true });
-      return resolvedValue; // موفقیت
+      return finalValue;
     } catch (error) {
       console.error(`[useSyncedState] ❌ Error saving ${key} to Firebase:`, error);
-      throw error; // خطا را به کامپوننت برگردان تا بتواند catch کند
+      throw error; // خطا را به کامپوننت برمی‌گرداند
     }
   }, [key]);
 
