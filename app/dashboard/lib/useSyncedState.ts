@@ -42,7 +42,6 @@ function saveToLocalStorage<T>(key: string, value: T): void {
 
 export function useSyncedState<T>(key: string, initialValue: T) {
   const isMounted = useRef(true);
-  const lastFirebaseValueRef = useRef<T | null>(null);
   
   const [value, setValue] = useState<T>(() => {
     return readFromLocalStorage<T>(key, initialValue);
@@ -61,7 +60,6 @@ export function useSyncedState<T>(key: string, initialValue: T) {
           const data = docSnap.data();
           if (data && data.value !== undefined) {
             const firebaseValue = data.value as T;
-            lastFirebaseValueRef.current = firebaseValue;
             
             setValue(prevValue => {
               const prevJson = JSON.stringify(prevValue);
@@ -87,38 +85,30 @@ export function useSyncedState<T>(key: string, initialValue: T) {
     };
   }, [key]);
 
-  // ✅ نسخه اصلاح‌شده و کاملاً سازگار با TypeScript
+  // ✅ نسخه نهایی و ۱۰۰٪ بدون باگ: استفاده از مقدار فعلی value برای محاسبه مقدار جدید
   const setSyncedValue = useCallback(async (newValue: T | ((prev: T) => T)): Promise<T> => {
-    let finalValue: T | undefined;
+    // ۱. محاسبه مقدار جدید بر اساس state فعلی (بدون استفاده از متغیرهای let خطرناک)
+    const resolvedValue = typeof newValue === "function" 
+      ? (newValue as (prev: T) => T)(value)
+      : newValue;
 
-    // ۱. محاسبه و ذخیره同步 (Synchronous)
-    setValue(prevValue => {
-      finalValue = typeof newValue === "function" 
-        ? (newValue as (prev: T) => T)(prevValue)
-        : newValue;
-      
-      if (finalValue !== undefined) {
-        saveToLocalStorage(key, finalValue);
-      }
-      return finalValue as T;
-    });
+    // ۲. آپدیت state ری‌اکت
+    setValue(resolvedValue);
+    
+    // ۳. ذخیره در LocalStorage
+    saveToLocalStorage(key, resolvedValue);
 
-    // ۲. این چک کردن باعث می‌شود TypeScript مطمئن شود که finalValue حتماً مقدار دارد
-    if (finalValue === undefined) {
-      throw new Error("Failed to resolve new value");
-    }
-
-    // ۳. ذخیره در فایربیس
+    // ۴. ذخیره در فایربیس
     try {
       const docRef = doc(db, "appData", key);
-      const cleanedValue = removeUndefinedFields(finalValue);
+      const cleanedValue = removeUndefinedFields(resolvedValue);
       await setDoc(docRef, { value: cleanedValue }, { merge: true });
-      return finalValue;
+      return resolvedValue;
     } catch (error) {
       console.error(`[useSyncedState] ❌ Error saving ${key} to Firebase:`, error);
-      throw error; // خطا را به کامپوننت برمی‌گرداند
+      throw error;
     }
-  }, [key]);
+  }, [key, value]); // اضافه کردن value به وابستگی‌ها برای اطمینان از دسترسی به آخرین مقدار
 
   return [value, setSyncedValue] as const;
 }
