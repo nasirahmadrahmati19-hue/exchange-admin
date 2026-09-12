@@ -1,12 +1,12 @@
 /**
  * ═══════════════════════════════════════════════════════════
- * سیستم تولید کد پیگیری جهانی (نسخه نهایی و ۱۰۰٪ ضد تداخل)
- * ✅ تضمین عدم تکرار بین تمامی دستگاه‌ها (موبایل، تبلت و کامپیوتر)
+ * سیستم تولید کد پیگیری جهانی (نسخه نهایی با دیباگ کامل)
+ * ✅ نمایش خطای واقعی فایربیس به جای پیام گمراه‌کننده‌ی اینترنت
  * ═══════════════════════════════════════════════════════════
  */
 
 import { doc, runTransaction } from "firebase/firestore";
-import { db } from "./firebase"; // مسیر فایل firebase خود را بررسی کنید
+import { db } from "./firebase"; 
 
 const SEQUENCE_LENGTH = 5;
 const MAX_SEQUENCE = 99999;
@@ -22,21 +22,15 @@ export function getCurrentShamsiYear(): string {
   }
 }
 
-/**
- * مصرف و تولید یک کد پیگیری یکتا (به صورت آنلاین و مستقیم از سرور)
- * این تابع تضمین می‌کند که موبایل و کامپیوتر هرگز کد تکرار دریافت نکنند.
- */
 export async function consumeTrackingCode(): Promise<string> {
   const year = getCurrentShamsiYear();
   const counterRef = doc(db, "system_counters", COUNTER_DOC_ID);
 
   try {
-    // استفاده از Transaction فایربیس برای جلوگیری از تداخل هم‌زمان (Concurrency Control)
     const trackingCode = await runTransaction(db, async (transaction) => {
       const counterDoc = await transaction.get(counterRef);
       const currentData = counterDoc.exists() ? counterDoc.data() : {};
       
-      // دریافت آخرین عدد ثبت‌شده برای سال جاری (پیش‌فرض 0)
       const currentCount = currentData[year] || 0;
 
       if (currentCount >= MAX_SEQUENCE) {
@@ -45,7 +39,6 @@ export async function consumeTrackingCode(): Promise<string> {
 
       const nextCount = currentCount + 1;
 
-      // ذخیره عدد جدید در فایربیس
       transaction.set(
         counterRef, 
         { ...currentData, [year]: nextCount }, 
@@ -56,7 +49,6 @@ export async function consumeTrackingCode(): Promise<string> {
       return `TR-${year}-${formattedSeq}`;
     });
 
-    // ذخیره آخرین کد موفق در لوکال‌استوری برای نمایش در پیش‌نمایش
     try {
       localStorage.setItem(LS_LAST_CODE, trackingCode);
     } catch {}
@@ -64,15 +56,19 @@ export async function consumeTrackingCode(): Promise<string> {
     console.log(`✅ کد پیگیری یکتا صادر شد: ${trackingCode}`);
     return trackingCode;
 
-  } catch (error) {
-    console.error("❌ خطا در تولید کد پیگیری یکتا:", error);
-    throw new Error("خطا در ارتباط با سرور برای تولید کد پیگیری. لطفاً اینترنت خود را بررسی کنید.");
+  } catch (error: any) {
+    // 🔥 اصلاح حیاتی: چاپ کامل خطای واقعی فایربیس در کنسول
+    console.error("🔥 🔥 🔥 خطای واقعی فایربیس در تولید کد پیگیری: 🔥 🔥 🔥");
+    console.error("➡️ Error Code:", error?.code);
+    console.error("➡️ Error Message:", error?.message);
+    console.error("➡️ Full Error Object:", error);
+    
+    // 🔥 اصلاح حیاتی: پرتاب خطای واقعی به جای پیام "اینترنت"
+    const realMessage = error?.message || "خطای ناشناخته در فایربیس";
+    throw new Error(`خطا در تولید کد پیگیری: ${realMessage}`);
   }
 }
 
-/**
- * پیش‌نمایش کد پیگیری بعدی (جهت نمایش در فرم‌ها قبل از ثبت نهایی)
- */
 export function getNextTrackingCode(): string {
   const year = getCurrentShamsiYear();
   try {
@@ -89,9 +85,6 @@ export function getNextTrackingCode(): string {
   return `TR-${year}-00001`;
 }
 
-/**
- * استخراج عدد از کد پیگیری (جهت مرتب‌سازی در جدول‌ها)
- */
 export function getTrackingNumberValue(code: string): number {
   if (!code) return 0;
   const match = String(code).match(/^TR-\d{4}-(\d{5})$/);
@@ -103,9 +96,6 @@ export function getTrackingNumberValue(code: string): number {
   return 0;
 }
 
-/**
- * اعتبارسنجی فرمت کد پیگیری
- */
 export function isValidTrackingCode(code: string): boolean {
   if (!code) return false;
   return /^TR-\d{4}-\d{5}$|^(?:HW|FX|TR)-\d+$/.test(code);
