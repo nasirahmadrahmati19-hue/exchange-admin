@@ -5,12 +5,13 @@ const withPWA = withPWAInit({
   dest: "public",
   // در حالت development سرویس‌ورکر غیرفعال می‌شود تا Hot Reload خراب نشود
   disable: process.env.NODE_ENV === "development",
-  register: true,
+  register: true, 
   sw: "service-worker.js",
   workboxOptions: {
     disableDevLogs: process.env.NODE_ENV === "production",
-    skipWaiting: false,
-    clientsClaim: true,
+    skipWaiting: true,       // ✅ اصلاح شد: حالا نسخه جدید بلافاصله فعال می‌شود
+    clientsClaim: true,      // ✅ کنترل فوری همه‌ی تب‌های باز
+    
     runtimeCaching: [
       {
         // تصاویر و فونت‌ها
