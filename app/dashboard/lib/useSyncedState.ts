@@ -18,7 +18,6 @@ function removeUndefinedFields(obj: any): any {
   return cleaned;
 }
 
-// ✅ تابع کمکی برای خواندن از LocalStorage
 function readFromLocalStorage<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
   try {
@@ -32,7 +31,6 @@ function readFromLocalStorage<T>(key: string, fallback: T): T {
   return fallback;
 }
 
-// ✅ تابع کمکی برای ذخیره در LocalStorage
 function saveToLocalStorage<T>(key: string, value: T): void {
   if (typeof window === "undefined") return;
   try {
@@ -46,12 +44,10 @@ export function useSyncedState<T>(key: string, initialValue: T) {
   const isMounted = useRef(true);
   const lastFirebaseValueRef = useRef<T | null>(null);
   
-  // ✅ مقدار اولیه را از LocalStorage بخوان (نه initialValue خام)
   const [value, setValue] = useState<T>(() => {
     return readFromLocalStorage<T>(key, initialValue);
   });
 
-  // ✅ گوش دادن به تغییرات فایربیس
   useEffect(() => {
     isMounted.current = true;
     const docRef = doc(db, "appData", key);
@@ -67,14 +63,11 @@ export function useSyncedState<T>(key: string, initialValue: T) {
             const firebaseValue = data.value as T;
             lastFirebaseValueRef.current = firebaseValue;
             
-            // ✅ فقط زمانی state را آپدیت کن که مقدار واقعاً متفاوت باشد
             setValue(prevValue => {
-              // مقایسه ساده با JSON (برای آرایه‌ها و آبجکت‌ها)
               const prevJson = JSON.stringify(prevValue);
               const newJson = JSON.stringify(firebaseValue);
               
               if (prevJson !== newJson) {
-                // ✅ مقدار جدید فایربیس را در LocalStorage هم ذخیره کن
                 saveToLocalStorage(key, firebaseValue);
                 return firebaseValue;
               }
@@ -94,29 +87,31 @@ export function useSyncedState<T>(key: string, initialValue: T) {
     };
   }, [key]);
 
-  // ✅ ذخیره در LocalStorage و فایربیس
-  const setSyncedValue = useCallback(async (newValue: T | ((prev: T) => T)) => {
+  // ✅ تغییر کلیدی: حالا Promise برمی‌گرداند و خطا را throw می‌کند
+  const setSyncedValue = useCallback(async (newValue: T | ((prev: T) => T)): Promise<T> => {
+    let resolvedValue: T;
+    
+    // ۱. ابتدا state را آپدیت کن (مثل قبل)
     setValue(prevValue => {
-      const resolvedValue = typeof newValue === "function" 
+      resolvedValue = typeof newValue === "function" 
         ? (newValue as (prev: T) => T)(prevValue)
         : newValue;
       
-      // ✅ فوراً در LocalStorage ذخیره کن (این باعث می‌شود وقتی از تب خارج می‌شوید، داده حفظ شود)
+      // فوراً در LocalStorage ذخیره کن
       saveToLocalStorage(key, resolvedValue);
-      
-      // ✅ سپس در فایربیس ذخیره کن (در پس‌زمینه)
-      (async () => {
-        try {
-          const docRef = doc(db, "appData", key);
-          const cleanedValue = removeUndefinedFields(resolvedValue);
-          await setDoc(docRef, { value: cleanedValue }, { merge: true });
-        } catch (error) {
-          console.error(`[useSyncedState] ❌ Error saving ${key} to Firebase:`, error);
-        }
-      })();
-      
       return resolvedValue;
     });
+    
+    // ۲. سپس در Firebase ذخیره کن و Promise برگردان
+    try {
+      const docRef = doc(db, "appData", key);
+      const cleanedValue = removeUndefinedFields(resolvedValue!);
+      await setDoc(docRef, { value: cleanedValue }, { merge: true });
+      return resolvedValue; // موفقیت
+    } catch (error) {
+      console.error(`[useSyncedState] ❌ Error saving ${key} to Firebase:`, error);
+      throw error; // خطا را به کامپوننت برگردان تا بتواند catch کند
+    }
   }, [key]);
 
   return [value, setSyncedValue] as const;
