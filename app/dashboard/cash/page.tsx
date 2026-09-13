@@ -61,11 +61,14 @@ function formatShamsiDate(d: Date) { const s = shamsiParts(d); return `${s.year}
 function shortDateLabel(s: string) { try { const d = new Date(s); return Number.isNaN(d.getTime()) ? "-" : formatShamsiDate(d); } catch (e) { return "-"; } }
 function timeLabel(s: string) { try { const d = new Date(s); if (Number.isNaN(d.getTime())) return "-"; const pad = (n: number) => String(n).padStart(2, "0"); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; } catch (e) { return "-"; } }
 
-// ✅ نسخه نهایی و اصلاح‌شده: تشخیص mutually exclusive نقش‌های sender/receiver
+// ✅ نسخه نهایی و اصلاح‌شده: جلوگیری از محاسبه‌ی دوگانه (Double Counting)
 function getLedgerBalance(customerId: string, currency: Currency, entries: CashEntry[], transactions: Transaction[] = [], hawalas: Hawala[] = []): number {
   let balance = 0;
   
-  // 1. محاسبه بر اساس اسناد صندوق (Cash Entries)
+  // ✅ مجموعه‌ای برای ذخیره شناسه حواله‌هایی که قبلاً در اسناد صندوق (entries) محاسبه شده‌اند
+  const accountedHawalaIds = new Set<string>();
+
+  // 1. محاسبه بر اساس اسناد صندوق (Cash Entries) - منبع اصلی و قطعی
   for (const entry of entries) {
     if (entry.status === "voided" || entry.currency !== currency) continue;
     
@@ -88,6 +91,11 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: CashE
         else if (entry.type === "customer_withdraw") balance -= entry.amount;
         else if (entry.type === "loan_given") balance -= entry.amount;
         else if (entry.type === "loan_received") balance += entry.amount;
+        
+        // ✅ اگر این سند مربوط به یک حواله است، شناسه آن را ثبت کن تا بعداً دوباره محاسبه نشود
+        if (entry.linkedHawalaId) {
+          accountedHawalaIds.add(entry.linkedHawalaId);
+        }
       }
     }
   }
@@ -98,31 +106,19 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: CashE
       if (tx.status === "voided") continue;
 
       if (tx.type === "exchange" || tx.type === "transfer" || tx.type === "convert") {
-        // ✅ اصلاح حیاتی: تشخیص mutually exclusive نقش‌ها
         const isSender = tx.senderId === customerId;
         const isReceiver = tx.receiverId === customerId;
         const isLegacyCustomer = !isSender && !isReceiver && tx.customerId === customerId;
 
         if (isSender) {
-          // فرستنده: ارز می‌دهد، پس موجودی ارز ارسالی کم می‌شود
-          if (tx.fromCurrency === currency) {
-            balance -= tx.fromAmount;
-          }
-          if (tx.commission && tx.commissionCurrency === currency && tx.commissionPayer === "sender") {
-            balance -= tx.commission;
-          }
+          if (tx.fromCurrency === currency) balance -= tx.fromAmount;
+          if (tx.commission && tx.commissionCurrency === currency && tx.commissionPayer === "sender") balance -= tx.commission;
         }
         else if (isReceiver) {
-          // گیرنده: ارز دریافت می‌کند، پس موجودی ارز دریافتی زیاد می‌شود
-          if (tx.toCurrency === currency) {
-            balance += tx.toAmount;
-          }
-          if (tx.commission && tx.commissionCurrency === currency && tx.commissionPayer === "receiver") {
-            balance -= tx.commission;
-          }
+          if (tx.toCurrency === currency) balance += tx.toAmount;
+          if (tx.commission && tx.commissionCurrency === currency && tx.commissionPayer === "receiver") balance -= tx.commission;
         }
         else if (isLegacyCustomer) {
-          // پشتیبانی از داده‌های قدیمی که فقط customerId داشتند
           if (tx.fromCurrency === currency) balance -= tx.fromAmount;
           if (tx.toCurrency === currency) balance += tx.toAmount;
           if (tx.commission && tx.commissionCurrency === currency) balance -= tx.commission;
@@ -134,6 +130,11 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: CashE
     for (const h of hawalas) {
       if (h.status === "cancelled") continue;
       
+      // ✅ اصلاح حیاتی: اگر این حواله قبلاً به صورت سند صندوق (entry) ثبت و محاسبه شده، از محاسبه‌ی مجدد آن صرف‌نظر کن
+      if (accountedHawalaIds.has(h.id)) {
+        continue;
+      }
+
       if (h.senderId === customerId) {
         if (h.currencyFrom === currency) balance -= h.amountFrom;
         if (h.feePayer === "sender" && h.feeCurrency === currency) balance -= h.fee;
