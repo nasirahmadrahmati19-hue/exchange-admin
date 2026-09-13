@@ -515,7 +515,6 @@ export default function HawalaPage() {
       if (editingId) {
         const existing = hawalas.find(x => x.id === editingId);
         if (existing) {
-          // ✅ اصلاح حیاتی: تمام فیلدهای قابل ویرایش فرم اکنون به درستی در آبجکت به‌روزرسانی قرار می‌گیرند
           const updated: Hawala = { 
             ...existing, 
             type: form.type,
@@ -547,13 +546,29 @@ export default function HawalaPage() {
             balance: form.balance
           };
           
-          setHawalas(prev => prev.map(x => x.id === editingId ? updated : x));
+          // ✅ اصلاح حیاتی: حذف اسناد مالی قدیمی و ثبت اسناد جدید بر اساس مبلغ ویرایش‌شده
+          let updatedEntries = syncCashEntriesForHawala("remove", null, editingId, cashEntries);
+          updatedEntries = syncCashEntriesForHawalaSettlement("remove", existing, updatedEntries);
+          
+          updatedEntries = syncCashEntriesForHawala("add", updated, undefined, updatedEntries);
+          if (updated.status === "paid") {
+            updatedEntries = syncCashEntriesForHawalaSettlement("add", updated, updatedEntries);
+          }
+
+          const updatedHawalasList = hawalas.map(x => x.id === editingId ? updated : x);
+          
+          setHawalas(updatedHawalasList);
+          setCashEntries(updatedEntries);
+          
+          const updatedCustomersList = getUpdatedCustomerBalances(customers, updatedEntries, transactions, updatedHawalasList);
+          setCustomers(updatedCustomersList);
+
           setEditingId(null); 
           setForm(emptyForm); 
           setErrors({}); 
           setPreviewOpen(false); 
-          setActiveTab(existing.status === "paid" || existing.status === "cancelled" ? "history" : "current");
-          showToast("✅ اطلاعات حواله با موفقیت ویرایش شد.");
+          setActiveTab(updated.status === "paid" || updated.status === "cancelled" ? "history" : "current");
+          showToast("✅ اطلاعات حواله و موجودی حساب‌ها با موفقیت به‌روز شد.");
           return;
         }
       }
