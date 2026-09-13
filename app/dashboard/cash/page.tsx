@@ -61,25 +61,28 @@ function formatShamsiDate(d: Date) { const s = shamsiParts(d); return `${s.year}
 function shortDateLabel(s: string) { try { const d = new Date(s); return Number.isNaN(d.getTime()) ? "-" : formatShamsiDate(d); } catch (e) { return "-"; } }
 function timeLabel(s: string) { try { const d = new Date(s); if (Number.isNaN(d.getTime())) return "-"; const pad = (n: number) => String(n).padStart(2, "0"); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; } catch (e) { return "-"; } }
 
-// ✅ اصلاح حیاتی: منطق محاسبه مانده با تشخیص دقیق نقش فرستنده و گیرنده
+// ✅ نسخه نهایی و اصلاح‌شده: تشخیص mutually exclusive نقش‌های sender/receiver
 function getLedgerBalance(customerId: string, currency: Currency, entries: CashEntry[], transactions: Transaction[] = [], hawalas: Hawala[] = []): number {
   let balance = 0;
   
   // 1. محاسبه بر اساس اسناد صندوق (Cash Entries)
   for (const entry of entries) {
     if (entry.status === "voided" || entry.currency !== currency) continue;
+    
     if (customerId === CASH_BOX_ID) {
       if (entry.type === "loan_given") balance -= entry.amount;
       else if (entry.type === "loan_received") balance += entry.amount;
-      else { const physicalMultiplier = entry.direction === "in" ? 1 : -1; balance += entry.amount * physicalMultiplier; }
-    } else if (customerId === EXCHANGE_ACCOUNT_ID) {
+      else balance += entry.amount * (entry.direction === "in" ? 1 : -1);
+    } 
+    else if (customerId === EXCHANGE_ACCOUNT_ID) {
       if (entry.type === "owner_deposit") balance += entry.amount;
       else if (entry.type === "owner_withdraw") balance -= entry.amount;
       else if (entry.type === "exchange_account_in") balance += entry.amount;
       else if (entry.type === "exchange_account_out") balance -= entry.amount;
       else if (entry.type === "loan_given") balance -= entry.amount;
       else if (entry.type === "loan_received") balance += entry.amount;
-    } else {
+    } 
+    else {
       if (entry.customerId === customerId) {
         if (entry.type === "customer_deposit") balance += entry.amount;
         else if (entry.type === "customer_withdraw") balance -= entry.amount;
@@ -95,28 +98,31 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: CashE
       if (tx.status === "voided") continue;
 
       if (tx.type === "exchange" || tx.type === "transfer" || tx.type === "convert") {
-        // تشخیص نقش مشتری در تراکنش
-        const isSender = tx.senderId === customerId || tx.customerId === customerId;
+        // ✅ اصلاح حیاتی: تشخیص mutually exclusive نقش‌ها
+        const isSender = tx.senderId === customerId;
         const isReceiver = tx.receiverId === customerId;
+        const isLegacyCustomer = !isSender && !isReceiver && tx.customerId === customerId;
 
         if (isSender) {
-          // فرستنده ارز را می‌دهد، پس موجودی ارز ارسالی او کم می‌شود
-          if (tx.fromCurrency === currency) balance -= tx.fromAmount;
+          // فرستنده: ارز می‌دهد، پس موجودی ارز ارسالی کم می‌شود
+          if (tx.fromCurrency === currency) {
+            balance -= tx.fromAmount;
+          }
           if (tx.commission && tx.commissionCurrency === currency && tx.commissionPayer === "sender") {
             balance -= tx.commission;
           }
         }
-        
-        if (isReceiver) {
-          // گیرنده ارز را دریافت می‌کند، پس موجودی ارز دریافتی او زیاد می‌شود
-          if (tx.toCurrency === currency) balance += tx.toAmount;
+        else if (isReceiver) {
+          // گیرنده: ارز دریافت می‌کند، پس موجودی ارز دریافتی زیاد می‌شود
+          if (tx.toCurrency === currency) {
+            balance += tx.toAmount;
+          }
           if (tx.commission && tx.commissionCurrency === currency && tx.commissionPayer === "receiver") {
             balance -= tx.commission;
           }
         }
-
-        // حالت پشتیبان برای داده‌های قدیمی که فقط customerId داشتند
-        if (!isSender && !isReceiver && tx.customerId === customerId) {
+        else if (isLegacyCustomer) {
+          // پشتیبانی از داده‌های قدیمی که فقط customerId داشتند
           if (tx.fromCurrency === currency) balance -= tx.fromAmount;
           if (tx.toCurrency === currency) balance += tx.toAmount;
           if (tx.commission && tx.commissionCurrency === currency) balance -= tx.commission;
@@ -127,16 +133,18 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: CashE
     // 3. محاسبه بر اساس حواله‌ها (Hawala)
     for (const h of hawalas) {
       if (h.status === "cancelled") continue;
+      
       if (h.senderId === customerId) {
         if (h.currencyFrom === currency) balance -= h.amountFrom;
         if (h.feePayer === "sender" && h.feeCurrency === currency) balance -= h.fee;
       }
-      if (h.receiverId === customerId) {
+      else if (h.receiverId === customerId) {
         if (h.currencyTo === currency) balance += h.finalAmount;
         if (h.feePayer === "receiver" && h.feeCurrency === currency) balance -= h.fee;
       }
     }
   }
+  
   return balance;
 }
 
@@ -180,7 +188,6 @@ function getBalanceChangesForCashEntry(entry: CashEntry, action: "register" | "r
     }
   }
 
-  // ✅ مدیریت صحیح قرض برای مشتری
   if ((entry.type === "loan_given" || entry.type === "loan_received") && entry.customerId && entry.customerId !== CASH_BOX_ID && entry.customerId !== EXCHANGE_ACCOUNT_ID) {
     const delta = entry.type === "loan_given" ? -entry.amount : entry.amount;
     changes.push({ customerId: entry.customerId, customerName: entry.customerName || "", currency: entry.currency, amount: delta * sign });
@@ -357,8 +364,6 @@ export default function CashPage() {
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [openActionId, setOpenActionId] = useState<string | null>(null);
   const [selectedEntry, setSelectedEntry] = useState<CashEntry | null>(null);
-  
-  // ✅ جلوگیری از ثبت دوبار (Double Submission)
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => { try { const saved = window.localStorage.getItem("fx-theme"); if (saved === "dark" || saved === "light") setTheme(saved); } catch (e) { /* ignore */ } }, []);
@@ -412,7 +417,6 @@ export default function CashPage() {
     return totals;
   }, [customers, entries, transactions, hawalas]);
 
-  // ✅ اصلاح شده: حذف کسر اشتباه customerDebts و اضافه کردن exchange_account_in/out
   const exchangeBalance = useMemo(() => {
     const bal: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const cur of currencies) {
