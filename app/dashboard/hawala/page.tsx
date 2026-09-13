@@ -33,7 +33,6 @@ const generateId = (): string => { if (typeof crypto !== "undefined" && typeof c
 const normalizeDigits = (value: string) => { const pd = "۰۱۲۳۴۵۶۷۸۹", ad = "٠١٢٣٤٥٦٧٨٩"; return String(value || "").replace(/[۰-۹]/g, d => String(pd.indexOf(d))).replace(/[٠-٩]/g, d => String(ad.indexOf(d))); };
 const toNumericText = (v: string) => { let s = normalizeDigits(String(v || "")).replace(/[^0-9.]/g, ""); const fd = s.indexOf("."); if (fd !== -1) s = s.slice(0, fd + 1) + s.slice(fd + 1).replace(/\./g, ""); return s; };
 
-// ✅ نکته ۳: تابع تبدیل مطمئن که هرگز مقدار نامعتبر یا خالی را برنمی‌گرداند
 const parseAmount = (v: string) => { 
   const n = Number(normalizeDigits(String(v || "")).replace(/,/g, "")); 
   return Number.isFinite(n) && n >= 0 ? n : 0; 
@@ -60,9 +59,13 @@ const statusColors: Record<HawalaStatus, { light: string; dark: string }> = { pe
 const formatDestination = (province: string, district: string) => province === "هرات" ? `${province} — ${district}` : province;
 const sortByHawalaNumber = (items: Hawala[], order: "asc" | "desc") => [...items].sort((a, b) => { const an = getTrackingNumberValue(a.number), bn = getTrackingNumberValue(b.number); return order === "asc" ? an - bn : bn - an; });
 
+// ✅ نسخه نهایی و ضدگلوله: جلوگیری قطعی از محاسبه‌ی دوگانه (Double Counting)
 function getLedgerBalance(customerId: string | number, currency: Currency, entries: any[], transactions: any[] = [], hawalas: any[] = []) {
   let balance = 0;
   const strCustomerId = String(customerId);
+  
+  // ✅ مجموعه‌ای برای ذخیره شناسه حواله‌هایی که قبلاً در اسناد صندوق (entries) محاسبه شده‌اند
+  const accountedHawalaIds = new Set<string>();
 
   for (const entry of entries) {
     if (entry.status === "voided" || entry.currency !== currency) continue;
@@ -82,10 +85,14 @@ function getLedgerBalance(customerId: string | number, currency: Currency, entri
     } else {
       if (String(entry.customerId) === strCustomerId) {
         if (entry.type === "customer_deposit") balance += Number(entry.amount);
-        // ✅ نکته ۲: در اینجا فقط و فقط entry.amount (که همان مبلغ حواله است) کسر می‌شود.
         else if (entry.type === "customer_withdraw") balance -= Number(entry.amount);
         else if (entry.type === "loan_given") balance -= Number(entry.amount);
         else if (entry.type === "loan_received") balance += Number(entry.amount);
+        
+        // ✅ اگر این سند مربوط به یک حواله است، شناسه آن را ثبت کن تا بعداً در حلقه حواله‌ها دوباره محاسبه نشود
+        if (entry.linkedHawalaId) {
+          accountedHawalaIds.add(String(entry.linkedHawalaId));
+        }
       }
     }
   }
@@ -112,6 +119,25 @@ function getLedgerBalance(customerId: string | number, currency: Currency, entri
         if (tx.fromCurrency === currency) balance -= Number(tx.fromAmount);
         if (tx.toCurrency === currency) balance += Number(tx.toAmount);
         if (tx.commission && tx.commissionCurrency === currency) balance -= Number(tx.commission);
+      }
+    }
+
+    // ✅ محاسبه حواله‌ها فقط در صورتی که قبلاً در اسناد صندوق (entries) محاسبه نشده باشند
+    for (const h of hawalas) {
+      if (h.status === "cancelled") continue;
+      
+      // ✅ اصلاح حیاتی: اگر این حواله قبلاً به صورت سند صندوق ثبت و محاسبه شده، از محاسبه مجدد آن صرف‌نظر کن
+      if (accountedHawalaIds.has(String(h.id))) {
+        continue;
+      }
+
+      if (String(h.senderId) === strCustomerId) {
+        if (h.currencyFrom === currency) balance -= Number(h.amountFrom);
+        if (h.feePayer === "sender" && h.feeCurrency === currency) balance -= Number(h.fee);
+      }
+      if (String(h.receiverId) === strCustomerId) {
+        if (h.currencyTo === currency) balance += Number(h.finalAmount);
+        if (h.feePayer === "receiver" && h.feeCurrency === currency) balance -= Number(h.fee);
       }
     }
   }
@@ -151,7 +177,6 @@ function syncCashEntriesForHawala(action: "add" | "remove", h: Hawala | null, ol
         date: dateStr, 
         type: "customer_withdraw", 
         currency: h.currencyFrom, 
-        // ✅ نکته ۲ (اصلاح حیاتی): فقط مبلغ واردشده (h.amountFrom) کسر می‌شود. هرگز از h.balance یا موجودی مشتری استفاده نمی‌شود.
         amount: Number(h.amountFrom), 
         direction: "out", 
         reason: `ارسال حواله ${h.number} - ${h.senderName} به ${h.receiverName}`, 
@@ -489,10 +514,8 @@ export default function HawalaPage() {
 
   const confirmRegister = useCallback(async () => {
     try {
-      // ✅ نکته ۳: خواندن و تبدیل مطمئن مبلغ از input فرم در لحظه ثبت (جلوگیری از fallback یا NaN)
       const parsedAmountFrom = parseAmount(form.amountFrom);
       
-      // اعتبارسنجی سخت‌گیرانه: اگر مبلغ صفر یا نامعتبر بود، فرآیند متوقف شود
       if (!Number.isFinite(parsedAmountFrom) || parsedAmountFrom <= 0) {
         showToast("❌ مبلغ حواله نامعتبر است. لطفاً یک عدد مثبت وارد کنید.");
         return;
@@ -517,7 +540,7 @@ export default function HawalaPage() {
       if (editingId) {
         const existing = hawalas.find(x => x.id === editingId);
         if (existing) {
-          const updated: Hawala = { ...existing, type: form.type, province: form.province, district: form.province === "هرات" ? form.district : form.province, destinationText, senderName, senderPhone: form.senderPhone, senderTelegram: form.senderTelegram, senderId: sender ? String(sender.id) : undefined, receiverName, receiverTazkira: form.receiverTazkira, receiverPhone: form.receiverPhone, receiverAddress: form.receiverAddress, receiverId: receiver ? String(receiver.id) : undefined, note: form.note, balance: form.balance, amountFrom: parsedAmountFrom }; // ✅ اطمینان از آپدیت صحیح مبلغ در ویرایش
+          const updated: Hawala = { ...existing, type: form.type, province: form.province, district: form.province === "هرات" ? form.district : form.province, destinationText, senderName, senderPhone: form.senderPhone, senderTelegram: form.senderTelegram, senderId: sender ? String(sender.id) : undefined, receiverName, receiverTazkira: form.receiverTazkira, receiverPhone: form.receiverPhone, receiverAddress: form.receiverAddress, receiverId: receiver ? String(receiver.id) : undefined, note: form.note, balance: form.balance, amountFrom: parsedAmountFrom };
           setHawalas(prev => prev.map(x => x.id === editingId ? updated : x));
           setEditingId(null); setForm(emptyForm); setErrors({}); setPreviewOpen(false); setActiveTab(existing.status === "paid" || existing.status === "cancelled" ? "history" : "current");
           showToast("✅ اطلاعات حواله ویرایش شد.");
@@ -538,7 +561,6 @@ export default function HawalaPage() {
         destinationText, 
         currencyFrom: form.currencyFrom, 
         currencyTo: form.currencyTo, 
-        // ✅ نکته ۱ و ۲: استفاده مستقیم و انحصاری از parsedAmountFrom (مبلغی که کاربر تایپ کرده)
         amountFrom: parsedAmountFrom, 
         rate: txRate, 
         rateLabel, 
@@ -547,7 +569,7 @@ export default function HawalaPage() {
         feeCurrency: form.feeCurrency, 
         feePayer: form.feePayer, 
         finalAmount, 
-        balance: form.balance, // این فیلد فقط یک رشته متنی برای یادداشت است و در محاسبات ریاضی استفاده نمی‌شود
+        balance: form.balance,
         note: form.note, 
         profit: feeValue, 
         profitCurrency: form.feeCurrency, 
@@ -565,7 +587,6 @@ export default function HawalaPage() {
       
       setHawalas(prev => [newHawala, ...prev]);
       
-      // در داخل این تابع، amount به صورت Number(h.amountFrom) تنظیم می‌شود که کاملاً ایمن است.
       const newEntries = syncCashEntriesForHawala("add", newHawala, undefined, cashEntries);
       setCashEntries(newEntries);
       
@@ -816,7 +837,6 @@ export default function HawalaPage() {
                   {fld("ارز مقصد *", sel(form.currencyTo, (v) => setField("currencyTo", v), currencies.map(c => [c, labels[c]])))}
                 </div>
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-3 mb-4">
-                  {/* ✅ نکته ۱: فیلد مبلغ فقط به form.amountFrom متصل است و هرگز با customer.balance مقداردهی اولیه نمی‌شود */}
                   {fld("مبلغ حواله *", (<input type="text" inputMode="decimal" dir="ltr" className={`${uiInput} text-left tabular-nums ${errors.amountFrom ? errInput : ""}`} value={form.amountFrom} onChange={e => setField("amountFrom", toNumericText(e.target.value))} placeholder="مثلاً 5000" />))}
                   {fld("کمیشن حواله", (<input type="text" inputMode="decimal" dir="ltr" className={`${uiInput} text-left tabular-nums ${errors.fee ? errInput : ""}`} value={form.fee} onChange={e => setField("fee", toNumericText(e.target.value))} placeholder="مثلاً 200" />))}
                   {fld("مبلغ نهایی", (<input readOnly value={`${fmt(finalAmount)} ${labels[form.currencyTo]}`} className={`${uiInput} ${roInput} text-left tabular-nums`} />))}
