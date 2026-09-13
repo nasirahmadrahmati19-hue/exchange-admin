@@ -32,7 +32,12 @@ const hasTelegram = (c: Customer): boolean => Boolean(c.telegramChatId || c.tele
 const generateId = (): string => { if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") { try { return crypto.randomUUID(); } catch {} } return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => { const r = (Math.random() * 16) | 0; return (c === "x" ? r : (r & 0x3) | 0x8).toString(16); }); };
 const normalizeDigits = (value: string) => { const pd = "۰۱۲۳۴۵۶۷۸۹", ad = "٠١٢٣٤٥٦٧٨٩"; return String(value || "").replace(/[۰-۹]/g, d => String(pd.indexOf(d))).replace(/[٠-٩]/g, d => String(ad.indexOf(d))); };
 const toNumericText = (v: string) => { let s = normalizeDigits(String(v || "")).replace(/[^0-9.]/g, ""); const fd = s.indexOf("."); if (fd !== -1) s = s.slice(0, fd + 1) + s.slice(fd + 1).replace(/\./g, ""); return s; };
-const parseAmount = (v: string) => { const n = Number(normalizeDigits(String(v || "")).replace(/,/g, "")); return Number.isFinite(n) && n >= 0 ? n : 0; };
+
+// ✅ نکته ۳: تابع تبدیل مطمئن که هرگز مقدار نامعتبر یا خالی را برنمی‌گرداند
+const parseAmount = (v: string) => { 
+  const n = Number(normalizeDigits(String(v || "")).replace(/,/g, "")); 
+  return Number.isFinite(n) && n >= 0 ? n : 0; 
+};
 const fmt = (n: number) => (Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 2 }) : "0");
 
 function shamsiParts(d: Date) { try { const parts = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", { year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(d); const get = (type: string) => parts.find((p) => p.type === type)?.value || "0"; return { year: get("year"), month: get("month"), day: get("day") }; } catch { return { year: "0", month: "0", day: "0" }; } }
@@ -55,8 +60,7 @@ const statusColors: Record<HawalaStatus, { light: string; dark: string }> = { pe
 const formatDestination = (province: string, district: string) => province === "هرات" ? `${province} — ${district}` : province;
 const sortByHawalaNumber = (items: Hawala[], order: "asc" | "desc") => [...items].sort((a, b) => { const an = getTrackingNumberValue(a.number), bn = getTrackingNumberValue(b.number); return order === "asc" ? an - bn : bn - an; });
 
-// ✅ اصلاح حیاتی: استفاده از String() برای جلوگیری از باگ مقایسه "1" === 1
-function getLedgerBalance(customerId: string | number, currency: Currency, entries: any[], transactions: any[] = [], hawalas: any[] = []): number {
+function getLedgerBalance(customerId: string | number, currency: Currency, entries: any[], transactions: any[] = [], hawalas: any[] = []) {
   let balance = 0;
   const strCustomerId = String(customerId);
 
@@ -78,6 +82,7 @@ function getLedgerBalance(customerId: string | number, currency: Currency, entri
     } else {
       if (String(entry.customerId) === strCustomerId) {
         if (entry.type === "customer_deposit") balance += Number(entry.amount);
+        // ✅ نکته ۲: در اینجا فقط و فقط entry.amount (که همان مبلغ حواله است) کسر می‌شود.
         else if (entry.type === "customer_withdraw") balance -= Number(entry.amount);
         else if (entry.type === "loan_given") balance -= Number(entry.amount);
         else if (entry.type === "loan_received") balance += Number(entry.amount);
@@ -132,7 +137,6 @@ function recomputeCashBalances(entries: any[]): any[] {
   return sorted.map(e => { if (e.status === "voided") return { ...e, balanceAfter: bals[e.currency] || 0 }; if (e.currency && bals[e.currency] !== undefined) { if (e.type !== "exchange_account_in" && e.type !== "exchange_account_out") { bals[e.currency] += e.direction === "in" ? (e.amount || 0) : -(e.amount || 0); } } return { ...e, balanceAfter: bals[e.currency] || 0 }; });
 }
 
-// ✅ اصلاح حیاتی: تضمین تبدیل نوع داده‌ها به String و Number برای جلوگیری از باگ
 function syncCashEntriesForHawala(action: "add" | "remove", h: Hawala | null, oldHawalaId: string | undefined, currentEntries: any[]): any[] {
   let entries = [...currentEntries];
   const targetId = oldHawalaId || h?.id;
@@ -141,7 +145,23 @@ function syncCashEntriesForHawala(action: "add" | "remove", h: Hawala | null, ol
   if (action === "add" && h) {
     const dateStr = h.date || new Date().toISOString();
     if (h.senderId && String(h.senderId) !== String(CASH_BOX_ID) && String(h.senderId) !== String(EXCHANGE_ACCOUNT_ID)) {
-      entries.push({ id: generateId(), trackingCode: getNextTrackingCode(), date: dateStr, type: "customer_withdraw", currency: h.currencyFrom, amount: Number(h.amountFrom), direction: "out", reason: `ارسال حواله ${h.number} - ${h.senderName} به ${h.receiverName}`, balanceAfter: 0, customerId: String(h.senderId), customerName: h.senderName, customerPhone: h.senderPhone, linkedHawalaId: h.id, status: "active" });
+      entries.push({ 
+        id: generateId(), 
+        trackingCode: getNextTrackingCode(), 
+        date: dateStr, 
+        type: "customer_withdraw", 
+        currency: h.currencyFrom, 
+        // ✅ نکته ۲ (اصلاح حیاتی): فقط مبلغ واردشده (h.amountFrom) کسر می‌شود. هرگز از h.balance یا موجودی مشتری استفاده نمی‌شود.
+        amount: Number(h.amountFrom), 
+        direction: "out", 
+        reason: `ارسال حواله ${h.number} - ${h.senderName} به ${h.receiverName}`, 
+        balanceAfter: 0, 
+        customerId: String(h.senderId), 
+        customerName: h.senderName, 
+        customerPhone: h.senderPhone, 
+        linkedHawalaId: h.id, 
+        status: "active" 
+      });
       if (Number(h.fee) > 0 && h.feePayer === "sender") {
         entries.push({ id: generateId(), trackingCode: getNextTrackingCode(), date: dateStr, type: "customer_withdraw", currency: h.feeCurrency, amount: Number(h.fee), direction: "out", reason: `کارمزد حواله ${h.number}`, balanceAfter: 0, customerId: String(h.senderId), customerName: h.senderName, customerPhone: h.senderPhone, linkedHawalaId: h.id, status: "active" });
       }
@@ -162,7 +182,7 @@ function syncCashEntriesForHawala(action: "add" | "remove", h: Hawala | null, ol
   return recomputeCashBalances(entries);
 }
 
-function syncCashEntriesForHawalaSettlement(action: "add" | "remove", h: Hawala, currentEntries: any[]): any[] {
+function syncCashEntriesForHawalaSettlement(action: "add" | "remove", h: Hawala, currentEntries: any[]) {
   let entries = [...currentEntries];
   if (action === "remove") entries = entries.filter((e: any) => e.linkedHawalaSettleId !== h.id);
 
@@ -430,7 +450,6 @@ export default function HawalaPage() {
   const isSenderExchangeAccount = form.senderId === String(EXCHANGE_ACCOUNT_ID) || form.senderName.trim() === EXCHANGE_ACCOUNT_NAME;
   const isReceiverExchangeAccount = form.receiverId === String(EXCHANGE_ACCOUNT_ID) || form.receiverName.trim() === EXCHANGE_ACCOUNT_NAME;
   
-  // ✅ اصلاح حیاتی: اطمینان از تطابق نوع داده برای پیدا کردن مشتری
   const selectedSender = useMemo(() => { 
     if (isSenderCashBox) return CASH_BOX_CUSTOMER; 
     if (isSenderExchangeAccount) return EXCHANGE_ACCOUNT_CUSTOMER; 
@@ -470,6 +489,15 @@ export default function HawalaPage() {
 
   const confirmRegister = useCallback(async () => {
     try {
+      // ✅ نکته ۳: خواندن و تبدیل مطمئن مبلغ از input فرم در لحظه ثبت (جلوگیری از fallback یا NaN)
+      const parsedAmountFrom = parseAmount(form.amountFrom);
+      
+      // اعتبارسنجی سخت‌گیرانه: اگر مبلغ صفر یا نامعتبر بود، فرآیند متوقف شود
+      if (!Number.isFinite(parsedAmountFrom) || parsedAmountFrom <= 0) {
+        showToast("❌ مبلغ حواله نامعتبر است. لطفاً یک عدد مثبت وارد کنید.");
+        return;
+      }
+
       const nowDate = new Date();
       const senderName = form.senderName.trim(), receiverName = form.receiverName.trim();
       const isSenderCash = form.senderId === String(CASH_BOX_ID) || senderName === CASH_BOX_NAME;
@@ -477,7 +505,6 @@ export default function HawalaPage() {
       const isSenderExchange = form.senderId === String(EXCHANGE_ACCOUNT_ID) || senderName === EXCHANGE_ACCOUNT_NAME;
       const isReceiverExchange = form.receiverId === String(EXCHANGE_ACCOUNT_ID) || receiverName === EXCHANGE_ACCOUNT_NAME;
       
-      // ✅ اصلاح حیاتی: تضمین پیدا شدن مشتری با تبدیل به String
       const sender = isSenderCash ? CASH_BOX_CUSTOMER : isSenderExchange ? EXCHANGE_ACCOUNT_CUSTOMER : customers.find(c => String(c.id) === String(form.senderId)) || customers.find(c => c.name === senderName) || null;
       const receiver = isReceiverCash ? CASH_BOX_CUSTOMER : isReceiverExchange ? EXCHANGE_ACCOUNT_CUSTOMER : customers.find(c => String(c.id) === String(form.receiverId)) || customers.find(c => c.name === receiverName) || null;
       
@@ -490,7 +517,7 @@ export default function HawalaPage() {
       if (editingId) {
         const existing = hawalas.find(x => x.id === editingId);
         if (existing) {
-          const updated: Hawala = { ...existing, type: form.type, province: form.province, district: form.province === "هرات" ? form.district : form.province, destinationText, senderName, senderPhone: form.senderPhone, senderTelegram: form.senderTelegram, senderId: sender ? String(sender.id) : undefined, receiverName, receiverTazkira: form.receiverTazkira, receiverPhone: form.receiverPhone, receiverAddress: form.receiverAddress, receiverId: receiver ? String(receiver.id) : undefined, note: form.note, balance: form.balance };
+          const updated: Hawala = { ...existing, type: form.type, province: form.province, district: form.province === "هرات" ? form.district : form.province, destinationText, senderName, senderPhone: form.senderPhone, senderTelegram: form.senderTelegram, senderId: sender ? String(sender.id) : undefined, receiverName, receiverTazkira: form.receiverTazkira, receiverPhone: form.receiverPhone, receiverAddress: form.receiverAddress, receiverId: receiver ? String(receiver.id) : undefined, note: form.note, balance: form.balance, amountFrom: parsedAmountFrom }; // ✅ اطمینان از آپدیت صحیح مبلغ در ویرایش
           setHawalas(prev => prev.map(x => x.id === editingId ? updated : x));
           setEditingId(null); setForm(emptyForm); setErrors({}); setPreviewOpen(false); setActiveTab(existing.status === "paid" || existing.status === "cancelled" ? "history" : "current");
           showToast("✅ اطلاعات حواله ویرایش شد.");
@@ -499,10 +526,46 @@ export default function HawalaPage() {
       }
       
       const trackingNumber = await consumeTrackingCode();
-      const newHawala: Hawala = { id: generateId(), number: trackingNumber, date: nowDate.toISOString(), time: "", type: form.type, destinationCountry: "افغانستان", province: form.province, district: form.province === "هرات" ? form.district : form.province, destinationText, currencyFrom: form.currencyFrom, currencyTo: form.currencyTo, amountFrom, rate: txRate, rateLabel, rateBase: rateMode === "direct" ? directBaseValue : undefined, fee: feeValue, feeCurrency: form.feeCurrency, feePayer: form.feePayer, finalAmount, balance: form.balance, note: form.note, profit: feeValue, profitCurrency: form.feeCurrency, senderId: sender ? String(sender.id) : undefined, senderName, senderPhone: form.senderPhone, senderTelegram: form.senderTelegram, receiverId: receiver ? String(receiver.id) : undefined, receiverName, receiverTazkira: form.receiverTazkira, receiverPhone: form.receiverPhone, receiverAddress: form.receiverAddress, status: "pending" as HawalaStatus };
+      const newHawala: Hawala = { 
+        id: generateId(), 
+        number: trackingNumber, 
+        date: nowDate.toISOString(), 
+        time: "", 
+        type: form.type, 
+        destinationCountry: "افغانستان", 
+        province: form.province, 
+        district: form.province === "هرات" ? form.district : form.province, 
+        destinationText, 
+        currencyFrom: form.currencyFrom, 
+        currencyTo: form.currencyTo, 
+        // ✅ نکته ۱ و ۲: استفاده مستقیم و انحصاری از parsedAmountFrom (مبلغی که کاربر تایپ کرده)
+        amountFrom: parsedAmountFrom, 
+        rate: txRate, 
+        rateLabel, 
+        rateBase: rateMode === "direct" ? directBaseValue : undefined, 
+        fee: feeValue, 
+        feeCurrency: form.feeCurrency, 
+        feePayer: form.feePayer, 
+        finalAmount, 
+        balance: form.balance, // این فیلد فقط یک رشته متنی برای یادداشت است و در محاسبات ریاضی استفاده نمی‌شود
+        note: form.note, 
+        profit: feeValue, 
+        profitCurrency: form.feeCurrency, 
+        senderId: sender ? String(sender.id) : undefined, 
+        senderName, 
+        senderPhone: form.senderPhone, 
+        senderTelegram: form.senderTelegram, 
+        receiverId: receiver ? String(receiver.id) : undefined, 
+        receiverName, 
+        receiverTazkira: form.receiverTazkira, 
+        receiverPhone: form.receiverPhone, 
+        receiverAddress: form.receiverAddress, 
+        status: "pending" as HawalaStatus 
+      };
       
       setHawalas(prev => [newHawala, ...prev]);
       
+      // در داخل این تابع، amount به صورت Number(h.amountFrom) تنظیم می‌شود که کاملاً ایمن است.
       const newEntries = syncCashEntriesForHawala("add", newHawala, undefined, cashEntries);
       setCashEntries(newEntries);
       
@@ -511,11 +574,17 @@ export default function HawalaPage() {
       setCustomers(updatedCustomers);
       
       setLastNames({ senderName, receiverName });
-      setForm(emptyForm); setErrors({}); setPreviewOpen(false); setActiveTab("current");
+      setForm(emptyForm); 
+      setErrors({}); 
+      setPreviewOpen(false); 
+      setActiveTab("current");
       
       await sendHawalaReceipts({ hawala: newHawala, action: "register", customers: updatedCustomers });
       showToast("✅ حواله ثبت شد، حساب‌ها به‌روز و رسید ارسال شد");
-    } catch (err) { console.error("Register error:", err); showToast("خطا در ثبت حواله"); }
+    } catch (err) { 
+      console.error("Register error:", err); 
+      showToast("خطا در ثبت حواله"); 
+    }
   }, [form, rateMode, rateValue, afnForeign, directCounter, directBaseValue, feeValue, amountFrom, destinationText, customers, cashEntries, showToast, finalAmount, editingId, hawalas, transactions]);
 
   const openDetails = useCallback((item: Hawala) => { setDetailTarget(item); setOpenActionId(null); }, []);
@@ -747,11 +816,12 @@ export default function HawalaPage() {
                   {fld("ارز مقصد *", sel(form.currencyTo, (v) => setField("currencyTo", v), currencies.map(c => [c, labels[c]])))}
                 </div>
                 <div className="grid gap-3 md:gap-4 sm:grid-cols-3 mb-4">
-                  {fld("مبلغ حواله *", (<input type="text" inputMode="decimal" dir="ltr" className={`${uiInput} text-left tabular-nums ${errors.amountFrom ? errInput : ""}`} value={form.amountFrom} onChange={e => setField("amountFrom", toNumericText(e.target.value))} placeholder="مثلاً 10000" />))}
+                  {/* ✅ نکته ۱: فیلد مبلغ فقط به form.amountFrom متصل است و هرگز با customer.balance مقداردهی اولیه نمی‌شود */}
+                  {fld("مبلغ حواله *", (<input type="text" inputMode="decimal" dir="ltr" className={`${uiInput} text-left tabular-nums ${errors.amountFrom ? errInput : ""}`} value={form.amountFrom} onChange={e => setField("amountFrom", toNumericText(e.target.value))} placeholder="مثلاً 5000" />))}
                   {fld("کمیشن حواله", (<input type="text" inputMode="decimal" dir="ltr" className={`${uiInput} text-left tabular-nums ${errors.fee ? errInput : ""}`} value={form.fee} onChange={e => setField("fee", toNumericText(e.target.value))} placeholder="مثلاً 200" />))}
                   {fld("مبلغ نهایی", (<input readOnly value={`${fmt(finalAmount)} ${labels[form.currencyTo]}`} className={`${uiInput} ${roInput} text-left tabular-nums`} />))}
                 </div>
-                <div className="grid gap-3 md:gap-4 sm:grid-cols-2">{fld("باقی مانده حساب مشتری", (<input className={uiInput} value={form.balance} onChange={e => setField("balance", e.target.value)} placeholder="اختیاری" />))}</div>
+                <div className="grid gap-3 md:gap-4 sm:grid-cols-2">{fld("باقی مانده حساب مشتری", (<input className={uiInput} value={form.balance} onChange={e => setField("balance", e.target.value)} placeholder="اختیاری (فقط یادداشت)" />))}</div>
               </div>
               {rateMode === "same" && (<div>{sameBox("ارز مبدا و مقصد یکسان است؛ مبلغ نهایی برابر مبلغ حواله خواهد بود.")}</div>)}
               {rateMode === "afn" && afnForeign && (<div>{rateBox(cBlue, "نرخ دستی در برابر افغانی", (<div><label className={uiLabel}>نرخ</label><div className="flex flex-wrap items-center gap-2.5"><span className={rateChip}>{rateUnits[afnForeign]} {labels[afnForeign]} =</span><input type="text" inputMode="decimal" dir="ltr" value={form.rate} onChange={(e) => setField("rate", toNumericText(e.target.value))} placeholder="0" className={`h-12 w-32 md:w-44 px-3 text-left text-sm font-bold tabular-nums ${inputShell} ${errors.rate ? errInput : ""}`} /><span className={rateChip}>{labels.AFN}</span></div></div>), (<>{pill(cBlue.badge, rateValue > 0 ? `نرخ ثبت‌شده: ${afnRateLabel(afnForeign, rateValue)}` : "", true)}{pill(cEmerald.badge, convertedAmount > 0 ? `نتیجه: ${fmt(convertedAmount)} ${labels[form.currencyTo]}` : "")}</>))}</div>)}
