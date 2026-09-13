@@ -61,9 +61,11 @@ function formatShamsiDate(d: Date) { const s = shamsiParts(d); return `${s.year}
 function shortDateLabel(s: string) { try { const d = new Date(s); return Number.isNaN(d.getTime()) ? "-" : formatShamsiDate(d); } catch (e) { return "-"; } }
 function timeLabel(s: string) { try { const d = new Date(s); if (Number.isNaN(d.getTime())) return "-"; const pad = (n: number) => String(n).padStart(2, "0"); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; } catch (e) { return "-"; } }
 
-// ✅ اصلاح شده: اضافه شدن پشتیبانی از حواله (Hawala) در محاسبه مانده
+// ✅ اصلاح حیاتی: منطق محاسبه مانده با تشخیص دقیق نقش فرستنده و گیرنده
 function getLedgerBalance(customerId: string, currency: Currency, entries: CashEntry[], transactions: Transaction[] = [], hawalas: Hawala[] = []): number {
   let balance = 0;
+  
+  // 1. محاسبه بر اساس اسناد صندوق (Cash Entries)
   for (const entry of entries) {
     if (entry.status === "voided" || entry.currency !== currency) continue;
     if (customerId === CASH_BOX_ID) {
@@ -87,32 +89,42 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: CashE
     }
   }
   
+  // 2. محاسبه بر اساس تراکنش‌ها (معامله، حواله داخلی، تبدیل)
   if (customerId !== CASH_BOX_ID && customerId !== EXCHANGE_ACCOUNT_ID) {
     for (const tx of transactions) {
       if (tx.status === "voided") continue;
-      if (tx.type === "exchange" && tx.customerId === customerId) {
-        if (tx.fromCurrency === currency) balance -= tx.fromAmount;
-        if (tx.toCurrency === currency) balance += tx.toAmount;
-        if (tx.commission && tx.commissionCurrency === currency) balance -= tx.commission;
-      }
-      if (tx.type === "transfer") {
-        if (tx.senderId === customerId) {
+
+      if (tx.type === "exchange" || tx.type === "transfer" || tx.type === "convert") {
+        // تشخیص نقش مشتری در تراکنش
+        const isSender = tx.senderId === customerId || tx.customerId === customerId;
+        const isReceiver = tx.receiverId === customerId;
+
+        if (isSender) {
+          // فرستنده ارز را می‌دهد، پس موجودی ارز ارسالی او کم می‌شود
           if (tx.fromCurrency === currency) balance -= tx.fromAmount;
-          if (tx.commissionPayer === "sender" && tx.commission && tx.commissionCurrency === currency) balance -= tx.commission;
+          if (tx.commission && tx.commissionCurrency === currency && tx.commissionPayer === "sender") {
+            balance -= tx.commission;
+          }
         }
-        if (tx.receiverId === customerId) {
+        
+        if (isReceiver) {
+          // گیرنده ارز را دریافت می‌کند، پس موجودی ارز دریافتی او زیاد می‌شود
           if (tx.toCurrency === currency) balance += tx.toAmount;
-          if (tx.commissionPayer === "receiver" && tx.commission && tx.commissionCurrency === currency) balance -= tx.commission;
+          if (tx.commission && tx.commissionCurrency === currency && tx.commissionPayer === "receiver") {
+            balance -= tx.commission;
+          }
         }
-      }
-      if (tx.type === "convert" && tx.customerId === customerId) {
-        if (tx.fromCurrency === currency) balance -= tx.fromAmount;
-        if (tx.toCurrency === currency) balance += tx.toAmount;
-        if (tx.commission && tx.commissionCurrency === currency) balance -= tx.commission;
+
+        // حالت پشتیبان برای داده‌های قدیمی که فقط customerId داشتند
+        if (!isSender && !isReceiver && tx.customerId === customerId) {
+          if (tx.fromCurrency === currency) balance -= tx.fromAmount;
+          if (tx.toCurrency === currency) balance += tx.toAmount;
+          if (tx.commission && tx.commissionCurrency === currency) balance -= tx.commission;
+        }
       }
     }
 
-    // ✅ منطق جدید برای کسر/اضافه کردن مانده حواله
+    // 3. محاسبه بر اساس حواله‌ها (Hawala)
     for (const h of hawalas) {
       if (h.status === "cancelled") continue;
       if (h.senderId === customerId) {
@@ -128,7 +140,6 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: CashE
   return balance;
 }
 
-// ✅ اصلاح شده: لحاظ کردن exchange_account_in/out در محاسبه مانده فیزیکی
 function recomputeCashBalances(entries: CashEntry[]): CashEntry[] {
   const sorted = [...entries].sort((a, b) => {
     const t1 = new Date(a.date).getTime(); const t2 = new Date(b.date).getTime();
@@ -158,7 +169,6 @@ function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): C
   });
 }
 
-// ✅ اصلاح شده: اضافه شدن منطق به‌روزرسانی مانده مشتری برای قرض‌ها
 function getBalanceChangesForCashEntry(entry: CashEntry, action: "register" | "reverse"): BalanceChange[] {
   const changes: BalanceChange[] = [];
   const sign = action === "register" ? 1 : -1;
@@ -170,7 +180,7 @@ function getBalanceChangesForCashEntry(entry: CashEntry, action: "register" | "r
     }
   }
 
-  // ✅ مدیریت قرض برای مشتری
+  // ✅ مدیریت صحیح قرض برای مشتری
   if ((entry.type === "loan_given" || entry.type === "loan_received") && entry.customerId && entry.customerId !== CASH_BOX_ID && entry.customerId !== EXCHANGE_ACCOUNT_ID) {
     const delta = entry.type === "loan_given" ? -entry.amount : entry.amount;
     changes.push({ customerId: entry.customerId, customerName: entry.customerName || "", currency: entry.currency, amount: delta * sign });
@@ -378,7 +388,6 @@ export default function CashPage() {
     return () => document.removeEventListener("mousedown", handler);
   }, [openActionId]);
 
-  // ✅ به‌روزرسانی شده: ارسال hawalas به getLedgerBalance
   const customerDeposits = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
@@ -391,7 +400,6 @@ export default function CashPage() {
     return totals;
   }, [customers, entries, transactions, hawalas]);
 
-  // ✅ به‌روزرسانی شده: ارسال hawalas به getLedgerBalance
   const customerDebts = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
@@ -589,7 +597,6 @@ export default function CashPage() {
     setPreviewOpen(true);
   }, [validateForm, form, physicalCashBalances, isInType, isCustomerType, showToast, editingEntryId, entries]);
 
-  // ✅ اصلاح شده: اضافه شدن isSubmitting برای جلوگیری از ثبت دوبار
   const confirmRegister = useCallback(async () => {
     if (!previewData || isSubmitting) return;
     setIsSubmitting(true);
