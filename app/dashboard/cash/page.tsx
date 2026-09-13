@@ -61,12 +61,12 @@ function formatShamsiDate(d: Date) { const s = shamsiParts(d); return `${s.year}
 function shortDateLabel(s: string) { try { const d = new Date(s); return Number.isNaN(d.getTime()) ? "-" : formatShamsiDate(d); } catch (e) { return "-"; } }
 function timeLabel(s: string) { try { const d = new Date(s); if (Number.isNaN(d.getTime())) return "-"; const pad = (n: number) => String(n).padStart(2, "0"); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; } catch (e) { return "-"; } }
 
-function getLedgerBalance(customerId: string, currency: Currency, entries: CashEntry[], transactions: Transaction[] = []): number {
+// ✅ اصلاح شده: اضافه شدن پشتیبانی از حواله (Hawala) در محاسبه مانده
+function getLedgerBalance(customerId: string, currency: Currency, entries: CashEntry[], transactions: Transaction[] = [], hawalas: Hawala[] = []): number {
   let balance = 0;
   for (const entry of entries) {
     if (entry.status === "voided" || entry.currency !== currency) continue;
     if (customerId === CASH_BOX_ID) {
-      if (entry.type === "exchange_account_in" || entry.type === "exchange_account_out") continue;
       if (entry.type === "loan_given") balance -= entry.amount;
       else if (entry.type === "loan_received") balance += entry.amount;
       else { const physicalMultiplier = entry.direction === "in" ? 1 : -1; balance += entry.amount * physicalMultiplier; }
@@ -111,10 +111,24 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: CashE
         if (tx.commission && tx.commissionCurrency === currency) balance -= tx.commission;
       }
     }
+
+    // ✅ منطق جدید برای کسر/اضافه کردن مانده حواله
+    for (const h of hawalas) {
+      if (h.status === "cancelled") continue;
+      if (h.senderId === customerId) {
+        if (h.currencyFrom === currency) balance -= h.amountFrom;
+        if (h.feePayer === "sender" && h.feeCurrency === currency) balance -= h.fee;
+      }
+      if (h.receiverId === customerId) {
+        if (h.currencyTo === currency) balance += h.finalAmount;
+        if (h.feePayer === "receiver" && h.feeCurrency === currency) balance -= h.fee;
+      }
+    }
   }
   return balance;
 }
 
+// ✅ اصلاح شده: لحاظ کردن exchange_account_in/out در محاسبه مانده فیزیکی
 function recomputeCashBalances(entries: CashEntry[]): CashEntry[] {
   const sorted = [...entries].sort((a, b) => {
     const t1 = new Date(a.date).getTime(); const t2 = new Date(b.date).getTime();
@@ -127,9 +141,8 @@ function recomputeCashBalances(entries: CashEntry[]): CashEntry[] {
   return sorted.map(e => {
     if (e.status === "voided") return { ...e, balanceAfter: bals[e.currency] || 0 };
     if (e.currency && bals[e.currency] !== undefined) {
-      if (e.type !== "exchange_account_in" && e.type !== "exchange_account_out") {
-        bals[e.currency] += e.direction === "in" ? (e.amount || 0) : -(e.amount || 0);
-      }
+      const multiplier = e.direction === "in" ? 1 : -1;
+      bals[e.currency] += (e.amount || 0) * multiplier;
     }
     return { ...e, balanceAfter: bals[e.currency] || 0 };
   });
@@ -145,15 +158,24 @@ function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): C
   });
 }
 
+// ✅ اصلاح شده: اضافه شدن منطق به‌روزرسانی مانده مشتری برای قرض‌ها
 function getBalanceChangesForCashEntry(entry: CashEntry, action: "register" | "reverse"): BalanceChange[] {
   const changes: BalanceChange[] = [];
   const sign = action === "register" ? 1 : -1;
+  
   if (entry.type === "customer_deposit" || entry.type === "customer_withdraw") {
     if (entry.customerId && entry.customerId !== CASH_BOX_ID && entry.customerId !== EXCHANGE_ACCOUNT_ID) {
       const delta = entry.type === "customer_deposit" ? entry.amount : -entry.amount;
       changes.push({ customerId: entry.customerId, customerName: entry.customerName || "", currency: entry.currency, amount: delta * sign });
     }
   }
+
+  // ✅ مدیریت قرض برای مشتری
+  if ((entry.type === "loan_given" || entry.type === "loan_received") && entry.customerId && entry.customerId !== CASH_BOX_ID && entry.customerId !== EXCHANGE_ACCOUNT_ID) {
+    const delta = entry.type === "loan_given" ? -entry.amount : entry.amount;
+    changes.push({ customerId: entry.customerId, customerName: entry.customerName || "", currency: entry.currency, amount: delta * sign });
+  }
+
   if (entry.type === "owner_deposit" || entry.type === "owner_withdraw" || entry.type === "loan_given" || entry.type === "loan_received") {
     let exchangeDelta = 0;
     if (entry.type === "owner_deposit") exchangeDelta = entry.amount;
@@ -325,6 +347,9 @@ export default function CashPage() {
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [openActionId, setOpenActionId] = useState<string | null>(null);
   const [selectedEntry, setSelectedEntry] = useState<CashEntry | null>(null);
+  
+  // ✅ جلوگیری از ثبت دوبار (Double Submission)
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => { try { const saved = window.localStorage.getItem("fx-theme"); if (saved === "dark" || saved === "light") setTheme(saved); } catch (e) { /* ignore */ } }, []);
   useEffect(() => { try { window.localStorage.setItem("fx-theme", theme); } catch (e) { /* ignore */ } }, [theme]);
@@ -353,30 +378,33 @@ export default function CashPage() {
     return () => document.removeEventListener("mousedown", handler);
   }, [openActionId]);
 
+  // ✅ به‌روزرسانی شده: ارسال hawalas به getLedgerBalance
   const customerDeposits = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
       if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) continue;
       for (const cur of currencies) {
-        const bal = getLedgerBalance(c.id, cur, entries, transactions);
+        const bal = getLedgerBalance(c.id, cur, entries, transactions, hawalas);
         if (bal > 0) totals[cur] += bal;
       }
     }
     return totals;
-  }, [customers, entries, transactions]);
+  }, [customers, entries, transactions, hawalas]);
 
+  // ✅ به‌روزرسانی شده: ارسال hawalas به getLedgerBalance
   const customerDebts = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
       if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) continue;
       for (const cur of currencies) {
-        const bal = getLedgerBalance(c.id, cur, entries, transactions);
+        const bal = getLedgerBalance(c.id, cur, entries, transactions, hawalas);
         if (bal < 0) totals[cur] += Math.abs(bal);
       }
     }
     return totals;
-  }, [customers, entries, transactions]);
+  }, [customers, entries, transactions, hawalas]);
 
+  // ✅ اصلاح شده: حذف کسر اشتباه customerDebts و اضافه کردن exchange_account_in/out
   const exchangeBalance = useMemo(() => {
     const bal: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const cur of currencies) {
@@ -387,6 +415,8 @@ export default function CashPage() {
         else if (entry.type === "owner_withdraw") balance -= entry.amount;
         else if (entry.type === "loan_given") balance -= entry.amount;
         else if (entry.type === "loan_received") balance += entry.amount;
+        else if (entry.type === "exchange_account_in") balance += entry.amount;
+        else if (entry.type === "exchange_account_out") balance -= entry.amount;
       }
       for (const tx of transactions) {
         if (tx.status === "voided") continue;
@@ -394,10 +424,10 @@ export default function CashPage() {
         if (tx.toCurrency === cur) balance -= tx.toAmount;
         if (tx.commission && tx.commissionCurrency === cur) balance += tx.commission;
       }
-      bal[cur] = balance - (customerDebts[cur] || 0);
+      bal[cur] = balance;
     }
     return bal;
-  }, [entries, transactions, customerDebts]);
+  }, [entries, transactions]);
 
   const physicalCashBalances = useMemo(() => {
     const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
@@ -508,14 +538,10 @@ export default function CashPage() {
     showToast(`سند ${entry.trackingCode} حذف شد.`);
   }, [showToast, customers, entries]);
 
-  // ✅ نسخه اصلاح‌شده با لاگ‌های دیباگ
   const handleSubmitClick = useCallback(() => {
-    console.log("🔵 [DEBUG] handleSubmitClick triggered");
     const errs = validateForm(); 
     setErrors(errs);
-    
     if (Object.keys(errs).length > 0) { 
-      console.warn("🟡 [DEBUG] Validation failed:", errs);
       showToast("لطفاً فیلدهای ضروری را تکمیل کنید."); 
       return; 
     }
@@ -559,18 +585,14 @@ export default function CashPage() {
       };
     }
     
-    console.log("🟢 [DEBUG] Preview data prepared:", entry);
     setPreviewData(entry); 
     setPreviewOpen(true);
   }, [validateForm, form, physicalCashBalances, isInType, isCustomerType, showToast, editingEntryId, entries]);
 
-  // ✅ نسخه اصلاح‌شده با try/catch و لاگ‌های دیباگ برای جلوگیری از فریز شدن
+  // ✅ اصلاح شده: اضافه شدن isSubmitting برای جلوگیری از ثبت دوبار
   const confirmRegister = useCallback(async () => {
-    console.log("🚀 [DEBUG] confirmRegister started. previewData:", previewData);
-    if (!previewData) {
-      console.error("❌ [DEBUG] CRITICAL: No previewData found!");
-      return;
-    }
+    if (!previewData || isSubmitting) return;
+    setIsSubmitting(true);
 
     try {
       const wasEditing = !!editingEntryId;
@@ -578,7 +600,6 @@ export default function CashPage() {
       let finalEntry = previewData;
 
       if (wasEditing) {
-        console.log("⏳ [DEBUG] Processing EDIT mode...");
         const oldEntry = entries.find(e => e.id === editingEntryId);
         if (oldEntry) {
           updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForCashEntry(oldEntry, "reverse"));
@@ -602,12 +623,8 @@ export default function CashPage() {
         const updatedEntriesForEdit = recomputeCashBalances(entries.map(e => e.id === editingEntryId ? updated : e));
         setEntries(updatedEntriesForEdit);
         finalEntry = updated;
-        console.log("✅ [DEBUG] Edit mode state updated");
       } else {
-        console.log("⏳ [DEBUG] Fetching new tracking code (awaiting consumeTrackingCode)...");
         const newTrackingCode = await consumeTrackingCode();
-        console.log("✅ [DEBUG] Tracking code received:", newTrackingCode);
-
         const entry = { ...previewData, trackingCode: newTrackingCode, status: "active" as const };
         if (entry.customerId && entry.customerId !== CASH_BOX_ID) { 
           const cust = customers.find(c => c.id === entry.customerId); 
@@ -617,15 +634,11 @@ export default function CashPage() {
           } 
         }
         
-        console.log("⏳ [DEBUG] Calculating balance changes...");
         updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForCashEntry(entry, "register"));
-        
-        console.log("⏳ [DEBUG] Recomputing cash balances and calling setEntries/setCustomers...");
         const updatedEntriesForNew = recomputeCashBalances([...entries, entry]);
         
         setEntries(updatedEntriesForNew);
         setCustomers(updatedCustomers);
-        console.log("✅ [DEBUG] Local state updated successfully. useSyncedState should now trigger Firestore write.");
         finalEntry = entry;
       }
 
@@ -635,19 +648,17 @@ export default function CashPage() {
       setPreviewOpen(false); 
       setPreviewData(null);
 
-      console.log("⏳ [DEBUG] Sending Telegram receipts (if applicable)...");
       await sendCashReceipts({ entry: finalEntry, action: "register", customers: updatedCustomers });
-      console.log("✅ [DEBUG] Telegram process finished");
-
       showToast(wasEditing ? "سند با موفقیت ویرایش شد." : isCommissionType ? "کارمزد با موفقیت برداشت شد." : "عملیات صندوق با موفقیت ثبت شد.");
-      console.log("🎉 [DEBUG] confirmRegister completed successfully!");
 
     } catch (error) {
-      console.error("💥 [DEBUG] CRITICAL ERROR in confirmRegister:", error);
+      console.error("CRITICAL ERROR in confirmRegister:", error);
       const errorMessage = error instanceof Error ? error.message : "خطای ناشناخته در ارتباط با دیتابیس";
       showToast(`❌ خطا در ثبت: ${errorMessage}`);
+    } finally {
+      setIsSubmitting(false);
     }
-  }, [previewData, editingEntryId, entries, customers, showToast, isCommissionType]);
+  }, [previewData, isSubmitting, editingEntryId, entries, customers, showToast, isCommissionType]);
 
   if (!mounted) return (<div className="min-h-screen flex items-center justify-center"><div className="text-center"><div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-slate-300 border-t-emerald-500" /><p className="mt-4 text-slate-500">در حال بارگذاری...</p></div></div>);
 
@@ -843,7 +854,7 @@ export default function CashPage() {
                         <div className={`absolute left-0 top-full z-30 mt-1 w-full max-h-60 overflow-y-auto rounded-xl border shadow-xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`}>
                           {filteredCustomerList.length === 0 ? (<div className={`px-4 py-3 text-xs text-center ${subText}`}>مشتری‌ای یافت نشد</div>) : (
                             filteredCustomerList.map((c) => {
-                              const liveBal = getLedgerBalance(c.id, form.currency, entries, transactions);
+                              const liveBal = getLedgerBalance(c.id, form.currency, entries, transactions, hawalas);
                               return (
                                 <button key={c.id} type="button" onClick={() => { setField("customerId", c.id); setField("customerName", c.name); setCustomerFilter(""); setShowCustomerList(false); }} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${dk ? "text-slate-200 hover:bg-teal-400/15 hover:text-teal-300" : "text-slate-700 hover:bg-teal-50 hover:text-teal-600"}`}>
                                   <span className="flex-1 truncate flex items-center gap-1.5">
@@ -870,7 +881,7 @@ export default function CashPage() {
                       </div>
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
                         {currencies.map(cur => {
-                          const bal = getLedgerBalance(selectedCustomer.id, cur, entries, transactions);
+                          const bal = getLedgerBalance(selectedCustomer.id, cur, entries, transactions, hawalas);
                           const isDebt = bal < 0; const isCredit = bal > 0; const isSel = form.currency === cur;
                           return (
                             <div key={cur} className={`relative rounded-xl px-3 py-2.5 text-center transition-all ${isSel ? dk ? "bg-teal-400/15 ring-2 ring-teal-400/40" : "bg-teal-50 ring-2 ring-teal-400/40" : dk ? "bg-slate-900/40" : "bg-slate-50"}`}>
@@ -927,7 +938,15 @@ export default function CashPage() {
               )}
 
               {errorList.length > 0 && (<div className={`space-y-2 rounded-xl border p-4 ${dk ? "border-rose-500/50 bg-rose-500/10 text-rose-300" : "border-rose-500 bg-rose-50 text-rose-600"}`}><b className="flex items-center gap-2 text-sm"><Ic n="alert" className="h-5 w-5 shrink-0" />لطفاً فیلدهای اجباری را تکمیل کنید:</b><ul className="list-disc pr-5 text-sm space-y-1">{errorList.map((msg, i) => (<li key={i}>{msg}</li>))}</ul></div>)}
-              <button onClick={handleSubmitClick} className={`group flex h-[50px] md:h-[52px] w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-base font-black shadow-lg transition-all duration-300 hover:shadow-xl hover:brightness-110 active:scale-[0.985] ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 via-teal-500 to-cyan-500 text-white"}`}>{editingEntryId ? "به‌روزرسانی" : "ثبت عملیات"}<Ic n="check" className="h-5 w-5" /></button>
+              
+              <button 
+                onClick={handleSubmitClick} 
+                disabled={isSubmitting}
+                className={`group flex h-[50px] md:h-[52px] w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-base font-black shadow-lg transition-all duration-300 hover:shadow-xl hover:brightness-110 active:scale-[0.985] ${isSubmitting ? 'opacity-70 cursor-not-allowed' : ''} ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 via-teal-500 to-cyan-500 text-white"}`}
+              >
+                {isSubmitting ? 'در حال ثبت...' : (editingEntryId ? "به‌روزرسانی" : "ثبت عملیات")}
+                <Ic n="check" className="h-5 w-5" />
+              </button>
             </section>
           )}
 
@@ -1052,8 +1071,21 @@ export default function CashPage() {
                 </div>
               </div>
               <div className="flex flex-wrap gap-3 pt-2">
-                <button onClick={confirmRegister} className={`flex h-[48px] flex-1 min-w-[180px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-sm font-black shadow-lg transition-all hover:brightness-110 active:scale-[0.98] ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 to-teal-500 text-white"}`}>{editingEntryId ? "ذخیره تغییرات" : "ثبت نهایی"}<Ic n="check" className="h-4 w-4" /></button>
-                <button onClick={() => { setPreviewOpen(false); setPreviewData(null); }} className={`flex h-[48px] px-6 cursor-pointer items-center justify-center rounded-xl border text-sm font-bold transition-all active:scale-95 ${dk ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>انصراف</button>
+                <button 
+                  onClick={confirmRegister} 
+                  disabled={isSubmitting}
+                  className={`flex h-[48px] flex-1 min-w-[180px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-sm font-black shadow-lg transition-all hover:brightness-110 active:scale-[0.98] ${isSubmitting ? 'opacity-70 cursor-not-allowed' : ''} ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 to-teal-500 text-white"}`}
+                >
+                  {isSubmitting ? 'در حال پردازش...' : (editingEntryId ? "ذخیره تغییرات" : "ثبت نهایی")}
+                  <Ic n="check" className="h-4 w-4" />
+                </button>
+                <button 
+                  onClick={() => { setPreviewOpen(false); setPreviewData(null); }} 
+                  disabled={isSubmitting}
+                  className={`flex h-[48px] px-6 cursor-pointer items-center justify-center rounded-xl border text-sm font-bold transition-all active:scale-95 ${dk ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+                >
+                  انصراف
+                </button>
               </div>
             </div>
           </div>
