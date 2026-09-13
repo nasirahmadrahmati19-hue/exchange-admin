@@ -7,7 +7,10 @@ import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY } from "../lib/d
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type Customer = { id: string; name: string; phone?: string; tazkira?: string; address?: string; note?: string; telegram?: string; registeredAt: string; balances: Record<Currency, number>; };
 type TxType = "exchange" | "transfer" | "convert" | "hawala" | "deposit" | "withdraw" | "fee" | "correction";
-type CashEntryType = "customer_deposit" | "customer_withdraw" | "owner_deposit" | "owner_withdraw" | "adjustment" | "fee" | "commission_withdraw" | "loan_given" | "loan_received";
+
+// ✅ اصلاح حیاتی: اضافه شدن exchange_account_in و exchange_account_out برای جلوگیری از خطای TypeScript
+type CashEntryType = "customer_deposit" | "customer_withdraw" | "owner_deposit" | "owner_withdraw" | "adjustment" | "fee" | "commission_withdraw" | "loan_given" | "loan_received" | "exchange_account_in" | "exchange_account_out";
+
 type LedgerEntry = { id: string; date: string; customerId: string; type: TxType; description: string; currency: Currency; amount: number; direction: "in" | "out"; balanceAfter: number; referenceId?: string; referenceNumber?: string; counterPartyId?: string; };
 type FormState = { name: string; tazkira: string; phone: string; address: string; note: string; telegram: string; };
 type FormErrors = Partial<Record<keyof FormState, string>>;
@@ -142,7 +145,8 @@ const entryTypeLabels: Record<CashEntryType, string> = {
   customer_deposit: "واریز مشتری", customer_withdraw: "برداشت مشتری", 
   owner_deposit: "واریز مالک", owner_withdraw: "برداشت مالک", 
   adjustment: "اصلاح صندوق", fee: "کارمزد", commission_withdraw: "برداشت کارمزد",
-  loan_given: "قرض داده‌شده", loan_received: "دریافت قرض"
+  loan_given: "قرض داده‌شده", loan_received: "دریافت قرض",
+  exchange_account_in: "ورودی حساب صرافی", exchange_account_out: "خروجی حساب صرافی"
 };
 const currencyColors: Record<Currency, { light: string; dark: string; gradient: string }> = { AFN: { light: "text-emerald-700", dark: "text-emerald-300", gradient: "from-emerald-500 to-teal-400" }, USD: { light: "text-sky-700", dark: "text-sky-300", gradient: "from-sky-500 to-cyan-400" }, EUR: { light: "text-blue-700", dark: "text-blue-300", gradient: "from-blue-600 to-blue-400" }, IRR: { light: "text-amber-700", dark: "text-amber-300", gradient: "from-amber-500 to-orange-400" }, PKR: { light: "text-rose-700", dark: "text-rose-300", gradient: "from-rose-500 to-pink-400" } };
 const txLabels: Record<TxType, string> = { exchange: "تبادل ارز", transfer: "انتقال", convert: "تبدیل ارز", hawala: "حواله", deposit: "واریز", withdraw: "برداشت", fee: "کارمزد", correction: "اصلاح" };
@@ -277,7 +281,7 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
     if (ce.status === "voided") continue;
     if (ce.linkedHawalaId || ce.linkedHawalaSettleId || ce.linkedExchangeId || ce.linkedTransferId || ce.linkedConvertId) continue;
 
-    const isValidType = ["customer_deposit", "customer_withdraw", "owner_deposit", "owner_withdraw", "loan_given", "loan_received", "adjustment", "fee", "commission_withdraw"].includes(ce.type);
+    const isValidType = ["customer_deposit", "customer_withdraw", "owner_deposit", "owner_withdraw", "loan_given", "loan_received", "adjustment", "fee", "commission_withdraw", "exchange_account_in", "exchange_account_out"].includes(ce.type);
     if (!isValidType) continue;
 
     const cur = ce.currency as Currency;
@@ -293,11 +297,11 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
     if (!targetCustomerId) continue;
     if (!customers.find(c => c.id === targetCustomerId) && targetCustomerId !== EXCHANGE_ACCOUNT_ID && targetCustomerId !== CASH_BOX_ID) continue;
 
-    const isDirectionIn = ce.direction === "in" || ce.type === "owner_deposit" || ce.type === "customer_deposit" || ce.type === "loan_received";
+    const isDirectionIn = ce.direction === "in" || ce.type === "owner_deposit" || ce.type === "customer_deposit" || ce.type === "loan_received" || ce.type === "exchange_account_in";
 
     let txType: TxType = "correction";
-    if (ce.type === "customer_deposit" || ce.type === "owner_deposit") txType = "deposit";
-    else if (ce.type === "customer_withdraw" || ce.type === "owner_withdraw" || ce.type === "commission_withdraw") txType = "withdraw";
+    if (ce.type === "customer_deposit" || ce.type === "owner_deposit" || ce.type === "exchange_account_in") txType = "deposit";
+    else if (ce.type === "customer_withdraw" || ce.type === "owner_withdraw" || ce.type === "commission_withdraw" || ce.type === "exchange_account_out") txType = "withdraw";
     else if (ce.type === "loan_given" || ce.type === "loan_received") txType = "transfer";
     else if (ce.type === "fee") txType = "fee";
     else if (ce.type === "adjustment") txType = "correction";
@@ -339,11 +343,10 @@ function buildCashBoxLedger(cashEntries: any[]): LedgerEntry[] {
     const isIn = ce.direction === "in";
     bals[cur] += isIn ? amt : -amt;
     let txType: TxType = "correction";
-    if (ce.type === "owner_deposit") txType = "deposit";
-    else if (ce.type === "owner_withdraw") txType = "withdraw";
-    else if (ce.type === "fee") txType = "fee";
+    if (ce.type === "owner_deposit" || ce.type === "exchange_account_in") txType = "deposit";
+    else if (ce.type === "owner_withdraw" || ce.type === "exchange_account_out") txType = "withdraw";
+    else if (ce.type === "fee" || ce.type === "commission_withdraw") txType = "fee";
     else if (ce.type === "adjustment") txType = "correction";
-    else if (ce.type === "commission_withdraw") txType = "withdraw";
     entries.push({ id: ce.id, date: ce.date || new Date().toISOString(), customerId: CASH_BOX_ID, type: txType, description: ce.reason || entryTypeLabels[ce.type as CashEntryType] || "عملیات صندوق", currency: cur, amount: amt, direction: isIn ? "in" : "out", balanceAfter: bals[cur], referenceId: ce.id, referenceNumber: ce.trackingCode || "" });
   }
   return entries;
@@ -440,14 +443,16 @@ export default function CustomersPage() {
       }
     }
 
-    // ۲. ✅ محاسبه‌ی مستقیم و دقیق موجودی حساب صرافی (مستقل از buildLedger برای اطمینان ۱۰۰٪)
+    // ۲. ✅ محاسبه‌ی مستقیم و دقیق موجودی حساب صرافی
     for (const cur of currencies) {
       let exchBalance = 0;
       
-      // الف: از روی اسناد صندوق (واریز/برداشت مالک، قرض، جابجایی حساب)
+      // الف: از روی اسناد صندوق
       for (const ce of cashEntries) {
         if (ce.status === "voided" || ce.currency !== cur) continue;
-        const type = ce.type as CashEntryType;
+        
+        // ✅ اصلاح حیاتی: تبدیل به رشته برای جلوگیری از خطای Type Overlap در TypeScript
+        const type = String(ce.type); 
         if (type === "owner_deposit" || type === "loan_received" || type === "exchange_account_in") {
           exchBalance += Number(ce.amount);
         } else if (type === "owner_withdraw" || type === "loan_given" || type === "exchange_account_out" || type === "commission_withdraw") {
@@ -455,7 +460,7 @@ export default function CustomersPage() {
         }
       }
 
-      // ب: از روی کارمزدهای تراکنش‌ها (سود متعلق به صرافی)
+      // ب: از روی کارمزدهای تراکنش‌ها
       for (const tx of transactions) {
         if (tx.status === "voided") continue;
         if (tx.commission && tx.commission > 0 && tx.commissionCurrency === cur) {
@@ -463,7 +468,7 @@ export default function CustomersPage() {
         }
       }
 
-      // ج: از روی کارمزدهای حواله‌ها (سود متعلق به صرافی)
+      // ج: از روی کارمزدهای حواله‌ها
       for (const h of hawalas) {
         if (h.status === "cancelled") continue;
         if (h.fee && h.fee > 0 && h.feeCurrency === cur) {
@@ -474,20 +479,15 @@ export default function CustomersPage() {
       map[EXCHANGE_ACCOUNT_ID][cur] = exchBalance;
     }
 
-    // ۳. ✅ محاسبه‌ی موجودی فیزیکی صندوق (فرمول استاندارد: مجموع مشتریان + حساب صرافی)
+    // ۳. ✅ محاسبه‌ی موجودی فیزیکی صندوق
     for (const cur of currencies) {
       let cashBoxBalance = 0;
-      
-      // جمع بستن موجودی تمام مشتریان عادی
       for (const c of safeCustomers) {
         if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) {
           cashBoxBalance += map[c.id][cur];
         }
       }
-      
-      // اضافه کردن موجودی حساب صرافی به صندوق
       cashBoxBalance += map[EXCHANGE_ACCOUNT_ID][cur];
-      
       map[CASH_BOX_ID][cur] = cashBoxBalance;
     }
 
