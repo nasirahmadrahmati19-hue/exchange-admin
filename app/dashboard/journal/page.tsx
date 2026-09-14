@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useSyncedState } from "../lib/useSyncedState";
 import { TRANSACTIONS_KEY, CASH_KEY, HAWALAS_KEY } from "../lib/defaultData";
 
@@ -18,7 +18,9 @@ function splitDateTime(s: string): { datePart: string; timePart: string } {
     const parts = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", { year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(d);
     const g = (t: string) => parts.find(p => p.type === t)?.value || "0";
     return { datePart: `${g("year")}/${g("month")}/${g("day")}`, timePart: `${pad(d.getHours())}:${pad(d.getMinutes())}` };
-  } catch { return { datePart: "-", timePart: "" }; }
+  } catch { 
+    return { datePart: "-", timePart: "" }; 
+  }
 }
 
 type JournalEntry = {
@@ -71,7 +73,6 @@ export default function JournalPage() {
 
   const dk = theme === "dark";
 
-  // ✅ ۱. ادغام هوشمند و استاندارد تمام اسناد
   const unifiedJournal = useMemo(() => {
     const entries: JournalEntry[] = [];
 
@@ -122,7 +123,6 @@ export default function JournalPage() {
     return entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [transactions, hawalas, cashEntries]);
 
-  // ✅ ۲. فیلتر کردن پیشرفته
   const filteredJournal = useMemo(() => {
     const q = search.trim().toLowerCase();
     const now = new Date();
@@ -146,7 +146,6 @@ export default function JournalPage() {
     });
   }, [unifiedJournal, search, filterType, filterCurrency, dateRange]);
 
-  // ✅ ۳. محاسبات خلاصه (Totals)
   const summary = useMemo(() => {
     let totalDebit = 0, totalCredit = 0;
     filteredJournal.forEach((e: any) => {
@@ -175,7 +174,8 @@ export default function JournalPage() {
     const headers = ["تاریخ", "ساعت", "کد پیگیری", "نوع", "شرح", "طرف حساب", "ارز", "بدهکار", "بستانکار"];
     const rows = filteredJournal.map((e: any) => {
       const dt = splitDateTime(e.date);
-      return [dt.datePart, dt.timePart, e.trackingCode, getTypeLabel(e.type), e.description, e.partyName, labels[e.currency], e.debit, e.credit].join(",");
+      // ✅ اصلاح خطا: اضافه کردن "as Currency"
+      return [dt.datePart, dt.timePart, e.trackingCode, getTypeLabel(e.type), e.description, e.partyName, labels[e.currency as Currency], e.debit, e.credit].join(",");
     });
     const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -190,7 +190,6 @@ export default function JournalPage() {
 
   return (
     <div className={`space-y-6 ${dk ? "text-slate-100" : "text-slate-800"} print:space-y-2`}>
-      {/* هدر صفحه */}
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div>
           <h1 className="text-2xl md:text-3xl font-extrabold">روزنامه کل</h1>
@@ -206,7 +205,6 @@ export default function JournalPage() {
         </div>
       </div>
 
-      {/* کارت‌های خلاصه وضعیت */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 print:hidden">
         <div className={`rounded-2xl border p-4 ${dk ? "border-rose-400/20 bg-rose-400/5" : "border-rose-200 bg-rose-50"}`}>
           <p className={`text-xs font-bold ${dk ? "text-rose-300" : "text-rose-600"}`}>جمع کل بدهکار (پرداخت)</p>
@@ -222,7 +220,6 @@ export default function JournalPage() {
         </div>
       </div>
 
-      {/* نوار فیلتر پیشرفته */}
       <div className={`rounded-2xl border p-4 print:hidden ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-white"}`}>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
           <div className="relative lg:col-span-2">
@@ -255,7 +252,6 @@ export default function JournalPage() {
         )}
       </div>
 
-      {/* جدول اصلی روزنامه */}
       <div className={`overflow-hidden rounded-2xl border ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-white"} print:border-0 print:shadow-none`}>
         {filteredJournal.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center print:hidden">
@@ -298,7 +294,7 @@ export default function JournalPage() {
                         {entry.partyName}
                       </td>
                       <td className={`px-3 py-3 text-center text-[11px] font-black ${dk ? "text-slate-300" : "text-slate-600"}`}>
-                        {labels[entry.currency]}
+                        {labels[entry.currency as Currency]}
                       </td>
                       <td className={`px-3 py-3 text-center text-[13px] font-black tabular-nums ${entry.debit > 0 ? (dk ? "text-rose-300" : "text-rose-600") : "text-transparent"}`}>
                         {entry.debit > 0 ? fmt(entry.debit) : "—"}
@@ -320,7 +316,6 @@ export default function JournalPage() {
         )}
       </div>
 
-      {/* مودال جزئیات حرفه‌ای */}
       {selectedEntry && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm print:hidden" onClick={() => setSelectedEntry(null)}>
           <div className={`w-full max-w-lg overflow-hidden rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={e => e.stopPropagation()}>
@@ -356,13 +351,13 @@ export default function JournalPage() {
                 <div className={`rounded-xl p-3 border ${selectedEntry.debit > 0 ? (dk ? "border-rose-400/30 bg-rose-400/5" : "border-rose-200 bg-rose-50") : (dk ? "border-slate-700 bg-slate-800/30" : "border-slate-200 bg-slate-50")}`}>
                   <p className={`text-[10px] font-black ${selectedEntry.debit > 0 ? (dk ? "text-rose-300" : "text-rose-600") : (dk ? "text-slate-500" : "text-slate-400")}`}>مبلغ بدهکار (پرداخت)</p>
                   <p className={`text-lg font-black mt-1 tabular-nums ${selectedEntry.debit > 0 ? "text-rose-500" : (dk ? "text-slate-600" : "text-slate-300")}`} dir="ltr">
-                    {selectedEntry.debit > 0 ? fmt(selectedEntry.debit) : "۰"} <span className="text-xs">{labels[selectedEntry.currency]}</span>
+                    {selectedEntry.debit > 0 ? fmt(selectedEntry.debit) : "۰"} <span className="text-xs">{labels[selectedEntry.currency as Currency]}</span>
                   </p>
                 </div>
                 <div className={`rounded-xl p-3 border ${selectedEntry.credit > 0 ? (dk ? "border-emerald-400/30 bg-emerald-400/5" : "border-emerald-200 bg-emerald-50") : (dk ? "border-slate-700 bg-slate-800/30" : "border-slate-200 bg-slate-50")}`}>
                   <p className={`text-[10px] font-black ${selectedEntry.credit > 0 ? (dk ? "text-emerald-300" : "text-emerald-600") : (dk ? "text-slate-500" : "text-slate-400")}`}>مبلغ بستانکار (دریافت)</p>
                   <p className={`text-lg font-black mt-1 tabular-nums ${selectedEntry.credit > 0 ? "text-emerald-500" : (dk ? "text-slate-600" : "text-slate-300")}`} dir="ltr">
-                    {selectedEntry.credit > 0 ? fmt(selectedEntry.credit) : "۰"} <span className="text-xs">{labels[selectedEntry.currency]}</span>
+                    {selectedEntry.credit > 0 ? fmt(selectedEntry.credit) : "۰"} <span className="text-xs">{labels[selectedEntry.currency as Currency]}</span>
                   </p>
                 </div>
               </div>
