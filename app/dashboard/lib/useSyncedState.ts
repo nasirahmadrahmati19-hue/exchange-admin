@@ -4,6 +4,9 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { doc, setDoc, onSnapshot } from "firebase/firestore";
 import { db } from "./firebase";
 
+// ============================================================
+// توابع کمکی برای پاک‌سازی داده‌ها (دقیقاً همان منطق شما)
+// ============================================================
 function removeUndefinedFields(obj: any): any {
   if (obj === null || obj === undefined) return obj;
   if (typeof obj !== "object") return obj;
@@ -18,37 +21,100 @@ function removeUndefinedFields(obj: any): any {
   return cleaned;
 }
 
-function readFromLocalStorage<T>(key: string, fallback: T): T {
+// ============================================================
+// ✅ ارتقاء یافته: استفاده از IndexedDB به جای LocalStorage
+// این کار ظرفیت ذخیره‌سازی محلی را از ۵ مگابایت به ۵۰+ مگابایت افزایش می‌دهد
+// ============================================================
+const DB_NAME = "AppSyncDB";
+const STORE_NAME = "syncedData";
+const DB_VERSION = 1;
+
+function openDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (typeof window === "undefined") return reject("Window is undefined");
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+    request.onupgradeneeded = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME);
+      }
+    };
+  });
+}
+
+async function readFromIndexedDB<T>(key: string, fallback: T): Promise<T> {
   if (typeof window === "undefined") return fallback;
   try {
-    const cached = localStorage.getItem(`synced_${key}`);
-    if (cached !== null && cached !== "undefined") {
-      return JSON.parse(cached);
-    }
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const transaction = db.transaction(STORE_NAME, "readonly");
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.get(key);
+      request.onsuccess = () => {
+        const cached = request.result;
+        if (cached !== undefined && cached !== null) {
+          resolve(cached);
+        } else {
+          resolve(fallback);
+        }
+      };
+      request.onerror = () => resolve(fallback);
+    });
   } catch (error) {
-    console.error(`[useSyncedState] Error reading LocalStorage for ${key}:`, error);
+    console.error(`[useSyncedState] Error reading IndexedDB for ${key}:`, error);
+    return fallback;
   }
-  return fallback;
 }
 
-function saveToLocalStorage<T>(key: string, value: T): void {
+async function saveToIndexedDB<T>(key: string, value: T): Promise<void> {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(`synced_${key}`, JSON.stringify(value));
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, "readwrite");
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.put(value, key);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
   } catch (error) {
-    console.error(`[useSyncedState] Error saving LocalStorage for ${key}:`, error);
+    console.error(`[useSyncedState] Error saving IndexedDB for ${key}:`, error);
   }
 }
 
+// ============================================================
+// هوک اصلی (بدون تغییر در نحوه فراخوانی توسط کامپوننت‌ها)
+// ============================================================
 export function useSyncedState<T>(key: string, initialValue: T) {
   const isMounted = useRef(true);
   
-  const [value, setValue] = useState<T>(() => {
-    return readFromLocalStorage<T>(key, initialValue);
-  });
+  const [value, setValue] = useState<T>(initialValue);
+  const [isLoaded, setIsLoaded] = useState(false);
 
+  // بارگذاری اولیه از IndexedDB
   useEffect(() => {
-    isMounted.current = true;
+    let ignore = false;
+    const loadInitialData = async () => {
+      const cachedValue = await readFromIndexedDB<T>(key, initialValue);
+      if (!ignore && isMounted.current) {
+        setValue(cachedValue);
+        setIsLoaded(true);
+      }
+    };
+    loadInitialData();
+
+    return () => {
+      ignore = true;
+      isMounted.current = false;
+    };
+  }, [key, initialValue]);
+
+  // گوش دادن به تغییرات فایربیس
+  useEffect(() => {
+    if (!isLoaded) return; // صبر کن تا داده اولیه لود شود
+    
     const docRef = doc(db, "appData", key);
     
     const unsubscribe = onSnapshot(
@@ -62,11 +128,13 @@ export function useSyncedState<T>(key: string, initialValue: T) {
             const firebaseValue = data.value as T;
             
             setValue(prevValue => {
+              // جلوگیری از رندر غیرضروری
               const prevJson = JSON.stringify(prevValue);
               const newJson = JSON.stringify(firebaseValue);
               
               if (prevJson !== newJson) {
-                saveToLocalStorage(key, firebaseValue);
+                // به‌روزرسانی همزمان IndexedDB
+                saveToIndexedDB(key, firebaseValue).catch(console.error);
                 return firebaseValue;
               }
               return prevValue;
@@ -83,32 +151,46 @@ export function useSyncedState<T>(key: string, initialValue: T) {
       isMounted.current = false;
       unsubscribe();
     };
-  }, [key]);
+  }, [key, isLoaded]);
 
-  // ✅ نسخه نهایی و ۱۰۰٪ بدون باگ: استفاده از مقدار فعلی value برای محاسبه مقدار جدید
+  // تابع به‌روزرسانی (دقیقاً همان منطق شما، اما با ذخیره‌سازی ایمن‌تر)
   const setSyncedValue = useCallback(async (newValue: T | ((prev: T) => T)): Promise<T> => {
-    // ۱. محاسبه مقدار جدید بر اساس state فعلی (بدون استفاده از متغیرهای let خطرناک)
     const resolvedValue = typeof newValue === "function" 
       ? (newValue as (prev: T) => T)(value)
       : newValue;
 
-    // ۲. آپدیت state ری‌اکت
+    // ۱. آپدیت فوری State ری‌اکت (برای تجربه کاربری سریع)
     setValue(resolvedValue);
     
-    // ۳. ذخیره در LocalStorage
-    saveToLocalStorage(key, resolvedValue);
+    // ۲. ذخیره فوری در IndexedDB (آفلاین)
+    await saveToIndexedDB(key, resolvedValue);
 
-    // ۴. ذخیره در فایربیس
+    // ۳. ذخیره در فایربیس (آنلاین)
     try {
       const docRef = doc(db, "appData", key);
       const cleanedValue = removeUndefinedFields(resolvedValue);
+      
+      // بررسی حجم تقریبی برای جلوگیری از خطای 1MB فایربیس
+      const jsonString = JSON.stringify(cleanedValue);
+      const sizeInBytes = new Blob([jsonString]).size;
+      const sizeInMB = sizeInBytes / (1024 * 1024);
+      
+      if (sizeInMB > 0.9) {
+        console.warn(`⚠️ هشدار: حجم داده برای کلید "${key}" به ${sizeInMB.toFixed(2)} مگابایت رسیده است. نزدیک به محدودیت ۱ مگابایت فایربیس!`);
+      }
+
       await setDoc(docRef, { value: cleanedValue }, { merge: true });
       return resolvedValue;
-    } catch (error) {
-      console.error(`[useSyncedState] ❌ Error saving ${key} to Firebase:`, error);
+    } catch (error: any) {
+      if (error?.code === "failed-precondition" || error?.message?.includes("1 MiB")) {
+        console.error(`❌ خطای بحرانی: حجم داده برای "${key}" از ۱ مگابایت تجاوز کرده است. فایربیس اجازه ذخیره نمی‌دهد.`);
+        alert("خطا: حجم داده‌ها بیش از حد مجاز سرور است. لطفاً با پشتیبانی تماس بگیرید.");
+      } else {
+        console.error(`[useSyncedState] ❌ Error saving ${key} to Firebase:`, error);
+      }
       throw error;
     }
-  }, [key, value]); // اضافه کردن value به وابستگی‌ها برای اطمینان از دسترسی به آخرین مقدار
+  }, [key, value]);
 
   return [value, setSyncedValue] as const;
 }
