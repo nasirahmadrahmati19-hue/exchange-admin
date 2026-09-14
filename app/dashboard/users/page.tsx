@@ -180,13 +180,11 @@ function timeLabel(s: string) { try { const d = new Date(s); if (Number.isNaN(d.
 
 const emptyForm: FormState = { name: "", tazkira: "", phone: "", address: "", note: "", telegram: "" };
 
-// ✅ نسخه نهایی و ضدگلوله‌ی buildLedger - جلوگیری قطعی از محاسبه‌ی دوگانه
+// ✅ نسخه نهایی و ضدگلوله‌ی buildLedger
 function buildLedger(customers: Customer[], transactions: any[], hawalas: any[], cashEntries: any[]): LedgerEntry[] {
   const entries: LedgerEntry[] = [];
   if (!Array.isArray(customers) || !Array.isArray(transactions) || !Array.isArray(hawalas) || !Array.isArray(cashEntries)) return entries;
 
-  // ✅ مرحله ۱: جمع‌آوری شناسه‌ی تمام حواله‌هایی که در اسناد صندوق ثبت شده‌اند
-  // این برای جلوگیری از محاسبه‌ی دوگانه استفاده می‌شود
   const hawalaIdsInCashEntries = new Set<string>();
   for (const ce of cashEntries) {
     if (ce && typeof ce === "object") {
@@ -195,10 +193,10 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
     }
   }
 
-  // مرحله ۲: پردازش تراکنش‌ها (Exchange, Transfer, Convert)
+  // مرحله ۲: پردازش تراکنش‌ها
   for (const tx of transactions) {
     if (!tx || typeof tx !== "object") continue;
-    if (tx.status === "voided" || tx.status === "cancelled") continue;
+    if (tx.status === "voided" || tx.status === "cancelled" || tx.customerDeleted || tx.senderDeleted || tx.receiverDeleted) continue; // ✅ چک حذف نرم‌افزاری
     const date = tx.date || new Date().toISOString();
     const refNum = tx.trackingCode || (tx.id ? String(tx.id).slice(-6) : "");
     const fromCur = tx.fromCurrency as Currency, toCur = tx.toCurrency as Currency;
@@ -249,10 +247,10 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
     }
   }
 
-  // مرحله ۳: پردازش حواله‌ها - منبع اصلی و قطعی
+  // مرحله ۳: پردازش حواله‌ها
   for (const h of hawalas) {
     if (!h || typeof h !== "object") continue;
-    if (h.status === "cancelled") continue;
+    if (h.status === "cancelled" || h.customerDeleted || h.senderDeleted || h.receiverDeleted) continue; // ✅ چک حذف نرم‌افزاری
     const date = h.date || new Date().toISOString(), refNum = h.number || "";
     const sender = customers.find(c => c.id === h.senderId) || customers.find(c => c.name === h.senderName);
     const receiver = customers.find(c => c.id === h.receiverId) || customers.find(c => c.name === h.receiverName);
@@ -277,15 +275,11 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
     }
   }
 
-  // مرحله ۴: پردازش اسناد صندوق (Cash Entries)
-  // ✅ اصلاح حیاتی: اگر این سند مربوط به یک حواله است، از اضافه کردن آن خودداری کن
-  // زیرا آن حواله قبلاً در حلقه بالا (مرحله ۳) به‌طور کامل پردازش شده است.
-  // اضافه کردن این سند باعث می‌شود مبلغ دو بار کسر/اضافه شود.
+  // مرحله ۴: پردازش اسناد صندوق (Cash Entries) - ✅ اصلاح حیاتی: ثبت آینه‌ای برای صندوق و حساب صرافی
   for (const ce of cashEntries) {
     if (!ce || typeof ce !== "object") continue;
-    if (ce.status === "voided") continue;
+    if (ce.status === "voided" || ce.customerDeleted) continue; // ✅ چک حذف نرم‌افزاری
     
-    // ✅ بررسی حیاتی: اگر این سند به هر نوع تراکنش دیگری لینک شده، رد کن
     if (ce.linkedHawalaId || ce.linkedHawalaSettleId || ce.linkedExchangeId || ce.linkedTransferId || ce.linkedConvertId) continue;
 
     const isValidType = ["customer_deposit", "customer_withdraw", "owner_deposit", "owner_withdraw", "loan_given", "loan_received", "adjustment", "fee", "commission_withdraw"].includes(ce.type);
@@ -313,11 +307,32 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
     else if (ce.type === "fee") txType = "fee";
     else if (ce.type === "adjustment") txType = "correction";
 
+    // ۱. ثبت اصلی برای مشتری یا حساب صرافی
     entries.push({
-      id: `${ce.id}-cash`, date: ce.date || new Date().toISOString(), customerId: targetCustomerId, type: txType,
+      id: `${ce.id}-primary`, date: ce.date || new Date().toISOString(), customerId: targetCustomerId, type: txType,
       description: ce.reason || entryTypeLabels[ce.type as CashEntryType] || "عملیات", currency: cur, amount: amt,
       direction: isDirectionIn ? "in" : "out", balanceAfter: 0, referenceId: ce.id, referenceNumber: ce.trackingCode || "", counterPartyId: ce.counterPartyId || CASH_BOX_ID
     });
+
+    // ۲. ثبت آینه‌ای برای صندوق (برای محاسبه دقیق موجودی فیزیکی)
+    if (["customer_deposit", "customer_withdraw", "owner_deposit", "owner_withdraw", "loan_given", "loan_received"].includes(ce.type)) {
+      const cashBoxDirection = (ce.type === "customer_deposit" || ce.type === "owner_deposit" || ce.type === "loan_received") ? "in" : "out";
+      entries.push({
+        id: `${ce.id}-cashbox`, date: ce.date || new Date().toISOString(), customerId: CASH_BOX_ID, type: txType,
+        description: `صندوق: ${ce.reason || entryTypeLabels[ce.type as CashEntryType]}`, currency: cur, amount: amt,
+        direction: cashBoxDirection, balanceAfter: 0, referenceId: ce.id, referenceNumber: ce.trackingCode || "", counterPartyId: targetCustomerId
+      });
+    }
+
+    // ۳. ثبت آینه‌ای برای حساب صرافی (مخصوص عملیات قرض)
+    if (ce.type === "loan_given" || ce.type === "loan_received") {
+      const exchDirection = ce.type === "loan_given" ? "out" : "in";
+      entries.push({
+        id: `${ce.id}-exch`, date: ce.date || new Date().toISOString(), customerId: EXCHANGE_ACCOUNT_ID, type: txType,
+        description: `حساب صرافی: ${ce.reason || entryTypeLabels[ce.type as CashEntryType]}`, currency: cur, amount: amt,
+        direction: exchDirection, balanceAfter: 0, referenceId: ce.id, referenceNumber: ce.trackingCode || "", counterPartyId: targetCustomerId
+      });
+    }
   }
 
   entries.sort((a, b) => { try { return new Date(a.date).getTime() - new Date(b.date).getTime(); } catch { return 0; } });
@@ -332,30 +347,6 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
     if (!isCurrency(e.currency)) continue;
     rb[e.customerId][e.currency] += e.direction === "in" ? e.amount : -e.amount;
     e.balanceAfter = rb[e.customerId][e.currency];
-  }
-  return entries;
-}
-
-function buildCashBoxLedger(cashEntries: any[]): LedgerEntry[] {
-  const entries: LedgerEntry[] = [];
-  if (!Array.isArray(cashEntries)) return entries;
-  const sorted = [...cashEntries].sort((a, b) => { try { return new Date(a.date).getTime() - new Date(b.date).getTime(); } catch { return 0; } });
-  const bals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-  for (const ce of sorted) {
-    if (ce.status === "voided") continue;
-    if (ce.type === "customer_deposit" || ce.type === "customer_withdraw" || ce.type === "loan_given" || ce.type === "loan_received") continue;
-    if (ce.linkedExchangeId || ce.linkedTransferId || ce.linkedConvertId || ce.linkedHawalaId || ce.linkedHawalaSettleId) continue;
-    const cur = ce.currency as Currency; if (!isCurrency(cur)) continue;
-    const amt = Number(ce.amount || 0) || 0; if (amt <= 0) continue;
-    const isIn = ce.direction === "in";
-    bals[cur] += isIn ? amt : -amt;
-    let txType: TxType = "correction";
-    if (ce.type === "owner_deposit") txType = "deposit";
-    else if (ce.type === "owner_withdraw") txType = "withdraw";
-    else if (ce.type === "fee") txType = "fee";
-    else if (ce.type === "adjustment") txType = "correction";
-    else if (ce.type === "commission_withdraw") txType = "withdraw";
-    entries.push({ id: ce.id, date: ce.date || new Date().toISOString(), customerId: CASH_BOX_ID, type: txType, description: ce.reason || entryTypeLabels[ce.type as CashEntryType] || "عملیات صندوق", currency: cur, amount: amt, direction: isIn ? "in" : "out", balanceAfter: bals[cur], referenceId: ce.id, referenceNumber: ce.trackingCode || "" });
   }
   return entries;
 }
@@ -420,9 +411,10 @@ export default function CustomersPage() {
     return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); };
   }, [openMenuId]);
 
+  // ✅ منبع واحد حقیقت: تمام محاسبات فقط از روی این ledger انجام می‌شود
   const ledger = useMemo(() => { try { return buildLedger(customers, transactions, hawalas, cashEntries); } catch { return []; } }, [customers, transactions, hawalas, cashEntries]);
-  const cashBoxLedger = useMemo(() => { try { return buildCashBoxLedger(cashEntries); } catch { return []; } }, [cashEntries]);
 
+  // ✅ محاسبه دقیق و ساده‌شده موجودی‌ها بر اساس ledger واحد
   const allBalances = useMemo(() => {
     const safeCustomers = Array.isArray(customers) ? customers : [];
     const map: Record<string, Record<Currency, number>> = {};
@@ -430,35 +422,13 @@ export default function CustomersPage() {
     map[CASH_BOX_ID] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     map[EXCHANGE_ACCOUNT_ID] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
 
-    for (const c of safeCustomers) {
-      if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) {
-        for (const cur of currencies) {
-          let balance = 0;
-          for (const e of ledger) { if (e.customerId === c.id && e.currency === cur) balance += e.direction === "in" ? e.amount : -e.amount; }
-          map[c.id][cur] = balance;
-        }
-      }
-    }
-
-    for (const cur of currencies) {
-      let exchBalance = 0;
-      for (const e of ledger) { if (e.customerId === EXCHANGE_ACCOUNT_ID && e.currency === cur) exchBalance += e.direction === "in" ? e.amount : -e.amount; }
-      map[EXCHANGE_ACCOUNT_ID][cur] = exchBalance;
-    }
-
-    // ✅ محاسبه موجودی فیزیکی صندوق دقیقاً مطابق تب صندوق
-    for (const cur of currencies) {
-      let cashBoxBalance = 0;
-      for (const c of safeCustomers) {
-        if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) {
-          cashBoxBalance += map[c.id][cur];
-        }
-      }
-      cashBoxBalance += map[EXCHANGE_ACCOUNT_ID][cur];
-      map[CASH_BOX_ID][cur] = cashBoxBalance;
+    for (const e of ledger) {
+      if (!map[e.customerId]) map[e.customerId] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+      if (!isCurrency(e.currency)) continue;
+      map[e.customerId][e.currency] += e.direction === "in" ? e.amount : -e.amount;
     }
     return map;
-  }, [customers, cashEntries, ledger]);
+  }, [customers, ledger]);
 
   const filteredCustomers = useMemo(() => {
     const cashBoxOption = CASH_BOX_CUSTOMER;
@@ -492,11 +462,14 @@ export default function CustomersPage() {
     return allBalances[selectedCustomer.id];
   }, [selectedCustomer, allBalances]);
 
+  // ✅ اکنون صندوق هم مانند یک مشتری عادی از ledger اصلی فیلتر می‌شود
   const customerLedger = useMemo(() => {
-    if (selectedCustomerId === CASH_BOX_ID || selectedCustomerId === CASH_BOX_NAME) return cashBoxLedger;
+    if (selectedCustomerId === CASH_BOX_ID || selectedCustomerId === CASH_BOX_NAME) {
+      return ledger.filter(e => e.customerId === CASH_BOX_ID);
+    }
     if (selectedCustomerId === EXCHANGE_ACCOUNT_ID) return ledger.filter(e => e.customerId === EXCHANGE_ACCOUNT_ID);
     return ledger.filter(e => e.customerId === selectedCustomerId);
-  }, [ledger, cashBoxLedger, selectedCustomerId]);
+  }, [ledger, selectedCustomerId]);
 
   const filteredLedger = useMemo(() => {
     const q = normalizeDigits(ledgerSearch.trim()).replace(/[,،\s]/g, "").toLowerCase();
@@ -524,6 +497,7 @@ export default function CustomersPage() {
     setLoanModalType(type); setLoanAmount(""); setLoanCurrency("AFN"); setLoanReason(""); setLoanModalOpen(true);
   };
 
+  // ✅ اصلاح حیاتی: فقط یک سند اصلی ثبت می‌شود. buildLedger خودش آینه‌های صندوق و حساب صرافی را می‌سازد.
   const processLoan = () => {
     if (!selectedCustomer || selectedCustomer.id === CASH_BOX_ID || selectedCustomer.id === EXCHANGE_ACCOUNT_ID) {
       showToast("فقط برای مشتریان واقعی قابل انجام است."); return;
@@ -546,11 +520,19 @@ export default function CustomersPage() {
     const newEntries: any[] = [];
 
     if (loanModalType === "give") {
-      newEntries.push({ id: generateId(), trackingCode: `${trackingCode}-CUST`, date: now, type: "loan_given", currency: loanCurrency, amount: amt, direction: "out", reason: `دریافت قرض از صرافی - ${reason}`, balanceAfter: 0, customerId: selectedCustomer.id, customerName: selectedCustomer.name, counterPartyId: EXCHANGE_ACCOUNT_ID, status: "active" });
-      newEntries.push({ id: generateId(), trackingCode: `${trackingCode}-EXCH`, date: now, type: "loan_given", currency: loanCurrency, amount: amt, direction: "out", reason: `پرداخت قرض به ${selectedCustomer.name}`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, counterPartyId: selectedCustomer.id, status: "active" });
+      newEntries.push({
+        id: generateId(), trackingCode, date: now, type: "loan_given", currency: loanCurrency, amount: amt,
+        direction: "out", reason: `اعطای قرض به ${selectedCustomer.name} - ${reason}`,
+        customerId: selectedCustomer.id, customerName: selectedCustomer.name,
+        counterPartyId: EXCHANGE_ACCOUNT_ID, status: "active"
+      });
     } else {
-      newEntries.push({ id: generateId(), trackingCode: `${trackingCode}-CUST`, date: now, type: "loan_received", currency: loanCurrency, amount: amt, direction: "in", reason: `بازپرداخت قرض به صرافی - ${reason}`, balanceAfter: 0, customerId: selectedCustomer.id, customerName: selectedCustomer.name, counterPartyId: EXCHANGE_ACCOUNT_ID, status: "active" });
-      newEntries.push({ id: generateId(), trackingCode: `${trackingCode}-EXCH`, date: now, type: "loan_received", currency: loanCurrency, amount: amt, direction: "in", reason: `دریافت بازپرداخت قرض از ${selectedCustomer.name}`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, counterPartyId: selectedCustomer.id, status: "active" });
+      newEntries.push({
+        id: generateId(), trackingCode, date: now, type: "loan_received", currency: loanCurrency, amount: amt,
+        direction: "in", reason: `دریافت بازپرداخت قرض از ${selectedCustomer.name} - ${reason}`,
+        customerId: selectedCustomer.id, customerName: selectedCustomer.name,
+        counterPartyId: EXCHANGE_ACCOUNT_ID, status: "active"
+      });
     }
 
     setCashEntries(prev => [...(Array.isArray(prev) ? prev : []), ...newEntries]);
@@ -577,14 +559,14 @@ export default function CustomersPage() {
     try {
       await setTransactions(prev => (Array.isArray(prev) ? prev : []).map((t: any) => { 
         if (t.customerId === id || t.customerName === c.name || t.senderId === id || t.senderName === c.name || t.receiverId === id || t.receiverName === c.name) {
-          return { ...t, customerDeleted: true }; 
+          return { ...t, customerDeleted: true, senderDeleted: true, receiverDeleted: true }; 
         }
         return t; 
       }));
 
       await setHawalas(prev => (Array.isArray(prev) ? prev : []).map((h: any) => { 
         if (h.senderId === id || h.senderName === c.name || h.receiverId === id || h.receiverName === c.name) {
-          return { ...h, customerDeleted: true }; 
+          return { ...h, customerDeleted: true, senderDeleted: true, receiverDeleted: true }; 
         }
         return h; 
       }));
@@ -717,7 +699,7 @@ export default function CustomersPage() {
           <div className="cu-up grid grid-cols-2 md:grid-cols-4 gap-3" style={{ animationDelay: "70ms" }}>
             {[
               { label: "کل مشتریان", value: safeCustomersForCount.filter(c => c.id !== EXCHANGE_ACCOUNT_ID).length, icon: "users", color: "from-emerald-500 to-teal-500", text: dk ? "text-emerald-300" : "text-emerald-600" },
-              { label: "رویدادهای مالی", value: ledger.length + cashBoxLedger.length, icon: "history", color: "from-amber-500 to-orange-500", text: dk ? "text-amber-300" : "text-amber-600" },
+              { label: "رویدادهای مالی", value: ledger.length, icon: "history", color: "from-amber-500 to-orange-500", text: dk ? "text-amber-300" : "text-amber-600" },
               { label: "مشتریان بدهکار", value: negativeBalanceCount, icon: "x", color: "from-rose-500 to-pink-500", text: dk ? "text-rose-300" : "text-rose-600" },
               { label: "مانده صفر", value: zeroBalanceCount, icon: "wallet", color: "from-sky-500 to-cyan-500", text: dk ? "text-sky-300" : "text-sky-600" },
             ].map((s, i) => (
@@ -795,7 +777,7 @@ export default function CustomersPage() {
                             {!isCashBoxRow && !isExchRow ? (<><div className={`text-[11px] tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`}>{c.registeredAt ? shortDateLabel(c.registeredAt) : "-"}</div><div className={`text-[10px] mt-1 ${subTextVar}`}>{ledger.filter(e => e.customerId === c.id).length} رویداد</div></>) : (<>
                               <div className={`text-[11px] tabular-nums ${dk ? "text-slate-300" : "text-slate-600"}`}>—</div>
                               <div className={`text-[10px] mt-1 ${subTextVar}`}>
-                                {isCashBoxRow ? `${cashBoxLedger.length} رویداد` : `${ledger.filter(e => e.customerId === EXCHANGE_ACCOUNT_ID).length} رویداد`}
+                                {isCashBoxRow ? `${ledger.filter(e => e.customerId === CASH_BOX_ID).length} رویداد` : `${ledger.filter(e => e.customerId === EXCHANGE_ACCOUNT_ID).length} رویداد`}
                               </div>
                             </>)}
                           </td>
