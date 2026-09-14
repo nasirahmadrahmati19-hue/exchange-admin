@@ -11,6 +11,7 @@ const menuItems = [
   { title: "تبادل ارز", href: "/dashboard/trades" },
   { title: "صندوق", href: "/dashboard/cash" },
   { title: "مشتریان", href: "/dashboard/users" },
+  { title: "روزنامه", href: "/dashboard/journal" }, // <-- این خط اضافه شد
   { title: "گزارشات", href: "/dashboard/reports" },
 ];
 
