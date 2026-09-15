@@ -6,22 +6,18 @@ import {
   collection, query, where, orderBy, limit, startAfter, 
   getDocs, Timestamp, onSnapshot 
 } from "firebase/firestore";
-import { db } from "../lib/firebase"; // مسیر کانفیگ شما
-// ✅ اتصال به توابع مشترک (همان توابعی که در فایل قبل ساختیم)
-import { voidTransaction, fetchCustomerName } from "../lib/firestoreActions";
-import * as XLSX from "xlsx";
 
-// --- Types ---
+// ✅ نکته: اگر پوشه شما به جای lib نام دیگری دارد (مثلاً services)، آن را تغییر دهید
+import { db } from "@/lib/firebase"; 
+import { voidTransaction, fetchCustomerName } from "@/lib/firestoreActions";
+
+// --- Types & Constants ---
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
 const currencyLabels: Record<Currency, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
 const currencyFlags: Record<Currency, string> = { AFN: "🇦🇫", USD: "🇺🇸", EUR: "🇪🇺", IRR: "🇮🇷", PKR: "🇵🇰" };
 
 type TxType = "واریز" | "برداشت" | "انتقال" | "تبدیل" | "هزینه";
-const typeLabels: Record<string, TxType> = {
-  deposit: "واریز", withdrawal: "برداشت", hawala_in: "انتقال", hawala_out: "انتقال",
-  buy_currency: "تبدیل", sell_currency: "تبدیل", commission: "هزینه", reversal: "ابطال"
-};
 
 interface Transaction {
   id: string;
@@ -88,14 +84,14 @@ export default function JournalPage() {
       
       // فیلترهای Firestore (سمت سرور)
       if (typeFilter !== "all") {
-        // نگاشت نوع فیلتر URL به نوع دیتابیس
         const dbType = typeFilter === "hawala_in" || typeFilter === "hawala_out" ? "انتقال" : 
                        typeFilter === "buy_currency" || typeFilter === "sell_currency" ? "تبدیل" :
-                       typeFilter === "commission" ? "هزینه" : typeLabels[typeFilter] || typeFilter;
+                       typeFilter === "commission" ? "هزینه" : 
+                       typeFilter === "deposit" ? "واریز" : "برداشت";
         q = query(q, where("type", "==", dbType));
       }
       if (currencyFilter !== "all") q = query(q, where("currency", "==", currencyFilter));
-      q = query(q, where("status", "==", "active")); // فقط تراکنش‌های فعال در لیست اصلی
+      q = query(q, where("status", "==", "active"));
 
       // محاسبه بازه زمانی برای فیلتر سروری (جلوگیری از شکستگی Pagination)
       if (dateRange !== "all") {
@@ -103,7 +99,7 @@ export default function JournalPage() {
         let startDate = new Date();
         if (dateRange === "today") startDate.setHours(0, 0, 0, 0);
         else if (dateRange === "week") startDate.setDate(now.getDate() - 7);
-        else if (dateRange === "month") startDate.setDate(1); // اول ماه جاری
+        else if (dateRange === "month") startDate.setDate(1);
         
         q = query(q, where("timestamp", ">=", Timestamp.fromDate(startDate)));
       }
@@ -115,19 +111,17 @@ export default function JournalPage() {
       const snapshot = await getDocs(q);
       let newEntries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Transaction));
       
-      // فیلتر جستجو در کلاینت (چون Firestore جستجوی متن کامل ندارد)
+      // فیلتر جستجو در کلاینت
       if (searchQuery) {
         const lowerSearch = searchQuery.toLowerCase();
-        newEntries = newEntries.filter(e => 
-          e.description.toLowerCase().includes(lowerSearch)
-        );
+        newEntries = newEntries.filter(e => e.description.toLowerCase().includes(lowerSearch));
       }
 
       setEntries(prev => reset ? newEntries : [...prev, ...newEntries]);
       setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
       setHasMore(snapshot.docs.length === 50);
 
-      // بارگذاری نام مشتریان به صورت غیرمسدودکننده
+      // بارگذاری نام مشتریان
       newEntries.forEach(async (tx) => {
         if (tx.partyId && !customerNames[tx.partyId]) {
           const name = await fetchCustomerName(tx.partyId);
@@ -144,7 +138,7 @@ export default function JournalPage() {
 
   useEffect(() => { fetchEntries(true); }, [dateRange, typeFilter, currencyFilter, searchQuery]);
 
-  // --- ۳. محاسبه جمع کل موجودی صندوق (Real-time از کل دیتابیس) ---
+  // --- ۳. محاسبه جمع کل موجودی صندوق (Real-time) ---
   const [totals, setTotals] = useState<Record<string, number>>({});
   useEffect(() => {
     const q = query(collection(db, "transactions"), where("status", "==", "active"));
@@ -176,14 +170,13 @@ export default function JournalPage() {
     return { count, deposits, withdrawals, transfers };
   }, [entries, exchangeRates]);
 
-  // --- ۵. ابطال اتمیک تراکنش (متصل به تابع مشترک) ---
+  // --- ۵. ابطال اتمیک تراکنش ---
   const handleVoid = async (entry: Transaction) => {
     const reason = prompt("دلیل ابطال این تراکنش را وارد کنید:");
     if (!reason) return;
     
     setVoidingId(entry.id);
     try {
-      // ✅ استفاده از تابع مشترک به جای حذف یا آپدیت دستی
       await voidTransaction(entry.id); 
       alert("تراکنش با موفقیت باطل و موجودی به‌صورت اتمیک اصلاح شد.");
       fetchEntries(true);
@@ -194,24 +187,46 @@ export default function JournalPage() {
     }
   };
 
-  // --- ۶. خروجی Excel ---
+  // --- ۶. خروجی CSV (جایگزین اکسل، بدون نیاز به پکیج خارجی) ---
   const handleExport = () => {
-    const dataToExport = entries.map(e => ({
-      "شماره سند": e.id.slice(0, 8),
-      "تاریخ/ساعت": e.timestamp?.toDate ? e.timestamp.toDate().toLocaleString("fa-IR") : "-",
-      "شرح معامله": e.description,
-      "مشتری": customerNames[e.partyId] || e.partyId,
-      "ارز": currencyLabels[e.currency],
-      "مبلغ": e.amount,
-      "نوع": e.type,
-      "تراز پس از معامله": e.balanceAfter,
-      "وضعیت": e.status === "voided" ? "باطل شده" : "فعال"
-    }));
+    const headers = ["شماره سند", "تاریخ/ساعت", "شرح معامله", "مشتری", "ارز", "مبلغ", "نوع", "تراز پس از معامله", "وضعیت"];
+    
+    const escapeCsv = (val: any) => {
+      const str = String(val ?? "");
+      return `"${str.replace(/"/g, '""')}"`;
+    };
 
-    const ws = XLSX.utils.json_to_sheet(dataToExport);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Journal");
-    XLSX.writeFile(wb, `Journal_Report_${new Date().toISOString().slice(0,10)}.xlsx`);
+    const rows = entries.map(e => {
+      const dateStr = e.timestamp?.toDate ? e.timestamp.toDate().toLocaleString("fa-IR") : "-";
+      const customerName = customerNames[e.partyId] || e.partyId;
+      const statusStr = e.status === "voided" ? "باطل شده" : "فعال";
+
+      return [
+        escapeCsv(e.id.slice(0, 8)),
+        escapeCsv(dateStr),
+        escapeCsv(e.description),
+        escapeCsv(customerName),
+        escapeCsv(currencyLabels[e.currency] || e.currency),
+        e.amount,
+        escapeCsv(e.type),
+        e.balanceAfter,
+        escapeCsv(statusStr)
+      ].join(",");
+    });
+
+    // افزودن BOM (\uFEFF) برای پشتیبانی صحیح از حروف فارسی در Excel
+    const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    
+    link.href = url;
+    link.download = `Journal_Report_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // --- Helper: استایل بج نوع تراکنش ---
@@ -245,14 +260,14 @@ export default function JournalPage() {
         ))}
       </div>
 
-      {/* هدر صفحه و دکمه اکسل */}
+      {/* هدر صفحه و دکمه خروجی */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-2xl font-extrabold text-slate-800">روزنامه کل معاملات</h1>
           <p className="text-slate-500 text-sm mt-1">سابقه کامل و حسابرسی‌پذیر تمام رویدادهای مالی</p>
         </div>
         <button onClick={handleExport} className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition shadow-sm text-sm font-bold">
-          <span>📊</span> خروجی Excel
+          <span>📊</span> خروجی CSV (سازگار با Excel)
         </button>
       </div>
 
@@ -380,7 +395,7 @@ export default function JournalPage() {
 
       {/* ۴ و ۵. بخش پایینی: جمع کل موجودی و خلاصه دوره */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* جمع کل موجودی هر ارز (پایین سمت راست) */}
+        {/* جمع کل موجودی هر ارز */}
         <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm p-5">
           <h3 className="text-base font-bold text-slate-800 mb-4 flex items-center">
             <span className="w-2 h-2 bg-emerald-500 rounded-full ml-2"></span>
@@ -389,7 +404,7 @@ export default function JournalPage() {
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             {currencies.map(cur => {
               const amount = totals[cur] || 0;
-              if (amount === 0 && Object.keys(totals).length > 0) return null; // مخفی کردن ارزهای صفر
+              if (amount === 0 && Object.keys(totals).length > 0) return null;
               return (
                 <div key={cur} className="bg-slate-50 rounded-lg p-3 border border-slate-100">
                   <div className="text-xs text-slate-500 mb-1 flex items-center">
@@ -403,7 +418,7 @@ export default function JournalPage() {
           </div>
         </div>
 
-        {/* خلاصه دوره فیلترشده (پایین سمت چپ) */}
+        {/* خلاصه دوره فیلترشده */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
           <h3 className="text-base font-bold text-slate-800 mb-4 flex items-center">
             <span className="w-2 h-2 bg-blue-500 rounded-full ml-2"></span>
