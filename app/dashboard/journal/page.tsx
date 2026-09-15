@@ -159,18 +159,22 @@ export default function JournalPage() {
     });
 
     cashEntries.forEach((ce: any) => {
+      if (!ce) return;
       if (ce.status === "voided") return;
+      // جلوگیری از شمارش دوباره اسنادی که توسط معاملات یا حواله‌ها ساخته شده‌اند
       if (ce.linkedExchangeId || ce.linkedTransferId || ce.linkedConvertId || ce.linkedHawalaId || ce.linkedHawalaSettleId) return;
       
       let type: TxType = "هزینه";
       if (ce.type === "customer_deposit" || ce.type === "owner_deposit") type = "واریز";
       else if (ce.type === "customer_withdraw" || ce.type === "owner_withdraw") type = "برداشت";
       else if (ce.type === "loan_given" || ce.type === "loan_received") type = "انتقال";
+      else if (ce.type === "fee" || ce.type === "commission_withdraw") type = "هزینه";
+      else if (ce.type === "adjustment") type = "برداشت";
 
       entries.push({
-        id: ce.id, date: ce.date, type, description: ce.reason || ce.type,
-        partyName: ce.customerName || "صندوق", partyId: ce.customerId, currency: ce.currency, amount: ce.amount,
-        balanceAfter: ce.balanceAfter, status: ce.status, source: "cash", sourceId: ce.id
+        id: ce.id, date: ce.date || new Date().toISOString(), type, description: ce.reason || ce.type || "عملیات صندوق",
+        partyName: ce.customerName || "صندوق", partyId: ce.customerId, currency: ce.currency, amount: Number(ce.amount) || 0,
+        balanceAfter: ce.balanceAfter, status: ce.status || "active", source: "cash", sourceId: ce.id
       });
     });
 
