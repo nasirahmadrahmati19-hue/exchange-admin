@@ -27,7 +27,7 @@ const typeMap: Record<string, TxType> = {
 interface RawTransaction {
   id: string;
   timestamp: Timestamp;
-  type: string;
+  type: string; // از دیتابیس به صورت string می‌آید
   description?: string;
   note?: string;
   currency: Currency;
@@ -44,7 +44,7 @@ interface RawTransaction {
 function normalizeTransaction(raw: RawTransaction): RawTransaction {
   return {
     ...raw,
-    type: typeMap[raw.type] || "واریز",
+    type: typeMap[raw.type] || "واریز", // اینجا به TxType تبدیل می‌شود
     description: raw.description || raw.note || "بدون توضیح",
   };
 }
@@ -202,10 +202,9 @@ export default function JournalPage() {
       setLastVisible(result.lastDoc);
       setHasMore(result.hasMore);
 
-      // ✅ رفع خطای TypeScript: استفاده از متغیر محلی برای کلید شیء
       result.entries.forEach(async (tx) => {
         if (tx.partyId && !tx.partyName && !customerNames[tx.partyId]) {
-          const pid = tx.partyId; // ✅ این خط خطای TypeScript را برطرف می‌کند
+          const pid = tx.partyId; 
           const name = await fetchCustomerName(pid);
           setCustomerNames(prev => ({ ...prev, [pid]: name }));
         }
@@ -383,7 +382,12 @@ export default function JournalPage() {
                     <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{customerName}</td>
                     <td className="px-4 py-3 text-center text-slate-600 whitespace-nowrap"><span className="ml-1">{currencyFlags[entry.currency]}</span>{currencyLabels[entry.currency]}</td>
                     <td className={`px-4 py-3 text-center font-bold tabular-nums ${isVoided ? "text-slate-400 line-through" : "text-slate-800"}`}>{fmt(entry.amount)}</td>
-                    <td className="px-4 py-3 text-center"><span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${getTypeBadgeStyle(entry.type, isVoided)}`}>{entry.type}</span></td>
+                    <td className="px-4 py-3 text-center">
+                      {/* ✅ رفع خطای TypeScript با اضافه کردن as TxType */}
+                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${getTypeBadgeStyle(entry.type as TxType, isVoided)}`}>
+                        {entry.type}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 text-center text-slate-700 font-mono text-xs whitespace-nowrap">{fmt(entry.balanceAfter)}</td>
                     <td className="px-4 py-3 text-center">
                       {!isVoided && (
