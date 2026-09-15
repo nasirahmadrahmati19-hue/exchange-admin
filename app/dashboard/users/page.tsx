@@ -72,15 +72,12 @@ function computeCustomerBalance(customerId: string, transactions: any[], hawalas
     balances[currency] += amount;
   };
 
-  // ۱. پردازش معاملات
   for (const tx of transactions) {
     if (!tx || tx.status === "voided") continue;
     if (tx.type === "exchange" && tx.customerId === customerId) {
-      if (tx.dealType === "sell") {
-        add(tx.fromCurrency, -Number(tx.fromAmount || 0));
-      } else if (tx.dealType === "buy") {
-        add(tx.toCurrency, Number(tx.toAmount || 0));
-      } else {
+      if (tx.dealType === "sell") add(tx.fromCurrency, -Number(tx.fromAmount || 0));
+      else if (tx.dealType === "buy") add(tx.toCurrency, Number(tx.toAmount || 0));
+      else {
         add(tx.fromCurrency, -Number(tx.fromAmount || 0));
         add(tx.toCurrency, Number(tx.toAmount || 0));
       }
@@ -103,7 +100,6 @@ function computeCustomerBalance(customerId: string, transactions: any[], hawalas
     }
   }
 
-  // ۲. پردازش حواله‌ها
   for (const h of hawalas) {
     if (!h || h.status === "cancelled") continue;
     if (h.senderId === customerId) {
@@ -116,7 +112,6 @@ function computeCustomerBalance(customerId: string, transactions: any[], hawalas
     }
   }
 
-  // ۳. پردازش اسناد صندوق (مستقل)
   for (const ce of cashEntries) {
     if (!ce || ce.status === "voided" || ce.customerId !== customerId) continue;
     if (ce.linkedExchangeId || ce.linkedTransferId || ce.linkedConvertId || ce.linkedHawalaId || ce.linkedHawalaSettleId) continue;
@@ -184,7 +179,8 @@ export default function UsersPage() {
   const [formNote, setFormNote] = useState("");
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
-  const actionRef = useRef<HTMLDivElement>(null);
+  // ✅ اصلاح حیاتی: تغییر نوع Ref به HTMLTableCellElement برای هماهنگی با <td>
+  const actionRef = useRef<HTMLTableCellElement>(null);
 
   useEffect(() => {
     try {
@@ -213,7 +209,6 @@ export default function UsersPage() {
     setTimeout(() => setToast(""), 3500);
   }, []);
 
-  // ✅ فیلتر مشتریان (بدون CASH_BOX و EXCHANGE_ACCOUNT)
   const realCustomers = useMemo(() => {
     return customers.filter(c => c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID);
   }, [customers]);
@@ -228,7 +223,6 @@ export default function UsersPage() {
     );
   }, [realCustomers, search]);
 
-  // ✅ محاسبه موجودی واقعی هر مشتری (زنده)
   const getLiveBalance = useCallback((customerId: string): Record<Currency, number> => {
     return computeCustomerBalance(customerId, transactions, hawalas, cashEntries);
   }, [transactions, hawalas, cashEntries]);
@@ -243,7 +237,6 @@ export default function UsersPage() {
     return currencies.some(c => bal[c] > 0);
   }, [getLiveBalance]);
 
-  // ✅ ثبت/ویرایش مشتری - با استفاده از Functional Update برای جلوگیری از Stale Closure
   const handleSave = useCallback(() => {
     const errs: Record<string, string> = {};
     if (!formName.trim()) errs.name = "نام مشتری ضروری است.";
@@ -252,25 +245,15 @@ export default function UsersPage() {
     if (Object.keys(errs).length > 0) return;
 
     if (editingId) {
-      // ✅ ویرایش - استفاده از Functional Update
       setCustomers((prev: Customer[]) =>
         prev.map(c =>
           c.id === editingId
-            ? {
-                ...c,
-                name: formName.trim(),
-                phone: formPhone.trim(),
-                tazkira: formTazkira.trim(),
-                address: formAddress.trim(),
-                telegram: formTelegram.trim(),
-                note: formNote.trim(),
-              }
+            ? { ...c, name: formName.trim(), phone: formPhone.trim(), tazkira: formTazkira.trim(), address: formAddress.trim(), telegram: formTelegram.trim(), note: formNote.trim() }
             : c
         )
       );
       showToast("✅ اطلاعات مشتری با موفقیت به‌روز شد.");
     } else {
-      // ✅ ثبت جدید - استفاده از Functional Update
       const newCustomer: Customer = {
         id: newId(),
         name: formName.trim(),
@@ -286,36 +269,20 @@ export default function UsersPage() {
       setCustomers((prev: Customer[]) => [...prev, newCustomer]);
       showToast("✅ مشتری جدید با موفقیت ثبت شد.");
     }
-
     resetForm();
   }, [formName, formPhone, formTazkira, formAddress, formTelegram, formNote, editingId, setCustomers, showToast]);
 
   const resetForm = useCallback(() => {
-    setFormName("");
-    setFormPhone("");
-    setFormTazkira("");
-    setFormAddress("");
-    setFormTelegram("");
-    setFormNote("");
-    setFormErrors({});
-    setEditingId(null);
-    setShowForm(false);
+    setFormName(""); setFormPhone(""); setFormTazkira(""); setFormAddress(""); setFormTelegram(""); setFormNote("");
+    setFormErrors({}); setEditingId(null); setShowForm(false);
   }, []);
 
   const startEdit = useCallback((c: Customer) => {
-    setEditingId(c.id);
-    setFormName(c.name);
-    setFormPhone(c.phone || "");
-    setFormTazkira(c.tazkira || "");
-    setFormAddress(c.address || "");
-    setFormTelegram(c.telegram || "");
-    setFormNote(c.note || "");
-    setFormErrors({});
-    setShowForm(true);
-    setOpenActionId(null);
+    setEditingId(c.id); setFormName(c.name); setFormPhone(c.phone || ""); setFormTazkira(c.tazkira || "");
+    setFormAddress(c.address || ""); setFormTelegram(c.telegram || ""); setFormNote(c.note || "");
+    setFormErrors({}); setShowForm(true); setOpenActionId(null);
   }, []);
 
-  // ✅ حذف مشتری - استفاده از Functional Update
   const handleDelete = useCallback((c: Customer) => {
     if (!window.confirm(`آیا از حذف مشتری "${c.name}" مطمئن هستید؟\nاین عمل قابل بازگشت نیست.`)) return;
     setCustomers((prev: Customer[]) => prev.filter(x => x.id !== c.id));
@@ -323,9 +290,6 @@ export default function UsersPage() {
     setOpenActionId(null);
   }, [setCustomers, showToast]);
 
-  // ============================================================
-  // استایل‌ها (هماهنگ با سایر تب‌ها)
-  // ============================================================
   const heading = dk ? "text-white" : "text-slate-900";
   const subText = dk ? "text-slate-500" : "text-slate-400";
   const uiCard = `rounded-2xl border backdrop-blur transition-colors duration-300 ${dk ? "border-slate-700 bg-slate-800/90 shadow-[0_16px_40px_-24px_rgba(0,0,0,0.6)]" : "border-emerald-100 bg-white/95 shadow-[0_16px_40px_-28px_rgba(16,185,129,0.35)]"}`;
@@ -341,7 +305,6 @@ export default function UsersPage() {
         <div className={`fixed inset-x-0 top-0 z-30 h-1 bg-gradient-to-l ${dk ? "from-emerald-400 via-teal-400 to-cyan-400" : "from-emerald-500 via-teal-500 to-cyan-500"}`} />
         <div className="relative z-10 mx-auto w-full max-w-7xl space-y-4 md:space-y-6 px-3 pb-16 pt-5 md:px-8 md:pt-9">
 
-          {/* هدر */}
           <header className="us-up flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 md:gap-3.5 min-w-0">
               <div className="relative grid h-11 w-11 md:h-14 md:w-14 shrink-0 place-items-center rounded-xl md:rounded-2xl bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-400 text-white shadow-lg shadow-emerald-500/30 ring-1 ring-white/30">
@@ -365,26 +328,16 @@ export default function UsersPage() {
             </div>
           </header>
 
-          {/* جستجو + دکمه ثبت */}
           <div className="us-up flex flex-col sm:flex-row gap-3" style={{ animationDelay: "70ms" }}>
             <div className="relative flex-1">
-              <input
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="جستجو بر اساس نام، تلفن یا تذکره..."
-                className={`${uiInput} pr-10`}
-              />
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="جستجو بر اساس نام، تلفن یا تذکره..." className={`${uiInput} pr-10`} />
               <span className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 ${subText}`}><Ic n="search" className="h-4 w-4" /></span>
             </div>
-            <button
-              onClick={() => { resetForm(); setShowForm(true); }}
-              className={`flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-black transition-all active:scale-95 shadow-lg ${dk ? "bg-gradient-to-l from-emerald-400 to-teal-400 text-slate-950 hover:brightness-110" : "bg-gradient-to-l from-emerald-500 via-teal-500 to-cyan-500 text-white hover:brightness-110"}`}
-            >
+            <button onClick={() => { resetForm(); setShowForm(true); }} className={`flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-black transition-all active:scale-95 shadow-lg ${dk ? "bg-gradient-to-l from-emerald-400 to-teal-400 text-slate-950 hover:brightness-110" : "bg-gradient-to-l from-emerald-500 via-teal-500 to-cyan-500 text-white hover:brightness-110"}`}>
               <Ic n="plus" className="h-4 w-4" /> ثبت مشتری جدید
             </button>
           </div>
 
-          {/* فرم ثبت/ویرایش */}
           {showForm && (
             <section className={`us-up space-y-4 p-4 md:p-7 ${uiCard}`} style={{ animationDelay: "140ms" }}>
               <div className="flex items-center justify-between">
@@ -430,7 +383,6 @@ export default function UsersPage() {
             </section>
           )}
 
-          {/* لیست مشتریان */}
           <section className={`us-up overflow-hidden ${uiCard}`} style={{ animationDelay: "210ms" }}>
             <div className="flex flex-wrap items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
               <span className={`grid h-10 w-10 md:h-11 md:w-11 place-items-center rounded-xl bg-gradient-to-br ring-1 ${dk ? "from-emerald-400/20 to-teal-400/5 text-emerald-300 ring-emerald-400/25" : "from-emerald-400/20 to-teal-400/10 text-emerald-600 ring-emerald-400/30"}`}>
@@ -455,9 +407,8 @@ export default function UsersPage() {
                 </div>
               ) : (
                 <>
-                  {/* نسخه موبایل */}
                   <div className="md:hidden space-y-3">
-                    {filteredCustomers.map((c, idx) => {
+                    {filteredCustomers.map((c) => {
                       const bal = getLiveBalance(c.id);
                       const isDebtor = hasAnyDebt(c.id);
                       const isCreditor = hasAnyCredit(c.id);
@@ -499,7 +450,6 @@ export default function UsersPage() {
                     })}
                   </div>
 
-                  {/* نسخه دسکتاپ */}
                   <div className="hidden md:block overflow-x-auto">
                     <div className="max-h-[672px] overflow-y-auto">
                       <table className="w-full min-w-[1100px] text-sm">
@@ -547,7 +497,8 @@ export default function UsersPage() {
                                     <span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${dk ? "bg-slate-700 text-slate-400" : "bg-slate-100 text-slate-500"}`}>⚪ صفر</span>
                                   )}
                                 </td>
-                                <td className="px-3 py-3 text-center" ref={isOpen ? actionRef : null}>
+                                {/* ✅ اصلاح شده: ref اکنون با نوع HTMLTableCellElement هماهنگ است */}
+                                <td className="px-3 py-3 text-center" ref={isOpen ? actionRef : undefined}>
                                   <div className="relative flex justify-center">
                                     <button onClick={() => setOpenActionId(isOpen ? null : c.id)} className={`grid h-8 w-8 place-items-center rounded-lg border transition-all active:scale-90 cursor-pointer ${dk ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-200 text-slate-500 hover:bg-slate-100"}`}>
                                       <Ic n="more" className="h-4 w-4" />
@@ -580,14 +531,12 @@ export default function UsersPage() {
             </div>
           </section>
 
-          {/* فوتر */}
           <div className={`us-up text-center py-4 text-[11px] font-bold ${subText}`} style={{ animationDelay: "280ms" }}>
             🏦 صرافی برادران نورزاد — هرات
           </div>
         </div>
       </div>
 
-      {/* مودال جزئیات مشتری */}
       {selectedCustomer && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm" onClick={() => setSelectedCustomer(null)}>
           <div className={`w-full max-w-lg overflow-hidden rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={e => e.stopPropagation()}>
@@ -676,7 +625,6 @@ export default function UsersPage() {
         </div>
       )}
 
-      {/* Toast */}
       {toast && (
         <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[99] rounded-xl px-5 py-3 text-sm font-black shadow-lg ${dk ? "bg-slate-800 text-slate-100 border border-slate-600" : "bg-slate-900 text-white"}`}>
           {toast}
