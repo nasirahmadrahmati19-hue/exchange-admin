@@ -371,6 +371,13 @@ export default function CustomersPage() {
   const [loanCurrency, setLoanCurrency] = useState<Currency>("AFN");
   const [loanReason, setLoanReason] = useState("");
 
+  // ✅ جدید: استیت‌های مربوط به مودال واریز و برداشت مستقیم
+  const [cwModalOpen, setCwModalOpen] = useState(false);
+  const [cwType, setCwType] = useState<"deposit" | "withdraw">("deposit");
+  const [cwAmount, setCwAmount] = useState("");
+  const [cwCurrency, setCwCurrency] = useState<Currency>("AFN");
+  const [cwReason, setCwReason] = useState("");
+
   useEffect(() => { try { const s = window.localStorage.getItem("fx-theme"); if (s === "dark" || s === "light") setTheme(s); } catch {} }, []);
   useEffect(() => { try { window.localStorage.setItem("fx-theme", theme); } catch {} }, [theme]);
   const dk = theme === "dark";
@@ -398,27 +405,15 @@ export default function CustomersPage() {
 
   const allBalances = useMemo(() => {
     const map: Record<string, Record<Currency, number>> = {};
-    
-    // ۱. مقداردهی اولیه برای همه مشتریان عادی
-    customers.forEach(c => { 
-      if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) {
-        map[c.id] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-      }
-    });
-    
+    customers.forEach(c => { if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) { map[c.id] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; } });
     map[CASH_BOX_ID] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     map[EXCHANGE_ACCOUNT_ID] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
 
-    // ۲. محاسبه موجودی تک‌تک مشتریان عادی
     for (const c of customers) {
       if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) {
-        for (const cur of currencies) {
-          map[c.id][cur] = getLedgerBalance(c.id, cur, cashEntries, ledger);
-        }
+        for (const cur of currencies) { map[c.id][cur] = getLedgerBalance(c.id, cur, cashEntries, ledger); }
       }
     }
-
-    // ۳. محاسبه موجودی حساب صرافی
     map[EXCHANGE_ACCOUNT_ID] = {
       AFN: getLedgerBalance(EXCHANGE_ACCOUNT_ID, "AFN", cashEntries, ledger),
       USD: getLedgerBalance(EXCHANGE_ACCOUNT_ID, "USD", cashEntries, ledger),
@@ -426,26 +421,12 @@ export default function CustomersPage() {
       IRR: getLedgerBalance(EXCHANGE_ACCOUNT_ID, "IRR", cashEntries, ledger),
       PKR: getLedgerBalance(EXCHANGE_ACCOUNT_ID, "PKR", cashEntries, ledger),
     };
-
-    // ۴. ✅ محاسبه موجودی صندوق دقیقاً مطابق فرمول داشبورد:
-    // صندوق = مجموع طلب مشتریان + موجودی حساب صرافی
     for (const cur of currencies) {
       let cashBoxTotal = 0;
-      
-      // جمع زدن موجودی همه مشتریان عادی
-      for (const c of customers) {
-        if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) {
-          cashBoxTotal += map[c.id][cur];
-        }
-      }
-      
-      // اضافه کردن موجودی حساب صرافی
+      for (const c of customers) { if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) { cashBoxTotal += map[c.id][cur]; } }
       cashBoxTotal += map[EXCHANGE_ACCOUNT_ID][cur];
-      
-      // ذخیره نهایی موجودی صندوق
       map[CASH_BOX_ID][cur] = cashBoxTotal;
     }
-
     return map;
   }, [customers, cashEntries, ledger]);
 
@@ -453,17 +434,14 @@ export default function CustomersPage() {
     const cashBoxOption = CASH_BOX_CUSTOMER;
     const exchangeOption = EXCHANGE_ACCOUNT_CUSTOMER;
     const q = normalizeDigits(search.trim()).toLowerCase();
-    
     const filtered = customers.filter(c => {
       if (c.id === EXCHANGE_ACCOUNT_ID) return false; 
       if (!q) return true;
       return [c.name, c.phone || "", c.tazkira || "", c.telegram || "", c.id].some(f => normalizeDigits(String(f)).toLowerCase().includes(q));
     });
-
     const result: Customer[] = [];
     if (!q || CASH_BOX_NAME.includes(q)) result.push(cashBoxOption);
     if (!q || EXCHANGE_ACCOUNT_NAME.includes(q)) result.push(exchangeOption);
-    
     result.push(...filtered);
     return result;
   }, [customers, search]);
@@ -512,11 +490,52 @@ export default function CustomersPage() {
   const backToList = () => { setActiveTab("list"); setSelectedCustomerId(null); };
 
   const openLoanModal = (type: "give" | "receive") => {
-    setLoanModalType(type);
-    setLoanAmount("");
-    setLoanCurrency("AFN");
-    setLoanReason("");
-    setLoanModalOpen(true);
+    setLoanModalType(type); setLoanAmount(""); setLoanCurrency("AFN"); setLoanReason(""); setLoanModalOpen(true);
+  };
+
+  // ✅ جدید: تابع پردازش واریز و برداشت مستقیم از صندوق
+  const processCashOperation = () => {
+    if (!selectedCustomer || selectedCustomer.id === CASH_BOX_ID || selectedCustomer.id === EXCHANGE_ACCOUNT_ID) {
+      showToast("این عملیات فقط برای مشتریان عادی امکان‌پذیر است.");
+      return;
+    }
+    const amt = Number(normalizeDigits(cwAmount).replace(/,/g, ""));
+    if (!Number.isFinite(amt) || amt <= 0) {
+      showToast("مبلغ معتبر وارد کنید.");
+      return;
+    }
+    if (!isCurrency(cwCurrency)) return;
+
+    const now = new Date().toISOString();
+    const reason = cwReason.trim() || (cwType === "deposit" ? "واریز به حساب مشتری" : "برداشت از حساب مشتری");
+    const trackingCode = `CW-${Date.now().toString(36).toUpperCase()}`;
+    const newEntries: any[] = [];
+
+    if (cwType === "deposit") {
+      // ۱. ثبت برای مشتری (ورودی)
+      newEntries.push({
+        id: generateId(), trackingCode: `${trackingCode}-CUST`, date: now, type: "customer_deposit", currency: cwCurrency, amount: amt, direction: "in", reason: `واریز از صندوق - ${reason}`, balanceAfter: 0, customerId: selectedCustomer.id, customerName: selectedCustomer.name, counterPartyId: CASH_BOX_ID, status: "active"
+      });
+      // ۲. ثبت برای صندوق (خروجی)
+      newEntries.push({
+        id: generateId(), trackingCode: `${trackingCode}-CASH`, date: now, type: "customer_withdraw", currency: cwCurrency, amount: amt, direction: "out", reason: `واریز به ${selectedCustomer.name} - ${reason}`, balanceAfter: 0, customerId: CASH_BOX_ID, customerName: CASH_BOX_NAME, counterPartyId: selectedCustomer.id, status: "active"
+      });
+    } else {
+      // ۱. ثبت برای مشتری (خروجی)
+      newEntries.push({
+        id: generateId(), trackingCode: `${trackingCode}-CUST`, date: now, type: "customer_withdraw", currency: cwCurrency, amount: amt, direction: "out", reason: `برداشت به صندوق - ${reason}`, balanceAfter: 0, customerId: selectedCustomer.id, customerName: selectedCustomer.name, counterPartyId: CASH_BOX_ID, status: "active"
+      });
+      // ۲. ثبت برای صندوق (ورودی)
+      newEntries.push({
+        id: generateId(), trackingCode: `${trackingCode}-CASH`, date: now, type: "customer_deposit", currency: cwCurrency, amount: amt, direction: "in", reason: `برداشت از ${selectedCustomer.name} - ${reason}`, balanceAfter: 0, customerId: CASH_BOX_ID, customerName: CASH_BOX_NAME, counterPartyId: selectedCustomer.id, status: "active"
+      });
+    }
+
+    setCashEntries(prev => [...prev, ...newEntries]);
+    setCwModalOpen(false);
+    showToast(cwType === "deposit"
+      ? `✅ ${fmt(amt)} ${labels[cwCurrency]} به "${selectedCustomer.name}" واریز شد.`
+      : `✅ ${fmt(amt)} ${labels[cwCurrency]} از "${selectedCustomer.name}" برداشت شد.`);
   };
 
   const processLoan = () => {
@@ -525,16 +544,12 @@ export default function CustomersPage() {
       return;
     }
     const amt = Number(normalizeDigits(loanAmount).replace(/,/g, ""));
-    if (!Number.isFinite(amt) || amt <= 0) {
-      showToast("مبلغ معتبر وارد کنید.");
-      return;
-    }
+    if (!Number.isFinite(amt) || amt <= 0) { showToast("مبلغ معتبر وارد کنید."); return; }
     if (!isCurrency(loanCurrency)) return;
 
     const now = new Date().toISOString();
     const reason = loanReason.trim() || (loanModalType === "give" ? "قرض به مشتری" : "بازپرداخت قرض توسط مشتری");
     const trackingCode = `LN-${Date.now().toString(36).toUpperCase()}`;
-
     const newEntries: any[] = [];
 
     if (loanModalType === "give") {
@@ -552,9 +567,7 @@ export default function CustomersPage() {
         id: generateId(), trackingCode: `${trackingCode}-EXCH`, date: now, type: "loan_received", currency: loanCurrency, amount: amt, direction: "in", reason: `دریافت قرض از ${selectedCustomer.name} - ${reason}`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, counterPartyId: selectedCustomer.id, status: "active"
       });
     }
-
     setCashEntries(prev => [...prev, ...newEntries]);
-
     setLoanModalOpen(false);
     showToast(loanModalType === "give"
       ? `✅ ${fmt(amt)} ${labels[loanCurrency]} به "${selectedCustomer.name}" قرض داده شد.`
@@ -586,14 +599,9 @@ export default function CustomersPage() {
     const errs: FormErrors = {};
     if (!form.name.trim()) errs.name = "نام ضروری است.";
     if (!form.phone.trim()) errs.phone = "تماس ضروری است.";
-    
     const currentId = selectedCustomer?.id;
-    if (customers.find(c => c.phone === form.phone.trim() && c.id !== EXCHANGE_ACCOUNT_ID && c.id !== currentId)) {
-      errs.phone = "تکراری است.";
-    }
-    if (form.tazkira.trim() && customers.find(c => c.tazkira === form.tazkira.trim() && c.id !== EXCHANGE_ACCOUNT_ID && c.id !== currentId)) {
-      errs.tazkira = "تکراری است.";
-    }
+    if (customers.find(c => c.phone === form.phone.trim() && c.id !== EXCHANGE_ACCOUNT_ID && c.id !== currentId)) errs.phone = "تکراری است.";
+    if (form.tazkira.trim() && customers.find(c => c.tazkira === form.tazkira.trim() && c.id !== EXCHANGE_ACCOUNT_ID && c.id !== currentId)) errs.tazkira = "تکراری است.";
     return errs;
   };
 
@@ -635,7 +643,6 @@ export default function CustomersPage() {
 
   const headingText = dk ? "text-white" : "text-slate-900";
   const subTextVar = dk ? "text-slate-500" : "text-slate-400";
-  
   const uiCard = `rounded-2xl border backdrop-blur transition-colors duration-300 ${dk ? "border-slate-700 bg-slate-800/90 shadow-[0_16px_40px_-24px_rgba(0,0,0,0.6)]" : "border-emerald-100 bg-white/95 shadow-[0_16px_40px_-28px_rgba(16,185,129,0.35)]"}`;
   const glassCard = `rounded-2xl border backdrop-blur transition-all duration-300 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-200 bg-white/80"}`;
   const inputShell = `rounded-xl border text-sm font-medium shadow-sm outline-none transition-all duration-200 focus:ring-4 ${dk ? "border-slate-600 bg-slate-900 text-slate-100 placeholder:text-slate-500 hover:border-slate-500 focus:border-emerald-400 focus:ring-emerald-400/10" : "border-slate-200 bg-white text-slate-800 placeholder:text-slate-400 hover:border-emerald-400 focus:border-emerald-500 focus:ring-emerald-500/10"}`;
@@ -871,14 +878,27 @@ export default function CustomersPage() {
                       </div>
                     </div>
                     {!isCashBox && !isExchangeAccount && (
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 flex-wrap">
+                        {/* ✅ جدید: دکمه‌های واریز و برداشت مستقیم */}
+                        <button onClick={() => { setCwType("deposit"); setCwAmount(""); setCwReason(""); setCwModalOpen(true); }} className={`cursor-pointer rounded-xl border px-3 py-2 text-xs font-bold ${dk ? "border-emerald-400/30 text-emerald-300 hover:bg-emerald-400/10" : "border-emerald-300 text-emerald-600 hover:bg-emerald-50"}`}>
+                          <span className="flex items-center gap-1.5">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M12 21v-8.25M15.75 21V12.5m-7.5 8.5v-8.25m12-4.5L12 2.25 3.75 7.75" /></svg>
+                            واریز از صندوق
+                          </span>
+                        </button>
+                        <button onClick={() => { setCwType("withdraw"); setCwAmount(""); setCwReason(""); setCwModalOpen(true); }} className={`cursor-pointer rounded-xl border px-3 py-2 text-xs font-bold ${dk ? "border-rose-400/30 text-rose-300 hover:bg-rose-400/10" : "border-rose-300 text-rose-600 hover:bg-rose-50"}`}>
+                          <span className="flex items-center gap-1.5">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M19.5 13.5 12 21m0 0-7.5-7.5M12 21V3" /></svg>
+                            برداشت به صندوق
+                          </span>
+                        </button>
                         <button onClick={() => openLoanModal("give")} className={`cursor-pointer rounded-xl border px-3 py-2 text-xs font-bold ${dk ? "border-sky-400/30 text-sky-300 hover:bg-sky-400/10" : "border-sky-300 text-sky-600 hover:bg-sky-50"}`}>
                           <span className="flex items-center gap-1.5">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M12 21v-8.25M15.75 21V12.5m-7.5 8.5v-8.25m12-4.5L12 2.25 3.75 7.75" /></svg>
                             قرض دادن
                           </span>
                         </button>
-                        <button onClick={() => openLoanModal("receive")} className={`cursor-pointer rounded-xl border px-3 py-2 text-xs font-bold ${dk ? "border-emerald-400/30 text-emerald-300 hover:bg-emerald-400/10" : "border-emerald-300 text-emerald-600 hover:bg-emerald-50"}`}>
+                        <button onClick={() => openLoanModal("receive")} className={`cursor-pointer rounded-xl border px-3 py-2 text-xs font-bold ${dk ? "border-amber-400/30 text-amber-300 hover:bg-amber-400/10" : "border-amber-300 text-amber-600 hover:bg-amber-50"}`}>
                           <span className="flex items-center gap-1.5">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
                             پرداخت قرض
@@ -1132,11 +1152,55 @@ export default function CustomersPage() {
         </div>
       </div>
 
+      {/* ✅ جدید: مودال واریز و برداشت مستقیم */}
+      {cwModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm" onClick={() => setCwModalOpen(false)}>
+          <div className={`w-full max-w-md rounded-2xl border p-6 shadow-2xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`} onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className={`grid h-12 w-12 place-items-center rounded-xl ${cwType === "deposit" ? "bg-gradient-to-br from-emerald-500 to-teal-500" : "bg-gradient-to-br from-rose-500 to-pink-500"} text-white shadow-lg`}>
+                {cwType === "deposit"
+                  ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6"><path d="M12 21v-8.25M15.75 21V12.5m-7.5 8.5v-8.25m12-4.5L12 2.25 3.75 7.75" /></svg>
+                  : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6"><path d="M19.5 13.5 12 21m0 0-7.5-7.5M12 21V3" /></svg>}
+              </div>
+              <div>
+                <h3 className={`cu-display text-xl ${headingText}`}>{cwType === "deposit" ? "واریز از صندوق به مشتری" : "برداشت از مشتری به صندوق"}</h3>
+                <p className={`text-[11px] font-bold ${subTextVar}`}>{selectedCustomer?.name}</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className={uiLabel}>مبلغ *</label>
+                <input type="text" inputMode="decimal" dir="ltr" value={cwAmount} onChange={e => setCwAmount(normalizeDigits(e.target.value).replace(/[^0-9.]/g, ""))} placeholder="0" className={uiInput} autoFocus />
+              </div>
+              <div>
+                <label className={uiLabel}>ارز</label>
+                <select value={cwCurrency} onChange={e => setCwCurrency(e.target.value as Currency)} className={`${uiInput} cursor-pointer appearance-none`}>
+                  {currencies.map(c => <option key={c} value={c}>{labels[c]}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className={uiLabel}>توضیحات (اختیاری)</label>
+                <input value={cwReason} onChange={e => setCwReason(e.target.value)} placeholder={`مثلاً: ${cwType === "deposit" ? "واریز وجه نقد" : "برداشت بابت بدهی"}`} className={uiInput} />
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-6">
+              <button onClick={processCashOperation} className={`flex h-12 flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl font-black shadow-lg ${cwType === "deposit" ? "bg-gradient-to-l from-emerald-500 to-teal-500 text-white" : "bg-gradient-to-l from-rose-500 to-pink-500 text-white"}`}>
+                {cwType === "deposit" ? "ثبت واریز" : "ثبت برداشت"}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" /></svg>
+              </button>
+              <button onClick={() => setCwModalOpen(false)} className={`flex h-12 px-6 cursor-pointer items-center justify-center rounded-xl border font-bold ${dk ? "border-slate-600 text-slate-300" : "border-slate-200 text-slate-600"}`}>انصراف</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {loanModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm" onClick={() => setLoanModalOpen(false)}>
           <div className={`w-full max-w-md rounded-2xl border p-6 shadow-2xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`} onClick={e => e.stopPropagation()}>
             <div className="flex items-center gap-3 mb-4">
-              <div className={`grid h-12 w-12 place-items-center rounded-xl ${loanModalType === "give" ? "bg-gradient-to-br from-sky-500 to-cyan-500" : "bg-gradient-to-br from-emerald-500 to-teal-500"} text-white shadow-lg`}>
+              <div className={`grid h-12 w-12 place-items-center rounded-xl ${loanModalType === "give" ? "bg-gradient-to-br from-sky-500 to-cyan-500" : "bg-gradient-to-br from-amber-500 to-orange-500"} text-white shadow-lg`}>
                 {loanModalType === "give"
                   ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6"><path d="M12 21v-8.25M15.75 21V12.5m-7.5 8.5v-8.25m12-4.5L12 2.25 3.75 7.75" /></svg>
                   : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6"><path d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>}
@@ -1165,7 +1229,7 @@ export default function CustomersPage() {
             </div>
 
             <div className="flex gap-2 mt-6">
-              <button onClick={processLoan} className={`flex h-12 flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl font-black shadow-lg ${loanModalType === "give" ? "bg-gradient-to-l from-sky-500 to-cyan-500 text-white" : "bg-gradient-to-l from-emerald-500 to-teal-500 text-white"}`}>
+              <button onClick={processLoan} className={`flex h-12 flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl font-black shadow-lg ${loanModalType === "give" ? "bg-gradient-to-l from-sky-500 to-cyan-500 text-white" : "bg-gradient-to-l from-amber-500 to-orange-500 text-white"}`}>
                 {loanModalType === "give" ? "ثبت قرض" : "ثبت بازپرداخت"}
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" /></svg>
               </button>
