@@ -179,15 +179,12 @@ export default function JournalPage() {
 
   // ✅ ۴. محاسبه آنی خلاصه کلی
   const summary = useMemo(() => {
-    let deposits = 0, withdrawals = 0, transfers = 0, count = 0;
+    let count = 0;
     filteredEntries.forEach((e: any) => {
       if (e.status === "voided") return;
       count++;
-      if (e.type === "واریز") deposits += e.amount;
-      else if (e.type === "برداشت" || e.type === "هزینه") withdrawals += e.amount;
-      else if (e.type === "انتقال" || e.type === "حواله" || e.type === "تبدیل") transfers += e.amount;
     });
-    return { count, deposits, withdrawals, transfers };
+    return { count };
   }, [filteredEntries]);
 
   // ✅ ۵. محاسبه خلاصه ارزها (نمایش اجباری هر ۵ ارز)
@@ -366,27 +363,15 @@ export default function JournalPage() {
           <span className="w-2 h-2 bg-emerald-400 rounded-full ml-2"></span> خلاصه دوره انتخاب‌شده
         </h3>
         
-        {/* کارت‌های خلاصه کلی */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-          <div className={`rounded-lg p-3 border text-center ${isDark ? "border-slate-700" : "border-gray-200"}`}>
-            <div className={`text-xs mb-1 ${isDark ? "text-slate-400" : "text-gray-500"}`}>تعداد کل</div>
-            <div className={`text-xl font-bold tabular-nums ${isDark ? "text-slate-200" : "text-gray-800"}`}>{summary.count}</div>
-          </div>
-          <div className={`rounded-lg p-3 border text-center ${isDark ? "border-emerald-400/30 bg-emerald-400/5" : "border-emerald-200 bg-emerald-50"}`}>
-            <div className={`text-xs mb-1 ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>واریز</div>
-            <div className={`text-xl font-bold tabular-nums ${isDark ? "text-emerald-300" : "text-emerald-600"}`}>{fmt(summary.deposits)}</div>
-          </div>
-          <div className={`rounded-lg p-3 border text-center ${isDark ? "border-rose-400/30 bg-rose-400/5" : "border-rose-200 bg-rose-50"}`}>
-            <div className={`text-xs mb-1 ${isDark ? "text-rose-400" : "text-rose-700"}`}>برداشت/هزینه</div>
-            <div className={`text-xl font-bold tabular-nums ${isDark ? "text-rose-300" : "text-rose-600"}`}>{fmt(summary.withdrawals)}</div>
-          </div>
-          <div className={`rounded-lg p-3 border text-center ${isDark ? "border-blue-400/30 bg-blue-400/5" : "border-blue-200 bg-blue-50"}`}>
-            <div className={`text-xs mb-1 ${isDark ? "text-blue-400" : "text-blue-700"}`}>انتقال/حواله/تبدیل</div>
-            <div className={`text-xl font-bold tabular-nums ${isDark ? "text-blue-300" : "text-blue-600"}`}>{fmt(summary.transfers)}</div>
+        {/* 🆕 فقط کارت تعداد کل باقی مانده است */}
+        <div className="flex flex-wrap gap-3 mb-6">
+          <div className={`rounded-lg p-4 border text-center min-w-[160px] flex-1 max-w-xs ${isDark ? "border-slate-700 bg-slate-900/50" : "border-gray-200 bg-gray-50"}`}>
+            <div className={`text-xs mb-2 ${isDark ? "text-slate-400" : "text-gray-500"}`}>تعداد کل تراکنش‌ها</div>
+            <div className={`text-3xl font-bold tabular-nums ${isDark ? "text-slate-100" : "text-gray-900"}`}>{summary.count}</div>
           </div>
         </div>
 
-        {/* 🆕 کارت‌های جدید: نمایش اجباری هر ۵ ارز */}
+        {/* کارت‌های گردش هر ۵ ارز */}
         <h4 className={`text-sm font-bold mb-3 flex items-center border-t pt-4 ${isDark ? "text-slate-300 border-slate-700/50" : "text-gray-700 border-gray-200"}`}>
           <span className={`w-1.5 h-1.5 rounded-full ml-2 ${isDark ? "bg-blue-400" : "bg-blue-600"}`}></span> گردش و تغییر خالص ارزها در این دوره
         </h4>
