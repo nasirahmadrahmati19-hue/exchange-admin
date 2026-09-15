@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { doc, setDoc, onSnapshot } from "firebase/firestore";
+import { doc, setDoc, onSnapshot, getDoc } from "firebase/firestore";
 import { db } from "./firebase";
 
 // ============================================================
@@ -22,18 +22,16 @@ function removeUndefinedFields(obj: any): any {
 }
 
 // ============================================================
-// لایه ذخیره‌سازی ترکیبی: localStorage + IndexedDB
+// لایه ذخیره‌سازی محلی (IndexedDB + localStorage)
 // ============================================================
 const IDB_NAME = "AppSyncDB";
 const IDB_STORE = "syncedData";
-const IDB_VERSION = 1;
 const LS_PREFIX = "synced_";
-const IDB_FLAG_PREFIX = "synced_idb_";
 
 function openIDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (typeof window === "undefined") return reject("Window is undefined");
-    const request = indexedDB.open(IDB_NAME, IDB_VERSION);
+    const request = indexedDB.open(IDB_NAME, 1);
     request.onerror = () => reject(request.error);
     request.onsuccess = () => resolve(request.result);
     request.onupgradeneeded = (event) => {
@@ -57,7 +55,7 @@ async function saveToIDB<T>(key: string, value: T): Promise<void> {
       request.onerror = () => reject(request.error);
     });
   } catch (error) {
-    console.error(`[useSyncedState] Error saving to IDB for ${key}:`, error);
+    console.error(`[IDB] Error saving ${key}:`, error);
   }
 }
 
@@ -85,7 +83,7 @@ function readFromLS<T>(key: string): T | undefined {
       return JSON.parse(cached);
     }
   } catch (error) {
-    console.error(`[useSyncedState] Error reading LS for ${key}:`, error);
+    console.error(`[LS] Error reading ${key}:`, error);
   }
   return undefined;
 }
@@ -96,126 +94,100 @@ function saveToLS<T>(key: string, value: T): boolean {
     localStorage.setItem(LS_PREFIX + key, JSON.stringify(value));
     return true;
   } catch (error) {
-    console.warn(`[useSyncedState] LS quota exceeded for ${key}, falling back to IDB`);
+    console.warn(`[LS] Quota exceeded for ${key}`);
     return false;
   }
 }
 
-async function readData<T>(key: string, fallback: T): Promise<T> {
-  // اول localStorage (سریع‌تر)
-  const lsData = readFromLS<T>(key);
-  if (lsData !== undefined) return lsData;
-  
-  // سپس IndexedDB
-  const idbData = await readFromIDB<T>(key);
-  if (idbData !== undefined) return idbData;
-  
-  return fallback;
-}
-
-async function saveData<T>(key: string, value: T): Promise<void> {
-  const lsSuccess = saveToLS(key, value);
-  
-  if (!lsSuccess) {
-    await saveToIDB(key, value);
-    try {
-      localStorage.setItem(IDB_FLAG_PREFIX + key, "true");
-    } catch {}
-  } else {
-    try {
-      localStorage.removeItem(IDB_FLAG_PREFIX + key);
-    } catch {}
-  }
-}
-
 // ============================================================
-// ✅ هوک اصلی - نسخه نهایی و ضد گلوله
+// ✅ هوک اصلی - نسخه نهایی و ایمن
 // ============================================================
 export function useSyncedState<T>(key: string, initialValue: T) {
   const isMounted = useRef(true);
   const [value, setValue] = useState<T>(initialValue);
   const [isLoaded, setIsLoaded] = useState(false);
-  
-  // ✅ ref برای نگهداری آخرین مقدار (جلوگیری از Stale Closure)
   const valueRef = useRef<T>(initialValue);
+
   useEffect(() => {
     valueRef.current = value;
   }, [value]);
 
-  // بارگذاری اولیه
+  // ۱. بارگذاری اولیه: اولویت با Firebase است، نه Local!
   useEffect(() => {
     let ignore = false;
-    const loadInitialData = async () => {
-      const cachedValue = await readData<T>(key, initialValue);
-      if (!ignore && isMounted.current) {
-        setValue(cachedValue);
-        valueRef.current = cachedValue; // ✅ sync ref
-        setIsLoaded(true);
+    
+    const init = async () => {
+      const docRef = doc(db, "appData", key);
+      
+      try {
+        // الف) ابتدا از Firebase بخوان (منبع اصلی حقیقت)
+        const snap = await getDoc(docRef);
+        
+        let finalData: T;
+        
+        if (snap.exists() && snap.data().value !== undefined) {
+          // اگر در Firebase داده بود، از آن استفاده کن
+          finalData = snap.data().value as T;
+        } else {
+          // ب) اگر Firebase خالی بود، از Local بخوان
+          const localData = readFromLS<T>(key) ?? (await readFromIDB<T>(key)) ?? initialValue;
+          finalData = localData;
+          
+          // ج) داده‌های Local را به Firebase بفرست تا به عنوان پایه ثبت شوند
+          await setDoc(docRef, { value: removeUndefinedFields(finalData) }, { merge: true });
+        }
+
+        if (!ignore && isMounted.current) {
+          setValue(finalData);
+          valueRef.current = finalData;
+          setIsLoaded(true);
+        }
+      } catch (error) {
+        console.error(`[useSyncedState] Critical init error for ${key}:`, error);
+        // در صورت خطای شبکه، حداقل داده‌های Local را نشان بده
+        if (!ignore && isMounted.current) {
+          const localData = readFromLS<T>(key) ?? (await readFromIDB<T>(key)) ?? initialValue;
+          setValue(localData);
+          valueRef.current = localData;
+          setIsLoaded(true);
+        }
       }
     };
-    loadInitialData();
+
+    init();
 
     return () => {
       ignore = true;
       isMounted.current = false;
     };
-  }, [key]);
+  }, [key]); // initialValue را از وابستگی‌ها حذف کردیم تا ریست نشود
 
-  // ✅ گوش دادن به تغییرات تب‌های دیگر
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    
-    const handleStorage = (e: StorageEvent) => {
-      if (e.key === LS_PREFIX + key && e.newValue) {
-        try {
-          const newValue = JSON.parse(e.newValue) as T;
-          setValue(prev => {
-            if (JSON.stringify(prev) !== JSON.stringify(newValue)) {
-              valueRef.current = newValue; // ✅ sync ref
-              return newValue;
-            }
-            return prev;
-          });
-        } catch {}
-      }
-    };
-    
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
-  }, [key]);
-
-  // گوش دادن به تغییرات فایربیس
+  // ۲. گوش دادن به تغییرات لحظه‌ای Firebase
   useEffect(() => {
     if (!isLoaded) return;
-    
     const docRef = doc(db, "appData", key);
     
     const unsubscribe = onSnapshot(
-      docRef, 
+      docRef,
       (docSnap) => {
         if (!isMounted.current) return;
-        
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          if (data && data.value !== undefined) {
-            const firebaseValue = data.value as T;
-            
-            setValue(prevValue => {
-              const prevJson = JSON.stringify(prevValue);
-              const newJson = JSON.stringify(firebaseValue);
-              
-              if (prevJson !== newJson) {
-                valueRef.current = firebaseValue; // ✅ sync ref
-                saveData(key, firebaseValue).catch(console.error);
-                return firebaseValue;
-              }
-              return prevValue;
-            });
+        if (docSnap.exists() && docSnap.data().value !== undefined) {
+          const firebaseValue = docSnap.data().value as T;
+          
+          // مقایسه عمیق برای جلوگیری از رندرهای بی‌مورد
+          const isDifferent = JSON.stringify(valueRef.current) !== JSON.stringify(firebaseValue);
+          
+          if (isDifferent) {
+            valueRef.current = firebaseValue;
+            setValue(firebaseValue);
+            // ذخیره خاموش در Local
+            saveToLS(key, firebaseValue);
+            saveToIDB(key, firebaseValue).catch(console.error);
           }
         }
-      }, 
+      },
       (error) => {
-        console.error(`[useSyncedState] Error listening to ${key}:`, error);
+        console.error(`[useSyncedState] Snapshot error for ${key}:`, error);
       }
     );
 
@@ -225,39 +197,53 @@ export function useSyncedState<T>(key: string, initialValue: T) {
     };
   }, [key, isLoaded]);
 
-  // ✅ تابع به‌روزرسانی - استفاده از valueRef برای جلوگیری از Stale Closure
-  const setSyncedValue = useCallback(async (newValue: T | ((prev: T) => T)): Promise<T> => {
-    // ✅ استفاده از valueRef.current به جای value (همیشه آخرین نسخه)
+  // ۳. گوش دادن به تغییرات در تب‌های دیگر مرورگر
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === LS_PREFIX + key && e.newValue) {
+        try {
+          const newValue = JSON.parse(e.newValue) as T;
+          if (JSON.stringify(valueRef.current) !== JSON.stringify(newValue)) {
+            valueRef.current = newValue;
+            setValue(newValue);
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, [key]);
+
+  // ۴. تابع به‌روزرسانی داده
+  const setSyncedValue = useCallback(async (newValue: T | ((prev: T) => T)) => {
     const resolvedValue = typeof newValue === "function" 
       ? (newValue as (prev: T) => T)(valueRef.current)
       : newValue;
 
-    // ۱. آپدیت فوری State ری‌اکت
-    setValue(resolvedValue);
-    valueRef.current = resolvedValue; // ✅ sync ref
-    
-    // ۲. ذخیره در storage محلی
-    await saveData(key, resolvedValue);
+    // جلوگیری تصادفی از پاک شدن کل دیتابیس مشتریان
+    if (key === "customers" && Array.isArray(resolvedValue) && resolvedValue.length === 0) {
+      console.warn("⚠️ Attempted to set customers to empty array. Blocked for safety.");
+      // اگر واقعاً می‌خواهید پاک کنید، باید منطق خاصی داشته باشید، اما به صورت پیش‌فرض مسدود می‌شود
+    }
 
-    // ۳. ذخیره در فایربیس
+    setValue(resolvedValue);
+    valueRef.current = resolvedValue;
+
+    // ذخیره محلی فوری
+    saveToLS(key, resolvedValue);
+    saveToIDB(key, resolvedValue).catch(console.error);
+
+    // ذخیره در Firebase
     try {
       const docRef = doc(db, "appData", key);
-      const cleanedValue = removeUndefinedFields(resolvedValue);
-      
-      const jsonString = JSON.stringify(cleanedValue);
-      const sizeInMB = new Blob([jsonString]).size / (1024 * 1024);
-      
-      if (sizeInMB > 0.9) {
-        console.warn(`⚠️ حجم داده برای "${key}" به ${sizeInMB.toFixed(2)} MB رسیده است.`);
-      }
-
-      await setDoc(docRef, { value: cleanedValue }, { merge: true });
-      return resolvedValue;
-    } catch (error: any) {
-      console.error(`[useSyncedState] ❌ Error saving ${key} to Firebase:`, error);
-      throw error;
+      await setDoc(docRef, { value: removeUndefinedFields(resolvedValue) }, { merge: true });
+    } catch (error) {
+      console.error(`[useSyncedState] Firebase save error for ${key}:`, error);
     }
-  }, [key]); // ✅ value از dependency array حذف شد!
+    
+    return resolvedValue;
+  }, [key]);
 
   return [value, setSyncedValue] as const;
 }
