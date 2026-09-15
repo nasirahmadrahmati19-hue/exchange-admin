@@ -253,6 +253,7 @@ export default function JournalPage() {
     }
   };
 
+  // ✅ اصلاح خطای TypeScript: اضافه کردن `as Currency`
   const handleExport = () => {
     const headers = ["شماره سند", "تاریخ/ساعت", "شرح معامله", "مشتری", "ارز", "مبلغ", "نوع", "وضعیت"];
     const escapeCsv = (val: any) => `"${String(val ?? "").replace(/"/g, '""')}"`;
@@ -261,7 +262,7 @@ export default function JournalPage() {
       escapeCsv(new Date(e.date).toLocaleString("fa-IR")),
       escapeCsv(e.description),
       escapeCsv(e.partyName),
-      escapeCsv(currencyLabels[e.currency]),
+      escapeCsv(currencyLabels[e.currency as Currency]), // ✅ FIX: Added `as Currency`
       e.amount,
       escapeCsv(e.type),
       escapeCsv(e.status === "voided" ? `باطل شده (${e.voidedReason})` : "فعال")
@@ -351,7 +352,8 @@ export default function JournalPage() {
                       </td>
                       <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{entry.partyName}</td>
                       <td className="px-4 py-3 text-center text-slate-600 whitespace-nowrap">
-                        <span className="ml-1">{currencyFlags[entry.currency]}</span>{currencyLabels[entry.currency]}
+                        {/* ✅ اصلاح خطای TypeScript: اضافه کردن `as Currency` */}
+                        <span className="ml-1">{currencyFlags[entry.currency as Currency]}</span>{currencyLabels[entry.currency as Currency]}
                       </td>
                       <td className={`px-4 py-3 text-center font-bold tabular-nums ${isVoided ? "text-slate-400 line-through" : (entry.type === "واریز" ? "text-emerald-600" : "text-rose-600")}`}>
                         {entry.type === "واریز" ? "+" : "-"} {fmt(entry.amount)}
