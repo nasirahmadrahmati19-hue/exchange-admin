@@ -21,6 +21,7 @@ interface UnifiedJournalEntry {
   partyId?: string;
   currency: Currency;
   amount: number;
+  balanceAfter?: number;
   status: "active" | "voided";
   voidedReason?: string;
   source: "transaction" | "hawala" | "cash";
@@ -64,7 +65,7 @@ export default function JournalPage() {
       let type: TxType = "تبدیل";
       if (tx.type === "exchange") type = tx.dealType === "buy" ? "واریز" : "برداشت";
       else if (tx.type === "transfer") type = "انتقال";
-
+      
       const partyName = tx.type === "transfer" ? `${tx.senderName || "—"} به ${tx.receiverName || "—"}` : (tx.customerName || "مشتری");
 
       entries.push({
@@ -76,6 +77,7 @@ export default function JournalPage() {
         partyId: tx.customerId || tx.senderId,
         currency: tx.fromCurrency,
         amount: tx.fromAmount,
+        balanceAfter: tx.balanceAfter,
         status: tx.status,
         voidedReason: tx.voidedReason,
         source: "transaction",
@@ -116,7 +118,7 @@ export default function JournalPage() {
       }
     });
 
-    // ج) صندوق
+    // ج) اسناد صندوق
     cashEntries.forEach((ce: any) => {
       if (!ce || ce.status === "voided") return;
       if (ce.linkedExchangeId || ce.linkedTransferId || ce.linkedConvertId || ce.linkedHawalaId || ce.linkedHawalaSettleId) return;
@@ -137,6 +139,7 @@ export default function JournalPage() {
         partyId: ce.customerId,
         currency: ce.currency,
         amount: Number(ce.amount) || 0,
+        balanceAfter: ce.balanceAfter,
         status: ce.status || "active",
         source: "cash",
         sourceId: ce.id
@@ -152,7 +155,7 @@ export default function JournalPage() {
       if (e.status === "voided" && !e.voidedReason) return false;
       if (typeFilter !== "all" && e.type !== typeFilter) return false;
       if (currencyFilter !== "all" && e.currency !== currencyFilter) return false;
-
+      
       if (dateRange !== "all") {
         const entryDate = new Date(e.date);
         const now = new Date();
@@ -172,7 +175,7 @@ export default function JournalPage() {
     });
   }, [unifiedEntries, dateRange, typeFilter, currencyFilter, searchQuery]);
 
-  // ✅ ۳. محاسبه خلاصه (بالای جدول)
+  // ✅ ۳. محاسبه آنی خلاصه
   const summary = useMemo(() => {
     let deposits = 0, withdrawals = 0, transfers = 0, count = 0;
     filteredEntries.forEach((e: any) => {
@@ -185,22 +188,31 @@ export default function JournalPage() {
     return { count, deposits, withdrawals, transfers };
   }, [filteredEntries]);
 
-  // ✅ ۴. ابطال امن و یکپارچه
+  // ✅ ۴. منطق ابطال امن
   const handleVoid = async (entry: UnifiedJournalEntry) => {
     const reason = prompt("دلیل ابطال این تراکنش را وارد کنید:");
     if (!reason) return;
+    
     setVoidingId(entry.id);
     try {
       if (entry.source === "transaction") {
-        setTransactions((prev: any) => prev.map((t: any) => t.id === entry.sourceId ? { ...t, status: "voided", voidedReason: reason } : t));
+        setTransactions((prev: any[]) =>
+          prev.map((t: any) =>
+            t.id === entry.sourceId ? { ...t, status: "voided", voidedReason: reason } : t
+          )
+        );
       } else if (entry.source === "cash") {
-        setCashEntries((prev: any) => prev.map((c: any) => c.id === entry.sourceId ? { ...c, status: "voided", voidedReason: reason } : c));
+        setCashEntries((prev: any[]) =>
+          prev.map((c: any) =>
+            c.id === entry.sourceId ? { ...c, status: "voided", voidedReason: reason } : c
+          )
+        );
       } else if (entry.source === "hawala") {
-        alert("لطفاً به تب حواله بروید و از آنجا ابطال کنید.");
+        alert("برای ابطال حواله، لطفاً به تب حواله‌جات مراجعه کنید.");
         setVoidingId(null);
         return;
       }
-      alert("تراکنش با موفقیت باطل شد و موجودی به‌روز شد.");
+      alert("تراکنش با موفقیت باطل و موجودی اصلاح شد.");
     } catch (err) {
       alert("خطا در ابطال تراکنش: " + (err as Error).message);
     } finally {
@@ -208,20 +220,20 @@ export default function JournalPage() {
     }
   };
 
-  // ✅ ۵. خروجی CSV
+  // ✅ ۵. خروجی CSV با اصلاح `currencyLabels[e.currency as Currency]`
   const handleExport = () => {
-    const headers = ["تاریخ", "نوع", "طرف حساب", "ارز", "مبلغ", "شرح"];
+    const headers = ["شماره سند", "تاریخ/ساعت", "شرح معامله", "مشتری", "ارز", "مبلغ", "نوع", "وضعیت"];
     const escapeCsv = (val: any) => `"${String(val ?? "").replace(/"/g, '""')}"`;
-    const rows = filteredEntries.map((e: any) => {
-      return [
-        escapeCsv(new Date(e.date).toLocaleDateString("fa-IR")),
-        escapeCsv(e.type),
-        escapeCsv(e.partyName),
-        escapeCsv(currencyLabels[e.currency as Currency]),
-        e.amount,
-        escapeCsv(e.description),
-      ].join(",");
-    });
+    const rows = filteredEntries.map((e: any) => [
+      escapeCsv(e.id.slice(0, 8)),
+      escapeCsv(new Date(e.date).toLocaleString("fa-IR")),
+      escapeCsv(e.description),
+      escapeCsv(e.partyName),
+      escapeCsv(currencyLabels[e.currency as Currency]), // ✅ اصلاح با `as Currency`
+      e.amount,
+      escapeCsv(e.type),
+      escapeCsv(e.status === "voided" ? `باطل شده (${e.voidedReason})` : "فعال")
+    ].join(","));
 
     const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -235,9 +247,9 @@ export default function JournalPage() {
     URL.revokeObjectURL(url);
   };
 
-  // ✅ ۶. استایل‌های رنگی برای نوع تراکنش
+  // ✅ ۶. رنگ‌بندی نوع تراکنش
   const getTypeBadgeStyle = (type: TxType, isVoided: boolean) => {
-    if (isVoided) return "bg-gray-100 text-gray-500 line-through";
+    if (isVoided) return "bg-gray-200 text-gray-500 line-through";
     const styles: Record<TxType, string> = {
       "واریز": "bg-emerald-100 text-emerald-800",
       "برداشت": "bg-rose-100 text-rose-800",
@@ -311,7 +323,7 @@ export default function JournalPage() {
             <div className="text-xl font-bold text-slate-800 tabular-nums">{summary.count}</div>
           </div>
           <div className="bg-emerald-50 rounded-lg p-3 border border-emerald-100 text-center">
-            <div className="text-xs text-emerald-600 mb-1">واریز</div>
+            <div className="text-xs text-emerald-600 mb-1">واریزها</div>
             <div className="text-xl font-bold text-emerald-700 tabular-nums">{fmt(summary.deposits)}</div>
           </div>
           <div className="bg-rose-50 rounded-lg p-3 border border-rose-100 text-center">
@@ -325,15 +337,15 @@ export default function JournalPage() {
         </div>
       </div>
 
-      {/* ۴. جدول روزنامه (بهینه‌شده برای موبایل) */}
+      {/* ۴. جدول روزنامه */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-right">
-            <thead className="bg-slate-50 text-slate-600 font-bold border-b hidden md:table-row">
+            <thead className="bg-slate-50 text-slate-600 font-bold border-b">
               <tr>
                 <th className="px-4 py-3">تاریخ/ساعت</th>
-                <th className="px-4 py-3">نوع</th>
-                <th className="px-4 py-3">شرح</th>
+                <th className="px-4 py-3 text-center">نوع</th>
+                <th className="px-4 py-3">شرح معامله</th>
                 <th className="px-4 py-3">طرف حساب</th>
                 <th className="px-4 py-3 text-center">ارز</th>
                 <th className="px-4 py-3 text-center">مبلغ</th>
@@ -348,85 +360,35 @@ export default function JournalPage() {
               ) : (
                 filteredEntries.map((entry: any) => {
                   const isVoided = entry.status === "voided";
-                  const badgeStyle = getTypeBadgeStyle(entry.type, isVoided);
-
                   return (
                     <tr key={entry.id} className={`hover:bg-slate-50 transition ${isVoided ? "bg-slate-100/50" : ""}`}>
-                      {/* نمایش در موبایل (کارتی) */}
-                      <td className="block md:hidden p-4 border-b border-slate-100">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <div className="text-xs text-slate-500">{new Date(entry.date).toLocaleDateString("fa-IR")}</div>
-                            <div className={`font-bold mt-1 ${isVoided ? "text-slate-400 line-through" : "text-slate-800"}`}>
-                              {entry.description}
-                            </div>
-                          </div>
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-bold ${badgeStyle}`}>
-                            {entry.type}
-                          </span>
-                        </div>
-
-                        <div className="mt-2 space-y-1 text-sm">
-                          <div className="flex justify-between">
-                            <span className="text-slate-500">طرف حساب:</span>
-                            <span>{entry.partyName}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-slate-500">ارز:</span>
-                            <span className="font-bold">{currencyLabels[entry.currency as Currency]}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-slate-500">مبلغ:</span>
-                            <span className={`font-bold tabular-nums ${isVoided ? "text-slate-400 line-through" : entry.type === "واریز" ? "text-emerald-600" : "text-rose-600"}`}>
-                              {entry.type === "واریز" ? "+" : "-"} {fmt(entry.amount)}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="mt-3 flex justify-between items-center">
-                          <button
-                            onClick={() => handleVoid(entry)}
-                            disabled={voidingId === entry.id || entry.source === "hawala"}
-                            className={`text-xs ${isVoided ? "bg-slate-200 text-slate-400" : "bg-rose-50 text-rose-600 hover:bg-rose-100"} px-3 py-1.5 rounded-lg font-bold transition disabled:opacity-50`}
-                          >
-                            {isVoided ? "باطل‌شده" : "ابطال"}
-                          </button>
-                          <span className="text-xs text-slate-400">{new Date(entry.date).toLocaleTimeString("fa-IR")}</span>
-                        </div>
-                      </td>
-
-                      {/* نمایش در دسکتاپ (جدول) */}
-                      <td className="hidden md:table-cell px-4 py-3 text-slate-600 whitespace-nowrap text-xs">
+                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap text-xs">
                         {new Date(entry.date).toLocaleString("fa-IR")}
                       </td>
-                      <td className="hidden md:table-cell px-4 py-3 text-center">
-                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${badgeStyle}`}>
+                      <td className="px-4 py-3 text-center">
+                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${getTypeBadgeStyle(entry.type, isVoided)}`}>
                           {entry.type}
                         </span>
                       </td>
-                      <td className="hidden md:table-cell px-4 py-3 font-medium">
+                      <td className={`px-4 py-3 font-medium ${isVoided ? "text-slate-400 line-through" : "text-slate-800"}`}>
                         {entry.description}
                         {isVoided && <div className="text-[10px] text-rose-500 mt-1">دلیل: {entry.voidedReason}</div>}
                       </td>
-                      <td className="hidden md:table-cell px-4 py-3 text-slate-700">{entry.partyName}</td>
-                      <td className="hidden md:table-cell px-4 py-3 text-center text-slate-600">
-                        <span className="ml-1">{currencyFlags[entry.currency as Currency]}</span>
-                        {currencyLabels[entry.currency as Currency]}
+                      <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{entry.partyName}</td>
+                      <td className="px-4 py-3 text-center text-slate-600 whitespace-nowrap">
+                        <span className="ml-1">{currencyFlags[entry.currency as Currency]}</span>{currencyLabels[entry.currency as Currency]}
                       </td>
-                      <td className={`hidden md:table-cell px-4 py-3 text-center font-bold tabular-nums ${isVoided ? "text-slate-400 line-through" : entry.type === "واریز" ? "text-emerald-600" : "text-rose-600"}`}>
+                      <td className={`px-4 py-3 text-center font-bold tabular-nums ${isVoided ? "text-slate-400 line-through" : (entry.type === "واریز" ? "text-emerald-600" : "text-rose-600")}`}>
                         {entry.type === "واریز" ? "+" : "-"} {fmt(entry.amount)}
                       </td>
-                      <td className="hidden md:table-cell px-4 py-3 text-center">
+                      <td className="px-4 py-3 text-center">
                         {!isVoided && entry.source !== "hawala" && (
-                          <button
-                            onClick={() => handleVoid(entry)}
-                            disabled={voidingId === entry.id}
-                            className={`text-xs ${isVoided ? "text-slate-400 bg-slate-200" : "text-rose-600 bg-rose-50 hover:bg-rose-100"} px-3 py-1.5 rounded-lg font-bold transition disabled:opacity-50`}
-                          >
+                          <button onClick={() => handleVoid(entry)} disabled={voidingId === entry.id} className="text-xs bg-rose-50 text-rose-600 hover:bg-rose-100 px-3 py-1.5 rounded-lg font-bold transition disabled:opacity-50">
                             {voidingId === entry.id ? "در حال ابطال..." : "ابطال"}
                           </button>
                         )}
                         {isVoided && <span className="text-[10px] text-slate-400 bg-slate-200 px-2 py-1 rounded">باطل‌شده</span>}
+                        {entry.source === "hawala" && <span className="text-[10px] text-blue-500 bg-blue-50 px-2 py-1 rounded">مدیریت در تب حواله</span>}
                       </td>
                     </tr>
                   );
@@ -440,13 +402,13 @@ export default function JournalPage() {
       {/* ۵. راهنما */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
         <h3 className="text-base font-bold text-slate-800 mb-4 flex items-center">
-          <span className="w-2 h-2 bg-blue-500 rounded-full ml-2"></span>راهنمای کاربری
+          <span className="w-2 h-2 bg-blue-500 rounded-full ml-2"></span>راهنمای سیستم
         </h3>
         <ul className="text-sm text-slate-600 space-y-2 list-disc pr-4">
-          <li>این روزنامه به صورت <b>آفلاین و آنلاین</b> کار می‌کند — بدون اینترنت هم می‌توانید داده‌ها را ثبت یا ببینید.</li>
-          <li>داده‌های ثبت‌شده در حافظه محلی ذخیره می‌شوند و با اینترنت دوباره با سرور همگام می‌شوند.</li>
-          <li>برای ابطال حواله، به تب حواله‌جات بروید تا موجودی به‌روز شود.</li>
-          <li>خروجی CSV دقیقاً بر اساس فیلترهای اعمال‌شده تولید می‌شود.</li>
+          <li>این روزنامه به صورت <b>آفلاین و آنلاین</b> کار می‌کند — بدون نیاز به اینترنت هم می‌توانید داده‌ها را ثبت و ببینید.</li>
+          <li>داده‌های ثبت‌شده بلافاصله در حافظه محلی ذخیره شده و با اینترنت فعال به صورت خودکار با سرور همگام می‌شوند.</li>
+          <li>برای ابطال حواله، باید به تب "حواله‌جات" مراجعه کنید تا موجودی به‌روزرسانی شود.</li>
+          <li>خروجی CSV دقیقاً بر اساس فیلترهای اعمال‌شده در همین صفحه تولید می‌شود.</li>
         </ul>
       </div>
     </div>
