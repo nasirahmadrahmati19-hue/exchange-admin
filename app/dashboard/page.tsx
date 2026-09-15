@@ -133,7 +133,6 @@ function fa(n: number) {
   return (Number.isFinite(n) ? n.toLocaleString("fa-IR", { maximumFractionDigits: 0 }) : "۰");
 }
 
-// ✅ تابع shamsiParts کاملاً صحیح و بدون خطای سینتکسی
 function shamsiParts(d: Date) {
   try {
     const parts = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", {
@@ -169,7 +168,8 @@ function isToday(dateStr: string | number | undefined | null): boolean {
   return false;
 }
 
-function getLedgerBalance(customerId: string, currency: Currency, entries: any[], transactions: any[] = []): number {
+// ✅ اصلاح شده: اضافه شدن پارامتر hawalas برای محاسبه دقیق موجودی
+function getLedgerBalance(customerId: string, currency: Currency, entries: any[], transactions: any[], hawalas: any[]): number {
   let balance = 0;
   
   for (const entry of entries) {
@@ -220,6 +220,19 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: any[]
         if (tx.commission && tx.commissionCurrency === currency) balance -= (tx.commission || 0);
       }
     }
+
+    // ✅ اضافه شدن منطق حواله‌ها که قبلاً فراموش شده بود و باعث ناهماهنگی می‌شد
+    for (const h of hawalas) {
+      if (h.status === "cancelled") continue;
+      if (h.senderId === customerId && h.currencyFrom === currency) {
+        balance -= (h.amountFrom || 0);
+        if (h.feePayer === "sender" && h.feeCurrency === currency) balance -= (h.fee || 0);
+      }
+      if (h.status === "paid" && h.receiverId === customerId && h.currencyTo === currency) {
+        balance += (h.finalAmount || 0);
+        if (h.feePayer === "receiver" && h.feeCurrency === currency) balance -= (h.fee || 0);
+      }
+    }
   }
   
   return balance;
@@ -248,29 +261,31 @@ export default function DashboardPage() {
     setLastUpdated(new Date());
   }, []);
 
+  // ✅ اصلاح شده: ارسال hawalas به تابع محاسبه
   const customerDeposits = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
       if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) continue;
       for (const cur of currencies) {
-        const bal = getLedgerBalance(c.id, cur, entries, transactions);
+        const bal = getLedgerBalance(c.id, cur, entries, transactions, hawalas);
         if (bal > 0) totals[cur] += bal;
       }
     }
     return totals;
-  }, [customers, entries, transactions]);
+  }, [customers, entries, transactions, hawalas]);
 
+  // ✅ اصلاح شده: ارسال hawalas به تابع محاسبه
   const customerDebts = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
       if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) continue;
       for (const cur of currencies) {
-        const bal = getLedgerBalance(c.id, cur, entries, transactions);
+        const bal = getLedgerBalance(c.id, cur, entries, transactions, hawalas);
         if (bal < 0) totals[cur] += Math.abs(bal);
       }
     }
     return totals;
-  }, [customers, entries, transactions]);
+  }, [customers, entries, transactions, hawalas]);
 
   const exchangeBalance = useMemo(() => {
     const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
@@ -384,12 +399,13 @@ export default function DashboardPage() {
     return result;
   }, [hawalas]);
 
+  // ✅ اصلاح شده: ارسال hawalas به تابع محاسبه
   const debtorsCount = useMemo(() => {
     return customers.filter(c => {
       if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) return false;
-      return currencies.some(cur => getLedgerBalance(c.id, cur, entries, transactions) < 0);
+      return currencies.some(cur => getLedgerBalance(c.id, cur, entries, transactions, hawalas) < 0);
     }).length;
-  }, [customers, entries, transactions]);
+  }, [customers, entries, transactions, hawalas]);
 
   const dk = theme === "dark";
   const heading = dk ? "text-white" : "text-slate-900";
@@ -459,7 +475,7 @@ export default function DashboardPage() {
             </div>
           </header>
 
-          {/* ═══════════ آمار امروز (نسخه بزرگ‌تر، حرفه‌ای‌تر و ۵ ارز افقی) ═══════════ */}
+          {/* ═══════════ آمار امروز ═══════════ */}
           <section className="cs-up space-y-4 md:space-y-6" style={{ animationDelay: "70ms" }}>
             <div className="flex items-center gap-3 mb-1">
               <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl shadow-md ${dk ? "bg-gradient-to-br from-blue-500 to-sky-500 text-white" : "bg-gradient-to-br from-blue-500 to-cyan-500 text-white"}`}>
@@ -471,10 +487,7 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* ✅ چیدمان ۲ ستونه در دسکتاپ برای فضای بیشتر و خوانایی بهتر */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-              
-              {/* 💱 مجموع مبلغ تبادل ارز */}
               <div className={`group relative overflow-hidden rounded-2xl border p-5 md:p-6 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-blue-400/25 bg-gradient-to-br from-blue-900/30 to-slate-900/50" : "border-blue-200 bg-gradient-to-br from-blue-50 to-white"}`}>
                 <div className="relative flex items-center gap-3 mb-4">
                   <span className={`grid h-12 w-12 place-items-center rounded-xl shadow-sm ${dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-600"}`}>
@@ -485,7 +498,6 @@ export default function DashboardPage() {
                     <div className={`text-[10px] md:text-xs font-bold ${dk ? "text-blue-400/70" : "text-blue-600/70"}`}>{fa(todayStats.tradeCount)} معامله امروز</div>
                   </div>
                 </div>
-                {/* ✅ اصلاح شده: چیدمان واکنش‌گرا برای موبایل */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-3">
                   {currencies.map(cur => {
                     const data = todayTradeByCurrency[cur];
@@ -502,7 +514,6 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* 💸 مجموع مبلغ حواله‌ها */}
               <div className={`group relative overflow-hidden rounded-2xl border p-5 md:p-6 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-purple-400/25 bg-gradient-to-br from-purple-900/30 to-slate-900/50" : "border-purple-200 bg-gradient-to-br from-purple-50 to-white"}`}>
                 <div className="relative flex items-center gap-3 mb-4">
                   <span className={`grid h-12 w-12 place-items-center rounded-xl shadow-sm ${dk ? "bg-purple-400/15 text-purple-300" : "bg-purple-100 text-purple-600"}`}>
@@ -513,7 +524,6 @@ export default function DashboardPage() {
                     <div className={`text-[10px] md:text-xs font-bold ${dk ? "text-purple-400/70" : "text-purple-600/70"}`}>{fa(todayStats.hawalaCount)} حواله امروز</div>
                   </div>
                 </div>
-                {/* ✅ اصلاح شده: چیدمان واکنش‌گرا برای موبایل */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-3">
                   {currencies.map(cur => {
                     const data = todayHawalaByCurrency[cur];
@@ -530,7 +540,6 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* 💰 کارمزد تبادل ارز */}
               <div className={`group relative overflow-hidden rounded-2xl border p-5 md:p-6 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-amber-400/25 bg-gradient-to-br from-amber-900/30 to-slate-900/50" : "border-amber-200 bg-gradient-to-br from-amber-50 to-white"}`}>
                 <div className="relative flex items-center gap-3 mb-4">
                   <span className={`grid h-12 w-12 place-items-center rounded-xl shadow-sm ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}>
@@ -553,7 +562,6 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* 🎯 کارمزد حواله‌جات */}
               <div className={`group relative overflow-hidden rounded-2xl border p-5 md:p-6 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-rose-400/25 bg-gradient-to-br from-rose-900/30 to-slate-900/50" : "border-rose-200 bg-gradient-to-br from-rose-50 to-white"}`}>
                 <div className="relative flex items-center gap-3 mb-4">
                   <span className={`grid h-12 w-12 place-items-center rounded-xl shadow-sm ${dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600"}`}>
@@ -575,7 +583,6 @@ export default function DashboardPage() {
                   </div>
                 </div>
               </div>
-
             </div>
           </section>
 
