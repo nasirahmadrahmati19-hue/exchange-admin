@@ -58,11 +58,11 @@ export default function JournalPage() {
   const [customers] = useSyncedState<any[]>(CUSTOMERS_KEY, []);
   const [voidingId, setVoidingId] = useState<string | null>(null);
 
-  // ✅ ادغام تمام داده‌ها در یک لیست واحد
+  // ✅ ۱. ادغام هوشمند تمام داده‌ها
   const unifiedEntries = useMemo<UnifiedJournalEntry[]>(() => {
     const entries: UnifiedJournalEntry[] = [];
 
-    // ۱. معاملات
+    // الف) معاملات
     transactions.forEach((tx: any) => {
       if (tx.status === "voided" && !tx.voidedReason) return;
       let type: TxType = "تبدیل";
@@ -88,7 +88,7 @@ export default function JournalPage() {
       });
     });
 
-    // ۲. حواله‌ها
+    // ب) حواله‌ها
     hawalas.forEach((h: any) => {
       if (h.status === "cancelled") return;
       entries.push({
@@ -121,7 +121,7 @@ export default function JournalPage() {
       }
     });
 
-    // ۳. اسناد صندوق
+    // ج) صندوق
     cashEntries.forEach((ce: any) => {
       if (!ce || ce.status === "voided") return;
       if (ce.linkedExchangeId || ce.linkedTransferId || ce.linkedConvertId || ce.linkedHawalaId || ce.linkedHawalaSettleId) return;
@@ -152,7 +152,7 @@ export default function JournalPage() {
     return entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [transactions, hawalas, cashEntries]);
 
-  // ✅ فیلتر کردن داده‌ها بر اساس تاریخ، نوع، ارز و جستجو
+  // ✅ ۲. فیلتر کردن داده‌ها
   const filteredEntries = useMemo(() => {
     return unifiedEntries.filter((e: any) => {
       if (e.status === "voided" && !e.voidedReason) return false;
@@ -183,7 +183,7 @@ export default function JournalPage() {
     });
   }, [unifiedEntries, dateFrom, dateTo, typeFilter, currencyFilter, searchQuery]);
 
-  // ✅ محاسبه‌ی خلاصه
+  // ✅ ۳. محاسبه خلاصه
   const summary = useMemo(() => {
     let deposits = 0, withdrawals = 0, transfers = 0, count = 0;
     filteredEntries.forEach((e: any) => {
@@ -196,7 +196,7 @@ export default function JournalPage() {
     return { count, deposits, withdrawals, transfers };
   }, [filteredEntries]);
 
-  // ✅ منطق ابطال امن
+  // ✅ ۴. منطق ابطال امن
   const handleVoid = async (entry: UnifiedJournalEntry) => {
     const reason = prompt("دلیل ابطال این تراکنش را وارد کنید:");
     if (!reason) return;
@@ -211,7 +211,7 @@ export default function JournalPage() {
           prev.map((c: any) => c.id === entry.sourceId ? { ...c, status: "voided", voidedReason: reason } : c)
         );
       } else if (entry.source === "hawala") {
-        alert("لطفاً به تب حواله بروید و از آنجا این تراکنش را باطل کنید.");
+        alert("لطفاً به تب حواله‌جات بروید و از آنجا این تراکنش را باطل کنید.");
         setVoidingId(null);
         return;
       }
@@ -223,7 +223,7 @@ export default function JournalPage() {
     }
   };
 
-  // ✅ خروجی CSV
+  // ✅ ۵. خروجی CSV
   const handleExport = () => {
     const headers = ["شماره سند", "تاریخ", "ساعت", "شرح", "نوع", "ارز", "مبلغ", "تراز بعد", "وضعیت"];
     const escapeCsv = (val: any) => `"${String(val ?? "").replace(/"/g, '""')}"`;
@@ -244,7 +244,7 @@ export default function JournalPage() {
       ].join(",");
     });
 
-    const csvContent = "\uFEFF" + [headers.join(",")].concat(rows).join("\n");
+    const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -256,7 +256,7 @@ export default function JournalPage() {
     URL.revokeObjectURL(url);
   };
 
-  // ✅ رنگ‌بندی نوع تراکنش
+  // ✅ ۶. رنگ‌بندی نوع تراکنش
   const getTypeBadgeStyle = (type: TxType, isVoided: boolean) => {
     if (isVoided) return "bg-slate-700/50 text-slate-400 line-through";
     const styles: Record<TxType, string> = {
@@ -270,7 +270,7 @@ export default function JournalPage() {
     return styles[type] || "bg-slate-400/20 text-slate-300";
   };
 
-  // ✅ تابع تقسیم تاریخ و زمان
+  // ✅ ۷. تابع تقسیم تاریخ و زمان
   const splitDateTime = (iso: string) => {
     const d = new Date(iso);
     const datePart = d.toLocaleDateString("fa-IR");
@@ -286,7 +286,10 @@ export default function JournalPage() {
           <h1 className="text-2xl font-extrabold text-slate-100">روزنامه کل معاملات</h1>
           <p className="text-slate-400 text-sm mt-1">نمای یکپارچه و حسابرسی‌پذیر از تمام تب‌های سیستم</p>
         </div>
-        <button onClick={handleExport} className="flex items-center gap-2 bg-emerald-500 px-4 py-2 rounded-lg hover:bg-emerald-600 transition shadow-sm text-sm font-bold text-slate-900">
+        <button
+          onClick={handleExport}
+          className="flex items-center gap-2 bg-emerald-500 text-slate-900 px-4 py-2 rounded-lg hover:bg-emerald-600 transition shadow-sm text-sm font-bold"
+        >
           <span>📊</span> خروجی CSV
         </button>
       </div>
@@ -318,9 +321,7 @@ export default function JournalPage() {
         >
           <option value="all">همه ارزها</option>
           {currencies.map((cur) => (
-            <option key={cur} value={cur}>
-              {currencyLabels[cur]}
-            </option>
+            <option key={cur} value={cur}>{currencyLabels[cur]}</option>
           ))}
         </select>
         <div className="relative">
@@ -415,7 +416,7 @@ export default function JournalPage() {
                       </td>
                       <td className="px-4 py-3 text-center text-slate-300 tabular-nums">{entry.balanceAfter}</td>
                       <td className="px-4 py-3 text-center">
-                        {!isVoided && entry.source !== "hawala" && (
+                        {!isVoided && (
                           <button
                             onClick={() => handleVoid(entry)}
                             disabled={voidingId === entry.id}
@@ -443,9 +444,9 @@ export default function JournalPage() {
           <span className="w-2 h-2 bg-blue-400 rounded-full ml-2"></span> راهنمای سیستم
         </h3>
         <ul className="text-sm text-slate-400 space-y-2 list-disc pr-4">
-          <li>این روزنامه به صورت <b className="text-slate-300">آفلاین و آنلاین</b> کار می‌کند — بدون اینترنت هم می‌توانید داده ثبت کنید و ببینید.</li>
+          <li>این روزنامه به صورت <b className="text-slate-300">آفلاین و آنلاین</b> کار می‌کند — بدون اینترنت هم می‌توانید داده‌ها را ببینید و ثبت کنید.</li>
           <li>داده‌های ثبت‌شده در حافظه محلی ذخیره می‌شوند و با اینترنت دوباره با سرور همگام می‌شوند.</li>
-          <li>برای ابطال حواله، به تب <b className="text-slate-300">حواله‌جات</b> مراجعه کنید.</li>
+          <li>برای ابطال حواله، به تب <b className="text-sky-300">حواله‌جات</b> مراجعه کنید.</li>
           <li>خروجی CSV شامل تمام تراکنش‌های فیلترشده است.</li>
         </ul>
       </div>
