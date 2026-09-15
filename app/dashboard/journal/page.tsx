@@ -8,7 +8,6 @@ import {
   Timestamp, onSnapshot 
 } from "firebase/firestore";
 
-// ✅ مسیر صحیح بر اساس ساختار پوشه‌ای که فرستادید
 import { db } from "../lib/firebase"; 
 
 // --- Types & Constants ---
@@ -18,23 +17,50 @@ const currencyLabels: Record<Currency, string> = { AFN: "افغانی", USD: "د
 const currencyFlags: Record<Currency, string> = { AFN: "🇦🇫", USD: "🇺🇸", EUR: "🇪🇺", IRR: "🇮🇷", PKR: "🇵🇰" };
 type TxType = "واریز" | "برداشت" | "انتقال" | "تبدیل" | "هزینه";
 
-interface Transaction {
+// ✅ نگاشت انواع تراکنش انگلیسی (از تب‌های دیگر) به فارسی (برای روزنامچه)
+const typeMap: Record<string, TxType> = {
+  deposit: "واریز",
+  withdrawal: "برداشت",
+  hawala_in: "انتقال",
+  hawala_out: "انتقال",
+  transfer: "انتقال",
+  buy_currency: "تبدیل",
+  sell_currency: "تبدیل",
+  exchange: "تبدیل",
+  commission: "هزینه",
+  fee: "هزینه",
+  reversal: "واریز", // تراکنش معکوس معمولاً واریز است
+  // اگر نوع از قبل فارسی بود، همان را برگردان
+  "واریز": "واریز", "برداشت": "برداشت", "انتقال": "انتقال", "تبدیل": "تبدیل", "هزینه": "هزینه"
+};
+
+interface RawTransaction {
   id: string;
   timestamp: Timestamp;
-  type: TxType;
-  description: string;
+  type: string; // می‌تواند انگلیسی یا فارسی باشد
+  description?: string;
+  note?: string;
   currency: Currency;
   amount: number;
   balanceAfter: number;
-  partyId: string;
+  partyId?: string;
+  partyName?: string; // ✅ تب‌های دیگر ممکن است مستقیماً نام را ذخیره کنند
   status: "active" | "voided";
   voidedReason?: string;
   toCurrency?: Currency;
   toAmount?: number;
 }
 
+// ✅ نرمال‌ساز: تبدیل داده‌ی خام (از هر تبی) به فرمت استاندارد روزنامچه
+function normalizeTransaction(raw: RawTransaction): RawTransaction {
+  return {
+    ...raw,
+    type: typeMap[raw.type] || "واریز", // تبدیل نوع انگلیسی به فارسی
+    description: raw.description || raw.note || "بدون توضیح", // استفاده از note اگر description نبود
+  };
+}
+
 const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00";
-const generateId = () => typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'tx-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
 
 // --- Helper: URL State Management ---
 function useUrlState(key: string, defaultValue: string) {
@@ -50,7 +76,7 @@ function useUrlState(key: string, defaultValue: string) {
   return [value, setValue] as const;
 }
 
-// --- توابع کمکی (ادغام شده در همین فایل برای حذف وابستگی به فایل خارجی) ---
+// --- توابع کمکی ---
 const customerCache: Record<string, string> = {};
 
 async function fetchCustomerName(partyId: string) {
@@ -69,39 +95,44 @@ async function fetchCustomerName(partyId: string) {
   }
 }
 
-async function voidTransactionAtomic(transactionId: string) {
+async function voidTransactionAtomic(transactionId: string, collectionName: string) {
   return runTransaction(db, async (transaction) => {
-    const txRef = doc(db, 'transactions', transactionId);
+    const txRef = doc(db, collectionName, transactionId);
     const txSnap = await transaction.get(txRef);
     if (!txSnap.exists()) throw new Error('تراکنش یافت نشد');
     
-    const txData = txSnap.data() as Transaction;
+    const txData = txSnap.data() as RawTransaction;
     if (txData.status === 'voided') throw new Error('این تراکنش قبلاً باطل شده است');
     
-    const customerRef = doc(db, 'customers', txData.partyId);
-    const customerSnap = await transaction.get(customerRef);
-    const currentBalance = customerSnap.data()?.balances?.[txData.currency] || 0;
-    
-    let newBalance = currentBalance;
-    if (txData.type === 'واریز' || txData.type === 'انتقال') newBalance -= txData.amount;
-    else if (txData.type === 'برداشت' || txData.type === 'هزینه') newBalance += txData.amount;
-    else if (txData.type === 'تبدیل' && txData.toCurrency && txData.toAmount) {
-      const fromBal = customerSnap.data()?.balances?.[txData.currency] || 0;
-      const toBal = customerSnap.data()?.balances?.[txData.toCurrency] || 0;
-      transaction.update(customerRef, {
-        [`balances.${txData.currency}`]: fromBal + txData.amount,
-        [`balances.${txData.toCurrency}`]: toBal - txData.toAmount,
-        updatedAt: serverTimestamp()
-      });
+    // اگر partyId دارد، موجودی را اصلاح کن
+    if (txData.partyId) {
+      const customerRef = doc(db, 'customers', txData.partyId);
+      const customerSnap = await transaction.get(customerRef);
+      const currentBalance = customerSnap.data()?.balances?.[txData.currency] || 0;
+      
+      let newBalance = currentBalance;
+      const normalizedType = typeMap[txData.type] || "واریز";
+      
+      if (normalizedType === 'واریز' || normalizedType === 'انتقال') newBalance -= txData.amount;
+      else if (normalizedType === 'برداشت' || normalizedType === 'هزینه') newBalance += txData.amount;
+      else if (normalizedType === 'تبدیل' && txData.toCurrency && txData.toAmount) {
+        const fromBal = customerSnap.data()?.balances?.[txData.currency] || 0;
+        const toBal = customerSnap.data()?.balances?.[txData.toCurrency] || 0;
+        transaction.update(customerRef, {
+          [`balances.${txData.currency}`]: fromBal + txData.amount,
+          [`balances.${txData.toCurrency}`]: toBal - txData.toAmount,
+          updatedAt: serverTimestamp()
+        });
+      }
+      
+      if (normalizedType !== 'تبدیل') {
+        transaction.update(customerRef, { [`balances.${txData.currency}`]: newBalance, updatedAt: serverTimestamp() });
+      }
     }
     
     transaction.update(txRef, { status: 'voided', voidedAt: serverTimestamp() });
-    if (txData.type !== 'تبدیل') {
-      transaction.update(customerRef, { [`balances.${txData.currency}`]: newBalance, updatedAt: serverTimestamp() });
-    }
   });
 }
-// ----------------------------------------------------------------------------------
 
 export default function JournalPage() {
   const searchParams = useSearchParams();
@@ -111,13 +142,14 @@ export default function JournalPage() {
   const [currencyFilter, setCurrencyFilter] = useUrlState("currency", "all");
   const [searchQuery, setSearchQuery] = useUrlState("search", "");
 
-  const [entries, setEntries] = useState<Transaction[]>([]);
+  const [entries, setEntries] = useState<RawTransaction[]>([]);
   const [customerNames, setCustomerNames] = useState<Record<string, string>>({});
   const [exchangeRates, setExchangeRates] = useState<Record<string, { rate: number }>>({});
   const [loading, setLoading] = useState(true);
   const [lastVisible, setLastVisible] = useState<any>(null);
   const [hasMore, setHasMore] = useState(true);
   const [voidingId, setVoidingId] = useState<string | null>(null);
+  const [sourceCollection, setSourceCollection] = useState<string>("transactions"); // ✅ ردیابی کالکشن
 
   // ۱. بارگذاری نرخ ارزها
   useEffect(() => {
@@ -129,47 +161,73 @@ export default function JournalPage() {
     return () => unsubscribe();
   }, []);
 
-  // ۲. دریافت داده از Firestore
+  // ✅ ۲. تابع کمکی برای خواندن از یک کالکشن خاص
+  const fetchFromCollection = useCallback(async (collectionName: string, reset: boolean) => {
+    let q = query(collection(db, collectionName), orderBy("timestamp", "desc"), limit(50));
+    
+    if (typeFilter !== "all") {
+      // ✅ هم نوع فارسی و هم انگلیسی را چک کن (برای سازگاری با همه تب‌ها)
+      const englishTypes = Object.entries(typeMap).filter(([_, fa]) => fa === typeFilter).map(([en]) => en);
+      if (englishTypes.length > 0) {
+        q = query(q, where("type", "in", [...englishTypes, typeFilter]));
+      } else {
+        q = query(q, where("type", "==", typeFilter));
+      }
+    }
+    if (currencyFilter !== "all") q = query(q, where("currency", "==", currencyFilter));
+    q = query(q, where("status", "==", "active"));
+
+    if (dateRange !== "all") {
+      const now = new Date();
+      let startDate = new Date();
+      if (dateRange === "today") startDate.setHours(0, 0, 0, 0);
+      else if (dateRange === "week") startDate.setDate(now.getDate() - 7);
+      else if (dateRange === "month") startDate.setDate(1);
+      q = query(q, where("timestamp", ">=", Timestamp.fromDate(startDate)));
+    }
+
+    if (!reset && lastVisible) q = query(q, startAfter(lastVisible));
+
+    const snapshot = await getDocs(q);
+    let newEntries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as RawTransaction));
+    
+    // ✅ نرمال‌سازی ساختار داده
+    newEntries = newEntries.map(normalizeTransaction);
+    
+    if (searchQuery) {
+      const lowerSearch = searchQuery.toLowerCase();
+      newEntries = newEntries.filter(e => 
+        (e.description || "").toLowerCase().includes(lowerSearch) ||
+        (e.partyName || "").toLowerCase().includes(lowerSearch)
+      );
+    }
+
+    return { entries: newEntries, lastDoc: snapshot.docs[snapshot.docs.length - 1], hasMore: snapshot.docs.length === 50 };
+  }, [dateRange, typeFilter, currencyFilter, searchQuery, lastVisible]);
+
+  // ✅ ۳. دریافت داده: ابتدا از transactions، اگر خالی بود از journal_entries
   const fetchEntries = useCallback(async (reset = false) => {
     setLoading(true);
     try {
-      let q = query(collection(db, "transactions"), orderBy("timestamp", "desc"), limit(50));
+      // ابتدا از کالکشن transactions بخوان
+      let result = await fetchFromCollection("transactions", reset);
+      let usedCollection = "transactions";
       
-      if (typeFilter !== "all") {
-        const dbType = typeFilter === "hawala_in" || typeFilter === "hawala_out" ? "انتقال" : 
-                       typeFilter === "buy_currency" || typeFilter === "sell_currency" ? "تبدیل" :
-                       typeFilter === "commission" ? "هزینه" : 
-                       typeFilter === "deposit" ? "واریز" : "برداشت";
-        q = query(q, where("type", "==", dbType));
+      // اگر هیچ داده‌ای نداشت، از journal_entries امتحان کن
+      if (result.entries.length === 0 && reset) {
+        result = await fetchFromCollection("journal_entries", reset);
+        usedCollection = "journal_entries";
       }
-      if (currencyFilter !== "all") q = query(q, where("currency", "==", currencyFilter));
-      q = query(q, where("status", "==", "active"));
-
-      if (dateRange !== "all") {
-        const now = new Date();
-        let startDate = new Date();
-        if (dateRange === "today") startDate.setHours(0, 0, 0, 0);
-        else if (dateRange === "week") startDate.setDate(now.getDate() - 7);
-        else if (dateRange === "month") startDate.setDate(1);
-        q = query(q, where("timestamp", ">=", Timestamp.fromDate(startDate)));
-      }
-
-      if (!reset && lastVisible) q = query(q, startAfter(lastVisible));
-
-      const snapshot = await getDocs(q);
-      let newEntries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Transaction));
       
-      if (searchQuery) {
-        const lowerSearch = searchQuery.toLowerCase();
-        newEntries = newEntries.filter(e => e.description.toLowerCase().includes(lowerSearch));
-      }
+      setSourceCollection(usedCollection);
+      
+      setEntries(prev => reset ? result.entries : [...prev, ...result.entries]);
+      setLastVisible(result.lastDoc);
+      setHasMore(result.hasMore);
 
-      setEntries(prev => reset ? newEntries : [...prev, ...newEntries]);
-      setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
-      setHasMore(snapshot.docs.length === 50);
-
-      newEntries.forEach(async (tx) => {
-        if (tx.partyId && !customerNames[tx.partyId]) {
+      // ✅ بارگذاری نام مشتریان (فقط برای آن‌هایی که partyId دارند و partyName ندارند)
+      result.entries.forEach(async (tx) => {
+        if (tx.partyId && !tx.partyName && !customerNames[tx.partyId]) {
           const name = await fetchCustomerName(tx.partyId);
           setCustomerNames(prev => ({ ...prev, [tx.partyId]: name }));
         }
@@ -179,28 +237,47 @@ export default function JournalPage() {
     } finally {
       setLoading(false);
     }
-  }, [dateRange, typeFilter, currencyFilter, searchQuery, lastVisible, customerNames]);
+  }, [fetchFromCollection]);
 
   useEffect(() => { fetchEntries(true); }, [dateRange, typeFilter, currencyFilter, searchQuery]);
 
-  // ۳. محاسبه جمع کل موجودی صندوق
+  // ✅ ۴. محاسبه جمع کل موجودی صندوق (از هر دو کالکشن)
   const [totals, setTotals] = useState<Record<string, number>>({});
   useEffect(() => {
-    const q = query(collection(db, "transactions"), where("status", "==", "active"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const fetchTotals = async () => {
       const totalsByCurrency: Record<string, number> = {};
-      snapshot.forEach(doc => {
-        const tx = doc.data() as Transaction;
+      
+      // خواندن از transactions
+      const q1 = query(collection(db, "transactions"), where("status", "==", "active"));
+      const snap1 = await getDocs(q1);
+      snap1.forEach(doc => {
+        const tx = normalizeTransaction(doc.data() as RawTransaction);
         if (!totalsByCurrency[tx.currency]) totalsByCurrency[tx.currency] = 0;
         if (tx.type === "واریز" || tx.type === "انتقال") totalsByCurrency[tx.currency] += tx.amount;
         else if (tx.type === "برداشت" || tx.type === "هزینه") totalsByCurrency[tx.currency] -= tx.amount;
       });
+      
+      // خواندن از journal_entries
+      const q2 = query(collection(db, "journal_entries"), where("status", "==", "active"));
+      const snap2 = await getDocs(q2);
+      snap2.forEach(doc => {
+        const tx = normalizeTransaction(doc.data() as RawTransaction);
+        if (!totalsByCurrency[tx.currency]) totalsByCurrency[tx.currency] = 0;
+        if (tx.type === "واریز" || tx.type === "انتقال") totalsByCurrency[tx.currency] += tx.amount;
+        else if (tx.type === "برداشت" || tx.type === "هزینه") totalsByCurrency[tx.currency] -= tx.amount;
+      });
+      
       setTotals(totalsByCurrency);
-    });
-    return () => unsubscribe();
+    };
+    
+    fetchTotals();
+    // Real-time با onSnapshot برای هر دو کالکشن
+    const unsub1 = onSnapshot(query(collection(db, "transactions"), where("status", "==", "active")), fetchTotals);
+    const unsub2 = onSnapshot(query(collection(db, "journal_entries"), where("status", "==", "active")), fetchTotals);
+    return () => { unsub1(); unsub2(); };
   }, []);
 
-  // ۴. خلاصه دوره
+  // ۵. خلاصه دوره
   const summary = useMemo(() => {
     let deposits = 0, withdrawals = 0, transfers = 0, count = 0;
     entries.forEach(e => {
@@ -214,13 +291,13 @@ export default function JournalPage() {
     return { count, deposits, withdrawals, transfers };
   }, [entries, exchangeRates]);
 
-  // ۵. ابطال اتمیک
-  const handleVoid = async (entry: Transaction) => {
+  // ۶. ابطال اتمیک (با پشتیبانی از هر دو کالکشن)
+  const handleVoid = async (entry: RawTransaction) => {
     const reason = prompt("دلیل ابطال این تراکنش را وارد کنید:");
     if (!reason) return;
     setVoidingId(entry.id);
     try {
-      await voidTransactionAtomic(entry.id); 
+      await voidTransactionAtomic(entry.id, sourceCollection); 
       alert("تراکنش با موفقیت باطل و موجودی به‌صورت اتمیک اصلاح شد.");
       fetchEntries(true);
     } catch (err) {
@@ -230,7 +307,7 @@ export default function JournalPage() {
     }
   };
 
-  // ۶. خروجی CSV (بدون نیاز به پکیج xlsx)
+  // ۷. خروجی CSV
   const handleExport = () => {
     const headers = ["شماره سند", "تاریخ/ساعت", "شرح معامله", "مشتری", "ارز", "مبلغ", "نوع", "تراز پس از معامله", "وضعیت"];
     const escapeCsv = (val: any) => `"${String(val ?? "").replace(/"/g, '""')}"`;
@@ -238,7 +315,7 @@ export default function JournalPage() {
       escapeCsv(e.id.slice(0, 8)),
       escapeCsv(e.timestamp?.toDate ? e.timestamp.toDate().toLocaleString("fa-IR") : "-"),
       escapeCsv(e.description),
-      escapeCsv(customerNames[e.partyId] || e.partyId),
+      escapeCsv(e.partyName || customerNames[e.partyId || ""] || e.partyId || "-"),
       escapeCsv(currencyLabels[e.currency] || e.currency),
       e.amount,
       escapeCsv(e.type),
@@ -285,7 +362,7 @@ export default function JournalPage() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-2xl font-extrabold text-slate-800">روزنامه کل معاملات</h1>
-          <p className="text-slate-500 text-sm mt-1">سابقه کامل و حسابرسی‌پذیر تمام رویدادهای مالی</p>
+          <p className="text-slate-500 text-sm mt-1">سابقه کامل و حسابرسی‌پذیر تمام رویدادهای مالی از همه تب‌ها</p>
         </div>
         <button onClick={handleExport} className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition shadow-sm text-sm font-bold">
           <span>📊</span> خروجی CSV (سازگار با Excel)
@@ -297,16 +374,15 @@ export default function JournalPage() {
           <option value="all">همه زمان‌ها</option><option value="today">امروز</option><option value="week">این هفته</option><option value="month">این ماه</option>
         </select>
         <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className="border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white">
-          <option value="all">همه انواع تراکنش</option><option value="deposit">واریز</option><option value="withdrawal">برداشت</option>
-          <option value="hawala_in">حواله ورودی</option><option value="hawala_out">حواله خروجی</option><option value="buy_currency">خرید ارز</option>
-          <option value="sell_currency">فروش ارز</option><option value="commission">کمیسیون</option>
+          <option value="all">همه انواع تراکنش</option><option value="واریز">واریز</option><option value="برداشت">برداشت</option>
+          <option value="انتقال">حواله / انتقال</option><option value="تبدیل">تبدیل ارز</option><option value="هزینه">کمیسیون / هزینه</option>
         </select>
         <select value={currencyFilter} onChange={e => setCurrencyFilter(e.target.value)} className="border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white">
           <option value="all">همه ارزها</option>
           {currencies.map(c => <option key={c} value={c}>{currencyLabels[c]}</option>)}
         </select>
         <div className="relative">
-          <input type="text" placeholder="جستجو در شرح معامله..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full border rounded-lg px-3 py-2 pr-9 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+          <input type="text" placeholder="جستجو در شرح یا نام مشتری..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full border rounded-lg px-3 py-2 pr-9 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
           <svg className="absolute right-3 top-2.5 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
         </div>
       </div>
@@ -327,12 +403,13 @@ export default function JournalPage() {
               ))}
               {entries.map((entry) => {
                 const isVoided = entry.status === "voided";
+                const customerName = entry.partyName || customerNames[entry.partyId || ""] || entry.partyId || "-";
                 return (
                   <tr key={entry.id} className={`hover:bg-slate-50 transition ${isVoided ? "bg-slate-100/50" : ""}`}>
                     <td className="px-4 py-3 text-slate-500 font-mono text-xs whitespace-nowrap">{entry.id.slice(0, 8)}</td>
                     <td className="px-4 py-3 text-slate-600 whitespace-nowrap text-xs">{entry.timestamp?.toDate ? entry.timestamp.toDate().toLocaleString("fa-IR") : "-"}</td>
                     <td className={`px-4 py-3 font-medium ${isVoided ? "text-slate-400 line-through" : "text-slate-800"}`}>{entry.description}</td>
-                    <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{customerNames[entry.partyId] || <span className="animate-pulse text-slate-400 text-xs">...</span>}</td>
+                    <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{customerName}</td>
                     <td className="px-4 py-3 text-center text-slate-600 whitespace-nowrap"><span className="ml-1">{currencyFlags[entry.currency]}</span>{currencyLabels[entry.currency]}</td>
                     <td className={`px-4 py-3 text-center font-bold tabular-nums ${isVoided ? "text-slate-400 line-through" : "text-slate-800"}`}>{fmt(entry.amount)}</td>
                     <td className="px-4 py-3 text-center"><span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${getTypeBadgeStyle(entry.type, isVoided)}`}>{entry.type}</span></td>
