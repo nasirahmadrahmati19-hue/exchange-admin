@@ -340,11 +340,8 @@ export default function CustomersPage() {
   
   const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
 
-  useEffect(() => {
-    if (!customers.find(c => c.id === EXCHANGE_ACCOUNT_ID)) {
-      setCustomers(prev => [EXCHANGE_ACCOUNT_CUSTOMER, ...prev]);
-    }
-  }, []);
+  // ✅ حذف شد: useEffect خطرناکی که سعی می‌کرد حساب صرافی را در دیتابیس ذخیره کند و باعث Race Condition می‌شد.
+  // حساب صرافی و صندوق به صورت مجازی (Virtual) در filteredCustomers و allBalances مدیریت می‌شوند و نیازی به ذخیره در DB ندارند.
 
   const [transactions, setTransactions] = useSyncedState<any[]>(TRANSACTIONS_KEY, []);
   const [hawalas, setHawalas] = useSyncedState<any[]>(HAWALAS_KEY, []);
@@ -371,7 +368,6 @@ export default function CustomersPage() {
   const [loanCurrency, setLoanCurrency] = useState<Currency>("AFN");
   const [loanReason, setLoanReason] = useState("");
 
-  // ✅ جدید: استیت‌های مربوط به مودال واریز و برداشت مستقیم
   const [cwModalOpen, setCwModalOpen] = useState(false);
   const [cwType, setCwType] = useState<"deposit" | "withdraw">("deposit");
   const [cwAmount, setCwAmount] = useState("");
@@ -434,14 +430,18 @@ export default function CustomersPage() {
     const cashBoxOption = CASH_BOX_CUSTOMER;
     const exchangeOption = EXCHANGE_ACCOUNT_CUSTOMER;
     const q = normalizeDigits(search.trim()).toLowerCase();
+    
+    // فیلتر کردن حساب صرافی از لیست اصلی برای جلوگیری از تکرار
     const filtered = customers.filter(c => {
       if (c.id === EXCHANGE_ACCOUNT_ID) return false; 
       if (!q) return true;
       return [c.name, c.phone || "", c.tazkira || "", c.telegram || "", c.id].some(f => normalizeDigits(String(f)).toLowerCase().includes(q));
     });
+
     const result: Customer[] = [];
     if (!q || CASH_BOX_NAME.includes(q)) result.push(cashBoxOption);
     if (!q || EXCHANGE_ACCOUNT_NAME.includes(q)) result.push(exchangeOption);
+    
     result.push(...filtered);
     return result;
   }, [customers, search]);
@@ -493,7 +493,6 @@ export default function CustomersPage() {
     setLoanModalType(type); setLoanAmount(""); setLoanCurrency("AFN"); setLoanReason(""); setLoanModalOpen(true);
   };
 
-  // ✅ جدید: تابع پردازش واریز و برداشت مستقیم از صندوق
   const processCashOperation = () => {
     if (!selectedCustomer || selectedCustomer.id === CASH_BOX_ID || selectedCustomer.id === EXCHANGE_ACCOUNT_ID) {
       showToast("این عملیات فقط برای مشتریان عادی امکان‌پذیر است.");
@@ -512,20 +511,16 @@ export default function CustomersPage() {
     const newEntries: any[] = [];
 
     if (cwType === "deposit") {
-      // ۱. ثبت برای مشتری (ورودی)
       newEntries.push({
         id: generateId(), trackingCode: `${trackingCode}-CUST`, date: now, type: "customer_deposit", currency: cwCurrency, amount: amt, direction: "in", reason: `واریز از صندوق - ${reason}`, balanceAfter: 0, customerId: selectedCustomer.id, customerName: selectedCustomer.name, counterPartyId: CASH_BOX_ID, status: "active"
       });
-      // ۲. ثبت برای صندوق (خروجی)
       newEntries.push({
         id: generateId(), trackingCode: `${trackingCode}-CASH`, date: now, type: "customer_withdraw", currency: cwCurrency, amount: amt, direction: "out", reason: `واریز به ${selectedCustomer.name} - ${reason}`, balanceAfter: 0, customerId: CASH_BOX_ID, customerName: CASH_BOX_NAME, counterPartyId: selectedCustomer.id, status: "active"
       });
     } else {
-      // ۱. ثبت برای مشتری (خروجی)
       newEntries.push({
         id: generateId(), trackingCode: `${trackingCode}-CUST`, date: now, type: "customer_withdraw", currency: cwCurrency, amount: amt, direction: "out", reason: `برداشت به صندوق - ${reason}`, balanceAfter: 0, customerId: selectedCustomer.id, customerName: selectedCustomer.name, counterPartyId: CASH_BOX_ID, status: "active"
       });
-      // ۲. ثبت برای صندوق (ورودی)
       newEntries.push({
         id: generateId(), trackingCode: `${trackingCode}-CASH`, date: now, type: "customer_deposit", currency: cwCurrency, amount: amt, direction: "in", reason: `برداشت از ${selectedCustomer.name} - ${reason}`, balanceAfter: 0, customerId: CASH_BOX_ID, customerName: CASH_BOX_NAME, counterPartyId: selectedCustomer.id, status: "active"
       });
@@ -579,13 +574,22 @@ export default function CustomersPage() {
     setOpenMenuId(null);
     const c = customers.find(x => x.id === id);
     if (!c) return;
+    
+    // ✅ حفاظت پیشرفته: جلوگیری از حذف تصادفی
+    const confirmName = prompt(`برای تأیید حذف، نام مشتری "${c.name}" را دقیقاً تایپ کنید:`);
+    if (confirmName !== c.name) {
+      showToast("❌ نام وارد شده مطابقت ندارد. عملیات لغو شد.");
+      return;
+    }
+
     const hasBal = currencies.some(cur => allBalances[id][cur] !== 0);
     const cnt = ledger.filter(e => e.customerId === id).length;
-    let msg = `آیا از حذف "${c.name}" مطمئن هستید؟`;
-    if (cnt > 0) msg += `\n⚠️ ${cnt} رویداد مالی دارد.`;
-    if (hasBal) msg += `\n⚠️ موجودی غیر صفر دارد!`;
-    if (!window.confirm(msg)) return;
     
+    if (hasBal) {
+      alert("⚠️ هشدار: این مشتری دارای موجودی است! لطفاً قبل از حذف، موجودی را صفر کنید.");
+      return;
+    }
+
     setTransactions(prev => prev.map((t: any) => { if (t.customerId === id || t.customerName === c.name || t.senderId === id || t.senderName === c.name || t.receiverId === id || t.receiverName === c.name) return { ...t, customerDeleted: true }; return t; }));
     setHawalas(prev => prev.map((h: any) => { if (h.senderId === id || h.senderName === c.name || h.receiverId === id || h.receiverName === c.name) return { ...h, customerDeleted: true }; return h; }));
     setCashEntries(prev => prev.map((ce: any) => { if (ce.customerId === id || ce.customerName === c.name) return { ...ce, customerDeleted: true }; return ce; }));
@@ -608,6 +612,10 @@ export default function CustomersPage() {
   const submitNew = () => {
     const errs = validateForm(); setErrors(errs);
     if (Object.keys(errs).length > 0) { showToast("فیلدها را تکمیل کنید."); return; }
+    
+    // ✅ حفاظت: جلوگیری از ثبت نام خالی
+    if (customers.length === 0 && !window.confirm("آیا مطمئن هستید؟ این اولین مشتری ثبت‌شده است.")) return;
+
     const nc: Customer = { id: generateId(), name: form.name.trim(), phone: form.phone.trim(), tazkira: form.tazkira.trim(), address: form.address.trim(), note: form.note.trim(), telegram: form.telegram.trim(), registeredAt: new Date().toISOString(), balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
     setCustomers(p => [...p, nc]); setForm(emptyForm); setErrors({}); setActiveTab("list");
     showToast(`"${nc.name}" ثبت شد.`);
@@ -879,7 +887,6 @@ export default function CustomersPage() {
                     </div>
                     {!isCashBox && !isExchangeAccount && (
                       <div className="flex gap-2 flex-wrap">
-                        {/* ✅ جدید: دکمه‌های واریز و برداشت مستقیم */}
                         <button onClick={() => { setCwType("deposit"); setCwAmount(""); setCwReason(""); setCwModalOpen(true); }} className={`cursor-pointer rounded-xl border px-3 py-2 text-xs font-bold ${dk ? "border-emerald-400/30 text-emerald-300 hover:bg-emerald-400/10" : "border-emerald-300 text-emerald-600 hover:bg-emerald-50"}`}>
                           <span className="flex items-center gap-1.5">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M12 21v-8.25M15.75 21V12.5m-7.5 8.5v-8.25m12-4.5L12 2.25 3.75 7.75" /></svg>
@@ -1152,7 +1159,6 @@ export default function CustomersPage() {
         </div>
       </div>
 
-      {/* ✅ جدید: مودال واریز و برداشت مستقیم */}
       {cwModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm" onClick={() => setCwModalOpen(false)}>
           <div className={`w-full max-w-md rounded-2xl border p-6 shadow-2xl ${dk ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"}`} onClick={e => e.stopPropagation()}>
