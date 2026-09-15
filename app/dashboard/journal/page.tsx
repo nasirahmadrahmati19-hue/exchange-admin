@@ -17,52 +17,40 @@ const currencyLabels: Record<Currency, string> = { AFN: "افغانی", USD: "د
 const currencyFlags: Record<Currency, string> = { AFN: "🇦🇫", USD: "🇺🇸", EUR: "🇪🇺", IRR: "🇮🇷", PKR: "🇵🇰" };
 type TxType = "واریز" | "برداشت" | "انتقال" | "تبدیل" | "هزینه";
 
-// ✅ نگاشت انواع تراکنش انگلیسی (از تب‌های دیگر) به فارسی (برای روزنامچه)
 const typeMap: Record<string, TxType> = {
-  deposit: "واریز",
-  withdrawal: "برداشت",
-  hawala_in: "انتقال",
-  hawala_out: "انتقال",
-  transfer: "انتقال",
-  buy_currency: "تبدیل",
-  sell_currency: "تبدیل",
-  exchange: "تبدیل",
-  commission: "هزینه",
-  fee: "هزینه",
-  reversal: "واریز", // تراکنش معکوس معمولاً واریز است
-  // اگر نوع از قبل فارسی بود، همان را برگردان
+  deposit: "واریز", withdrawal: "برداشت", hawala_in: "انتقال", hawala_out: "انتقال",
+  transfer: "انتقال", buy_currency: "تبدیل", sell_currency: "تبدیل", exchange: "تبدیل",
+  commission: "هزینه", fee: "هزینه", reversal: "واریز",
   "واریز": "واریز", "برداشت": "برداشت", "انتقال": "انتقال", "تبدیل": "تبدیل", "هزینه": "هزینه"
 };
 
 interface RawTransaction {
   id: string;
   timestamp: Timestamp;
-  type: string; // می‌تواند انگلیسی یا فارسی باشد
+  type: string;
   description?: string;
   note?: string;
   currency: Currency;
   amount: number;
   balanceAfter: number;
   partyId?: string;
-  partyName?: string; // ✅ تب‌های دیگر ممکن است مستقیماً نام را ذخیره کنند
+  partyName?: string;
   status: "active" | "voided";
   voidedReason?: string;
   toCurrency?: Currency;
   toAmount?: number;
 }
 
-// ✅ نرمال‌ساز: تبدیل داده‌ی خام (از هر تبی) به فرمت استاندارد روزنامچه
 function normalizeTransaction(raw: RawTransaction): RawTransaction {
   return {
     ...raw,
-    type: typeMap[raw.type] || "واریز", // تبدیل نوع انگلیسی به فارسی
-    description: raw.description || raw.note || "بدون توضیح", // استفاده از note اگر description نبود
+    type: typeMap[raw.type] || "واریز",
+    description: raw.description || raw.note || "بدون توضیح",
   };
 }
 
 const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00";
 
-// --- Helper: URL State Management ---
 function useUrlState(key: string, defaultValue: string) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -76,7 +64,6 @@ function useUrlState(key: string, defaultValue: string) {
   return [value, setValue] as const;
 }
 
-// --- توابع کمکی ---
 const customerCache: Record<string, string> = {};
 
 async function fetchCustomerName(partyId: string) {
@@ -104,7 +91,6 @@ async function voidTransactionAtomic(transactionId: string, collectionName: stri
     const txData = txSnap.data() as RawTransaction;
     if (txData.status === 'voided') throw new Error('این تراکنش قبلاً باطل شده است');
     
-    // اگر partyId دارد، موجودی را اصلاح کن
     if (txData.partyId) {
       const customerRef = doc(db, 'customers', txData.partyId);
       const customerSnap = await transaction.get(customerRef);
@@ -149,9 +135,8 @@ export default function JournalPage() {
   const [lastVisible, setLastVisible] = useState<any>(null);
   const [hasMore, setHasMore] = useState(true);
   const [voidingId, setVoidingId] = useState<string | null>(null);
-  const [sourceCollection, setSourceCollection] = useState<string>("transactions"); // ✅ ردیابی کالکشن
+  const [sourceCollection, setSourceCollection] = useState<string>("transactions");
 
-  // ۱. بارگذاری نرخ ارزها
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "appData", "exchangeRates", "rates"), (snapshot) => {
       const rates: Record<string, { rate: number }> = {};
@@ -161,12 +146,10 @@ export default function JournalPage() {
     return () => unsubscribe();
   }, []);
 
-  // ✅ ۲. تابع کمکی برای خواندن از یک کالکشن خاص
   const fetchFromCollection = useCallback(async (collectionName: string, reset: boolean) => {
     let q = query(collection(db, collectionName), orderBy("timestamp", "desc"), limit(50));
     
     if (typeFilter !== "all") {
-      // ✅ هم نوع فارسی و هم انگلیسی را چک کن (برای سازگاری با همه تب‌ها)
       const englishTypes = Object.entries(typeMap).filter(([_, fa]) => fa === typeFilter).map(([en]) => en);
       if (englishTypes.length > 0) {
         q = query(q, where("type", "in", [...englishTypes, typeFilter]));
@@ -190,8 +173,6 @@ export default function JournalPage() {
 
     const snapshot = await getDocs(q);
     let newEntries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as RawTransaction));
-    
-    // ✅ نرمال‌سازی ساختار داده
     newEntries = newEntries.map(normalizeTransaction);
     
     if (searchQuery) {
@@ -205,31 +186,28 @@ export default function JournalPage() {
     return { entries: newEntries, lastDoc: snapshot.docs[snapshot.docs.length - 1], hasMore: snapshot.docs.length === 50 };
   }, [dateRange, typeFilter, currencyFilter, searchQuery, lastVisible]);
 
-  // ✅ ۳. دریافت داده: ابتدا از transactions، اگر خالی بود از journal_entries
   const fetchEntries = useCallback(async (reset = false) => {
     setLoading(true);
     try {
-      // ابتدا از کالکشن transactions بخوان
       let result = await fetchFromCollection("transactions", reset);
       let usedCollection = "transactions";
       
-      // اگر هیچ داده‌ای نداشت، از journal_entries امتحان کن
       if (result.entries.length === 0 && reset) {
         result = await fetchFromCollection("journal_entries", reset);
         usedCollection = "journal_entries";
       }
       
       setSourceCollection(usedCollection);
-      
       setEntries(prev => reset ? result.entries : [...prev, ...result.entries]);
       setLastVisible(result.lastDoc);
       setHasMore(result.hasMore);
 
-      // ✅ بارگذاری نام مشتریان (فقط برای آن‌هایی که partyId دارند و partyName ندارند)
+      // ✅ رفع خطای TypeScript: استفاده از متغیر محلی برای کلید شیء
       result.entries.forEach(async (tx) => {
         if (tx.partyId && !tx.partyName && !customerNames[tx.partyId]) {
-          const name = await fetchCustomerName(tx.partyId);
-          setCustomerNames(prev => ({ ...prev, [tx.partyId]: name }));
+          const pid = tx.partyId; // ✅ این خط خطای TypeScript را برطرف می‌کند
+          const name = await fetchCustomerName(pid);
+          setCustomerNames(prev => ({ ...prev, [pid]: name }));
         }
       });
     } catch (error) {
@@ -241,13 +219,11 @@ export default function JournalPage() {
 
   useEffect(() => { fetchEntries(true); }, [dateRange, typeFilter, currencyFilter, searchQuery]);
 
-  // ✅ ۴. محاسبه جمع کل موجودی صندوق (از هر دو کالکشن)
   const [totals, setTotals] = useState<Record<string, number>>({});
   useEffect(() => {
     const fetchTotals = async () => {
       const totalsByCurrency: Record<string, number> = {};
       
-      // خواندن از transactions
       const q1 = query(collection(db, "transactions"), where("status", "==", "active"));
       const snap1 = await getDocs(q1);
       snap1.forEach(doc => {
@@ -257,7 +233,6 @@ export default function JournalPage() {
         else if (tx.type === "برداشت" || tx.type === "هزینه") totalsByCurrency[tx.currency] -= tx.amount;
       });
       
-      // خواندن از journal_entries
       const q2 = query(collection(db, "journal_entries"), where("status", "==", "active"));
       const snap2 = await getDocs(q2);
       snap2.forEach(doc => {
@@ -271,13 +246,11 @@ export default function JournalPage() {
     };
     
     fetchTotals();
-    // Real-time با onSnapshot برای هر دو کالکشن
     const unsub1 = onSnapshot(query(collection(db, "transactions"), where("status", "==", "active")), fetchTotals);
     const unsub2 = onSnapshot(query(collection(db, "journal_entries"), where("status", "==", "active")), fetchTotals);
     return () => { unsub1(); unsub2(); };
   }, []);
 
-  // ۵. خلاصه دوره
   const summary = useMemo(() => {
     let deposits = 0, withdrawals = 0, transfers = 0, count = 0;
     entries.forEach(e => {
@@ -291,7 +264,6 @@ export default function JournalPage() {
     return { count, deposits, withdrawals, transfers };
   }, [entries, exchangeRates]);
 
-  // ۶. ابطال اتمیک (با پشتیبانی از هر دو کالکشن)
   const handleVoid = async (entry: RawTransaction) => {
     const reason = prompt("دلیل ابطال این تراکنش را وارد کنید:");
     if (!reason) return;
@@ -307,7 +279,6 @@ export default function JournalPage() {
     }
   };
 
-  // ۷. خروجی CSV
   const handleExport = () => {
     const headers = ["شماره سند", "تاریخ/ساعت", "شرح معامله", "مشتری", "ارز", "مبلغ", "نوع", "تراز پس از معامله", "وضعیت"];
     const escapeCsv = (val: any) => `"${String(val ?? "").replace(/"/g, '""')}"`;
