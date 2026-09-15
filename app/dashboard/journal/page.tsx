@@ -283,7 +283,7 @@ export default function JournalPage() {
             </div>
           </section>
 
-          {/* ═══════════ خلاصه دوره ═══════════ */}
+          {/* ═══════════ خلاصه دوره (گرید یکپارچه ۶ تایی) ═══════════ */}
           <section className="cs-up space-y-4 md:space-y-5" style={{ animationDelay: "140ms" }}>
             <div className={`relative overflow-hidden rounded-2xl md:rounded-3xl border-2 p-5 md:p-6 transition-all duration-300 ${dk ? "border-emerald-400/30 bg-gradient-to-br from-emerald-900/30 via-slate-900/60 to-teal-900/30" : "border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50"}`}>
               <div className={`absolute -top-24 -left-24 h-48 w-48 rounded-full blur-3xl opacity-20 ${dk ? "bg-emerald-400" : "bg-emerald-300"}`} />
@@ -298,19 +298,18 @@ export default function JournalPage() {
                 </div>
               </div>
 
-              {/* کارت تعداد کل */}
-              <div className="relative flex flex-wrap gap-3 mb-6">
-                <div className={`rounded-2xl p-4 border text-center min-w-[160px] flex-1 max-w-xs transition-all hover:scale-[1.02] ${dk ? "border-slate-700 bg-slate-900/60" : "border-emerald-100 bg-white/90 shadow-sm"}`}>
-                  <div className={`text-xs font-black mb-2 ${subText}`}>تعداد کل تراکنش‌ها</div>
-                  <div className={`text-3xl md:text-4xl font-black tabular-nums leading-none ${dk ? "text-emerald-300" : "text-emerald-700"}`}>{summary.count}</div>
+              {/* ✅ گرید یکپارچه: ۱ کارت تعداد کل + ۵ کارت ارزها (همه هم‌اندازه) */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 md:gap-4">
+                
+                {/* کارت ۱: تعداد کل (هم‌استایل با کارت‌های ارز) */}
+                <div className={`rounded-xl p-3 border text-center transition-all duration-300 hover:scale-[1.02] flex flex-col justify-center ${dk ? "border-slate-700 bg-slate-900/50" : "border-slate-200 bg-white/80"}`}>
+                  <div className={`text-[11px] font-black mb-2 ${dk ? "text-slate-300" : "text-slate-600"}`}>تعداد کل</div>
+                  <div className="flex-1 flex items-center justify-center">
+                    <span className={`text-3xl font-black tabular-nums leading-none ${dk ? "text-emerald-300" : "text-emerald-700"}`}>{summary.count}</span>
+                  </div>
                 </div>
-              </div>
 
-              {/* گردش ۵ ارز */}
-              <h4 className={`text-sm font-black mb-3 flex items-center border-t pt-4 ${dk ? "text-slate-300 border-slate-700/50" : "text-slate-700 border-slate-200"}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ml-2 ${dk ? "bg-blue-400" : "bg-blue-600"}`}></span> گردش و تغییر خالص ارزها
-              </h4>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+                {/* کارت‌های ۲ تا ۶: گردش ۵ ارز */}
                 {currencies.map((curr) => {
                   const data = currencyPeriodSummary[curr];
                   return (
