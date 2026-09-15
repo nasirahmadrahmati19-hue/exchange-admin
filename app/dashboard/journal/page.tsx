@@ -115,7 +115,6 @@ export default function JournalPage() {
   const [currencyFilter, setCurrencyFilter] = useUrlState("currency", "all");
   const [searchQuery, setSearchQuery] = useUrlState("search", "");
 
-  // ✅ استفاده از useSyncedState برای ارتباط ۱۰۰٪ با سایر تب‌ها
   const [transactions, setTransactions] = useSyncedState<any[]>(TRANSACTIONS_KEY, []);
   const [hawalas, setHawalas] = useSyncedState<any[]>(HAWALAS_KEY, []);
   const [cashEntries, setCashEntries] = useSyncedState<any[]>(CASH_KEY, []);
@@ -123,7 +122,6 @@ export default function JournalPage() {
 
   const [voidingId, setVoidingId] = useState<string | null>(null);
 
-  // ✅ ادغام هوشمند تمام داده‌ها در یک آرایه واحد و مرتب‌سازی بر اساس تاریخ
   const unifiedEntries = useMemo<UnifiedJournalEntry[]>(() => {
     const entries: UnifiedJournalEntry[] = [];
 
@@ -161,7 +159,6 @@ export default function JournalPage() {
     cashEntries.forEach((ce: any) => {
       if (!ce) return;
       if (ce.status === "voided") return;
-      // جلوگیری از شمارش دوباره اسنادی که توسط معاملات یا حواله‌ها ساخته شده‌اند
       if (ce.linkedExchangeId || ce.linkedTransferId || ce.linkedConvertId || ce.linkedHawalaId || ce.linkedHawalaSettleId) return;
       
       let type: TxType = "هزینه";
@@ -181,7 +178,6 @@ export default function JournalPage() {
     return entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [transactions, hawalas, cashEntries]);
 
-  // ✅ فیلتر کردن پیشرفته سمت کلاینت
   const filteredEntries = useMemo(() => {
     return unifiedEntries.filter((e: any) => {
       if (e.status === "voided" && !e.voidedReason) return false;
@@ -222,7 +218,6 @@ export default function JournalPage() {
     return { count, deposits, withdrawals, transfers };
   }, [filteredEntries]);
 
-  // ✅ منطق ابطال امن و یکپارچه
   const handleVoid = async (entry: UnifiedJournalEntry) => {
     const reason = prompt("دلیل ابطال این تراکنش را وارد کنید:");
     if (!reason) return;
@@ -253,7 +248,6 @@ export default function JournalPage() {
     }
   };
 
-  // ✅ اصلاح خطای TypeScript: اضافه کردن `as Currency`
   const handleExport = () => {
     const headers = ["شماره سند", "تاریخ/ساعت", "شرح معامله", "مشتری", "ارز", "مبلغ", "نوع", "وضعیت"];
     const escapeCsv = (val: any) => `"${String(val ?? "").replace(/"/g, '""')}"`;
@@ -262,7 +256,7 @@ export default function JournalPage() {
       escapeCsv(new Date(e.date).toLocaleString("fa-IR")),
       escapeCsv(e.description),
       escapeCsv(e.partyName),
-      escapeCsv(currencyLabels[e.currency as Currency]), // ✅ FIX: Added `as Currency`
+      escapeCsv(currencyLabels[e.currency as Currency]),
       e.amount,
       escapeCsv(e.type),
       escapeCsv(e.status === "voided" ? `باطل شده (${e.voidedReason})` : "فعال")
@@ -302,6 +296,7 @@ export default function JournalPage() {
         </button>
       </div>
 
+      {/* بخش فیلترها */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-4 gap-4">
         <select value={dateRange} onChange={e => setDateRange(e.target.value)} className="border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white">
           <option value="all">همه زمان‌ها</option><option value="today">امروز</option><option value="week">این هفته</option><option value="month">این ماه</option>
@@ -320,6 +315,33 @@ export default function JournalPage() {
         </div>
       </div>
 
+      {/* ✅ تغییر ۱: انتقال خلاصه دوره به بالای صفحه (زیر فیلترها و بالای جدول) */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+        <h3 className="text-base font-bold text-slate-800 mb-4 flex items-center">
+          <span className="w-2 h-2 bg-emerald-500 rounded-full ml-2"></span>
+          خلاصه دوره انتخاب‌شده (بر اساس فیلترهای اعمال‌شده)
+        </h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="bg-slate-50 rounded-lg p-3 border border-slate-100 text-center">
+            <div className="text-xs text-slate-500 mb-1">تعداد کل اسناد</div>
+            <div className="text-xl font-bold text-slate-800 tabular-nums">{summary.count}</div>
+          </div>
+          <div className="bg-emerald-50 rounded-lg p-3 border border-emerald-100 text-center">
+            <div className="text-xs text-emerald-600 mb-1">مجموع واریزها</div>
+            <div className="text-xl font-bold text-emerald-700 tabular-nums">{fmt(summary.deposits)}</div>
+          </div>
+          <div className="bg-rose-50 rounded-lg p-3 border border-rose-100 text-center">
+            <div className="text-xs text-rose-600 mb-1">مجموع برداشت/هزینه</div>
+            <div className="text-xl font-bold text-rose-700 tabular-nums">{fmt(summary.withdrawals)}</div>
+          </div>
+          <div className="bg-blue-50 rounded-lg p-3 border border-blue-100 text-center">
+            <div className="text-xs text-blue-600 mb-1">مجموع انتقال/حواله</div>
+            <div className="text-xl font-bold text-blue-700 tabular-nums">{fmt(summary.transfers)}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* بخش جدول اصلی */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-right">
@@ -352,7 +374,6 @@ export default function JournalPage() {
                       </td>
                       <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{entry.partyName}</td>
                       <td className="px-4 py-3 text-center text-slate-600 whitespace-nowrap">
-                        {/* ✅ اصلاح خطای TypeScript: اضافه کردن `as Currency` */}
                         <span className="ml-1">{currencyFlags[entry.currency as Currency]}</span>{currencyLabels[entry.currency as Currency]}
                       </td>
                       <td className={`px-4 py-3 text-center font-bold tabular-nums ${isVoided ? "text-slate-400 line-through" : (entry.type === "واریز" ? "text-emerald-600" : "text-rose-600")}`}>
@@ -376,37 +397,16 @@ export default function JournalPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-          <h3 className="text-base font-bold text-slate-800 mb-4 flex items-center"><span className="w-2 h-2 bg-emerald-500 rounded-full ml-2"></span>خلاصه دوره انتخاب‌شده (بر اساس فیلتر)</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="bg-slate-50 rounded-lg p-3 border border-slate-100 text-center">
-              <div className="text-xs text-slate-500 mb-1">تعداد کل</div>
-              <div className="text-xl font-bold text-slate-800 tabular-nums">{summary.count}</div>
-            </div>
-            <div className="bg-emerald-50 rounded-lg p-3 border border-emerald-100 text-center">
-              <div className="text-xs text-emerald-600 mb-1">مجموع واریز</div>
-              <div className="text-xl font-bold text-emerald-700 tabular-nums">{fmt(summary.deposits)}</div>
-            </div>
-            <div className="bg-rose-50 rounded-lg p-3 border border-rose-100 text-center">
-              <div className="text-xs text-rose-600 mb-1">مجموع برداشت/هزینه</div>
-              <div className="text-xl font-bold text-rose-700 tabular-nums">{fmt(summary.withdrawals)}</div>
-            </div>
-            <div className="bg-blue-50 rounded-lg p-3 border border-blue-100 text-center">
-              <div className="text-xs text-blue-600 mb-1">مجموع انتقال/حواله</div>
-              <div className="text-xl font-bold text-blue-700 tabular-nums">{fmt(summary.transfers)}</div>
-            </div>
-          </div>
-        </div>
-        
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-          <h3 className="text-base font-bold text-slate-800 mb-4 flex items-center"><span className="w-2 h-2 bg-blue-500 rounded-full ml-2"></span>راهنما</h3>
-          <ul className="text-sm text-slate-600 space-y-2 list-disc pr-4">
-            <li>این جدول به صورت <b>آنلاین و لحظه‌ای</b> با تب‌های معاملات، حواله و صندوق همگام است.</li>
-            <li>برای ابطال حواله، باید به تب "حواله‌جات" مراجعه کنید تا زنجیره اسناد به درستی معکوس شود.</li>
-            <li>خروجی CSV دقیقاً مطابق با فیلترهای اعمال‌شده در همین صفحه تولید می‌شود.</li>
-          </ul>
-        </div>
+      {/* ✅ تغییر ۲: اصلاح متن راهنما برای بازتاب دقیق عملکرد آفلاین/آنلاین */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+        <h3 className="text-base font-bold text-slate-800 mb-4 flex items-center">
+          <span className="w-2 h-2 bg-blue-500 rounded-full ml-2"></span>راهنمای سیستم
+        </h3>
+        <ul className="text-sm text-slate-600 space-y-2 list-disc pr-4">
+          <li>این جدول به صورت <b>آفلاین و آنلاین</b> کار می‌کند. تمام داده‌ها بلافاصله در حافظه امن دستگاه شما ذخیره شده و به محض اتصال به اینترنت، به صورت خودکار با سرور همگام‌سازی (Sync) می‌شوند.</li>
+          <li>برای ابطال حواله، باید مستقیماً به تب "حواله‌جات" مراجعه کنید تا زنجیره اسناد و موجودی‌ها به درستی و به صورت اتمیک معکوس شود.</li>
+          <li>خروجی CSV دقیقاً مطابق با فیلترهای اعمال‌شده در همین صفحه (تاریخ، نوع، ارز و جستجو) تولید می‌شود.</li>
+        </ul>
       </div>
     </div>
   );
