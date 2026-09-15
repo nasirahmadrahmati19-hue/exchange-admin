@@ -5,7 +5,7 @@ import { doc, setDoc, onSnapshot } from "firebase/firestore";
 import { db } from "./firebase";
 
 // ============================================================
-// توابع کمکی (دقیقاً مطابق کد اصلی شما)
+// توابع کمکی
 // ============================================================
 function removeUndefinedFields(obj: any): any {
   if (obj === null || obj === undefined) return obj;
@@ -22,7 +22,7 @@ function removeUndefinedFields(obj: any): any {
 }
 
 // ============================================================
-// ✅ لایه ذخیره‌سازی ترکیبی: localStorage + IndexedDB
+// لایه ذخیره‌سازی ترکیبی: localStorage + IndexedDB
 // ============================================================
 const IDB_NAME = "AppSyncDB";
 const IDB_STORE = "syncedData";
@@ -96,28 +96,23 @@ function saveToLS<T>(key: string, value: T): boolean {
     localStorage.setItem(LS_PREFIX + key, JSON.stringify(value));
     return true;
   } catch (error) {
-    // Quota exceeded - داده خیلی بزرگ است
     console.warn(`[useSyncedState] LS quota exceeded for ${key}, falling back to IDB`);
     return false;
   }
 }
 
-// ============================================================
-// خواندن ترکیبی: ابتدا IDB، سپس LS
-// ============================================================
 async function readData<T>(key: string, fallback: T): Promise<T> {
-  const idbData = await readFromIDB<T>(key);
-  if (idbData !== undefined) return idbData;
-  
+  // اول localStorage (سریع‌تر)
   const lsData = readFromLS<T>(key);
   if (lsData !== undefined) return lsData;
+  
+  // سپس IndexedDB
+  const idbData = await readFromIDB<T>(key);
+  if (idbData !== undefined) return idbData;
   
   return fallback;
 }
 
-// ============================================================
-// نوشتن ترکیبی: ابتدا LS، اگر پر شد به IDB
-// ============================================================
 async function saveData<T>(key: string, value: T): Promise<void> {
   const lsSuccess = saveToLS(key, value);
   
@@ -134,20 +129,27 @@ async function saveData<T>(key: string, value: T): Promise<void> {
 }
 
 // ============================================================
-// ✅ هوک اصلی (بدون تغییر در نحوه فراخوانی)
+// ✅ هوک اصلی - نسخه نهایی و ضد گلوله
 // ============================================================
 export function useSyncedState<T>(key: string, initialValue: T) {
   const isMounted = useRef(true);
   const [value, setValue] = useState<T>(initialValue);
   const [isLoaded, setIsLoaded] = useState(false);
+  
+  // ✅ ref برای نگهداری آخرین مقدار (جلوگیری از Stale Closure)
+  const valueRef = useRef<T>(initialValue);
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
 
-  // بارگذاری اولیه از storage
+  // بارگذاری اولیه
   useEffect(() => {
     let ignore = false;
     const loadInitialData = async () => {
       const cachedValue = await readData<T>(key, initialValue);
       if (!ignore && isMounted.current) {
         setValue(cachedValue);
+        valueRef.current = cachedValue; // ✅ sync ref
         setIsLoaded(true);
       }
     };
@@ -159,7 +161,7 @@ export function useSyncedState<T>(key: string, initialValue: T) {
     };
   }, [key]);
 
-  // ✅ حیاتی: گوش دادن به تغییرات از تب‌های دیگر مرورگر
+  // ✅ گوش دادن به تغییرات تب‌های دیگر
   useEffect(() => {
     if (typeof window === "undefined") return;
     
@@ -169,6 +171,7 @@ export function useSyncedState<T>(key: string, initialValue: T) {
           const newValue = JSON.parse(e.newValue) as T;
           setValue(prev => {
             if (JSON.stringify(prev) !== JSON.stringify(newValue)) {
+              valueRef.current = newValue; // ✅ sync ref
               return newValue;
             }
             return prev;
@@ -181,7 +184,7 @@ export function useSyncedState<T>(key: string, initialValue: T) {
     return () => window.removeEventListener("storage", handleStorage);
   }, [key]);
 
-  // گوش دادن به تغییرات فایربیس (sync بین دستگاه‌ها)
+  // گوش دادن به تغییرات فایربیس
   useEffect(() => {
     if (!isLoaded) return;
     
@@ -202,6 +205,7 @@ export function useSyncedState<T>(key: string, initialValue: T) {
               const newJson = JSON.stringify(firebaseValue);
               
               if (prevJson !== newJson) {
+                valueRef.current = firebaseValue; // ✅ sync ref
                 saveData(key, firebaseValue).catch(console.error);
                 return firebaseValue;
               }
@@ -221,16 +225,18 @@ export function useSyncedState<T>(key: string, initialValue: T) {
     };
   }, [key, isLoaded]);
 
-  // تابع به‌روزرسانی
+  // ✅ تابع به‌روزرسانی - استفاده از valueRef برای جلوگیری از Stale Closure
   const setSyncedValue = useCallback(async (newValue: T | ((prev: T) => T)): Promise<T> => {
+    // ✅ استفاده از valueRef.current به جای value (همیشه آخرین نسخه)
     const resolvedValue = typeof newValue === "function" 
-      ? (newValue as (prev: T) => T)(value)
+      ? (newValue as (prev: T) => T)(valueRef.current)
       : newValue;
 
     // ۱. آپدیت فوری State ری‌اکت
     setValue(resolvedValue);
+    valueRef.current = resolvedValue; // ✅ sync ref
     
-    // ۲. ذخیره در storage محلی (LS یا IDB)
+    // ۲. ذخیره در storage محلی
     await saveData(key, resolvedValue);
 
     // ۳. ذخیره در فایربیس
@@ -251,7 +257,7 @@ export function useSyncedState<T>(key: string, initialValue: T) {
       console.error(`[useSyncedState] ❌ Error saving ${key} to Firebase:`, error);
       throw error;
     }
-  }, [key, value]);
+  }, [key]); // ✅ value از dependency array حذف شد!
 
   return [value, setSyncedValue] as const;
 }
