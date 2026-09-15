@@ -1,15 +1,80 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSyncedState } from "../lib/useSyncedState";
 import { TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY, CUSTOMERS_KEY } from "../lib/defaultData";
-import { applyBalanceChanges, getBalanceChangesForTransaction } from "../lib/helpers"; // مطمئن شوید این توابع در فایل helpers شما موجود هستند
 
+// ============================================================
+// ✅ تعریف توابع کمکی به صورت محلی برای جلوگیری از خطای Import
+// ============================================================
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
 const currencyLabels: Record<Currency, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
 const currencyFlags: Record<Currency, string> = { AFN: "🇦🇫", USD: "🇺🇸", EUR: "🇪🇺", IRR: "🇮🇷", PKR: "🇵🇰" };
+
+const CASH_BOX_ID = "CASH_BOX";
+const EXCHANGE_ACCOUNT_ID = "EXCHANGE_ACCOUNT";
+
+type BalanceChange = { customerId?: string; customerName: string; currency: Currency; amount: number; };
+
+function applyBalanceChanges(customers: any[], changes: BalanceChange[]): any[] {
+  return customers.map(c => {
+    if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) return c;
+    const cc = changes.filter(ch => ch.customerId === c.id);
+    if (cc.length === 0) return c;
+    const nb = { ...c.balances };
+    for (const ch of cc) {
+      if (nb[ch.currency] === undefined) nb[ch.currency] = 0;
+      nb[ch.currency] = (nb[ch.currency] || 0) + ch.amount;
+    }
+    return { ...c, balances: nb };
+  });
+}
+
+function getBalanceChangesForTransaction(tx: any, action: "register" | "reverse"): BalanceChange[] {
+  const changes: BalanceChange[] = [];
+  const sign = action === "register" ? 1 : -1;
+  
+  if (tx.type === "exchange" && tx.customerId && tx.customerId !== CASH_BOX_ID && tx.customerId !== EXCHANGE_ACCOUNT_ID) {
+    if (tx.dealType === "sell") {
+      changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.fromCurrency, amount: -tx.fromAmount * sign });
+    } else if (tx.dealType === "buy") {
+      changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.toCurrency, amount: tx.toAmount * sign });
+    } else {
+      changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.fromCurrency, amount: -tx.fromAmount * sign });
+      changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.toCurrency, amount: tx.toAmount * sign });
+    }
+    if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
+      changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.commissionCurrency, amount: -tx.commission * sign });
+    }
+  }
+  
+  if (tx.type === "transfer") {
+    if (tx.senderId && tx.senderId !== CASH_BOX_ID && tx.senderId !== EXCHANGE_ACCOUNT_ID) {
+      changes.push({ customerId: tx.senderId, customerName: tx.senderName || "", currency: tx.fromCurrency, amount: -tx.fromAmount * sign });
+      if (tx.commissionPayer === "sender" && tx.commission && tx.commission > 0 && tx.commissionCurrency) {
+        changes.push({ customerId: tx.senderId, customerName: tx.senderName || "", currency: tx.commissionCurrency, amount: -tx.commission * sign });
+      }
+    }
+    if (tx.receiverId && tx.receiverId !== CASH_BOX_ID && tx.receiverId !== EXCHANGE_ACCOUNT_ID) {
+      changes.push({ customerId: tx.receiverId, customerName: tx.receiverName || "", currency: tx.toCurrency, amount: tx.toAmount * sign });
+      if (tx.commissionPayer === "receiver" && tx.commission && tx.commission > 0 && tx.commissionCurrency) {
+        changes.push({ customerId: tx.receiverId, customerName: tx.receiverName || "", currency: tx.commissionCurrency, amount: -tx.commission * sign });
+      }
+    }
+  }
+  
+  if (tx.type === "convert" && tx.customerId && tx.customerId !== CASH_BOX_ID && tx.customerId !== EXCHANGE_ACCOUNT_ID) {
+    changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.fromCurrency, amount: -tx.fromAmount * sign });
+    changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.toCurrency, amount: tx.toAmount * sign });
+    if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
+      changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.commissionCurrency, amount: -tx.commission * sign });
+    }
+  }
+  return changes;
+}
+// ============================================================
 
 type TxType = "واریز" | "برداشت" | "انتقال" | "تبدیل" | "هزینه" | "حواله";
 
@@ -50,26 +115,25 @@ export default function JournalPage() {
   const [currencyFilter, setCurrencyFilter] = useUrlState("currency", "all");
   const [searchQuery, setSearchQuery] = useUrlState("search", "");
 
-  // ✅ ۱. استفاده از useSyncedState برای ارتباط ۱۰۰٪ با سایر تب‌ها
+  // ✅ استفاده از useSyncedState برای ارتباط ۱۰۰٪ با سایر تب‌ها
   const [transactions, setTransactions] = useSyncedState<any[]>(TRANSACTIONS_KEY, []);
   const [hawalas, setHawalas] = useSyncedState<any[]>(HAWALAS_KEY, []);
   const [cashEntries, setCashEntries] = useSyncedState<any[]>(CASH_KEY, []);
-  const [customers] = useSyncedState<any[]>(CUSTOMERS_KEY, []);
+  const [customers, setCustomers] = useSyncedState<any[]>(CUSTOMERS_KEY, []);
 
   const [voidingId, setVoidingId] = useState<string | null>(null);
 
-  // ✅ ۲. ادغام هوشمند تمام داده‌ها در یک آرایه واحد و مرتب‌سازی بر اساس تاریخ
+  // ✅ ادغام هوشمند تمام داده‌ها در یک آرایه واحد و مرتب‌سازی بر اساس تاریخ
   const unifiedEntries = useMemo<UnifiedJournalEntry[]>(() => {
     const entries: UnifiedJournalEntry[] = [];
 
-    // الف) پردازش معاملات (Transactions)
     transactions.forEach((tx: any) => {
-      if (tx.status === "voided" && !tx.voidedReason) return; // فقط voidedهایی که دلیل دارند را نگه دار (یا همه را بسته به نیاز)
+      if (tx.status === "voided" && !tx.voidedReason) return;
       let type: TxType = "تبدیل";
       if (tx.type === "exchange") type = tx.dealType === "buy" ? "واریز" : "برداشت";
       else if (tx.type === "transfer") type = "انتقال";
       
-      const partyName = tx.type === "transfer" ? `${tx.senderName || "نامشخص"} به ${tx.receiverName || "نامشخص"}` : (tx.customerName || "نامشخص");
+      const partyName = tx.type === "transfer" ? `${tx.senderName || "—"} به ${tx.receiverName || "—"}` : (tx.customerName || "مشتری");
       
       entries.push({
         id: tx.id, date: tx.date, type, description: tx.description || `${tx.type} ${tx.fromCurrency} به ${tx.toCurrency}`,
@@ -78,11 +142,10 @@ export default function JournalPage() {
       });
     });
 
-    // ب) پردازش حواله‌ها (Hawalas)
     hawalas.forEach((h: any) => {
       if (h.status === "cancelled") return;
       entries.push({
-        id: h.id, date: h.date, type: "حواله", description: `حواله به ${h.receiverName} (${h.destinationText})`,
+        id: h.id, date: h.date, type: "حواله", description: `حواله به ${h.receiverName} (${h.destinationText || ""})`,
         partyName: h.senderName, partyId: h.senderId, currency: h.currencyFrom, amount: h.amountFrom,
         status: h.status === "paid" ? "active" : "active", source: "hawala", sourceId: h.id
       });
@@ -95,10 +158,8 @@ export default function JournalPage() {
       }
     });
 
-    // ج) پردازش اسناد صندوق (Cash Entries)
     cashEntries.forEach((ce: any) => {
       if (ce.status === "voided") return;
-      // جلوگیری از شمارش دوباره اسنادی که توسط معاملات یا حواله‌ها ساخته شده‌اند
       if (ce.linkedExchangeId || ce.linkedTransferId || ce.linkedConvertId || ce.linkedHawalaId || ce.linkedHawalaSettleId) return;
       
       let type: TxType = "هزینه";
@@ -113,15 +174,13 @@ export default function JournalPage() {
       });
     });
 
-    // مرتب‌سازی بر اساس تاریخ (جدیدترین اول)
     return entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [transactions, hawalas, cashEntries]);
 
-  // ✅ ۳. فیلتر کردن پیشرفته سمت کلاینت (سریع و بدون نیاز به ایندکس فایربیس)
+  // ✅ فیلتر کردن پیشرفته سمت کلاینت
   const filteredEntries = useMemo(() => {
-    return unifiedEntries.filter(e => {
-      if (e.status === "voided" && !e.voidedReason) return false; // مخفی کردن voidedهای ناقص
-      
+    return unifiedEntries.filter((e: any) => {
+      if (e.status === "voided" && !e.voidedReason) return false;
       if (typeFilter !== "all" && e.type !== typeFilter) return false;
       if (currencyFilter !== "all" && e.currency !== currencyFilter) return false;
       
@@ -146,10 +205,10 @@ export default function JournalPage() {
     });
   }, [unifiedEntries, dateRange, typeFilter, currencyFilter, searchQuery]);
 
-  // ✅ ۴. محاسبه آنی و سبک مجموع‌ها بر اساس داده‌های فیلترشده
+  // ✅ محاسبه آنی و سبک مجموع‌ها
   const summary = useMemo(() => {
     let deposits = 0, withdrawals = 0, transfers = 0, count = 0;
-    filteredEntries.forEach(e => {
+    filteredEntries.forEach((e: any) => {
       if (e.status === "voided") return;
       count++;
       if (e.type === "واریز") deposits += e.amount;
@@ -159,7 +218,7 @@ export default function JournalPage() {
     return { count, deposits, withdrawals, transfers };
   }, [filteredEntries]);
 
-  // ✅ ۵. منطق ابطال امن و یکپارچه (بدون تداخل با useSyncedState)
+  // ✅ منطق ابطال امن و یکپارچه
   const handleVoid = async (entry: UnifiedJournalEntry) => {
     const reason = prompt("دلیل ابطال این تراکنش را وارد کنید:");
     if (!reason) return;
@@ -167,18 +226,15 @@ export default function JournalPage() {
     setVoidingId(entry.id);
     try {
       if (entry.source === "transaction") {
-        const tx = transactions.find(t => t.id === entry.sourceId);
+        const tx = transactions.find((t: any) => t.id === entry.sourceId);
         if (tx) {
-          // ۱. معکوس کردن موجودی مشتری
-          setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForTransaction(tx, "reverse")));
-          // ۲. تغییر وضعیت به voided
-          setTransactions(prev => prev.map(t => t.id === entry.sourceId ? { ...t, status: "voided", voidedReason: reason } : t));
+          setCustomers((prev: any) => applyBalanceChanges(prev, getBalanceChangesForTransaction(tx, "reverse")));
+          setTransactions((prev: any) => prev.map((t: any) => t.id === entry.sourceId ? { ...t, status: "voided", voidedReason: reason } : t));
         }
       } else if (entry.source === "cash") {
-        const ce = cashEntries.find(c => c.id === entry.sourceId);
+        const ce = cashEntries.find((c: any) => c.id === entry.sourceId);
         if (ce) {
-          setCashEntries(prev => prev.map(c => c.id === entry.sourceId ? { ...c, status: "voided", voidedReason: reason } : c));
-          // اگر نیاز به معکوس کردن موجودی صندوق است، اینجا اضافه شود
+          setCashEntries((prev: any) => prev.map((c: any) => c.id === entry.sourceId ? { ...c, status: "voided", voidedReason: reason } : c));
         }
       } else if (entry.source === "hawala") {
         alert("برای ابطال حواله، لطفاً به تب حواله‌جات مراجعه کنید.");
@@ -196,7 +252,7 @@ export default function JournalPage() {
   const handleExport = () => {
     const headers = ["شماره سند", "تاریخ/ساعت", "شرح معامله", "مشتری", "ارز", "مبلغ", "نوع", "وضعیت"];
     const escapeCsv = (val: any) => `"${String(val ?? "").replace(/"/g, '""')}"`;
-    const rows = filteredEntries.map(e => [
+    const rows = filteredEntries.map((e: any) => [
       escapeCsv(e.id.slice(0, 8)),
       escapeCsv(new Date(e.date).toLocaleString("fa-IR")),
       escapeCsv(e.description),
@@ -273,7 +329,7 @@ export default function JournalPage() {
               {filteredEntries.length === 0 ? (
                 <tr><td colSpan={7} className="px-4 py-12 text-center text-slate-500">هیچ تراکنشی با این فیلترها یافت نشد.</td></tr>
               ) : (
-                filteredEntries.map((entry) => {
+                filteredEntries.map((entry: any, idx: number) => {
                   const isVoided = entry.status === "voided";
                   return (
                     <tr key={entry.id} className={`hover:bg-slate-50 transition ${isVoided ? "bg-slate-100/50" : ""}`}>
