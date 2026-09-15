@@ -7,9 +7,9 @@ import {
   getDocs, Timestamp, onSnapshot 
 } from "firebase/firestore";
 
-// ✅ نکته: اگر پوشه شما به جای lib نام دیگری دارد (مثلاً services)، آن را تغییر دهید
-import { db } from "@/lib/firebase"; 
-import { voidTransaction, fetchCustomerName } from "@/lib/firestoreActions";
+// ✅ مسیرهای نسبی دقیق (سه پوشه به عقب از journal به ریشه پروژه)
+import { db } from "../../../lib/firebase"; 
+import { voidTransaction, fetchCustomerName } from "../../../lib/firestoreActions";
 
 // --- Types & Constants ---
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
@@ -82,7 +82,6 @@ export default function JournalPage() {
     try {
       let q = query(collection(db, "transactions"), orderBy("timestamp", "desc"), limit(50));
       
-      // فیلترهای Firestore (سمت سرور)
       if (typeFilter !== "all") {
         const dbType = typeFilter === "hawala_in" || typeFilter === "hawala_out" ? "انتقال" : 
                        typeFilter === "buy_currency" || typeFilter === "sell_currency" ? "تبدیل" :
@@ -93,7 +92,6 @@ export default function JournalPage() {
       if (currencyFilter !== "all") q = query(q, where("currency", "==", currencyFilter));
       q = query(q, where("status", "==", "active"));
 
-      // محاسبه بازه زمانی برای فیلتر سروری (جلوگیری از شکستگی Pagination)
       if (dateRange !== "all") {
         const now = new Date();
         let startDate = new Date();
@@ -111,7 +109,6 @@ export default function JournalPage() {
       const snapshot = await getDocs(q);
       let newEntries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Transaction));
       
-      // فیلتر جستجو در کلاینت
       if (searchQuery) {
         const lowerSearch = searchQuery.toLowerCase();
         newEntries = newEntries.filter(e => e.description.toLowerCase().includes(lowerSearch));
@@ -121,7 +118,6 @@ export default function JournalPage() {
       setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
       setHasMore(snapshot.docs.length === 50);
 
-      // بارگذاری نام مشتریان
       newEntries.forEach(async (tx) => {
         if (tx.partyId && !customerNames[tx.partyId]) {
           const name = await fetchCustomerName(tx.partyId);
@@ -156,7 +152,7 @@ export default function JournalPage() {
     return () => unsubscribe();
   }, []);
 
-  // --- ۴. خلاصه دوره فیلترشده (تبدیل شده به دلار) ---
+  // --- ۴. خلاصه دوره فیلترشده ---
   const summary = useMemo(() => {
     let deposits = 0, withdrawals = 0, transfers = 0, count = 0;
     entries.forEach(e => {
@@ -187,7 +183,7 @@ export default function JournalPage() {
     }
   };
 
-  // --- ۶. خروجی CSV (جایگزین اکسل، بدون نیاز به پکیج خارجی) ---
+  // --- ۶. خروجی CSV ---
   const handleExport = () => {
     const headers = ["شماره سند", "تاریخ/ساعت", "شرح معامله", "مشتری", "ارز", "مبلغ", "نوع", "تراز پس از معامله", "وضعیت"];
     
@@ -214,7 +210,6 @@ export default function JournalPage() {
       ].join(",");
     });
 
-    // افزودن BOM (\uFEFF) برای پشتیبانی صحیح از حروف فارسی در Excel
     const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -229,7 +224,6 @@ export default function JournalPage() {
     URL.revokeObjectURL(url);
   };
 
-  // --- Helper: استایل بج نوع تراکنش ---
   const getTypeBadgeStyle = (type: TxType, isVoided: boolean) => {
     if (isVoided) return "bg-gray-200 text-gray-500 line-through";
     const styles: Record<TxType, string> = {
@@ -245,7 +239,6 @@ export default function JournalPage() {
   return (
     <div className="space-y-6 p-4 md:p-8 bg-slate-50 min-h-screen font-sans" dir="rtl">
       
-      {/* ۱. هدر بالای صفحه — نرخ ارزهای زنده */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {currencies.map(cur => (
           <div key={cur} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
@@ -260,7 +253,6 @@ export default function JournalPage() {
         ))}
       </div>
 
-      {/* هدر صفحه و دکمه خروجی */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-2xl font-extrabold text-slate-800">روزنامه کل معاملات</h1>
@@ -271,7 +263,6 @@ export default function JournalPage() {
         </button>
       </div>
 
-      {/* ۲. نوار فیلتر */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-4 gap-4">
         <select value={dateRange} onChange={e => setDateRange(e.target.value)} className="border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white">
           <option value="all">همه زمان‌ها</option>
@@ -305,7 +296,6 @@ export default function JournalPage() {
         </div>
       </div>
 
-      {/* ۳. جدول اصلی روزنامچه */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-right">
@@ -383,7 +373,6 @@ export default function JournalPage() {
           </table>
         </div>
         
-        {/* Pagination Control */}
         {hasMore && !loading && entries.length > 0 && (
           <div className="p-4 border-t text-center bg-slate-50">
             <button onClick={() => fetchEntries(false)} className="text-blue-600 hover:text-blue-800 font-bold text-sm bg-white px-4 py-2 rounded-lg border border-slate-200 shadow-sm hover:shadow transition">
@@ -393,9 +382,7 @@ export default function JournalPage() {
         )}
       </div>
 
-      {/* ۴ و ۵. بخش پایینی: جمع کل موجودی و خلاصه دوره */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* جمع کل موجودی هر ارز */}
         <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm p-5">
           <h3 className="text-base font-bold text-slate-800 mb-4 flex items-center">
             <span className="w-2 h-2 bg-emerald-500 rounded-full ml-2"></span>
@@ -418,7 +405,6 @@ export default function JournalPage() {
           </div>
         </div>
 
-        {/* خلاصه دوره فیلترشده */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
           <h3 className="text-base font-bold text-slate-800 mb-4 flex items-center">
             <span className="w-2 h-2 bg-blue-500 rounded-full ml-2"></span>
