@@ -21,11 +21,10 @@ function removeUndefinedFields(obj: any): any {
   return cleaned;
 }
 
-// 🛡️ توابع جدید برای تشخیص هوشمند خالی بودن (هم آرایه و هم آبجکت)
 function isEmptyData(data: any): boolean {
   if (Array.isArray(data)) return data.length === 0;
   if (typeof data === 'object' && data !== null) return Object.keys(data).length === 0;
-  return false;
+  return data === null || data === undefined || data === "";
 }
 
 function hasData(data: any): boolean {
@@ -101,12 +100,13 @@ function saveToLS(key: string, value: any): boolean {
 }
 
 // ============================================================
-// ✅ هوک اصلی - نسخه فوق‌العاده مقاوم (Ultra-Resilient)
+// ✅ هوک اصلی - نسخه نهایی ضد پاک‌شدن هنگام تعویض تب
 // ============================================================
 export function useSyncedState<T>(key: string, initialValue: T) {
   const isMounted = useRef(true);
   const [value, setValue] = useState<T>(initialValue);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [isLoading, setIsLoading] = useState(true); // 🛡️ جلوگیری از توهم بصری
   
   const valueRef = useRef<T>(initialValue);
   const lastUpdatedRef = useRef<number>(0);
@@ -116,9 +116,10 @@ export function useSyncedState<T>(key: string, initialValue: T) {
     valueRef.current = value;
   }, [value]);
 
-  // ۱. بارگذاری اولیه با منطق تعمیر سرور (Server Repair)
+  // ۱. بارگذاری اولیه با منطق "اولویت مطلق با داده محلی"
   useEffect(() => {
     let ignore = false;
+    setIsLoading(true);
     
     const init = async () => {
       const docRef = doc(db, "appData", key);
@@ -126,28 +127,37 @@ export function useSyncedState<T>(key: string, initialValue: T) {
         const snap = await getDoc(docRef);
         let finalPayload: any;
         
-        if (snap.exists() && snap.data().value !== undefined) {
+        // اولویت ۱: داده معتبر در سرور وجود دارد
+        if (snap.exists() && snap.data().value !== undefined && hasData(snap.data().value)) {
           finalPayload = snap.data();
         } else {
+          // اولویت ۲: سرور خالی یا نامعتبر است، اما داده محلی (LocalStorage/IDB) داریم
           const localData = readFromLS(key) ?? (await readFromIDB(key));
           
           if (localData !== undefined && hasData(localData)) {
-            // 🛡️ دفاع ۱: اگر سرور خالی است اما ما داده محلی معتبر داریم، سرور را تعمیر کن
             finalPayload = { 
               value: localData,
               lastUpdated: Date.now()
             };
+            // 🛡️ تعمیر سرور: داده محلی معتبر را به سرور برمی‌گردانیم
             await setDoc(docRef, removeUndefinedFields(finalPayload), { merge: true });
           } else {
-            // نه سرور داده دارد نه محلی. فقط اگر initialValue خالی نباشد آن را ذخیره کن
-            finalPayload = { 
-              value: initialValue,
-              lastUpdated: Date.now()
-            };
-            
+            // اولویت ۳: نه سرور داده دارد، نه محلی. 
+            // 🛡️ دفاع نهایی: اگر initialValue خالی است، هرگز آن را به سرور نفرست تا داده دستگاه‌های دیگر پاک نشود!
             const isInitialValueEmpty = isEmptyData(initialValue);
+            
             if (!isInitialValueEmpty) {
+              finalPayload = { 
+                value: initialValue,
+                lastUpdated: Date.now()
+              };
               await setDoc(docRef, removeUndefinedFields(finalPayload), { merge: true });
+            } else {
+              // اگر initialValue هم خالی است، فقط یک آبجکت خالی با زمان فعلی برمی‌گردانیم، اما به سرور نمی‌نویسیم
+              finalPayload = { 
+                value: initialValue,
+                lastUpdated: Date.now()
+              };
             }
           }
         }
@@ -157,25 +167,28 @@ export function useSyncedState<T>(key: string, initialValue: T) {
           valueRef.current = finalPayload.value;
           lastUpdatedRef.current = finalPayload.lastUpdated || Date.now();
           setIsLoaded(true);
+          setIsLoading(false);
         }
       } catch (error) {
         console.error(`🔴 [${key}] Init Error:`, error);
         if (!ignore && isMounted.current) {
+          // در صورت خطای شبکه، حتماً از داده محلی استفاده کن
           const localData = readFromLS(key) ?? (await readFromIDB(key));
           if (localData !== undefined && hasData(localData)) {
             setValue(localData);
             valueRef.current = localData;
-            setIsLoaded(true);
           }
+          setIsLoaded(true);
+          setIsLoading(false);
         }
       }
     };
 
     init();
     return () => { ignore = true; isMounted.current = false; };
-  }, [key, initialValue]);
+  }, [key]); // initialValue را از وابستگی‌ها حذف کردیم تا با رندرهای مجدد بازنشانی نشود
 
-  // ۲. شنونده بلادرنگ با مکانیزم دفاعی پیشرفته
+  // ۲. شنونده بلادرنگ
   useEffect(() => {
     if (!isLoaded) return;
     const docRef = doc(db, "appData", key);
@@ -194,12 +207,12 @@ export function useSyncedState<T>(key: string, initialValue: T) {
           const incomingTimestamp = payload.lastUpdated || 0;
 
           if (incomingTimestamp > lastUpdatedRef.current) {
-            // 🛡️ دفاع ۲: جلوگیری از پاک شدن تصادفی (هم آرایه و هم آبجکت)
+            // 🛡️ دفاع در برابر پاک‌شدن از سمت سرور
             const hadData = hasData(valueRef.current);
             const isNowEmpty = isEmptyData(payload.value);
             
             if (hadData && isNowEmpty) {
-              console.error(`🚨 [${key}] BLOCKED SERVER WIPEOUT! Server sent empty data, but we have local data. Ignored.`);
+              console.error(`🚨 [${key}] BLOCKED SERVER WIPEOUT! Ignored empty server data.`);
               return; 
             }
 
@@ -233,7 +246,6 @@ export function useSyncedState<T>(key: string, initialValue: T) {
           if (JSON.stringify(valueRef.current) !== JSON.stringify(parsed)) {
             valueRef.current = parsed;
             setValue(parsed);
-            // 🛡️ دفاع ۳: به‌روزرسانی زمان برای جلوگیری از بازنشانی توسط اسنپ‌شات قدیمی فایربیس
             lastUpdatedRef.current = Date.now(); 
           }
         } catch {}
@@ -256,7 +268,7 @@ export function useSyncedState<T>(key: string, initialValue: T) {
         ? (newValue as (prev: T) => T)(valueRef.current)
         : newValue;
 
-      // 🛡️ دفاع ۴ (سمت کلاینت): جلوگیری از پاک کردن تصادفی داده‌ها
+      // 🛡️ دفاع در برابر پاک‌کردن تصادفی توسط کد برنامه
       const hadData = hasData(valueRef.current);
       const isNowEmpty = isEmptyData(resolvedValue);
       
@@ -289,5 +301,5 @@ export function useSyncedState<T>(key: string, initialValue: T) {
     }
   }, [key]);
 
-  return [value, setSyncedValue] as const;
+  return [value, setSyncedValue, isLoading] as const; // 🛡️ خروجی isLoading اضافه شد
 }
