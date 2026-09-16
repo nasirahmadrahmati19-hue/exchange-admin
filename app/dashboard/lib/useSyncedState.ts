@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { doc, setDoc, onSnapshot, getDoc } from "firebase/firestore";
+import { doc, setDoc, onSnapshot, getDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "./firebase";
 
 // ============================================================
@@ -22,7 +22,7 @@ function removeUndefinedFields(obj: any): any {
 }
 
 // ============================================================
-// لایه ذخیره‌سازی محلی (IndexedDB + localStorage)
+// لایه ذخیره‌سازی محلی
 // ============================================================
 const IDB_NAME = "AppSyncDB";
 const IDB_STORE = "syncedData";
@@ -43,7 +43,7 @@ function openIDB(): Promise<IDBDatabase> {
   });
 }
 
-async function saveToIDB<T>(key: string, value: T): Promise<void> {
+async function saveToIDB<T>(key: string, value: any): Promise<void> {
   if (typeof window === "undefined") return;
   try {
     const db = await openIDB();
@@ -59,7 +59,7 @@ async function saveToIDB<T>(key: string, value: T): Promise<void> {
   }
 }
 
-async function readFromIDB<T>(key: string): Promise<T | undefined> {
+async function readFromIDB<T>(key: string): Promise<any> {
   if (typeof window === "undefined") return undefined;
   try {
     const db = await openIDB();
@@ -67,7 +67,7 @@ async function readFromIDB<T>(key: string): Promise<T | undefined> {
       const transaction = db.transaction(IDB_STORE, "readonly");
       const store = transaction.objectStore(IDB_STORE);
       const request = store.get(key);
-      request.onsuccess = () => resolve(request.result as T | undefined);
+      request.onsuccess = () => resolve(request.result);
       request.onerror = () => resolve(undefined);
     });
   } catch {
@@ -75,7 +75,7 @@ async function readFromIDB<T>(key: string): Promise<T | undefined> {
   }
 }
 
-function readFromLS<T>(key: string): T | undefined {
+function readFromLS(key: string): any {
   if (typeof window === "undefined") return undefined;
   try {
     const cached = localStorage.getItem(LS_PREFIX + key);
@@ -88,7 +88,7 @@ function readFromLS<T>(key: string): T | undefined {
   return undefined;
 }
 
-function saveToLS<T>(key: string, value: T): boolean {
+function saveToLS(key: string, value: any): boolean {
   if (typeof window === "undefined") return false;
   try {
     localStorage.setItem(LS_PREFIX + key, JSON.stringify(value));
@@ -100,19 +100,17 @@ function saveToLS<T>(key: string, value: T): boolean {
 }
 
 // ============================================================
-// ✅ هوک اصلی - نسخه نهایی و ایمن
+// ✅ هوک اصلی - نسخه ضد باگ با بررسی Timestamp
 // ============================================================
 export function useSyncedState<T>(key: string, initialValue: T) {
   const isMounted = useRef(true);
   const [value, setValue] = useState<T>(initialValue);
   const [isLoaded, setIsLoaded] = useState(false);
-  const valueRef = useRef<T>(initialValue);
+  
+  // نگهداری آخرین زمان آپدیت برای جلوگیری از بازنویسی داده قدیمی روی جدید
+  const lastUpdatedRef = useRef<number>(0);
 
-  useEffect(() => {
-    valueRef.current = value;
-  }, [value]);
-
-  // ۱. بارگذاری اولیه: اولویت با Firebase است، نه Local!
+  // ۱. بارگذاری اولیه
   useEffect(() => {
     let ignore = false;
     
@@ -120,36 +118,35 @@ export function useSyncedState<T>(key: string, initialValue: T) {
       const docRef = doc(db, "appData", key);
       
       try {
-        // الف) ابتدا از Firebase بخوان (منبع اصلی حقیقت)
         const snap = await getDoc(docRef);
-        
-        let finalData: T;
+        let finalPayload: any;
         
         if (snap.exists() && snap.data().value !== undefined) {
-          // اگر در Firebase داده بود، از آن استفاده کن
-          finalData = snap.data().value as T;
+          finalPayload = snap.data();
         } else {
-          // ب) اگر Firebase خالی بود، از Local بخوان
-          const localData = readFromLS<T>(key) ?? (await readFromIDB<T>(key)) ?? initialValue;
-          finalData = localData;
+          const localData = readFromLS(key) ?? (await readFromIDB(key));
+          finalPayload = { 
+            value: localData !== undefined ? localData : initialValue,
+            lastUpdated: Date.now()
+          };
           
-          // ج) داده‌های Local را به Firebase بفرست تا به عنوان پایه ثبت شوند
-          await setDoc(docRef, { value: removeUndefinedFields(finalData) }, { merge: true });
+          // فقط اگر واقعاً دیتایی نبود، لوکال را به فایربیس بفرست
+          await setDoc(docRef, removeUndefinedFields(finalPayload), { merge: true });
         }
 
         if (!ignore && isMounted.current) {
-          setValue(finalData);
-          valueRef.current = finalData;
+          setValue(finalPayload.value);
+          lastUpdatedRef.current = finalPayload.lastUpdated || Date.now();
           setIsLoaded(true);
         }
       } catch (error) {
         console.error(`[useSyncedState] Critical init error for ${key}:`, error);
-        // در صورت خطای شبکه، حداقل داده‌های Local را نشان بده
         if (!ignore && isMounted.current) {
-          const localData = readFromLS<T>(key) ?? (await readFromIDB<T>(key)) ?? initialValue;
-          setValue(localData);
-          valueRef.current = localData;
-          setIsLoaded(true);
+          const localData = readFromLS(key) ?? (await readFromIDB(key));
+          if (localData !== undefined) {
+            setValue(localData);
+            setIsLoaded(true);
+          }
         }
       }
     };
@@ -160,9 +157,9 @@ export function useSyncedState<T>(key: string, initialValue: T) {
       ignore = true;
       isMounted.current = false;
     };
-  }, [key]); // initialValue را از وابستگی‌ها حذف کردیم تا ریست نشود
+  }, [key]);
 
-  // ۲. گوش دادن به تغییرات لحظه‌ای Firebase
+  // ۲. گوش دادن به تغییرات لحظه‌ای Firebase (با محافظت در برابر داده قدیمی)
   useEffect(() => {
     if (!isLoaded) return;
     const docRef = doc(db, "appData", key);
@@ -172,17 +169,15 @@ export function useSyncedState<T>(key: string, initialValue: T) {
       (docSnap) => {
         if (!isMounted.current) return;
         if (docSnap.exists() && docSnap.data().value !== undefined) {
-          const firebaseValue = docSnap.data().value as T;
-          
-          // مقایسه عمیق برای جلوگیری از رندرهای بی‌مورد
-          const isDifferent = JSON.stringify(valueRef.current) !== JSON.stringify(firebaseValue);
-          
-          if (isDifferent) {
-            valueRef.current = firebaseValue;
-            setValue(firebaseValue);
-            // ذخیره خاموش در Local
-            saveToLS(key, firebaseValue);
-            saveToIDB(key, firebaseValue).catch(console.error);
+          const payload = docSnap.data();
+          const incomingTimestamp = payload.lastUpdated || 0;
+
+          // ⚠️ نکته کلیدی: اگر داده‌ی سرور قدیمی‌تر از داده‌ی محلی بود، آن را نادیده بگیر!
+          if (incomingTimestamp > lastUpdatedRef.current) {
+            lastUpdatedRef.current = incomingTimestamp;
+            setValue(payload.value);
+            saveToLS(key, payload.value);
+            saveToIDB(key, payload.value).catch(console.error);
           }
         }
       },
@@ -197,53 +192,46 @@ export function useSyncedState<T>(key: string, initialValue: T) {
     };
   }, [key, isLoaded]);
 
-  // ۳. گوش دادن به تغییرات در تب‌های دیگر مرورگر
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const handleStorage = (e: StorageEvent) => {
-      if (e.key === LS_PREFIX + key && e.newValue) {
-        try {
-          const newValue = JSON.parse(e.newValue) as T;
-          if (JSON.stringify(valueRef.current) !== JSON.stringify(newValue)) {
-            valueRef.current = newValue;
-            setValue(newValue);
-          }
-        } catch {}
-      }
-    };
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
-  }, [key]);
-
-  // ۴. تابع به‌روزرسانی داده
+  // ۳. تابع به‌روزرسانی داده
   const setSyncedValue = useCallback(async (newValue: T | ((prev: T) => T)) => {
     const resolvedValue = typeof newValue === "function" 
-      ? (newValue as (prev: T) => T)(valueRef.current)
+      ? (newValue as (prev: T) => T)(value) // استفاده از value به جای valueRef برای اطمینان
       : newValue;
 
-    // جلوگیری تصادفی از پاک شدن کل دیتابیس مشتریان
     if (key === "customers" && Array.isArray(resolvedValue) && resolvedValue.length === 0) {
       console.warn("⚠️ Attempted to set customers to empty array. Blocked for safety.");
-      // اگر واقعاً می‌خواهید پاک کنید، باید منطق خاصی داشته باشید، اما به صورت پیش‌فرض مسدود می‌شود
+      return value; // لغو عملیات
     }
 
-    setValue(resolvedValue);
-    valueRef.current = resolvedValue;
+    const newTimestamp = Date.now();
+    const payload = {
+      value: resolvedValue,
+      lastUpdated: newTimestamp
+    };
 
-    // ذخیره محلی فوری
+    // ۱. آپدیت فوری محلی
+    setValue(resolvedValue);
+    lastUpdatedRef.current = newTimestamp;
     saveToLS(key, resolvedValue);
     saveToIDB(key, resolvedValue).catch(console.error);
 
-    // ذخیره در Firebase
+    // ۲. ارسال به فایربیس
     try {
       const docRef = doc(db, "appData", key);
-      await setDoc(docRef, { value: removeUndefinedFields(resolvedValue) }, { merge: true });
+      await setDoc(docRef, removeUndefinedFields(payload), { merge: true });
     } catch (error) {
       console.error(`[useSyncedState] Firebase save error for ${key}:`, error);
+      // در صورت خطا، یک رفرش اجباری از سرور انجام بده تا استیت خراب نشود
+      const docRef = doc(db, "appData", key);
+      const snap = await getDoc(docRef);
+      if (snap.exists() && snap.data().lastUpdated > lastUpdatedRef.current) {
+        setValue(snap.data().value);
+        lastUpdatedRef.current = snap.data().lastUpdated;
+      }
     }
     
     return resolvedValue;
-  }, [key]);
+  }, [key, value]);
 
   return [value, setSyncedValue] as const;
 }
