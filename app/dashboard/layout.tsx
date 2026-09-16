@@ -11,7 +11,7 @@ const menuItems = [
   { title: "تبادل ارز", href: "/dashboard/trades" },
   { title: "صندوق", href: "/dashboard/cash" },
   { title: "مشتریان", href: "/dashboard/users" },
-  { title: "روزنامچه", href: "/dashboard/journal" }, // <-- این خط اضافه شد
+  { title: "روزنامچه", href: "/dashboard/journal" },
   { title: "گزارشات", href: "/dashboard/reports" },
 ];
 
@@ -334,33 +334,18 @@ function SettingsPanel({ open, onClose }: { open: boolean; onClose: () => void }
 }
 
 // ============================================================
-// ✅ Layout اصلی با سیستم همگام‌سازی سراسری (Global Sync)
+// ✅ Layout اصلی (اصلاح شده: حذف syncKey برای جلوگیری از پاک شدن داده‌ها)
 // ============================================================
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [settingsOpen, setSettingsOpen] = useState(false);
-  
-  // ✅ جادوی همگام‌سازی: این کلید باعث رفرش هوشمند صفحات هنگام تغییر داده می‌شود
-  const [syncKey, setSyncKey] = useState(0);
 
   useEffect(() => {
     if (typeof window !== "undefined" && localStorage.getItem("isAuthenticated") !== "true") {
       router.push("/");
     }
   }, [router]);
-
-  // ✅ گوش دادن به سیگنال تغییر داده از هر تبی (مثلاً تب حواله)
-  useEffect(() => {
-    const handleDbUpdate = () => {
-      // با تغییر این کلید، کامپوننت صفحه فعلی (children) به طور خودکار Remount شده 
-      // و داده‌های جدید را از localStorage می‌خواند.
-      setSyncKey(prev => prev + 1);
-    };
-    
-    window.addEventListener("db-updated", handleDbUpdate);
-    return () => window.removeEventListener("db-updated", handleDbUpdate);
-  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem("isAuthenticated");
@@ -408,8 +393,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </header>
 
-      {/* ✅ اضافه کردن key={syncKey} برای رفرش هوشمند محتوا */}
-      <main key={syncKey} className="max-w-7xl mx-auto px-4 py-8">
+      {/* ✅ نکته کلیدی: key={syncKey} از اینجا حذف شد تا صفحه به صورت اجباری رفرش نشود و داده‌ها پاک نشوند */}
+      <main className="max-w-7xl mx-auto px-4 py-8">
         {children}
       </main>
 
