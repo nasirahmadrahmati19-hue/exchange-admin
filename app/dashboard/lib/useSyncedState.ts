@@ -11,7 +11,7 @@ function removeUndefinedFields(obj: any): any {
   if (obj === null || obj === undefined) return obj;
   if (typeof obj !== "object") return obj;
   if (Array.isArray(obj)) return obj.map(removeUndefinedFields);
-  
+
   const cleaned: any = {};
   for (const key in obj) {
     if (obj[key] !== undefined) {
@@ -23,7 +23,8 @@ function removeUndefinedFields(obj: any): any {
 
 function isEmptyData(data: any): boolean {
   if (Array.isArray(data)) return data.length === 0;
-  if (typeof data === 'object' && data !== null) return Object.keys(data).length === 0;
+  if (typeof data === "object" && data !== null)
+    return Object.keys(data).length === 0;
   return data === null || data === undefined || data === "";
 }
 
@@ -71,7 +72,10 @@ async function readFromIDB(key: string): Promise<any> {
   try {
     const db = await openIDB();
     return new Promise((resolve) => {
-      const request = db.transaction(IDB_STORE, "readonly").objectStore(IDB_STORE).get(key);
+      const request = db
+        .transaction(IDB_STORE, "readonly")
+        .objectStore(IDB_STORE)
+        .get(key);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => resolve(undefined);
     });
@@ -100,17 +104,21 @@ function saveToLS(key: string, value: any): boolean {
 }
 
 // ============================================================
-// ✅ هوک اصلی - نسخه نهایی ضد پاک‌شدن هنگام تعویض تب
+// ✅ هوک اصلی - نسخه اصلاح‌شده (رفع باگ پاک‌شدن مشتری)
 // ============================================================
 export function useSyncedState<T>(key: string, initialValue: T) {
   const isMounted = useRef(true);
   const [value, setValue] = useState<T>(initialValue);
   const [isLoaded, setIsLoaded] = useState(false);
-  const [isLoading, setIsLoading] = useState(true); // 🛡️ جلوگیری از توهم بصری
-  
+  const [isLoading, setIsLoading] = useState(true);
+
   const valueRef = useRef<T>(initialValue);
   const lastUpdatedRef = useRef<number>(0);
-  const isSavingRef = useRef<boolean>(false);
+
+  // 🛡️ شمارنده نوشتن‌های در حال انتظار (جای isSavingRef قدیمی)
+  const pendingWritesRef = useRef<number>(0);
+  // 🛡️ آخرین داده‌ای که خودمان به سرور فرستادیم (برای تشخیص echo)
+  const lastLocalWriteRef = useRef<string>("");
 
   useEffect(() => {
     valueRef.current = value;
@@ -120,43 +128,53 @@ export function useSyncedState<T>(key: string, initialValue: T) {
   useEffect(() => {
     let ignore = false;
     setIsLoading(true);
-    
+
     const init = async () => {
       const docRef = doc(db, "appData", key);
       try {
         const snap = await getDoc(docRef);
         let finalPayload: any;
-        
+
         // اولویت ۱: داده معتبر در سرور وجود دارد
-        if (snap.exists() && snap.data().value !== undefined && hasData(snap.data().value)) {
+        if (
+          snap.exists() &&
+          snap.data().value !== undefined &&
+          hasData(snap.data().value)
+        ) {
           finalPayload = snap.data();
         } else {
-          // اولویت ۲: سرور خالی یا نامعتبر است، اما داده محلی (LocalStorage/IDB) داریم
+          // اولویت ۲: سرور خالی یا نامعتبر است، اما داده محلی داریم
           const localData = readFromLS(key) ?? (await readFromIDB(key));
-          
+
           if (localData !== undefined && hasData(localData)) {
-            finalPayload = { 
+            finalPayload = {
               value: localData,
-              lastUpdated: Date.now()
+              lastUpdated: Date.now(),
             };
             // 🛡️ تعمیر سرور: داده محلی معتبر را به سرور برمی‌گردانیم
-            await setDoc(docRef, removeUndefinedFields(finalPayload), { merge: true });
+            await setDoc(
+              docRef,
+              removeUndefinedFields(finalPayload),
+              { merge: true }
+            );
           } else {
-            // اولویت ۳: نه سرور داده دارد، نه محلی. 
-            // 🛡️ دفاع نهایی: اگر initialValue خالی است، هرگز آن را به سرور نفرست تا داده دستگاه‌های دیگر پاک نشود!
+            // اولویت ۳: نه سرور داده دارد، نه محلی
             const isInitialValueEmpty = isEmptyData(initialValue);
-            
+
             if (!isInitialValueEmpty) {
-              finalPayload = { 
+              finalPayload = {
                 value: initialValue,
-                lastUpdated: Date.now()
+                lastUpdated: Date.now(),
               };
-              await setDoc(docRef, removeUndefinedFields(finalPayload), { merge: true });
+              await setDoc(
+                docRef,
+                removeUndefinedFields(finalPayload),
+                { merge: true }
+              );
             } else {
-              // اگر initialValue هم خالی است، فقط یک آبجکت خالی با زمان فعلی برمی‌گردانیم، اما به سرور نمی‌نویسیم
-              finalPayload = { 
+              finalPayload = {
                 value: initialValue,
-                lastUpdated: Date.now()
+                lastUpdated: Date.now(),
               };
             }
           }
@@ -172,7 +190,6 @@ export function useSyncedState<T>(key: string, initialValue: T) {
       } catch (error) {
         console.error(`🔴 [${key}] Init Error:`, error);
         if (!ignore && isMounted.current) {
-          // در صورت خطای شبکه، حتماً از داده محلی استفاده کن
           const localData = readFromLS(key) ?? (await readFromIDB(key));
           if (localData !== undefined && hasData(localData)) {
             setValue(localData);
@@ -185,41 +202,57 @@ export function useSyncedState<T>(key: string, initialValue: T) {
     };
 
     init();
-    return () => { ignore = true; isMounted.current = false; };
-  }, [key]); // initialValue را از وابستگی‌ها حذف کردیم تا با رندرهای مجدد بازنشانی نشود
+    return () => {
+      ignore = true;
+    };
+  }, [key]); // initialValue از وابستگی حذف شده
 
   // ۲. شنونده بلادرنگ
   useEffect(() => {
     if (!isLoaded) return;
     const docRef = doc(db, "appData", key);
-    
+
     const unsubscribe = onSnapshot(
       docRef,
       (docSnap) => {
         if (!isMounted.current) return;
-        
+
         if (docSnap.metadata.fromCache && lastUpdatedRef.current > 0) {
-          return; 
+          return;
         }
 
         if (docSnap.exists() && docSnap.data().value !== undefined) {
           const payload = docSnap.data();
           const incomingTimestamp = payload.lastUpdated || 0;
 
+          // 🛡️ اگر خودمان در حال نوشتن هستیم و این snapshot احتمالاً echo خودمان است
+          if (pendingWritesRef.current > 0) {
+            const incomingStr = JSON.stringify(payload.value);
+            if (incomingStr === lastLocalWriteRef.current) {
+              // این echo خودمان است، فقط timestamp را همگام کن
+              if (incomingTimestamp > lastUpdatedRef.current) {
+                lastUpdatedRef.current = incomingTimestamp;
+              }
+              return;
+            }
+          }
+
           if (incomingTimestamp > lastUpdatedRef.current) {
             // 🛡️ دفاع در برابر پاک‌شدن از سمت سرور
             const hadData = hasData(valueRef.current);
             const isNowEmpty = isEmptyData(payload.value);
-            
+
             if (hadData && isNowEmpty) {
-              console.error(`🚨 [${key}] BLOCKED SERVER WIPEOUT! Ignored empty server data.`);
-              return; 
+              console.error(
+                `🚨 [${key}] BLOCKED SERVER WIPEOUT! Ignored empty server data.`
+              );
+              return;
             }
 
             lastUpdatedRef.current = incomingTimestamp;
             valueRef.current = payload.value;
             setValue(payload.value);
-            
+
             saveToLS(key, payload.value);
             saveToIDB(key, payload.value).catch(() => {});
           }
@@ -231,7 +264,6 @@ export function useSyncedState<T>(key: string, initialValue: T) {
     );
 
     return () => {
-      isMounted.current = false;
       unsubscribe();
     };
   }, [key, isLoaded]);
@@ -246,7 +278,7 @@ export function useSyncedState<T>(key: string, initialValue: T) {
           if (JSON.stringify(valueRef.current) !== JSON.stringify(parsed)) {
             valueRef.current = parsed;
             setValue(parsed);
-            lastUpdatedRef.current = Date.now(); 
+            lastUpdatedRef.current = Date.now();
           }
         } catch {}
       }
@@ -255,51 +287,58 @@ export function useSyncedState<T>(key: string, initialValue: T) {
     return () => window.removeEventListener("storage", handleStorage);
   }, [key]);
 
-  // ۴. تابع به‌روزرسانی داده
-  const setSyncedValue = useCallback(async (newValue: T | ((prev: T) => T)) => {
-    if (isSavingRef.current) {
-      console.warn(`⚠️ [${key}] Save already in progress, skipping.`);
-      return valueRef.current;
-    }
-    isSavingRef.current = true;
+  // ۴. تابع به‌روزرسانی داده — ✅ اصلاح‌شده
+  const setSyncedValue = useCallback(
+    async (newValue: T | ((prev: T) => T)) => {
+      // 🛡️ افزایش شمارنده نوشتن‌های در حال انتظار
+      pendingWritesRef.current += 1;
 
-    try {
-      const resolvedValue = typeof newValue === "function" 
-        ? (newValue as (prev: T) => T)(valueRef.current)
-        : newValue;
+      try {
+        const resolvedValue =
+          typeof newValue === "function"
+            ? (newValue as (prev: T) => T)(valueRef.current)
+            : newValue;
 
-      // 🛡️ دفاع در برابر پاک‌کردن تصادفی توسط کد برنامه
-      const hadData = hasData(valueRef.current);
-      const isNowEmpty = isEmptyData(resolvedValue);
-      
-      if (hadData && isNowEmpty) {
-        console.error(`🚨 [${key}] BLOCKED LOCAL WIPEOUT! Script tried to set empty data. Blocked.`);
-        return valueRef.current; 
+        // 🛡️ دفاع در برابر پاک‌کردن تصادفی
+        const hadData = hasData(valueRef.current);
+        const isNowEmpty = isEmptyData(resolvedValue);
+
+        if (hadData && isNowEmpty) {
+          console.error(
+            `🚨 [${key}] BLOCKED LOCAL WIPEOUT! Script tried to set empty data. Blocked.`
+          );
+          return valueRef.current;
+        }
+
+        const newTimestamp = Date.now();
+        const payload = {
+          value: resolvedValue,
+          lastUpdated: newTimestamp,
+        };
+
+        // ✅ آپدیت state و refs فوراً (Optimistic UI)
+        valueRef.current = resolvedValue;
+        setValue(resolvedValue);
+        lastUpdatedRef.current = newTimestamp;
+        lastLocalWriteRef.current = JSON.stringify(resolvedValue);
+
+        saveToLS(key, resolvedValue);
+        saveToIDB(key, resolvedValue).catch(() => {});
+
+        const docRef = doc(db, "appData", key);
+        await setDoc(docRef, removeUndefinedFields(payload), { merge: true });
+
+        return resolvedValue;
+      } catch (error) {
+        console.error(`🔴 [${key}] Firebase Save Failed:`, error);
+        return valueRef.current;
+      } finally {
+        // 🛡️ کاهش شمارنده بعد از پایان نوشتن
+        pendingWritesRef.current = Math.max(0, pendingWritesRef.current - 1);
       }
+    },
+    [key]
+  );
 
-      const newTimestamp = Date.now();
-      const payload = {
-        value: resolvedValue,
-        lastUpdated: newTimestamp
-      };
-
-      valueRef.current = resolvedValue;
-      setValue(resolvedValue);
-      lastUpdatedRef.current = newTimestamp;
-      saveToLS(key, resolvedValue);
-      saveToIDB(key, resolvedValue).catch(() => {});
-
-      const docRef = doc(db, "appData", key);
-      await setDoc(docRef, removeUndefinedFields(payload), { merge: true });
-      
-      return resolvedValue;
-    } catch (error) {
-      console.error(`🔴 [${key}] Firebase Save Failed:`, error);
-      return valueRef.current;
-    } finally {
-      isSavingRef.current = false;
-    }
-  }, [key]);
-
-  return [value, setSyncedValue, isLoading] as const; // 🛡️ خروجی isLoading اضافه شد
+  return [value, setSyncedValue, isLoading] as const;
 }
