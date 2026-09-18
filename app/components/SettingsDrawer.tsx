@@ -1,6 +1,9 @@
 "use client";
 import { useEffect, useState, useRef, useCallback, type ReactNode } from "react";
-import { doc, setDoc, getDoc, onSnapshot, collection, getDocs } from "firebase/firestore";
+import { 
+  doc, setDoc, getDoc, onSnapshot, 
+  collection, getDocs, writeBatch, deleteDoc 
+} from "firebase/firestore";
 import { db } from "../dashboard/lib/firebase";
 
 const CUSTOMERS_KEY = "fx-customers";
@@ -8,6 +11,12 @@ const TRANSACTIONS_KEY = "fx-transactions";
 const HAWALAS_KEY = "fx-hawalas";
 const CASH_KEY = "fx-cash";
 const SETTINGS_KEY = "fx-settings";
+
+// لیست تمام collection های احتمالی Firebase
+const FIREBASE_COLLECTIONS = [
+  'customers', 'transactions', 'hawalas', 'cash', 
+  'exchanges', 'rates', 'settings', 'users', 'logs'
+];
 
 type Settings = {
   email: string;
@@ -103,6 +112,8 @@ export default function SettingsDrawer() {
   const [toast, setToast] = useState("");
   const [toastType, setToastType] = useState<"success" | "error">("success");
   const [activeAccordion, setActiveAccordion] = useState<string | null>("email");
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
   const [showDiagnosis, setShowDiagnosis] = useState(false);
   const [diagnosisData, setDiagnosisData] = useState<any>(null);
   
@@ -219,173 +230,176 @@ export default function SettingsDrawer() {
     setSettings(prev => ({ ...prev, telegram: { ...prev.telegram, ...updates } }));
   }, []);
 
-  // ✅ سیستم تشخیص هوشمند: اسکن تمام کلیدهای localStorage
-  const runDiagnosis = useCallback(async () => {
-    const allKeys: Record<string, any> = {};
-    const summary: any = {
-      localStorageKeys: [],
-      firebaseCollections: {},
-      expectedKeys: {
-        [CUSTOMERS_KEY]: false,
-        [TRANSACTIONS_KEY]: false,
-        [HAWALAS_KEY]: false,
-        [CASH_KEY]: false,
-        [SETTINGS_KEY]: false,
-      }
-    };
-
-    // ۱. اسکن localStorage
+  // ✅ اسکن تمام localStorage
+  const scanLocalStorage = () => {
+    const result: Record<string, any> = {};
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key) {
         try {
-          const value = localStorage.getItem(key);
-          const parsed = value ? JSON.parse(value) : null;
-          const size = value?.length || 0;
-          
-          let count = 0;
-          if (Array.isArray(parsed)) count = parsed.length;
-          else if (parsed && typeof parsed === 'object') count = Object.keys(parsed).length;
-          
-          allKeys[key] = {
-            size: size,
-            count: count,
-            preview: value?.substring(0, 100) + (value && value.length > 100 ? '...' : ''),
-            isArray: Array.isArray(parsed)
-          };
-          
-          summary.localStorageKeys.push({
-            key: key,
-            size: size,
-            count: count,
-            isArray: Array.isArray(parsed)
-          });
-          
-          if (key in summary.expectedKeys) {
-            summary.expectedKeys[key] = true;
-          }
+          result[key] = JSON.parse(localStorage.getItem(key) || 'null');
         } catch {
-          allKeys[key] = { error: "Invalid JSON" };
+          result[key] = localStorage.getItem(key);
         }
       }
     }
+    return result;
+  };
 
-    // ۲. اسکن Firebase Collections
-    try {
-      const collections = ['customers', 'transactions', 'hawalas', 'cash', 'exchanges'];
-      for (const col of collections) {
+  // ✅ اسکن تمام sessionStorage
+  const scanSessionStorage = () => {
+    const result: Record<string, any> = {};
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (key) {
         try {
-          const snapshot = await getDocs(collection(db, col));
-          summary.firebaseCollections[col] = snapshot.size;
-        } catch (err) {
-          summary.firebaseCollections[col] = "error";
+          result[key] = JSON.parse(sessionStorage.getItem(key) || 'null');
+        } catch {
+          result[key] = sessionStorage.getItem(key);
         }
       }
-    } catch (err) {
-      console.warn("خطا در اسکن فایربیس:", err);
     }
+    return result;
+  };
 
-    setDiagnosisData({ allKeys, summary });
-    setShowDiagnosis(true);
-    
-    console.log("🔍 گزارش تشخیص کامل:", { allKeys, summary });
-    showToast("✅ گزارش تشخیص آماده شد. کنسول را بررسی کنید.");
-  }, [showToast]);
-
-  // ✅ بک‌آپ هوشمند: ذخیره تمام کلیدهای localStorage
-  const handleBackup = useCallback(() => {
-    try {
-      // اسکن تمام کلیدهای localStorage
-      const allLocalStorage: Record<string, any> = {};
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key) {
-          try {
-            allLocalStorage[key] = JSON.parse(localStorage.getItem(key) || 'null');
-          } catch {
-            allLocalStorage[key] = localStorage.getItem(key);
-          }
-        }
+  // ✅ اسکن تمام collection های Firebase
+  const scanFirebase = async () => {
+    const result: Record<string, any[]> = {};
+    for (const col of FIREBASE_COLLECTIONS) {
+      try {
+        const snapshot = await getDocs(collection(db, col));
+        result[col] = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      } catch (err) {
+        console.warn(`⚠️ خطا در خواندن collection ${col}:`, err);
+        result[col] = [];
       }
+    }
+    return result;
+  };
+
+  // ✅ بک‌آپ جامع: Firebase + localStorage + sessionStorage
+  const handleBackup = useCallback(async () => {
+    setIsBackingUp(true);
+    try {
+      showToast("⏳ در حال جمع‌آوری داده‌ها از Firebase...");
+      
+      // ۱. اسکن Firebase
+      const firebaseData = await scanFirebase();
+      
+      // ۲. اسکن localStorage و sessionStorage
+      const localStorageData = scanLocalStorage();
+      const sessionStorageData = scanSessionStorage();
 
       const data = {
-        version: "1.2",
+        version: "2.0",
         exportDate: new Date().toISOString(),
         settings: settings,
-        // ✅ کلیدهای استاندارد
-        customers: JSON.parse(localStorage.getItem(CUSTOMERS_KEY) || "[]"),
-        transactions: JSON.parse(localStorage.getItem(TRANSACTIONS_KEY) || "[]"),
-        hawalas: JSON.parse(localStorage.getItem(HAWALAS_KEY) || "[]"),
-        cashEntries: JSON.parse(localStorage.getItem(CASH_KEY) || "[]"),
-        // ✅ تمام کلیدهای دیگر (برای اطمینان)
-        allLocalStorage: allLocalStorage,
+        localStorage: localStorageData,
+        sessionStorage: sessionStorageData,
+        firebase: firebaseData,
       };
       
-      console.log("📦 گزارش بک‌آپ:", {
-        customers: data.customers.length,
-        transactions: data.transactions.length,
-        hawalas: data.hawalas.length,
-        cashEntries: data.cashEntries.length,
-        totalKeys: Object.keys(allLocalStorage).length,
-        allKeysList: Object.keys(allLocalStorage)
+      // لاگ تشخیص
+      console.log("📦 گزارش بک‌آپ جامع:", {
+        localStorageKeys: Object.keys(localStorageData),
+        sessionStorageKeys: Object.keys(sessionStorageData),
+        firebaseCollections: Object.fromEntries(
+          Object.entries(firebaseData).map(([k, v]) => [k, v.length])
+        ),
       });
       
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `exchange-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `exchange-full-backup-${new Date().toISOString().slice(0, 10)}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      showToast("✅ پشتیبان با موفقیت دانلود شد");
+      
+      showToast("✅ پشتیبان کامل (Firebase + LocalStorage) دانلود شد");
     } catch (err) {
-      console.error("خطای بک‌آپ:", err);
+      console.error("❌ خطای بک‌آپ:", err);
       showToast("❌ خطا در ایجاد پشتیبان", "error");
+    } finally {
+      setIsBackingUp(false);
     }
   }, [settings, showToast]);
 
+  // ✅ بازیابی جامع: Firebase + localStorage + sessionStorage
   const handleRestore = useCallback(async (file: File) => {
+    setIsRestoring(true);
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
         const result = e.target?.result;
         if (!result) {
           showToast("❌ فایل خالی یا نامعتبر است", "error");
+          setIsRestoring(false);
           return;
         }
         
         const data = JSON.parse(result as string);
         if (!data.version) { 
           showToast("❌ فایل نامعتبر است", "error"); 
+          setIsRestoring(false);
           return; 
         }
         
-        console.log("📦 داده‌های استخراج شده از بک‌آپ:", {
-          transactionsCount: data.transactions?.length || 0,
-          hawalasCount: data.hawalas?.length || 0,
-          customersCount: data.customers?.length || 0,
-          allLocalStorageKeys: data.allLocalStorage ? Object.keys(data.allLocalStorage) : 'none'
-        });
+        console.log("📦 شروع بازیابی نسخه:", data.version);
 
-        // ۱. بازیابی کلیدهای استاندارد
-        localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(data.customers || []));
-        localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(data.transactions || []));
-        localStorage.setItem(HAWALAS_KEY, JSON.stringify(data.hawalas || []));
-        localStorage.setItem(CASH_KEY, JSON.stringify(data.cashEntries || []));
-        
-        // ✅ ۲. بازیابی تمام کلیدهای دیگر (اگر وجود داشته باشند)
-        if (data.allLocalStorage) {
-          Object.entries(data.allLocalStorage).forEach(([key, value]) => {
+        // ۱. بازیابی localStorage
+        if (data.localStorage) {
+          Object.entries(data.localStorage).forEach(([key, value]) => {
             if (value !== null && value !== undefined) {
               localStorage.setItem(key, JSON.stringify(value));
             }
           });
-          console.log("✅ تمام کلیدهای localStorage بازیابی شدند.");
+          console.log("✅ localStorage بازیابی شد");
         }
 
-        // ۳. همگام‌سازی تنظیمات با فایربیس
+        // ۲. بازیابی sessionStorage
+        if (data.sessionStorage) {
+          Object.entries(data.sessionStorage).forEach(([key, value]) => {
+            if (value !== null && value !== undefined) {
+              sessionStorage.setItem(key, JSON.stringify(value));
+            }
+          });
+          console.log("✅ sessionStorage بازیابی شد");
+        }
+
+        // ۳. بازیابی Firebase (با Batch برای سرعت و کارایی)
+        if (data.firebase) {
+          showToast("⏳ در حال بازیابی داده‌های Firebase...");
+          
+          for (const [colName, docs] of Object.entries(data.firebase)) {
+            if (!Array.isArray(docs) || docs.length === 0) continue;
+            
+            try {
+              // حذف اسناد قدیمی collection
+              const oldSnapshot = await getDocs(collection(db, colName));
+              const deleteBatch = writeBatch(db);
+              oldSnapshot.docs.forEach(d => deleteBatch.delete(d.ref));
+              await deleteBatch.commit();
+              
+              // نوشتن اسناد جدید
+              const writeBatchInstance = writeBatch(db);
+              docs.forEach((docData: any) => {
+                const { id, ...rest } = docData;
+                const docRef = doc(db, colName, id);
+                writeBatchInstance.set(docRef, rest);
+              });
+              await writeBatchInstance.commit();
+              
+              console.log(`✅ Collection ${colName}: ${docs.length} سند بازیابی شد`);
+            } catch (err) {
+              console.error(`❌ خطا در بازیابی collection ${colName}:`, err);
+            }
+          }
+        }
+
+        // ۴. بازیابی تنظیمات با Migration
         if (data.settings) {
           let migratedChatIds: string[] = [];
           if (data.settings.telegram?.chatIds && Array.isArray(data.settings.telegram.chatIds)) {
@@ -414,26 +428,53 @@ export default function SettingsDrawer() {
               updatedAt: new Date().toISOString()
             }, { merge: true });
           } catch (fbErr) {
-            console.warn("⚠️ خطا در همگام‌سازی تنظیمات با فایربیس:", fbErr);
+            console.warn("⚠️ خطا در همگام‌سازی تنظیمات:", fbErr);
           }
         }
 
-        showToast("✅ داده‌ها با موفقیت بازیابی شدند. صفحه در حال بروزرسانی است...");
+        showToast("✅ تمام داده‌ها با موفقیت بازیابی شدند. صفحه در حال بروزرسانی...");
         
         setTimeout(() => {
           window.location.replace(window.location.href);
-        }, 1500);
+        }, 2000);
 
       } catch (err) {
         console.error("❌ خطا در بازیابی:", err);
-        showToast("❌ خطا در خواندن فایل. لطفاً فرمت فایل را بررسی کنید.", "error");
+        showToast("❌ خطا در خواندن فایل", "error");
+        setIsRestoring(false);
       }
     };
     reader.onerror = () => {
       showToast("❌ خطا در خواندن فایل", "error");
+      setIsRestoring(false);
     };
     reader.readAsText(file);
   }, [showToast, db]);
+
+  // ✅ تشخیص جامع
+  const runDiagnosis = useCallback(async () => {
+    const summary: any = {
+      localStorage: scanLocalStorage(),
+      sessionStorage: scanSessionStorage(),
+      firebase: {},
+    };
+
+    for (const col of FIREBASE_COLLECTIONS) {
+      try {
+        const snapshot = await getDocs(collection(db, col));
+        summary.firebase[col] = {
+          count: snapshot.size,
+          sample: snapshot.docs.slice(0, 2).map(d => ({ id: d.id, ...d.data() }))
+        };
+      } catch (err) {
+        summary.firebase[col] = { error: String(err) };
+      }
+    }
+
+    setDiagnosisData(summary);
+    setShowDiagnosis(true);
+    console.log("🔍 گزارش تشخیص جامع:", summary);
+  }, []);
 
   if (!mounted) return null;
 
@@ -535,19 +576,33 @@ export default function SettingsDrawer() {
             </div>
           </AccordionItem>
 
-          <AccordionItem id="backup" icon="backup" title="پشتیبان‌گیری">
+          <AccordionItem id="backup" icon="backup" title="پشتیبان‌گیری جامع">
             <div className="space-y-3">
-              <button onClick={handleBackup} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white transition-all hover:bg-emerald-600 active:scale-95">
-                <Ic n="download" className="h-4 w-4" /> دانلود پشتیبان کامل
+              <div className={`rounded-xl p-3 text-xs ${dk ? "bg-amber-500/10 border border-amber-500/30 text-amber-200" : "bg-amber-50 border border-amber-200 text-amber-800"}`}>
+                💡 این بک‌آپ شامل <b>تمام داده‌ها</b> از Firebase و حافظه محلی است (حواله‌ها، معاملات، مشتریان و...).
+              </div>
+              
+              <button 
+                onClick={handleBackup} 
+                disabled={isBackingUp}
+                className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white transition-all hover:bg-emerald-600 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Ic n="download" className="h-4 w-4" /> 
+                {isBackingUp ? "در حال جمع‌آوری..." : "دانلود پشتیبان کامل"}
               </button>
-              <button onClick={() => fileInputRef.current?.click()} className={`flex h-11 w-full items-center justify-center gap-2 rounded-xl border text-sm font-black transition-all active:scale-95 ${dk ? "border-slate-600 text-slate-200 hover:bg-slate-700" : "border-slate-300 text-slate-700 hover:bg-slate-50"}`}>
-                <Ic n="upload" className="h-4 w-4" /> بازیابی از فایل
+              
+              <button 
+                onClick={() => fileInputRef.current?.click()} 
+                disabled={isRestoring}
+                className={`flex h-11 w-full items-center justify-center gap-2 rounded-xl border text-sm font-black transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${dk ? "border-slate-600 text-slate-200 hover:bg-slate-700" : "border-slate-300 text-slate-700 hover:bg-slate-50"}`}
+              >
+                <Ic n="upload" className="h-4 w-4" /> 
+                {isRestoring ? "در حال بازیابی..." : "بازیابی از فایل"}
               </button>
               <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={e => { const file = e.target.files?.[0]; if (file) handleRestore(file); e.target.value = ""; }} />
               
-              {/* ✅ دکمه تشخیص جدید */}
               <button onClick={runDiagnosis} className={`flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed text-sm font-black transition-all active:scale-95 ${dk ? "border-amber-500/50 text-amber-300 hover:bg-amber-500/10" : "border-amber-500 text-amber-600 hover:bg-amber-50"}`}>
-                <Ic n="info" className="h-4 w-4" /> تشخیص ذخیره‌سازی (Diagnosis)
+                <Ic n="info" className="h-4 w-4" /> تشخیص ذخیره‌سازی
               </button>
             </div>
           </AccordionItem>
@@ -584,9 +639,6 @@ export default function SettingsDrawer() {
                         <Ic n="plus" className="h-4 w-4" /> افزودن چت آی‌دی جدید
                       </button>
                     </div>
-                    <p className={`text-[10px] leading-relaxed ${subText}`}>
-                      💡 تغییرات به صورت خودکار و همزمان در تمام دستگاه‌های شما ذخیره می‌شوند.
-                    </p>
                   </div>
 
                   <div className={`rounded-xl border p-3 space-y-3 ${dk ? "border-slate-600" : "border-slate-200"}`}>
@@ -606,30 +658,29 @@ export default function SettingsDrawer() {
           </AccordionItem>
 
           <div className={`mt-4 rounded-xl p-4 text-center ${dk ? "bg-slate-800/50" : "bg-slate-50"}`}>
-            <p className={`text-[10px] font-bold ${subText}`}>نسخه ۱.۲.۰ — صرافی برادران نورزاد</p>
+            <p className={`text-[10px] font-bold ${subText}`}>نسخه ۲.۰.۰ — صرافی برادران نورزاد</p>
           </div>
         </div>
       </div>
 
-      {/* ✅ Modal تشخیص */}
       {showDiagnosis && diagnosisData && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowDiagnosis(false)}>
           <div className={`w-full max-w-2xl max-h-[80vh] overflow-y-auto rounded-2xl shadow-2xl ${dk ? "bg-slate-900 border border-slate-700" : "bg-white"}`} onClick={e => e.stopPropagation()}>
             <div className={`sticky top-0 flex items-center justify-between border-b px-5 py-4 ${dk ? "bg-slate-900 border-slate-700" : "bg-white border-slate-200"}`}>
-              <h3 className={`text-lg font-black ${heading}`}>🔍 گزارش تشخیص ذخیره‌سازی</h3>
+              <h3 className={`text-lg font-black ${heading}`}>🔍 گزارش تشخیص جامع</h3>
               <button onClick={() => setShowDiagnosis(false)} className={`grid h-9 w-9 place-items-center rounded-lg ${dk ? "hover:bg-slate-700" : "hover:bg-slate-100"}`}>
                 <Ic n="x" className="h-5 w-5" />
               </button>
             </div>
             <div className="p-5 space-y-4">
               <div className={`rounded-xl p-4 ${dk ? "bg-slate-800" : "bg-slate-50"}`}>
-                <h4 className={`text-sm font-black mb-3 ${heading}`}>📊 وضعیت کلیدهای مورد انتظار:</h4>
-                <div className="space-y-2">
-                  {Object.entries(diagnosisData.summary.expectedKeys).map(([key, exists]) => (
-                    <div key={key} className={`flex items-center justify-between p-2 rounded-lg ${exists ? (dk ? "bg-emerald-500/10" : "bg-emerald-50") : (dk ? "bg-rose-500/10" : "bg-rose-50")}`}>
-                      <span className={`text-xs font-mono ${heading}`}>{key}</span>
-                      <span className={`text-xs font-black ${exists ? "text-emerald-500" : "text-rose-500"}`}>
-                        {exists ? "✅ وجود دارد" : "❌ وجود ندارد"}
+                <h4 className={`text-sm font-black mb-3 ${heading}`}>💾 LocalStorage ({Object.keys(diagnosisData.localStorage).length} کلید):</h4>
+                <div className="space-y-1 max-h-40 overflow-y-auto">
+                  {Object.entries(diagnosisData.localStorage).map(([key, value]) => (
+                    <div key={key} className={`flex items-center justify-between p-2 rounded text-xs ${dk ? "bg-slate-700/50" : "bg-white"}`}>
+                      <span className={`font-mono ${heading}`}>{key}</span>
+                      <span className={subText}>
+                        {Array.isArray(value) ? `${value.length} آیتم` : typeof value === 'object' ? 'Object' : 'string'}
                       </span>
                     </div>
                   ))}
@@ -637,41 +688,24 @@ export default function SettingsDrawer() {
               </div>
 
               <div className={`rounded-xl p-4 ${dk ? "bg-slate-800" : "bg-slate-50"}`}>
-                <h4 className={`text-sm font-black mb-3 ${heading}`}>💾 تمام کلیدهای LocalStorage:</h4>
+                <h4 className={`text-sm font-black mb-3 ${heading}`}>🔥 Firebase Collections:</h4>
                 <div className="space-y-2">
-                  {diagnosisData.summary.localStorageKeys.map((item: any) => (
-                    <div key={item.key} className={`flex items-center justify-between p-2 rounded-lg ${dk ? "bg-slate-700/50" : "bg-white"}`}>
-                      <span className={`text-xs font-mono flex-1 ${heading}`}>{item.key}</span>
-                      <span className={`text-xs ${subText}`}>
-                        {item.isArray ? `${item.count} آیتم` : `${item.size} bytes`}
-                      </span>
-                    </div>
-                  ))}
-                  {diagnosisData.summary.localStorageKeys.length === 0 && (
-                    <p className={`text-xs text-center py-4 ${subText}`}>هیچ کلیدی در localStorage وجود ندارد!</p>
-                  )}
-                </div>
-              </div>
-
-              <div className={`rounded-xl p-4 ${dk ? "bg-slate-800" : "bg-slate-50"}`}>
-                <h4 className={`text-sm font-black mb-3 ${heading}`}>🔥 وضعیت Firebase Collections:</h4>
-                <div className="space-y-2">
-                  {Object.entries(diagnosisData.summary.firebaseCollections).map(([col, count]) => (
+                  {Object.entries(diagnosisData.firebase).map(([col, info]: [string, any]) => (
                     <div key={col} className={`flex items-center justify-between p-2 rounded-lg ${dk ? "bg-slate-700/50" : "bg-white"}`}>
                       <span className={`text-xs font-mono ${heading}`}>{col}</span>
-                      <span className={`text-xs font-black ${typeof count === 'number' && count > 0 ? "text-emerald-500" : "text-rose-500"}`}>
-                        {count === "error" ? "خطا" : `${count} سند`}
+                      <span className={`text-xs font-black ${info.count > 0 ? "text-emerald-500" : "text-rose-500"}`}>
+                        {info.error ? "خطا" : `${info.count} سند`}
                       </span>
                     </div>
                   ))}
                 </div>
               </div>
 
-              <div className={`rounded-xl p-4 border-2 ${dk ? "border-amber-500/50 bg-amber-500/10" : "border-amber-500 bg-amber-50"}`}>
-                <p className={`text-xs font-black mb-2 ${heading}`}>💡 نتیجه‌گیری:</p>
+              <div className={`rounded-xl p-4 border-2 ${dk ? "border-emerald-500/50 bg-emerald-500/10" : "border-emerald-500 bg-emerald-50"}`}>
+                <p className={`text-xs font-black mb-2 ${heading}`}>💡 نتیجه:</p>
                 <ul className={`text-xs space-y-1 ${subText}`}>
-                  <li>• اگر کلید <code className="font-mono">fx-transactions</code> وجود ندارد، معاملات شما در localStorage ذخیره نمی‌شوند.</li>
-                  <li>• اگر در Firebase تعداد اسناد بیشتر از localStorage است، معاملات شما در Firebase ذخیره می‌شوند.</li>
+                  <li>• اگر collection های Firebase (مثل hawalas, transactions) تعداد زیادی سند دارند، <b>داده‌های شما در Firebase ذخیره می‌شوند</b>.</li>
+                  <li>• بک‌آپ جدید (نسخه ۲.۰) <b>هم Firebase و هم localStorage</b> را ذخیره می‌کند.</li>
                   <li>• این گزارش را در کنسول (F12) هم می‌توانید ببینید.</li>
                 </ul>
               </div>
