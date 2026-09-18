@@ -335,13 +335,9 @@ function buildCashBoxLedger(cashEntries: any[]): LedgerEntry[] {
   return entries;
 }
 
-// ============================================================
-// ✅ کامپوننت اصلی صفحه مشتریان (با رفع باگ تعویض تب)
-// ============================================================
 export default function CustomersPage() {
   const [mounted, setMounted] = useState(false);
   
-  // 🛡️ دریافت وضعیت isLoading از هوک اصلاح‌شده
   const [customers, setCustomers, isLoadingCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
   const [transactions, setTransactions] = useSyncedState<any[]>(TRANSACTIONS_KEY, []);
   const [hawalas, setHawalas] = useSyncedState<any[]>(HAWALAS_KEY, []);
@@ -596,7 +592,6 @@ export default function CustomersPage() {
 
     const nc: Customer = { id: generateId(), name: form.name.trim(), phone: form.phone.trim(), tazkira: form.tazkira.trim(), address: form.address.trim(), note: form.note.trim(), telegram: form.telegram.trim(), registeredAt: new Date().toISOString(), balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
     
-    // ✅ آپدیت ایمن برای جلوگیری از Race Condition
     setCustomers(p => [...p, nc]); 
     setForm(emptyForm); setErrors({}); setActiveTab("list");
     showToast(`"${nc.name}" ثبت شد.`);
@@ -628,7 +623,6 @@ export default function CustomersPage() {
     } catch { showToast("خطا در چاپ"); }
   };
 
-  // 🛡️ رفع باگ اصلی: نمایش لودینگ تا زمانی که داده‌ها واقعاً از LocalStorage/Firebase خوانده شوند
   if (!mounted || isLoadingCustomers) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
@@ -717,11 +711,12 @@ export default function CustomersPage() {
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="جستجو..." className={`${uiInput} w-auto md:w-64`} />
               </div>
 
-              <div className="md:hidden space-y-2">
+              {/* ✅ نمایش موبایل: موجودی‌ها به صورت بلوک یکپارچه */}
+              <div className="md:hidden space-y-3">
                 {filteredCustomers.map(c => {
                   const isCashBoxRow = c.id === CASH_BOX_ID;
                   const isExchRow = c.id === EXCHANGE_ACCOUNT_ID;
-                  const balSource = allBalances[c.id];
+                  
                   return (
                     <div key={c.id} className={`rounded-2xl border p-4 ${glassCard} ${isCashBoxRow ? (dk ? "border-emerald-400/30" : "border-emerald-200") : ""} ${isExchRow ? (dk ? "border-violet-400/30" : "border-violet-200") : ""}`}>
                       <div className="flex items-start gap-3">
@@ -736,19 +731,28 @@ export default function CustomersPage() {
                             <div className={`text-[11px] ${subTextVar} mt-1 space-y-0.5`}>
                               <div>📱 <span dir="ltr">{c.phone || "-"}</span></div>
                               <div>🆔 <span dir="ltr">{c.tazkira || "-"}</span></div>
-                              {c.address && <div>📍 {c.address}</div>}
                             </div>
                           )}
                         </div>
                       </div>
-                      <div className="grid grid-cols-5 gap-1 mt-3">
-                        {currencies.map(cur => (
-                          <div key={cur} className={`rounded-lg px-1.5 py-1.5 text-center ${dk ? "bg-slate-900/50" : "bg-slate-50"}`}>
-                            <div className={`text-[8px] font-black ${subTextVar}`}>{cur}</div>
-                            <div className={`text-[10px] font-black tabular-nums ${balSource[cur] >= 0 ? currencyColors[cur][dk ? "dark" : "light"] : "text-rose-500"}`}>{fmt(balSource[cur])}</div>
-                          </div>
-                        ))}
+                      
+                      <div className="mt-3 pt-3 border-t border-dashed border-slate-200 dark:border-slate-700">
+                        <div className="text-[10px] font-black text-slate-400 mb-2">موجودی حساب:</div>
+                        <div className="flex flex-wrap gap-2">
+                          {currencies.map(cur => {
+                            const balance = allBalances[c.id][cur];
+                            const isPositive = balance >= 0;
+                            const colorClass = isPositive ? currencyColors[cur][dk ? "dark" : "light"] : "text-rose-500 bg-rose-50 dark:bg-rose-900/20";
+                            return (
+                              <span key={cur} className={`inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-lg font-bold border ${colorClass} ${dk ? "border-slate-700" : "border-slate-200"}`}>
+                                <span className="opacity-70">{cur}</span>
+                                <span>{fmt(balance)}</span>
+                              </span>
+                            );
+                          })}
+                        </div>
                       </div>
+
                       <div className="flex flex-col gap-1.5 mt-3">
                         <button onClick={() => openProfile(c.id)} className={`flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-bold cursor-pointer ${dk ? "border-emerald-400/30 text-emerald-300" : "border-emerald-300 text-emerald-600"}`}>
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
@@ -760,36 +764,57 @@ export default function CustomersPage() {
                 })}
               </div>
               
-              {/* نسخه دسکتاپ (ساده‌شده برای جلوگیری از طولانی‌شدن بیش‌ازحد کد، اما کاملاً کاربردی) */}
+              {/* ✅ نمایش دسکتاپ: موجودی‌ها در یک ستون واحد */}
               <div className="hidden md:block overflow-x-auto cu-scroll">
                 <table className="w-full text-sm text-right">
                   <thead className={`text-xs uppercase ${dk ? "text-slate-400 bg-slate-800/50" : "text-slate-500 bg-slate-50"}`}>
                     <tr>
-                      <th className="px-4 py-3 rounded-r-lg">نام مشتری</th>
-                      <th className="px-4 py-3">تماس / تذکره</th>
-                      <th className="px-4 py-3">موجودی‌ها</th>
-                      <th className="px-4 py-3 rounded-l-lg text-center">عملیات</th>
+                      <th className="px-4 py-3 rounded-r-lg w-1/4">نام مشتری</th>
+                      <th className="px-4 py-3 w-1/6">تماس / تذکره</th>
+                      <th className="px-4 py-3 w-2/4">موجودی‌ها (یکجا)</th>
+                      <th className="px-4 py-3 rounded-l-lg text-center w-1/6">عملیات</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                     {filteredCustomers.map(c => (
                       <tr key={c.id} className={`transition-colors hover:${dk ? "bg-slate-800/50" : "bg-slate-50"}`}>
-                        <td className="px-4 py-3 font-bold">{c.name}</td>
-                        <td className="px-4 py-3 text-slate-500">
-                          <div dir="ltr" className="text-xs">{c.phone || "-"}</div>
-                          <div dir="ltr" className="text-xs">{c.tazkira || "-"}</div>
-                        </td>
                         <td className="px-4 py-3">
-                          <div className="flex gap-2 flex-wrap">
-                            {currencies.map(cur => (
-                              <span key={cur} className={`text-[10px] px-2 py-1 rounded-md font-bold ${allBalances[c.id][cur] >= 0 ? currencyColors[cur][dk ? "dark" : "light"] : "text-rose-500 bg-rose-50 dark:bg-rose-900/20"}`}>
-                                {cur}: {fmt(allBalances[c.id][cur])}
-                              </span>
-                            ))}
+                          <div className="font-bold text-slate-800 dark:text-slate-100">{c.name}</div>
+                          {c.id === CASH_BOX_ID && <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">صندوق</span>}
+                          {c.id === EXCHANGE_ACCOUNT_ID && <span className="text-[10px] text-violet-600 dark:text-violet-400 font-bold">حساب صرافی</span>}
+                        </td>
+                        <td className="px-4 py-3 text-slate-500">
+                          <div dir="ltr" className="text-xs font-mono">{c.phone || "-"}</div>
+                          <div dir="ltr" className="text-xs font-mono text-slate-400">{c.tazkira || "-"}</div>
+                        </td>
+                        
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap gap-2">
+                            {currencies.map(cur => {
+                              const balance = allBalances[c.id][cur];
+                              const isPositive = balance >= 0;
+                              const colorClass = isPositive 
+                                ? currencyColors[cur][dk ? "dark" : "light"] 
+                                : "text-rose-500 bg-rose-50 dark:bg-rose-900/20";
+                              
+                              return (
+                                <span key={cur} className={`inline-flex items-center gap-1.5 text-[11px] px-3 py-1.5 rounded-lg font-bold border shadow-sm ${colorClass} ${dk ? "border-slate-700" : "border-slate-200"}`}>
+                                  <span className="opacity-70 text-[10px]">{cur}</span>
+                                  <span className="tabular-nums">{fmt(balance)}</span>
+                                </span>
+                              );
+                            })}
                           </div>
                         </td>
+                        
                         <td className="px-4 py-3 text-center">
-                          <button onClick={() => openProfile(c.id)} className="text-sky-600 hover:text-sky-800 dark:text-sky-400 dark:hover:text-sky-300 text-xs font-bold">مشاهده</button>
+                          <button 
+                            onClick={() => openProfile(c.id)} 
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-sky-50 dark:bg-sky-900/20 px-3 py-1.5 text-xs font-bold text-sky-600 dark:text-sky-400 transition-colors hover:bg-sky-100 dark:hover:bg-sky-900/40"
+                          >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+                            پرونده
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -799,7 +824,6 @@ export default function CustomersPage() {
             </section>
           )}
 
-          {/* Toast Notification */}
           {toast && (
             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-bounce">
               <div className={`px-6 py-3 rounded-xl shadow-2xl text-sm font-bold text-white ${toast.includes("❌") ? "bg-rose-600" : "bg-emerald-600"}`}>
