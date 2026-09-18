@@ -701,17 +701,17 @@ export default function CustomersPage() {
                         </div>
                       </div>
 
-                      {/* موجودی‌ها در یک بلوک واحد */}
+                      {/* ✅ اصلاح شده: وسط‌چین و نمایش نام فارسی ارز */}
                       <div className="mt-3 pt-3 border-t border-dashed border-slate-200 dark:border-slate-700">
-                        <div className="text-[10px] font-black text-slate-400 mb-2">موجودی حساب:</div>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="text-[10px] font-black text-slate-400 mb-2 text-center">موجودی حساب:</div>
+                        <div className="flex flex-wrap gap-2 justify-center">
                           {currencies.map(cur => {
                             const balance = allBalances[c.id][cur];
                             const isPositive = balance >= 0;
                             const colorClass = isPositive ? currencyColors[cur][dk ? "dark" : "light"] : "text-rose-500 bg-rose-50 dark:bg-rose-900/20";
                             return (
                               <span key={cur} className={`inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-lg font-bold border ${colorClass} ${dk ? "border-slate-700" : "border-slate-200"}`}>
-                                <span className="opacity-70">{cur}</span>
+                                <span className="opacity-70">{labels[cur]}</span>
                                 <span>{fmt(balance)}</span>
                               </span>
                             );
@@ -737,7 +737,7 @@ export default function CustomersPage() {
                     <tr>
                       <th className="px-4 py-3 rounded-r-lg w-1/4">نام مشتری</th>
                       <th className="px-4 py-3 w-1/6">تماس / تذکره</th>
-                      <th className="px-4 py-3 w-2/4">موجودی‌ها (یکجا)</th>
+                      <th className="px-4 py-3 w-2/4 text-center">موجودی‌ها (یکجا)</th>
                       <th className="px-4 py-3 rounded-l-lg text-center w-1/6">عملیات</th>
                     </tr>
                   </thead>
@@ -753,21 +753,24 @@ export default function CustomersPage() {
                           <div dir="ltr" className="text-xs font-mono">{c.phone || "-"}</div>
                           <div dir="ltr" className="text-xs font-mono text-slate-400">{c.tazkira || "-"}</div>
                         </td>
-                        <td className="px-4 py-3">
-                          <div className="flex flex-wrap gap-2">
+                        
+                        {/* ✅ اصلاح شده: وسط‌چین کردن محتوا و نمایش نام فارسی ارز */}
+                        <td className="px-4 py-3 text-center">
+                          <div className="flex flex-wrap gap-2 justify-center items-center">
                             {currencies.map(cur => {
                               const balance = allBalances[c.id][cur];
                               const isPositive = balance >= 0;
                               const colorClass = isPositive ? currencyColors[cur][dk ? "dark" : "light"] : "text-rose-500 bg-rose-50 dark:bg-rose-900/20";
                               return (
                                 <span key={cur} className={`inline-flex items-center gap-1.5 text-[11px] px-3 py-1.5 rounded-lg font-bold border shadow-sm ${colorClass} ${dk ? "border-slate-700" : "border-slate-200"}`}>
-                                  <span className="opacity-70 text-[10px]">{cur}</span>
+                                  <span className="opacity-70 text-[10px]">{labels[cur]}</span>
                                   <span className="tabular-nums">{fmt(balance)}</span>
                                 </span>
                               );
                             })}
                           </div>
                         </td>
+                        
                         <td className="px-4 py-3 text-center">
                           <button onClick={() => openProfile(c.id)} className="inline-flex items-center gap-1.5 rounded-lg bg-sky-50 dark:bg-sky-900/20 px-3 py-1.5 text-xs font-bold text-sky-600 dark:text-sky-400 transition-colors hover:bg-sky-100 dark:hover:bg-sky-900/40">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
@@ -841,7 +844,7 @@ export default function CustomersPage() {
                   const colorClass = balance >= 0 ? currencyColors[cur][dk ? "dark" : "light"] : "text-rose-500 bg-rose-50";
                   return (
                     <div key={cur} className={`rounded-xl p-3 border ${dk ? "border-slate-700 bg-slate-900/50" : "border-slate-200 bg-white"}`}>
-                      <div className="text-[10px] font-bold text-center text-slate-400">{cur}</div>
+                      <div className="text-[10px] font-bold text-center text-slate-400">{labels[cur]}</div>
                       <div className={`text-sm font-black text-center mt-1 ${colorClass.split(" ")[0]}`}>{fmt(balance)}</div>
                     </div>
                   );
