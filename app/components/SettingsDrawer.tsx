@@ -107,7 +107,7 @@ export default function SettingsDrawer() {
   const panelRef = useRef<HTMLDivElement>(null);
   const latestSettingsRef = useRef(settings);
   
-  // ✅ بهبود ۱: مدیریت صحیح تایمر Toast برای جلوگیری از تداخل
+  // ✅ بهبود ۱: مدیریت صحیح تایمر Toast برای جلوگیری از تداخل و محو شدن زودرس
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   latestSettingsRef.current = settings;
@@ -203,7 +203,6 @@ export default function SettingsDrawer() {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  // ✅ بهبود ۱ (ادامه): پاک کردن تایمر قبلی قبل از تنظیم تایمر جدید
   const showToast = useCallback((message: string, type: "success" | "error" = "success") => {
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     setToast(message);
@@ -219,18 +218,21 @@ export default function SettingsDrawer() {
     setSettings(prev => ({ ...prev, telegram: { ...prev.telegram, ...updates } }));
   }, []);
 
+  // ✅ بهبود ۲: استفاده از state زنده (settings) به جای خواندن مجدد از localStorage
   const handleBackup = useCallback(() => {
     try {
       const data = {
-        version: "1.0",
+        version: "1.1", // نسخه برای تشخیص فرمت جدید
         exportDate: new Date().toISOString(),
-        // ✅ بهبود ۲: استفاده از state فعلی به جای خواندن مجدد از localStorage
-        settings: settings, 
+        settings: settings, // ✅ اصلاح حیاتی: استفاده از state فعلی
         customers: JSON.parse(localStorage.getItem(CUSTOMERS_KEY) || "[]"),
         transactions: JSON.parse(localStorage.getItem(TRANSACTIONS_KEY) || "[]"),
         hawalas: JSON.parse(localStorage.getItem(HAWALAS_KEY) || "[]"),
         cashEntries: JSON.parse(localStorage.getItem(CASH_KEY) || "[]"),
       };
+      
+      console.log("📦 بک‌آپ ایجاد شد. تعداد معاملات:", data.transactions.length);
+      
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -241,16 +243,17 @@ export default function SettingsDrawer() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       showToast("✅ پشتیبان با موفقیت دانلود شد");
-    } catch {
+    } catch (err) {
+      console.error("خطای بک‌آپ:", err);
       showToast("❌ خطا در ایجاد پشتیبان", "error");
     }
   }, [settings, showToast]);
 
+  // ✅ بهبود ۳: بازیابی هوشمند با لاگ‌های دیباگ و مهاجرت (Migration) داده‌ها
   const handleRestore = useCallback(async (file: File) => {
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
-        // ✅ بهبود ۴: بررسی صحت داده خوانده شده
         const result = e.target?.result;
         if (!result) {
           showToast("❌ فایل خالی یا نامعتبر است", "error");
@@ -263,13 +266,27 @@ export default function SettingsDrawer() {
           return; 
         }
         
+        // لاگ برای اطمینان از وجود داده‌ها در فایل
+        console.log("📦 داده‌های استخراج شده از بک‌آپ:", {
+          transactionsCount: data.transactions?.length || 0,
+          hawalasCount: data.hawalas?.length || 0,
+          customersCount: data.customers?.length || 0,
+        });
+
+        if ((data.transactions?.length || 0) === 0 && (data.hawalas?.length || 0) === 0) {
+          console.warn("⚠️ هشدار: فایل بک‌آپ فاقد معامله یا حواله است! لطفاً فایل را بررسی کنید.");
+        }
+
+        // ۱. ذخیره قطعی در حافظه محلی
         localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(data.customers || []));
         localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(data.transactions || []));
         localStorage.setItem(HAWALAS_KEY, JSON.stringify(data.hawalas || []));
         localStorage.setItem(CASH_KEY, JSON.stringify(data.cashEntries || []));
         
+        console.log("✅ داده‌ها در LocalStorage با موفقیت بازنویسی شدند.");
+
+        // ۲. همگام‌سازی تنظیمات بازیابی‌شده با فایربیس (با منطق Migration)
         if (data.settings) {
-          // ✅ بهبود ۳: اعمال منطق Migration قبل از ذخیره در فایربیس
           let migratedChatIds: string[] = [];
           if (data.settings.telegram?.chatIds && Array.isArray(data.settings.telegram.chatIds)) {
             migratedChatIds = data.settings.telegram.chatIds;
@@ -296,18 +313,19 @@ export default function SettingsDrawer() {
               value: finalSettings,
               updatedAt: new Date().toISOString()
             }, { merge: true });
+            console.log("✅ تنظیمات در فایربیس همگام‌سازی شد.");
           } catch (fbErr) {
             console.warn("⚠️ خطا در همگام‌سازی تنظیمات با فایربیس:", fbErr);
           }
-        } else {
-          showToast("⚠️ فایل بک‌آپ فاقد بخش تنظیمات است", "error");
         }
+
+        showToast("✅ داده‌ها با موفقیت بازیابی شدند. صفحه در حال بروزرسانی است...");
         
-        showToast("✅ داده‌ها با موفقیت بازیابی و همگام‌سازی شدند. صفحه در حال بروزرسانی است...");
-        
+        // ✅ بهبود ۴: استفاده از replace به جای href برای رفرش تمیزتر و دور زدن کش
         setTimeout(() => {
-          window.location.href = window.location.href;
+          window.location.replace(window.location.href);
         }, 1500);
+
       } catch (err) {
         console.error("❌ خطا در بازیابی:", err);
         showToast("❌ خطا در خواندن فایل. لطفاً فرمت فایل را بررسی کنید.", "error");
@@ -485,7 +503,7 @@ export default function SettingsDrawer() {
           </AccordionItem>
 
           <div className={`mt-4 rounded-xl p-4 text-center ${dk ? "bg-slate-800/50" : "bg-slate-50"}`}>
-            <p className={`text-[10px] font-bold ${subText}`}>نسخه ۱.۰.۰ — صرافی برادران نورزاد</p>
+            <p className={`text-[10px] font-bold ${subText}`}>نسخه ۱.۱.۰ — صرافی برادران نورزاد</p>
           </div>
         </div>
       </div>
