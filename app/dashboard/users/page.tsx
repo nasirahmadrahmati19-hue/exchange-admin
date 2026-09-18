@@ -141,6 +141,7 @@ const currencyColors: Record<Currency, { light: string; dark: string; gradient: 
   PKR: { light: "text-rose-700 bg-rose-50", dark: "text-rose-300 bg-rose-900/20", gradient: "from-rose-500 to-pink-400" }
 };
 const txLabels: Record<TxType, string> = { exchange: "تبادل ارز", transfer: "انتقال", convert: "تبدیل ارز", hawala: "حواله", deposit: "واریز", withdraw: "برداشت", fee: "کارمزد", correction: "اصلاح" };
+const txColors: Record<TxType, { light: string; dark: string }> = { exchange: { light: "bg-sky-100 text-sky-700", dark: "bg-sky-400/15 text-sky-300" }, transfer: { light: "bg-violet-100 text-violet-700", dark: "bg-violet-400/15 text-violet-300" }, convert: { light: "bg-purple-100 text-purple-700", dark: "bg-purple-400/15 text-purple-300" }, hawala: { light: "bg-blue-100 text-blue-700", dark: "bg-blue-400/15 text-blue-300" }, deposit: { light: "bg-emerald-100 text-emerald-700", dark: "bg-emerald-400/15 text-emerald-300" }, withdraw: { light: "bg-rose-100 text-rose-700", dark: "bg-rose-400/15 text-rose-300" }, fee: { light: "bg-amber-100 text-amber-700", dark: "bg-amber-400/15 text-amber-300" }, correction: { light: "bg-orange-100 text-orange-700", dark: "bg-orange-400/15 text-orange-300" } };
 
 const CASH_BOX_ID = "CASH_BOX";
 const CASH_BOX_NAME = "صندوق";
@@ -676,7 +677,6 @@ export default function CustomersPage() {
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="جستجو..." className={`${uiInput} w-auto md:w-64`} />
               </div>
 
-              {/* نسخه موبایل */}
               <div className="md:hidden space-y-3">
                 {filteredCustomers.map(c => {
                   const isCashBoxRow = c.id === CASH_BOX_ID;
@@ -701,7 +701,6 @@ export default function CustomersPage() {
                         </div>
                       </div>
 
-                      {/* ✅ اصلاح شده: وسط‌چین و نمایش نام فارسی ارز */}
                       <div className="mt-3 pt-3 border-t border-dashed border-slate-200 dark:border-slate-700">
                         <div className="text-[10px] font-black text-slate-400 mb-2 text-center">موجودی حساب:</div>
                         <div className="flex flex-wrap gap-2 justify-center">
@@ -730,7 +729,6 @@ export default function CustomersPage() {
                 })}
               </div>
 
-              {/* نسخه دسکتاپ */}
               <div className="hidden md:block overflow-x-auto cu-scroll">
                 <table className="w-full text-sm text-right">
                   <thead className={`text-xs uppercase ${dk ? "text-slate-400 bg-slate-800/50" : "text-slate-500 bg-slate-50"}`}>
@@ -753,8 +751,6 @@ export default function CustomersPage() {
                           <div dir="ltr" className="text-xs font-mono">{c.phone || "-"}</div>
                           <div dir="ltr" className="text-xs font-mono text-slate-400">{c.tazkira || "-"}</div>
                         </td>
-                        
-                        {/* ✅ اصلاح شده: وسط‌چین کردن محتوا و نمایش نام فارسی ارز */}
                         <td className="px-4 py-3 text-center">
                           <div className="flex flex-wrap gap-2 justify-center items-center">
                             {currencies.map(cur => {
@@ -770,7 +766,6 @@ export default function CustomersPage() {
                             })}
                           </div>
                         </td>
-                        
                         <td className="px-4 py-3 text-center">
                           <button onClick={() => openProfile(c.id)} className="inline-flex items-center gap-1.5 rounded-lg bg-sky-50 dark:bg-sky-900/20 px-3 py-1.5 text-xs font-bold text-sky-600 dark:text-sky-400 transition-colors hover:bg-sky-100 dark:hover:bg-sky-900/40">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
@@ -825,6 +820,7 @@ export default function CustomersPage() {
             </section>
           )}
 
+          {/* ✅ بخش اصلاح‌شده: نمایش صورت حساب در نمای پرونده */}
           {activeTab === "profile" && selectedCustomer && (
             <section className={`cu-up space-y-4 p-4 md:p-6 ${uiCard}`}>
               <div className="flex items-center justify-between">
@@ -864,6 +860,64 @@ export default function CustomersPage() {
                   <div>
                     <span className="text-xs font-bold text-slate-500">📍 آدرس:</span>
                     <span className="mr-2 text-sm font-bold">{selectedCustomer.address}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* ✅ اضافه شده: جدول صورت حساب و گردش مالی مشتری */}
+              <div className="mt-6 pt-6 border-t border-dashed border-slate-200 dark:border-slate-700">
+                <h3 className={`text-lg font-black mb-4 flex items-center gap-2 ${headingText}`}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-sky-500"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" /></svg>
+                  صورت حساب و گردش مالی
+                </h3>
+                
+                {customerLedger.length === 0 ? (
+                  <div className="text-center py-8 text-slate-500 text-sm font-bold bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
+                    هنوز هیچ گردش مالی برای این مشتری ثبت نشده است.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto cu-scroll rounded-xl border border-slate-200 dark:border-slate-700">
+                    <table className="w-full text-sm text-right">
+                      <thead className={`text-xs uppercase ${dk ? "bg-slate-800 text-slate-400" : "bg-slate-50 text-slate-500"}`}>
+                        <tr>
+                          <th className="px-3 py-3 rounded-r-lg">تاریخ</th>
+                          <th className="px-3 py-3">شرح</th>
+                          <th className="px-3 py-3">نوع</th>
+                          <th className="px-3 py-3">ارز</th>
+                          <th className="px-3 py-3 text-left">واریز</th>
+                          <th className="px-3 py-3 text-left">برداشت</th>
+                          <th className="px-3 py-3 rounded-l-lg text-left">مانده</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                        {customerLedger.slice().reverse().map((e) => (
+                          <tr key={e.id} className={`transition-colors ${dk ? "hover:bg-slate-800/50" : "hover:bg-slate-50"}`}>
+                            <td className="px-3 py-3 text-xs font-mono whitespace-nowrap">
+                              <div>{shortDateLabel(e.date)}</div>
+                              <div className="text-slate-400">{timeLabel(e.date)}</div>
+                            </td>
+                            <td className="px-3 py-3 font-bold text-slate-700 dark:text-slate-200 max-w-[200px] truncate" title={e.description}>
+                              {e.description}
+                            </td>
+                            <td className="px-3 py-3">
+                              <span className={`text-[10px] px-2 py-1 rounded-md font-bold ${txColors[e.type] ? (dk ? txColors[e.type].dark : txColors[e.type].light) : "bg-slate-100 text-slate-600"}`}>
+                                {txLabels[e.type] || e.type}
+                              </span>
+                            </td>
+                            <td className="px-3 py-3 font-bold">{labels[e.currency]}</td>
+                            <td className="px-3 py-3 text-left font-mono text-emerald-600 dark:text-emerald-400">
+                              {e.direction === "in" ? fmt(e.amount) : "-"}
+                            </td>
+                            <td className="px-3 py-3 text-left font-mono text-rose-600 dark:text-rose-400">
+                              {e.direction === "out" ? fmt(e.amount) : "-"}
+                            </td>
+                            <td className="px-3 py-3 text-left font-black font-mono text-slate-800 dark:text-slate-100">
+                              {fmt(e.balanceAfter)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </div>
