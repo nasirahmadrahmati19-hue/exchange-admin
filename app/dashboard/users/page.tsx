@@ -326,5 +326,4 @@ function buildCashBoxLedger(cashEntries: any[]): LedgerEntry[] {
     bals[cur] += isIn ? amt : -amt;
     let txType: TxType = "correction";
     if (ce.type === "owner_deposit") txType = "deposit";
-    else if (ce.type === "owner_withdraw") txType = "withdraw";
-    else if (ce.type === "fee") tx
+    else if (ce.type === "owner_withdraw") txType =
