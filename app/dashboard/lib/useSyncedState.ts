@@ -52,7 +52,7 @@ async function saveToIDB(key: string, value: any): Promise<void> {
       request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
     });
-  } catch (error) {}
+  } catch {}
 }
 
 async function readFromIDB(key: string): Promise<any> {
@@ -88,23 +88,46 @@ function saveToLS(key: string, value: any): boolean {
   }
 }
 
-export function useSyncedState<T>(key: string, initialValue: T) {
-  const isMounted = useRef(true);
-  const [value, setValue] = useState<T>(initialValue);
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+// ============================================================
+// ✅ کش سراسری در سطح ماژول (بین mount/unmount زنده می‌مونه)
+// ============================================================
+type CacheEntry = {
+  value: any;
+  lastUpdated: number;
+  loaded: boolean;
+};
+const globalCache = new Map<string, CacheEntry>();
 
-  const valueRef = useRef<T>(initialValue);
-  const lastUpdatedRef = useRef<number>(0);
+export function useSyncedState<T>(key: string, initialValue: T) {
+  // 🛡️ مقدار اولیه از کش سراسری (اگه موجود باشه) — جلوگیری از پرش داده
+  const cached = globalCache.get(key);
+  const initial = cached?.loaded ? (cached.value as T) : initialValue;
+
+  const [value, setValue] = useState<T>(initial);
+  const [isLoaded, setIsLoaded] = useState(cached?.loaded ?? false);
+  const [isLoading, setIsLoading] = useState(!(cached?.loaded ?? false));
+
+  const valueRef = useRef<T>(initial);
+  const lastUpdatedRef = useRef<number>(cached?.lastUpdated ?? 0);
   const pendingWritesRef = useRef<number>(0);
   const lastLocalWriteRef = useRef<string>("");
+  const isMountedRef = useRef<boolean>(true);
 
-  useEffect(() => { valueRef.current = value; }, [value]);
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
 
   // ۱. بارگذاری اولیه
   useEffect(() => {
+    isMountedRef.current = true;
     let ignore = false;
-    setIsLoading(true);
+
+    // اگه قبلاً لود شده (از کش سراسری)، دیگه از صفر شروع نکن
+    const alreadyLoaded = globalCache.get(key)?.loaded;
+    if (alreadyLoaded) {
+      setIsLoaded(true);
+      setIsLoading(false);
+    }
 
     const init = async () => {
       const docRef = doc(db, "appData", key);
@@ -115,8 +138,8 @@ export function useSyncedState<T>(key: string, initialValue: T) {
         if (snap.exists() && snap.data().value !== undefined && hasData(snap.data().value)) {
           finalPayload = snap.data();
         } else {
+          // fallback: local storage / idb
           const localData = readFromLS(key) ?? (await readFromIDB(key));
-
           if (localData !== undefined && hasData(localData)) {
             finalPayload = { value: localData, lastUpdated: Date.now() };
             await setDoc(docRef, removeUndefinedFields(finalPayload), { merge: true });
@@ -131,16 +154,34 @@ export function useSyncedState<T>(key: string, initialValue: T) {
           }
         }
 
-        if (!ignore && isMounted.current) {
+        // 🛡️ فقط اگه داده جدیدتره، overwrite کن
+        if (!ignore && isMountedRef.current) {
+          const serverTs = finalPayload.lastUpdated || 0;
+
+          // اگه داده لوکال جدیدتره، ازش استفاده کن (ننویس روی سرور)
+          if (lastUpdatedRef.current > serverTs && hasData(valueRef.current)) {
+            // داده لوکال معتبرتره، پس دست نزن
+            setIsLoaded(true);
+            setIsLoading(false);
+            return;
+          }
+
           setValue(finalPayload.value);
           valueRef.current = finalPayload.value;
-          lastUpdatedRef.current = finalPayload.lastUpdated || Date.now();
+          lastUpdatedRef.current = serverTs || Date.now();
+
+          globalCache.set(key, {
+            value: finalPayload.value,
+            lastUpdated: lastUpdatedRef.current,
+            loaded: true,
+          });
+
           setIsLoaded(true);
           setIsLoading(false);
         }
       } catch (error) {
         console.error(`🔴 [${key}] Init Error:`, error);
-        if (!ignore && isMounted.current) {
+        if (!ignore && isMountedRef.current) {
           const localData = readFromLS(key) ?? (await readFromIDB(key));
           if (localData !== undefined && hasData(localData)) {
             setValue(localData);
@@ -153,25 +194,44 @@ export function useSyncedState<T>(key: string, initialValue: T) {
     };
 
     init();
-    return () => { ignore = true; };
+    return () => {
+      ignore = true;
+      isMountedRef.current = false;
+      // 🛡️ کش سراسری رو با آخرین مقدار معتبر به‌روز کن
+      if (hasData(valueRef.current)) {
+        globalCache.set(key, {
+          value: valueRef.current,
+          lastUpdated: lastUpdatedRef.current,
+          loaded: true,
+        });
+      }
+    };
   }, [key]);
 
-  // ۲. شنونده بلادرنگ
+  // ۲. onSnapshot
   useEffect(() => {
     if (!isLoaded) return;
-    const docRef = doc(db, "appData", key);
+    isMountedRef.current = true;
 
+    const docRef = doc(db, "appData", key);
     const unsubscribe = onSnapshot(
       docRef,
       (docSnap) => {
-        if (!isMounted.current) return;
+        if (!isMountedRef.current) return;
 
-        // اگه در حال نوشتن هستیم و این echo خودمون هست، ignore کن
+        // echo خودمون رو ignore کن
         if (pendingWritesRef.current > 0 && docSnap.exists()) {
           const incomingStr = JSON.stringify(docSnap.data().value);
           if (incomingStr === lastLocalWriteRef.current) {
             const incomingTs = docSnap.data().lastUpdated || 0;
-            if (incomingTs > lastUpdatedRef.current) lastUpdatedRef.current = incomingTs;
+            if (incomingTs > lastUpdatedRef.current) {
+              lastUpdatedRef.current = incomingTs;
+              globalCache.set(key, {
+                value: valueRef.current,
+                lastUpdated: incomingTs,
+                loaded: true,
+              });
+            }
             return;
           }
         }
@@ -185,7 +245,6 @@ export function useSyncedState<T>(key: string, initialValue: T) {
           if (incomingTimestamp > lastUpdatedRef.current) {
             const hadData = hasData(valueRef.current);
             const isNowEmpty = isEmptyData(payload.value);
-
             if (hadData && isNowEmpty) {
               console.error(`🚨 [${key}] BLOCKED SERVER WIPEOUT!`);
               return;
@@ -195,18 +254,28 @@ export function useSyncedState<T>(key: string, initialValue: T) {
             valueRef.current = payload.value;
             setValue(payload.value);
 
+            globalCache.set(key, {
+              value: payload.value,
+              lastUpdated: incomingTimestamp,
+              loaded: true,
+            });
+
             saveToLS(key, payload.value);
             saveToIDB(key, payload.value).catch(() => {});
           }
         }
       },
-      (error) => { console.error(`🔴 [${key}] Snapshot Error:`, error); }
+      (error) => {
+        console.error(`🔴 [${key}] Snapshot Error:`, error);
+      }
     );
 
-    return () => { unsubscribe(); };
+    return () => {
+      unsubscribe();
+    };
   }, [key, isLoaded]);
 
-  // ۳. سینک بین تب‌ها
+  // ۳. sync بین تب‌ها
   useEffect(() => {
     if (typeof window === "undefined") return;
     const handleStorage = (e: StorageEvent) => {
@@ -217,6 +286,11 @@ export function useSyncedState<T>(key: string, initialValue: T) {
             valueRef.current = parsed;
             setValue(parsed);
             lastUpdatedRef.current = Date.now();
+            globalCache.set(key, {
+              value: parsed,
+              lastUpdated: lastUpdatedRef.current,
+              loaded: true,
+            });
           }
         } catch {}
       }
@@ -225,44 +299,55 @@ export function useSyncedState<T>(key: string, initialValue: T) {
     return () => window.removeEventListener("storage", handleStorage);
   }, [key]);
 
-  // ۴. تابع به‌روزرسانی
-  const setSyncedValue = useCallback(async (newValue: T | ((prev: T) => T)) => {
-    pendingWritesRef.current += 1;
-    try {
-      const resolvedValue = typeof newValue === "function"
-        ? (newValue as (prev: T) => T)(valueRef.current)
-        : newValue;
+  // ۴. setSyncedValue
+  const setSyncedValue = useCallback(
+    async (newValue: T | ((prev: T) => T)) => {
+      pendingWritesRef.current += 1;
+      try {
+        const resolvedValue =
+          typeof newValue === "function"
+            ? (newValue as (prev: T) => T)(valueRef.current)
+            : newValue;
 
-      const hadData = hasData(valueRef.current);
-      const isNowEmpty = isEmptyData(resolvedValue);
+        const hadData = hasData(valueRef.current);
+        const isNowEmpty = isEmptyData(resolvedValue);
+        if (hadData && isNowEmpty) {
+          console.error(`🚨 [${key}] BLOCKED LOCAL WIPEOUT!`);
+          return valueRef.current;
+        }
 
-      if (hadData && isNowEmpty) {
-        console.error(`🚨 [${key}] BLOCKED LOCAL WIPEOUT!`);
+        const newTimestamp = Date.now();
+        const payload = { value: resolvedValue, lastUpdated: newTimestamp };
+
+        // آپدیت فوری
+        valueRef.current = resolvedValue;
+        setValue(resolvedValue);
+        lastUpdatedRef.current = newTimestamp;
+        lastLocalWriteRef.current = JSON.stringify(resolvedValue);
+
+        // 🛡️ کش سراسری رو فوری آپدیت کن (جلوگیری از پرش در unmount)
+        globalCache.set(key, {
+          value: resolvedValue,
+          lastUpdated: newTimestamp,
+          loaded: true,
+        });
+
+        saveToLS(key, resolvedValue);
+        saveToIDB(key, resolvedValue).catch(() => {});
+
+        const docRef = doc(db, "appData", key);
+        await setDoc(docRef, removeUndefinedFields(payload), { merge: true });
+
+        return resolvedValue;
+      } catch (error) {
+        console.error(`🔴 [${key}] Firebase Save Failed:`, error);
         return valueRef.current;
+      } finally {
+        pendingWritesRef.current = Math.max(0, pendingWritesRef.current - 1);
       }
-
-      const newTimestamp = Date.now();
-      const payload = { value: resolvedValue, lastUpdated: newTimestamp };
-
-      valueRef.current = resolvedValue;
-      setValue(resolvedValue);
-      lastUpdatedRef.current = newTimestamp;
-      lastLocalWriteRef.current = JSON.stringify(resolvedValue);
-
-      saveToLS(key, resolvedValue);
-      saveToIDB(key, resolvedValue).catch(() => {});
-
-      const docRef = doc(db, "appData", key);
-      await setDoc(docRef, removeUndefinedFields(payload), { merge: true });
-
-      return resolvedValue;
-    } catch (error) {
-      console.error(`🔴 [${key}] Firebase Save Failed:`, error);
-      return valueRef.current;
-    } finally {
-      pendingWritesRef.current = Math.max(0, pendingWritesRef.current - 1);
-    }
-  }, [key]);
+    },
+    [key]
+  );
 
   return [value, setSyncedValue, isLoading] as const;
 }
