@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, useRef, useCallback, type ReactNode } from "react";
-import { doc, setDoc, getDoc, onSnapshot } from "firebase/firestore";
+import { doc, setDoc, getDoc, onSnapshot, collection, getDocs } from "firebase/firestore";
 import { db } from "../dashboard/lib/firebase";
 
 const CUSTOMERS_KEY = "fx-customers";
@@ -90,6 +90,7 @@ const Ic = ({ n, className = "h-5 w-5" }: { n: string; className?: string }) => 
     upload: "M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 16.5V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3",
     chevron: "m19.5 8.25-7.5 7.5-7.5-7.5",
     plus: "M12 4.5v15m7.5-7.5h-15",
+    info: "M11.25 11.25l.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z",
   };
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true"><path d={paths[n] || ""} /></svg>;
 };
@@ -102,12 +103,12 @@ export default function SettingsDrawer() {
   const [toast, setToast] = useState("");
   const [toastType, setToastType] = useState<"success" | "error">("success");
   const [activeAccordion, setActiveAccordion] = useState<string | null>("email");
+  const [showDiagnosis, setShowDiagnosis] = useState(false);
+  const [diagnosisData, setDiagnosisData] = useState<any>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const latestSettingsRef = useRef(settings);
-  
-  // ✅ بهبود ۱: مدیریت صحیح تایمر Toast برای جلوگیری از تداخل و محو شدن زودرس
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   latestSettingsRef.current = settings;
@@ -218,20 +219,116 @@ export default function SettingsDrawer() {
     setSettings(prev => ({ ...prev, telegram: { ...prev.telegram, ...updates } }));
   }, []);
 
-  // ✅ بهبود ۲: استفاده از state زنده (settings) به جای خواندن مجدد از localStorage
+  // ✅ سیستم تشخیص هوشمند: اسکن تمام کلیدهای localStorage
+  const runDiagnosis = useCallback(async () => {
+    const allKeys: Record<string, any> = {};
+    const summary: any = {
+      localStorageKeys: [],
+      firebaseCollections: {},
+      expectedKeys: {
+        [CUSTOMERS_KEY]: false,
+        [TRANSACTIONS_KEY]: false,
+        [HAWALAS_KEY]: false,
+        [CASH_KEY]: false,
+        [SETTINGS_KEY]: false,
+      }
+    };
+
+    // ۱. اسکن localStorage
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key) {
+        try {
+          const value = localStorage.getItem(key);
+          const parsed = value ? JSON.parse(value) : null;
+          const size = value?.length || 0;
+          
+          let count = 0;
+          if (Array.isArray(parsed)) count = parsed.length;
+          else if (parsed && typeof parsed === 'object') count = Object.keys(parsed).length;
+          
+          allKeys[key] = {
+            size: size,
+            count: count,
+            preview: value?.substring(0, 100) + (value && value.length > 100 ? '...' : ''),
+            isArray: Array.isArray(parsed)
+          };
+          
+          summary.localStorageKeys.push({
+            key: key,
+            size: size,
+            count: count,
+            isArray: Array.isArray(parsed)
+          });
+          
+          if (key in summary.expectedKeys) {
+            summary.expectedKeys[key] = true;
+          }
+        } catch {
+          allKeys[key] = { error: "Invalid JSON" };
+        }
+      }
+    }
+
+    // ۲. اسکن Firebase Collections
+    try {
+      const collections = ['customers', 'transactions', 'hawalas', 'cash', 'exchanges'];
+      for (const col of collections) {
+        try {
+          const snapshot = await getDocs(collection(db, col));
+          summary.firebaseCollections[col] = snapshot.size;
+        } catch (err) {
+          summary.firebaseCollections[col] = "error";
+        }
+      }
+    } catch (err) {
+      console.warn("خطا در اسکن فایربیس:", err);
+    }
+
+    setDiagnosisData({ allKeys, summary });
+    setShowDiagnosis(true);
+    
+    console.log("🔍 گزارش تشخیص کامل:", { allKeys, summary });
+    showToast("✅ گزارش تشخیص آماده شد. کنسول را بررسی کنید.");
+  }, [showToast]);
+
+  // ✅ بک‌آپ هوشمند: ذخیره تمام کلیدهای localStorage
   const handleBackup = useCallback(() => {
     try {
+      // اسکن تمام کلیدهای localStorage
+      const allLocalStorage: Record<string, any> = {};
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key) {
+          try {
+            allLocalStorage[key] = JSON.parse(localStorage.getItem(key) || 'null');
+          } catch {
+            allLocalStorage[key] = localStorage.getItem(key);
+          }
+        }
+      }
+
       const data = {
-        version: "1.1", // نسخه برای تشخیص فرمت جدید
+        version: "1.2",
         exportDate: new Date().toISOString(),
-        settings: settings, // ✅ اصلاح حیاتی: استفاده از state فعلی
+        settings: settings,
+        // ✅ کلیدهای استاندارد
         customers: JSON.parse(localStorage.getItem(CUSTOMERS_KEY) || "[]"),
         transactions: JSON.parse(localStorage.getItem(TRANSACTIONS_KEY) || "[]"),
         hawalas: JSON.parse(localStorage.getItem(HAWALAS_KEY) || "[]"),
         cashEntries: JSON.parse(localStorage.getItem(CASH_KEY) || "[]"),
+        // ✅ تمام کلیدهای دیگر (برای اطمینان)
+        allLocalStorage: allLocalStorage,
       };
       
-      console.log("📦 بک‌آپ ایجاد شد. تعداد معاملات:", data.transactions.length);
+      console.log("📦 گزارش بک‌آپ:", {
+        customers: data.customers.length,
+        transactions: data.transactions.length,
+        hawalas: data.hawalas.length,
+        cashEntries: data.cashEntries.length,
+        totalKeys: Object.keys(allLocalStorage).length,
+        allKeysList: Object.keys(allLocalStorage)
+      });
       
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
@@ -249,7 +346,6 @@ export default function SettingsDrawer() {
     }
   }, [settings, showToast]);
 
-  // ✅ بهبود ۳: بازیابی هوشمند با لاگ‌های دیباگ و مهاجرت (Migration) داده‌ها
   const handleRestore = useCallback(async (file: File) => {
     const reader = new FileReader();
     reader.onload = async (e) => {
@@ -266,26 +362,30 @@ export default function SettingsDrawer() {
           return; 
         }
         
-        // لاگ برای اطمینان از وجود داده‌ها در فایل
         console.log("📦 داده‌های استخراج شده از بک‌آپ:", {
           transactionsCount: data.transactions?.length || 0,
           hawalasCount: data.hawalas?.length || 0,
           customersCount: data.customers?.length || 0,
+          allLocalStorageKeys: data.allLocalStorage ? Object.keys(data.allLocalStorage) : 'none'
         });
 
-        if ((data.transactions?.length || 0) === 0 && (data.hawalas?.length || 0) === 0) {
-          console.warn("⚠️ هشدار: فایل بک‌آپ فاقد معامله یا حواله است! لطفاً فایل را بررسی کنید.");
-        }
-
-        // ۱. ذخیره قطعی در حافظه محلی
+        // ۱. بازیابی کلیدهای استاندارد
         localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(data.customers || []));
         localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(data.transactions || []));
         localStorage.setItem(HAWALAS_KEY, JSON.stringify(data.hawalas || []));
         localStorage.setItem(CASH_KEY, JSON.stringify(data.cashEntries || []));
         
-        console.log("✅ داده‌ها در LocalStorage با موفقیت بازنویسی شدند.");
+        // ✅ ۲. بازیابی تمام کلیدهای دیگر (اگر وجود داشته باشند)
+        if (data.allLocalStorage) {
+          Object.entries(data.allLocalStorage).forEach(([key, value]) => {
+            if (value !== null && value !== undefined) {
+              localStorage.setItem(key, JSON.stringify(value));
+            }
+          });
+          console.log("✅ تمام کلیدهای localStorage بازیابی شدند.");
+        }
 
-        // ۲. همگام‌سازی تنظیمات بازیابی‌شده با فایربیس (با منطق Migration)
+        // ۳. همگام‌سازی تنظیمات با فایربیس
         if (data.settings) {
           let migratedChatIds: string[] = [];
           if (data.settings.telegram?.chatIds && Array.isArray(data.settings.telegram.chatIds)) {
@@ -313,7 +413,6 @@ export default function SettingsDrawer() {
               value: finalSettings,
               updatedAt: new Date().toISOString()
             }, { merge: true });
-            console.log("✅ تنظیمات در فایربیس همگام‌سازی شد.");
           } catch (fbErr) {
             console.warn("⚠️ خطا در همگام‌سازی تنظیمات با فایربیس:", fbErr);
           }
@@ -321,7 +420,6 @@ export default function SettingsDrawer() {
 
         showToast("✅ داده‌ها با موفقیت بازیابی شدند. صفحه در حال بروزرسانی است...");
         
-        // ✅ بهبود ۴: استفاده از replace به جای href برای رفرش تمیزتر و دور زدن کش
         setTimeout(() => {
           window.location.replace(window.location.href);
         }, 1500);
@@ -446,6 +544,11 @@ export default function SettingsDrawer() {
                 <Ic n="upload" className="h-4 w-4" /> بازیابی از فایل
               </button>
               <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={e => { const file = e.target.files?.[0]; if (file) handleRestore(file); e.target.value = ""; }} />
+              
+              {/* ✅ دکمه تشخیص جدید */}
+              <button onClick={runDiagnosis} className={`flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed text-sm font-black transition-all active:scale-95 ${dk ? "border-amber-500/50 text-amber-300 hover:bg-amber-500/10" : "border-amber-500 text-amber-600 hover:bg-amber-50"}`}>
+                <Ic n="info" className="h-4 w-4" /> تشخیص ذخیره‌سازی (Diagnosis)
+              </button>
             </div>
           </AccordionItem>
 
@@ -503,10 +606,79 @@ export default function SettingsDrawer() {
           </AccordionItem>
 
           <div className={`mt-4 rounded-xl p-4 text-center ${dk ? "bg-slate-800/50" : "bg-slate-50"}`}>
-            <p className={`text-[10px] font-bold ${subText}`}>نسخه ۱.۱.۰ — صرافی برادران نورزاد</p>
+            <p className={`text-[10px] font-bold ${subText}`}>نسخه ۱.۲.۰ — صرافی برادران نورزاد</p>
           </div>
         </div>
       </div>
+
+      {/* ✅ Modal تشخیص */}
+      {showDiagnosis && diagnosisData && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowDiagnosis(false)}>
+          <div className={`w-full max-w-2xl max-h-[80vh] overflow-y-auto rounded-2xl shadow-2xl ${dk ? "bg-slate-900 border border-slate-700" : "bg-white"}`} onClick={e => e.stopPropagation()}>
+            <div className={`sticky top-0 flex items-center justify-between border-b px-5 py-4 ${dk ? "bg-slate-900 border-slate-700" : "bg-white border-slate-200"}`}>
+              <h3 className={`text-lg font-black ${heading}`}>🔍 گزارش تشخیص ذخیره‌سازی</h3>
+              <button onClick={() => setShowDiagnosis(false)} className={`grid h-9 w-9 place-items-center rounded-lg ${dk ? "hover:bg-slate-700" : "hover:bg-slate-100"}`}>
+                <Ic n="x" className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className={`rounded-xl p-4 ${dk ? "bg-slate-800" : "bg-slate-50"}`}>
+                <h4 className={`text-sm font-black mb-3 ${heading}`}>📊 وضعیت کلیدهای مورد انتظار:</h4>
+                <div className="space-y-2">
+                  {Object.entries(diagnosisData.summary.expectedKeys).map(([key, exists]) => (
+                    <div key={key} className={`flex items-center justify-between p-2 rounded-lg ${exists ? (dk ? "bg-emerald-500/10" : "bg-emerald-50") : (dk ? "bg-rose-500/10" : "bg-rose-50")}`}>
+                      <span className={`text-xs font-mono ${heading}`}>{key}</span>
+                      <span className={`text-xs font-black ${exists ? "text-emerald-500" : "text-rose-500"}`}>
+                        {exists ? "✅ وجود دارد" : "❌ وجود ندارد"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className={`rounded-xl p-4 ${dk ? "bg-slate-800" : "bg-slate-50"}`}>
+                <h4 className={`text-sm font-black mb-3 ${heading}`}>💾 تمام کلیدهای LocalStorage:</h4>
+                <div className="space-y-2">
+                  {diagnosisData.summary.localStorageKeys.map((item: any) => (
+                    <div key={item.key} className={`flex items-center justify-between p-2 rounded-lg ${dk ? "bg-slate-700/50" : "bg-white"}`}>
+                      <span className={`text-xs font-mono flex-1 ${heading}`}>{item.key}</span>
+                      <span className={`text-xs ${subText}`}>
+                        {item.isArray ? `${item.count} آیتم` : `${item.size} bytes`}
+                      </span>
+                    </div>
+                  ))}
+                  {diagnosisData.summary.localStorageKeys.length === 0 && (
+                    <p className={`text-xs text-center py-4 ${subText}`}>هیچ کلیدی در localStorage وجود ندارد!</p>
+                  )}
+                </div>
+              </div>
+
+              <div className={`rounded-xl p-4 ${dk ? "bg-slate-800" : "bg-slate-50"}`}>
+                <h4 className={`text-sm font-black mb-3 ${heading}`}>🔥 وضعیت Firebase Collections:</h4>
+                <div className="space-y-2">
+                  {Object.entries(diagnosisData.summary.firebaseCollections).map(([col, count]) => (
+                    <div key={col} className={`flex items-center justify-between p-2 rounded-lg ${dk ? "bg-slate-700/50" : "bg-white"}`}>
+                      <span className={`text-xs font-mono ${heading}`}>{col}</span>
+                      <span className={`text-xs font-black ${typeof count === 'number' && count > 0 ? "text-emerald-500" : "text-rose-500"}`}>
+                        {count === "error" ? "خطا" : `${count} سند`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className={`rounded-xl p-4 border-2 ${dk ? "border-amber-500/50 bg-amber-500/10" : "border-amber-500 bg-amber-50"}`}>
+                <p className={`text-xs font-black mb-2 ${heading}`}>💡 نتیجه‌گیری:</p>
+                <ul className={`text-xs space-y-1 ${subText}`}>
+                  <li>• اگر کلید <code className="font-mono">fx-transactions</code> وجود ندارد، معاملات شما در localStorage ذخیره نمی‌شوند.</li>
+                  <li>• اگر در Firebase تعداد اسناد بیشتر از localStorage است، معاملات شما در Firebase ذخیره می‌شوند.</li>
+                  <li>• این گزارش را در کنسول (F12) هم می‌توانید ببینید.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {toast && (
         <div className={`fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-xl px-5 py-3 text-sm font-black shadow-lg transition-all duration-300 ${toastType === "success" ? dk ? "bg-emerald-400 text-slate-900" : "bg-emerald-500 text-white" : dk ? "bg-rose-400 text-slate-900" : "bg-rose-500 text-white"}`}>
