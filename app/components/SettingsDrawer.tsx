@@ -102,10 +102,14 @@ export default function SettingsDrawer() {
   const [toast, setToast] = useState("");
   const [toastType, setToastType] = useState<"success" | "error">("success");
   const [activeAccordion, setActiveAccordion] = useState<string | null>("email");
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  
   const latestSettingsRef = useRef(settings);
+  
+  // ✅ بهبود ۱: مدیریت صحیح تایمر Toast برای جلوگیری از تداخل
+  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   latestSettingsRef.current = settings;
 
   useEffect(() => { try { const s = window.localStorage.getItem("fx-theme"); if (s === "dark" || s === "light") setTheme(s); } catch {} }, []);
@@ -199,10 +203,12 @@ export default function SettingsDrawer() {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
+  // ✅ بهبود ۱ (ادامه): پاک کردن تایمر قبلی قبل از تنظیم تایمر جدید
   const showToast = useCallback((message: string, type: "success" | "error" = "success") => {
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     setToast(message);
     setToastType(type);
-    setTimeout(() => setToast(""), 3000);
+    toastTimeoutRef.current = setTimeout(() => setToast(""), 3000);
   }, []);
 
   const updateSettings = useCallback((updates: Partial<Settings>) => {
@@ -215,10 +221,11 @@ export default function SettingsDrawer() {
 
   const handleBackup = useCallback(() => {
     try {
-      const data: any = {
+      const data = {
         version: "1.0",
         exportDate: new Date().toISOString(),
-        settings: loadSettings(),
+        // ✅ بهبود ۲: استفاده از state فعلی به جای خواندن مجدد از localStorage
+        settings: settings, 
         customers: JSON.parse(localStorage.getItem(CUSTOMERS_KEY) || "[]"),
         transactions: JSON.parse(localStorage.getItem(TRANSACTIONS_KEY) || "[]"),
         hawalas: JSON.parse(localStorage.getItem(HAWALAS_KEY) || "[]"),
@@ -237,42 +244,67 @@ export default function SettingsDrawer() {
     } catch {
       showToast("❌ خطا در ایجاد پشتیبان", "error");
     }
-  }, [showToast]);
+  }, [settings, showToast]);
 
-  // ✅ بخش اصلاح‌شده: بازیابی هوشمند با همگام‌سازی فایربیس و رفرش سخت
   const handleRestore = useCallback(async (file: File) => {
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
-        const data = JSON.parse(e.target?.result as string);
+        // ✅ بهبود ۴: بررسی صحت داده خوانده شده
+        const result = e.target?.result;
+        if (!result) {
+          showToast("❌ فایل خالی یا نامعتبر است", "error");
+          return;
+        }
+        
+        const data = JSON.parse(result as string);
         if (!data.version) { 
           showToast("❌ فایل نامعتبر است", "error"); 
           return; 
         }
         
-        // ۱. ذخیره قطعی داده‌ها در حافظه محلی (حتی اگر آرایه خالی باشند)
         localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(data.customers || []));
         localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(data.transactions || []));
         localStorage.setItem(HAWALAS_KEY, JSON.stringify(data.hawalas || []));
         localStorage.setItem(CASH_KEY, JSON.stringify(data.cashEntries || []));
         
-        // ۲. همگام‌سازی تنظیمات بازیابی‌شده با فایربیس 
-        // (این کار جلوگیری می‌کند که پس از رفرش، فایربیس داده‌های قدیمی را جایگزین کند)
         if (data.settings) {
-          localStorage.setItem(SETTINGS_KEY, JSON.stringify(data.settings));
+          // ✅ بهبود ۳: اعمال منطق Migration قبل از ذخیره در فایربیس
+          let migratedChatIds: string[] = [];
+          if (data.settings.telegram?.chatIds && Array.isArray(data.settings.telegram.chatIds)) {
+            migratedChatIds = data.settings.telegram.chatIds;
+          } else if (data.settings.telegram?.chatId) {
+            migratedChatIds = String(data.settings.telegram.chatId)
+              .split(/[\n,]+/)
+              .map((id: string) => id.trim())
+              .filter(Boolean);
+          }
+
+          const finalSettings: Settings = {
+            ...defaultSettings,
+            ...data.settings,
+            telegram: {
+              ...defaultSettings.telegram,
+              ...data.settings.telegram,
+              chatIds: migratedChatIds
+            }
+          };
+
+          localStorage.setItem(SETTINGS_KEY, JSON.stringify(finalSettings));
           try {
             await setDoc(doc(db, "app_settings", "global_settings"), {
-              value: data.settings,
+              value: finalSettings,
               updatedAt: new Date().toISOString()
             }, { merge: true });
           } catch (fbErr) {
             console.warn("⚠️ خطا در همگام‌سازی تنظیمات با فایربیس:", fbErr);
           }
+        } else {
+          showToast("⚠️ فایل بک‌آپ فاقد بخش تنظیمات است", "error");
         }
         
         showToast("✅ داده‌ها با موفقیت بازیابی و همگام‌سازی شدند. صفحه در حال بروزرسانی است...");
         
-        // ۳. رفرش سخت (Hard Reload) برای دور زدن کش Next.js و خواندن داده‌های جدید از LocalStorage
         setTimeout(() => {
           window.location.href = window.location.href;
         }, 1500);
@@ -459,7 +491,7 @@ export default function SettingsDrawer() {
       </div>
 
       {toast && (
-        <div className={`fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-xl px-5 py-3 text-sm font-black shadow-lg ${toastType === "success" ? dk ? "bg-emerald-400 text-slate-900" : "bg-emerald-500 text-white" : dk ? "bg-rose-400 text-slate-900" : "bg-rose-500 text-white"}`}>
+        <div className={`fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-xl px-5 py-3 text-sm font-black shadow-lg transition-all duration-300 ${toastType === "success" ? dk ? "bg-emerald-400 text-slate-900" : "bg-emerald-500 text-white" : dk ? "bg-rose-400 text-slate-900" : "bg-rose-500 text-white"}`}>
           {toast}
         </div>
       )}
