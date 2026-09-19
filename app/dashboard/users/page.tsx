@@ -433,7 +433,7 @@ export default function CustomersPage() {
   const selectedCustomer = useMemo(() => {
     if (selectedCustomerId === CASH_BOX_ID || selectedCustomerId === CASH_BOX_NAME) return CASH_BOX_CUSTOMER;
     if (selectedCustomerId === EXCHANGE_ACCOUNT_ID) return EXCHANGE_ACCOUNT_CUSTOMER;
-    return customers.find(c => c.id === selectedCustomerId) || null;
+    return customers.find(c => String(c.id) === String(selectedCustomerId)) || null;
   }, [customers, selectedCustomerId]);
 
   const isCashBox = selectedCustomer?.id === CASH_BOX_ID;
@@ -447,7 +447,7 @@ export default function CustomersPage() {
   const customerLedger = useMemo(() => {
     if (selectedCustomerId === CASH_BOX_ID || selectedCustomerId === CASH_BOX_NAME) return cashBoxLedger;
     if (selectedCustomerId === EXCHANGE_ACCOUNT_ID) return ledger.filter(e => e.customerId === EXCHANGE_ACCOUNT_ID);
-    return ledger.filter(e => e.customerId === selectedCustomerId);
+    return ledger.filter(e => String(e.customerId) === String(selectedCustomerId));
   }, [ledger, cashBoxLedger, selectedCustomerId]);
 
   const filteredLedger = useMemo(() => {
@@ -523,43 +523,68 @@ export default function CustomersPage() {
     showToast(loanModalType === "give" ? `✅ ${fmt(amt)} ${labels[loanCurrency]} به "${selectedCustomer.name}" قرض داده شد.` : `✅ ${fmt(amt)} ${labels[loanCurrency]} از "${selectedCustomer.name}" دریافت شد.`);
   };
 
-  // ✅ تابع حذف کامل (Hard Delete) اصلاح‌شده
+  // ✅✅✅ تابع حذف کامل (Hard Delete) اصلاح‌شده و ضدباگ ✅✅✅
   const deleteCustomer = (id: string) => {
     if (id === CASH_BOX_ID || id === EXCHANGE_ACCOUNT_ID) return;
     setOpenMenuId(null);
-    const c = customers.find(x => x.id === id);
+    const c = customers.find(x => String(x.id) === String(id));
     if (!c) return;
 
-    const confirmName = prompt(`برای تأیید حذف کامل و پاک کردن تمام سوابق، نام مشتری "${c.name}" را دقیقاً تایپ کنید:`);
-    if (confirmName !== c.name) { showToast("❌ نام وارد شده مطابقت ندارد. عملیات لغو شد."); return; }
-
-    // ۱. حذف تمام تراکنش‌های مرتبط با این مشتری
-    setTransactions(prev => prev.filter((t: any) => 
-      t.customerId !== id && t.customerName !== c.name &&
-      t.senderId !== id && t.senderName !== c.name &&
-      t.receiverId !== id && t.receiverName !== c.name
-    ));
-
-    // ۲. حذف تمام حواله‌های مرتبط با این مشتری
-    setHawalas(prev => prev.filter((h: any) => 
-      h.senderId !== id && h.senderName !== c.name &&
-      h.receiverId !== id && h.receiverName !== c.name
-    ));
-
-    // ۳. حذف تمام اسناد صندوق مرتبط با این مشتری
-    setCashEntries(prev => prev.filter((ce: any) => 
-      ce.customerId !== id && ce.customerName !== c.name
-    ));
-
-    // ۴. در نهایت حذف خود مشتری از لیست
-    setCustomers(prev => prev.filter(x => x.id !== id));
-
-    if (selectedCustomerId === id) { 
-      setSelectedCustomerId(null); 
-      setActiveTab("list"); 
+    const confirmName = prompt(`⚠️ هشدار: این عمل غیرقابل بازگشت است.\nبرای حذف کامل "${c.name}" و تمام سوابق مالی (روزنامه، حواله، تراکنش)، نام مشتری را دقیقاً تایپ کنید:`);
+    if (confirmName?.trim() !== c.name.trim()) {
+      showToast("❌ نام وارد شده مطابقت ندارد. عملیات لغو شد.");
+      return;
     }
-    
-    showToast(`✅ "${c.name}" و تمام سوابق مالی او با موفقیت حذف شدند.`);
+
+    const strId = String(id);
+    const normalizedName = c.name.trim();
+
+    try {
+      // ۱. حذف تمام تراکنش‌های مرتبط (با مقایسه ایمن رشته‌ای)
+      setTransactions(prev => prev.filter((t: any) => {
+        const tCustId = String(t.customerId || "");
+        const tSenderId = String(t.senderId || "");
+        const tReceiverId = String(t.receiverId || "");
+        const tCustName = String(t.customerName || "").trim();
+        const tSenderName = String(t.senderName || "").trim();
+        const tReceiverName = String(t.receiverName || "").trim();
+
+        return tCustId !== strId && tSenderId !== strId && tReceiverId !== strId &&
+               tCustName !== normalizedName && tSenderName !== normalizedName && tReceiverName !== normalizedName;
+      }));
+
+      // ۲. حذف تمام حواله‌های مرتبط
+      setHawalas(prev => prev.filter((h: any) => {
+        const hSenderId = String(h.senderId || "");
+        const hReceiverId = String(h.receiverId || "");
+        const hSenderName = String(h.senderName || "").trim();
+        const hReceiverName = String(h.receiverName || "").trim();
+
+        return hSenderId !== strId && hReceiverId !== strId &&
+               hSenderName !== normalizedName && hReceiverName !== normalizedName;
+      }));
+
+      // ۳. حذف تمام اسناد صندوق (روزنامه) مرتبط
+      setCashEntries(prev => prev.filter((ce: any) => {
+        const ceCustId = String(ce.customerId || "");
+        const ceCustName = String(ce.customerName || "").trim();
+
+        return ceCustId !== strId && ceCustName !== normalizedName;
+      }));
+
+      // ۴. حذف خود مشتری از لیست اصلی
+      setCustomers(prev => prev.filter(x => String(x.id) !== strId));
+
+      if (selectedCustomerId === id) {
+        setSelectedCustomerId(null);
+        setActiveTab("list");
+      }
+
+      showToast(`✅ "${c.name}" و تمام سوابق مالی او با موفقیت و به طور کامل حذف شدند.`);
+    } catch (err) {
+      console.error("خطا در حذف مشتری:", err);
+      showToast("❌ خطایی در هنگام حذف رخ داد.");
+    }
   };
 
   const validateForm = () => {
