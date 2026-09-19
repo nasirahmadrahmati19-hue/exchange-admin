@@ -35,9 +35,53 @@ const toPersianDigits = (s: string): string => {
   return s.replace(/\d/g, d => "۰۱۲۳۴۵۶۷۸۹"[parseInt(d)]);
 };
 
-// ✨ تولید کد پیگیری: فقط ۴ حرف اول ID
-const generateTrackingCode = (id: string): string => {
-  return id.slice(0, 4).toUpperCase();
+// ✨ استخراج سال شمسی از تاریخ
+const getShamsiYear = (dateStr: string): string => {
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return "1405";
+    const parts = new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
+      year: "numeric"
+    }).formatToParts(d);
+    const y = parts.find(p => p.type === "year")?.value || "1405";
+    return y.replace(/[۰-۹]/g, c => String("۰۱۲۳۴۵۶۷۸۹".indexOf(c)));
+  } catch {
+    return "1405";
+  }
+};
+
+// ✨ نرمال‌سازی کد پیگیری به فرمت یکدست
+const normalizeTrackingCode = (
+  originalCode: string | undefined,
+  source: "transaction" | "hawala" | "cash",
+  date: string,
+  index: number
+): string => {
+  const prefix = {
+    "transaction": "TR",
+    "hawala": "HW",
+    "cash": "CS"
+  }[source];
+
+  const year = getShamsiYear(date);
+  
+  // اگر کد اصلی وجود دارد، سعی می‌کنیم آن را یکدست کنیم
+  if (originalCode && originalCode.trim()) {
+    // اگر فرمت آن از قبل درست است (مثل TR-1405-00442) همان را نگه می‌داریم
+    if (/^[A-Z]{2}-\d{4}-\d+$/.test(originalCode)) {
+      return originalCode;
+    }
+    // در غیر این صورت، فقط بخش عددی آخر را می‌گیریم
+    const numberMatch = originalCode.match(/(\d+)$/);
+    if (numberMatch) {
+      const num = numberMatch[1].padStart(5, "0");
+      return `${prefix}-${year}-${num}`;
+    }
+  }
+  
+  // اگر کد وجود نداشت، از index استفاده می‌کنیم
+  const num = String(index + 1).padStart(5, "0");
+  return `${prefix}-${year}-${num}`;
 };
 
 function useUrlState(key: string, defaultValue: string) {
@@ -84,9 +128,9 @@ export default function JournalPage() {
     ? "border-slate-700 bg-slate-800/90 shadow-[0_16px_40px_-24px_rgba(0,0,0,0.6)]"
     : "border-emerald-100 bg-white/95 shadow-[0_16px_40px_-28px_rgba(16,185,129,0.35)]";
 
-  // ✅ ۱. ادغام هوشمند تمام داده‌ها
+  // ✅ ۱. ادغام هوشمند تمام داده‌ها + یکدست‌سازی کد پیگیری
   const unifiedEntries = useMemo<UnifiedJournalEntry[]>(() => {
-    const entries: UnifiedJournalEntry[] = [];
+    const entries: Omit<UnifiedJournalEntry, "trackingCode">[] = [];
     
     transactions.forEach((tx: any) => {
       if (tx.status === "voided" && !tx.voidedReason) return;
@@ -95,40 +139,31 @@ export default function JournalPage() {
       else if (tx.type === "transfer") type = "انتقال";
       const partyName = tx.type === "transfer" ? `${tx.senderName || "—"} به ${tx.receiverName || "—"}` : (tx.customerName || "مشتری");
       
-      const trackingCode = tx.trackingCode || generateTrackingCode(tx.id);
-      
       entries.push({
         id: tx.id, date: tx.date, type,
         description: tx.description || `${tx.type} ${tx.fromCurrency} به ${tx.toCurrency}`,
         partyName, partyId: tx.customerId || tx.senderId, currency: tx.fromCurrency,
         amount: tx.fromAmount, balanceAfter: tx.balanceAfter, status: tx.status,
-        voidedReason: tx.voidedReason, source: "transaction", sourceId: tx.id,
-        trackingCode
+        voidedReason: tx.voidedReason, source: "transaction", sourceId: tx.id
       });
     });
     
     hawalas.forEach((h: any) => {
       if (h.status === "cancelled") return;
       
-      const trackingCode1 = h.trackingCode || generateTrackingCode(h.id);
-      
       entries.push({
         id: h.id, date: h.date, type: "حواله",
         description: `حواله به ${h.receiverName} (${h.destinationText || ""})`,
         partyName: h.senderName, partyId: h.senderId, currency: h.currencyFrom,
-        amount: h.amountFrom, status: "active", source: "hawala", sourceId: h.id,
-        trackingCode: trackingCode1
+        amount: h.amountFrom, status: "active", source: "hawala", sourceId: h.id
       });
       
       if (h.status === "paid") {
-        const trackingCode2 = h.paidTrackingCode || generateTrackingCode(`${h.id}-paid`);
-        
         entries.push({
           id: `${h.id}-paid`, date: h.paidAt || h.date, type: "واریز",
           description: `تسویه حواله از ${h.senderName}`, partyName: h.receiverName,
           partyId: h.receiverId, currency: h.currencyTo, amount: h.finalAmount,
-          status: "active", source: "hawala", sourceId: h.id,
-          trackingCode: trackingCode2
+          status: "active", source: "hawala", sourceId: h.id
         });
       }
     });
@@ -144,18 +179,34 @@ export default function JournalPage() {
       else if (ce.type === "fee" || ce.type === "commission_withdraw") type = "هزینه";
       else if (ce.type === "adjustment") type = "برداشت";
       
-      const trackingCode = ce.trackingCode || generateTrackingCode(ce.id);
-      
       entries.push({
         id: ce.id, date: ce.date || new Date().toISOString(), type,
         description: ce.reason || ce.type || "عملیات صندوق", partyName: ce.customerName || "صندوق",
         partyId: ce.customerId, currency: ce.currency, amount: Number(ce.amount) || 0,
-        balanceAfter: ce.balanceAfter, status: ce.status || "active", source: "cash", sourceId: ce.id,
-        trackingCode
+        balanceAfter: ce.balanceAfter, status: ce.status || "active", source: "cash", sourceId: ce.id
       });
     });
     
-    return entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    // مرتب‌سازی بر اساس تاریخ (قدیمی‌ترین اول) برای شماره‌دهی صحیح
+    entries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    
+    // ✨ یکدست‌سازی کد پیگیری برای همه تراکنش‌ها
+    const entriesWithCode: UnifiedJournalEntry[] = entries.map((entry, index) => ({
+      ...entry,
+      trackingCode: normalizeTrackingCode(
+        (entry.source === "transaction" 
+          ? transactions.find(t => t.id === entry.sourceId)?.trackingCode 
+          : entry.source === "hawala" 
+            ? hawalas.find(h => h.id === entry.sourceId)?.trackingCode 
+            : cashEntries.find(c => c.id === entry.sourceId)?.trackingCode) || "",
+        entry.source,
+        entry.date,
+        index
+      )
+    }));
+    
+    // مرتب‌سازی نهایی: جدیدترین اول (برای نمایش)
+    return entriesWithCode.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [transactions, hawalas, cashEntries]);
 
   // ✅ ۲. فیلتر کردن داده‌ها
@@ -375,7 +426,7 @@ export default function JournalPage() {
               </div>
               <div className="flex-1 min-w-0">
                 <h2 className={`cs-display text-xl md:text-2xl leading-none ${heading}`}>لیست تراکنش‌ها</h2>
-                <p className={`mt-1 text-[11px] font-bold ${subText}`}>کد پیگیری خالص از بخش‌های اصلی</p>
+                <p className={`mt-1 text-[11px] font-bold ${subText}`}>کد پیگیری یکدست از تمام بخش‌ها</p>
               </div>
             </div>
 
@@ -454,9 +505,15 @@ export default function JournalPage() {
               <span className={`w-2 h-2 rounded-full ml-2 ${dk ? "bg-blue-400" : "bg-blue-600"}`}></span> راهنمای کد پیگیری
             </h3>
             <ul className={`text-xs space-y-2 list-disc pr-4 ${dk ? "text-slate-400" : "text-slate-600"}`}>
-              <li>کد پیگیری <b className={dk ? "text-cyan-300" : "text-cyan-700"}>فقط شامل کد خالص</b> است (مثلاً: <span className="font-mono">DCE5</span>)</li>
-              <li>این کد از بخش‌های اصلی (معاملات، حواله‌ها، صندوق) خوانده می‌شود</li>
-              <li>اگر تراکنشی کد پیگیری نداشته باشد، ۴ حرف اول شناسه یکتا نمایش داده می‌شود</li>
+              <li>همه کدهای پیگیری <b className={dk ? "text-cyan-300" : "text-cyan-700"}>یکدست</b> و با فرمت یکسان نمایش داده می‌شوند</li>
+              <li>
+                <b>پیشوندها:</b>{" "}
+                <span className="font-mono">TR</span> = معامله،{" "}
+                <span className="font-mono">HW</span> = حواله،{" "}
+                <span className="font-mono">CS</span> = صندوق
+              </li>
+              <li>ساختار: <span className="font-mono">{`{پیشوند}-{سال شمسی}-{شماره ۵ رقمی}`}</span></li>
+              <li>نمونه: <span className="font-mono">TR-1405-00442</span>، <span className="font-mono">HW-1405-00158</span></li>
               <li>می‌توانید با کد پیگیری در بخش <b>جستجو</b> تراکنش را پیدا کنید</li>
               <li>این روزنامه به صورت <b className={dk ? "text-slate-200" : "text-slate-800"}>آفلاین و آنلاین</b> کار می‌کند</li>
             </ul>
