@@ -8,7 +8,7 @@ import { TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY, CUSTOMERS_KEY } from "../lib/d
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
 const currencyLabels: Record<Currency, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
-const currencyIcons: Record<Currency, string> = { AFN: "؋", USD: "$", EUR: "€", IRR: "﷼", PKR: "₨" };
+const currencyIcons: Record<Currency, string> = { AFN: "؋", USD: "$", EUR: "€", IRR: "", PKR: "₨" };
 const currencyColors: Record<Currency, { from: string; to: string; text: string; bg: string }> = {
   AFN: { from: "from-emerald-400", to: "to-teal-500", text: "text-emerald-400", bg: "bg-emerald-400/20" },
   USD: { from: "from-blue-400", to: "to-cyan-500", text: "text-blue-400", bg: "bg-blue-400/20" },
@@ -40,7 +40,7 @@ interface UnifiedJournalEntry {
 }
 
 const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00";
-const toPersianDigits = (s: string): string => s.replace(/\d/g, d => "۰۱۲۳۴۵۶۷۸۹"[parseInt(d)]);
+const toPersianDigits = (s: string): string => s.replace(/\d/g, d => "۰۲۳۴۵۶۷۸۹"[parseInt(d)]);
 
 const getShamsiYear = (dateStr: string): string => {
   try {
@@ -388,7 +388,7 @@ export default function JournalPage() {
             </div>
             <div className="flex items-center gap-1.5 md:gap-2.5">
               <button onClick={() => setTheme(dk ? "light" : "dark")} className={`group grid h-10 w-10 md:h-11 md:w-11 cursor-pointer place-items-center rounded-lg md:rounded-xl border shadow-sm backdrop-blur transition-all duration-300 active:scale-90 ${dk ? "border-slate-600 bg-slate-800/85 text-amber-300 hover:border-amber-300" : "border-slate-200 bg-white/85 text-slate-600 hover:border-emerald-400"}`}>
-                <span className="text-lg transition-transform duration-500 group-hover:rotate-12">{dk ? "☀️" : "🌙"}</span>
+                <span className="text-lg transition-transform duration-500 group-hover:rotate-12">{dk ? "☀️" : ""}</span>
               </button>
               <button onClick={handleExport} className="flex items-center gap-2 bg-emerald-500 px-4 py-2 rounded-xl hover:bg-emerald-600 transition shadow-lg shadow-emerald-500/20 text-sm font-bold text-white">
                 <span>📊</span> <span className="hidden sm:inline">خروجی CSV</span>
@@ -586,7 +586,7 @@ export default function JournalPage() {
             </div>
           </section>
 
-          {/* ═══════════ بخش جدول تراکنش‌ها (استایل جدید) ═══════════ */}
+          {/* ═══════════ بخش جدول تراکنش‌ها (استایل جدید - اصلاح‌شده) ═══════════ */}
           <section className={`cs-up rounded-2xl md:rounded-3xl border-2 overflow-hidden ${uiCard}`} style={{ animationDelay: "250ms" }}>
             
             {/* هدر جدول - استایل ویژه */}
@@ -618,7 +618,7 @@ export default function JournalPage() {
               <table className="w-full text-sm border-collapse">
                 <thead className="sticky top-0 z-10">
                   <tr className={`${dk ? "bg-gradient-to-l from-slate-800 via-slate-800/95 to-slate-800 border-b-2 border-slate-600" : "bg-gradient-to-l from-slate-100 via-slate-50 to-slate-100 border-b-2 border-slate-200"}`}>
-                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-12">#</th>
+                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-16">شماره</th>
                     <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-32 cursor-pointer hover:text-cyan-400 transition group" onClick={() => handleSort("trackingCode")}>
                       <span className="inline-flex items-center gap-1">کد پیگیری <SortIcon field="trackingCode" /></span>
                     </th>
@@ -626,10 +626,9 @@ export default function JournalPage() {
                       <span className="inline-flex items-center gap-1">تاریخ <SortIcon field="date" /></span>
                     </th>
                     <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-16">ساعت</th>
-                    <th className="px-2 py-3 text-right text-[11px] font-black text-slate-400 whitespace-nowrap w-36 cursor-pointer hover:text-cyan-400 transition" onClick={() => handleSort("partyName")}>
+                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-36 cursor-pointer hover:text-cyan-400 transition" onClick={() => handleSort("partyName")}>
                       <span className="inline-flex items-center gap-1">مشتری <SortIcon field="partyName" /></span>
                     </th>
-                    <th className="px-2 py-3 text-right text-[11px] font-black text-slate-400">شرح</th>
                     <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-20 cursor-pointer hover:text-cyan-400 transition" onClick={() => handleSort("type")}>
                       <span className="inline-flex items-center gap-1">نوع <SortIcon field="type" /></span>
                     </th>
@@ -638,7 +637,8 @@ export default function JournalPage() {
                       <span className="inline-flex items-center gap-1">مبلغ <SortIcon field="amount" /></span>
                     </th>
                     <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-24">تراز بعد</th>
-                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-16">عملیات</th>
+                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400">شرح</th>
+                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-20">عملیات</th>
                   </tr>
                 </thead>
                 <tbody className={`divide-y ${dk ? "divide-slate-700/40" : "divide-slate-100"}`}>
@@ -646,7 +646,7 @@ export default function JournalPage() {
                     <tr>
                       <td colSpan={11} className={`px-4 py-16 text-center ${subText}`}>
                         <div className="flex flex-col items-center gap-2">
-                          <span className="text-4xl">📭</span>
+                          <span className="text-4xl"></span>
                           <span className="font-bold">هیچ تراکنشی با این فیلترها یافت نشد.</span>
                         </div>
                       </td>
@@ -670,7 +670,7 @@ export default function JournalPage() {
                           } ${dk ? "" : "even:bg-slate-50/30"}`}
                           onClick={() => setSelectedEntry(entry)}
                         >
-                          {/* ردیف */}
+                          {/* شماره - مرکز */}
                           <td className={`px-2 py-2.5 text-center`}>
                             <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-black transition-all ${
                               dk ? "bg-slate-700/50 text-slate-300 group-hover:bg-slate-600" : "bg-slate-100 text-slate-600 group-hover:bg-emerald-100 group-hover:text-emerald-700"
@@ -679,7 +679,7 @@ export default function JournalPage() {
                             </span>
                           </td>
 
-                          {/* کد پیگیری */}
+                          {/* کد پیگیری - مرکز */}
                           <td className="px-2 py-2.5 text-center">
                             <span className={`inline-block px-2 py-1 rounded-md text-[11px] font-bold font-mono tracking-wider whitespace-nowrap transition-all ${
                               isVoided 
@@ -690,37 +690,32 @@ export default function JournalPage() {
                             </span>
                           </td>
 
-                          {/* تاریخ */}
+                          {/* تاریخ - مرکز */}
                           <td className={`px-2 py-2.5 text-center text-xs whitespace-nowrap font-bold ${dk ? "text-slate-300" : "text-slate-700"}`}>
                             {datePart}
                           </td>
 
-                          {/* ساعت */}
+                          {/* ساعت - مرکز */}
                           <td className={`px-2 py-2.5 text-center text-xs whitespace-nowrap ${dk ? "text-slate-400" : "text-slate-500"}`}>
                             {timePart}
                           </td>
                           
-                          {/* مشتری */}
-                          <td className={`px-2 py-2.5 text-right text-xs font-bold ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (dk ? "text-amber-300" : "text-amber-700")}`}>
-                            <div className="flex items-center gap-1 justify-end">
+                          {/* مشتری - مرکز */}
+                          <td className={`px-2 py-2.5 text-center text-xs font-bold ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (dk ? "text-amber-300" : "text-amber-700")}`}>
+                            <div className="flex items-center gap-1 justify-center">
                               <span className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-[9px] shrink-0 ${dk ? "bg-amber-400/20 text-amber-300" : "bg-amber-100 text-amber-700"}`}>👤</span>
                               <span className="truncate max-w-[120px]" title={entry.partyName || "—"}>{entry.partyName || "—"}</span>
                             </div>
                           </td>
 
-                          {/* شرح */}
-                          <td className={`px-2 py-2.5 text-right text-xs ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (dk ? "text-slate-200" : "text-slate-800")}`}>
-                            <span className="truncate block max-w-[200px]" title={entry.description}>{entry.description}</span>
-                          </td>
-
-                          {/* نوع - badge زیبا */}
+                          {/* نوع - badge زیبا - مرکز */}
                           <td className="px-2 py-2.5 text-center">
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap ${getBadgeColor(entry.type, isVoided)}`}>
                               {entry.type}
                             </span>
                           </td>
 
-                          {/* ارز - با رنگ مخصوص */}
+                          {/* ارز - با رنگ مخصوص - مرکز */}
                           <td className="px-2 py-2.5 text-center">
                             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap ${dk ? currColors.bg : "bg-slate-50"} ${currColors.text}`}>
                               <span className="text-xs">{currencyIcons[entry.currency as Currency]}</span>
@@ -728,7 +723,7 @@ export default function JournalPage() {
                             </span>
                           </td>
 
-                          {/* مبلغ - با افکت ویژه */}
+                          {/* مبلغ - با افکت ویژه - مرکز */}
                           <td className={`px-2 py-2.5 text-center font-black tabular-nums text-xs whitespace-nowrap ${
                             isVoided 
                               ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through")
@@ -741,12 +736,17 @@ export default function JournalPage() {
                             </span>
                           </td>
 
-                          {/* تراز بعد */}
+                          {/* تراز بعد - مرکز */}
                           <td className={`px-2 py-2.5 text-center tabular-nums text-xs font-mono whitespace-nowrap ${dk ? "text-slate-300" : "text-slate-600"}`}>
                             {entry.balanceAfter ?? "—"}
                           </td>
 
-                          {/* عملیات */}
+                          {/* شرح - مرکز */}
+                          <td className={`px-2 py-2.5 text-center text-xs ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (dk ? "text-slate-200" : "text-slate-800")}`}>
+                            <span className="truncate block max-w-[180px] mx-auto" title={entry.description}>{entry.description}</span>
+                          </td>
+
+                          {/* عملیات - مرکز */}
                           <td className="px-2 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
                             {!isVoided ? (
                               <button onClick={() => handleVoid(entry)} disabled={voidingId === entry.id} className={`text-[10px] px-2 py-1 rounded-lg font-black transition disabled:opacity-50 whitespace-nowrap ${dk ? "bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20" : "bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200"}`}>
@@ -797,9 +797,9 @@ export default function JournalPage() {
               <span className={`w-2 h-2 rounded-full ml-2 ${dk ? "bg-blue-400" : "bg-blue-600"}`}></span> راهنمای سیستم
             </h3>
             <ul className={`text-xs space-y-2 list-disc pr-4 ${dk ? "text-slate-400" : "text-slate-600"}`}>
-              <li>💰 <b>موجودی لحظه‌ای</b>: موجودی فعلی هر ارز در سیستم</li>
+              <li> <b>موجودی لحظه‌ای</b>: موجودی فعلی هر ارز در سیستم</li>
               <li>📈 <b>سود/زیان</b>: درآمد، هزینه، کارمزدها و سود خالص دوره</li>
-              <li>📊 <b>خلاصه دوره</b>: حجم کل (مجموع گردش) و تغییر خالص (واریز - برداشت)</li>
+              <li> <b>خلاصه دوره</b>: حجم کل (مجموع گردش) و تغییر خالص (واریز - برداشت)</li>
               <li>🔽 <b>مرتب‌سازی</b>: روی هدر ستون‌ها کلیک کنید</li>
               <li>📄 <b>صفحه‌بندی</b>: ۲۰ تراکنش در هر صفحه</li>
               <li>👤 <b>مشتری</b>: نام از لیست مشتریان خوانده می‌شود</li>
