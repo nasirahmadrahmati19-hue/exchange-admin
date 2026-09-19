@@ -4,6 +4,9 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { doc, setDoc, onSnapshot, getDoc } from "firebase/firestore";
 import { db } from "./firebase";
 
+// ============================================================
+// توابع کمکی
+// ============================================================
 function removeUndefinedFields(obj: any): any {
   if (obj === null || obj === undefined) return obj;
   if (typeof obj !== "object") return obj;
@@ -25,6 +28,9 @@ function hasData(data: any): boolean {
   return !isEmptyData(data);
 }
 
+// ============================================================
+// لایه ذخیره‌سازی محلی
+// ============================================================
 const IDB_NAME = "AppSyncDB";
 const IDB_STORE = "syncedData";
 const LS_PREFIX = "synced_";
@@ -89,7 +95,7 @@ function saveToLS(key: string, value: any): boolean {
 }
 
 // ============================================================
-// ✅ کش سراسری در سطح ماژول (بین mount/unmount زنده می‌مونه)
+// ✅ کش سراسری در سطح ماژول (برای زنده ماندن هنگام تعویض تب)
 // ============================================================
 type CacheEntry = {
   value: any;
@@ -99,7 +105,6 @@ type CacheEntry = {
 const globalCache = new Map<string, CacheEntry>();
 
 export function useSyncedState<T>(key: string, initialValue: T) {
-  // 🛡️ مقدار اولیه از کش سراسری (اگه موجود باشه) — جلوگیری از پرش داده
   const cached = globalCache.get(key);
   const initial = cached?.loaded ? (cached.value as T) : initialValue;
 
@@ -117,12 +122,13 @@ export function useSyncedState<T>(key: string, initialValue: T) {
     valueRef.current = value;
   }, [value]);
 
-  // ۱. بارگذاری اولیه
+  // ============================================================
+  // ۱. بارگذاری اولیه با منطق "ترمیم خودکار" (Auto-Repair)
+  // ============================================================
   useEffect(() => {
     isMountedRef.current = true;
     let ignore = false;
 
-    // اگه قبلاً لود شده (از کش سراسری)، دیگه از صفر شروع نکن
     const alreadyLoaded = globalCache.get(key)?.loaded;
     if (alreadyLoaded) {
       setIsLoaded(true);
@@ -135,32 +141,34 @@ export function useSyncedState<T>(key: string, initialValue: T) {
         const snap = await getDoc(docRef);
         let finalPayload: any;
 
+        // اولویت ۱: داده معتبر در سرور وجود دارد
         if (snap.exists() && snap.data().value !== undefined && hasData(snap.data().value)) {
           finalPayload = snap.data();
         } else {
-          // fallback: local storage / idb
+          // اولویت ۲: سرور خالی است، اما ما داده محلی داریم (ترمیم سرور)
           const localData = readFromLS(key) ?? (await readFromIDB(key));
           if (localData !== undefined && hasData(localData)) {
             finalPayload = { value: localData, lastUpdated: Date.now() };
+            console.log(`🔧 [${key}] Repairing server with local data...`);
             await setDoc(docRef, removeUndefinedFields(finalPayload), { merge: true });
           } else {
+            // اولویت ۳: هم سرور و هم لوکال خالی هستند.
             const isInitialValueEmpty = isEmptyData(initialValue);
             if (!isInitialValueEmpty) {
               finalPayload = { value: initialValue, lastUpdated: Date.now() };
               await setDoc(docRef, removeUndefinedFields(finalPayload), { merge: true });
             } else {
+              // 🛡️ دفاع نهایی: اگر initialValue خالی است، هرگز آن را به سرور نفرست!
               finalPayload = { value: initialValue, lastUpdated: Date.now() };
             }
           }
         }
 
-        // 🛡️ فقط اگه داده جدیدتره، overwrite کن
         if (!ignore && isMountedRef.current) {
           const serverTs = finalPayload.lastUpdated || 0;
 
-          // اگه داده لوکال جدیدتره، ازش استفاده کن (ننویس روی سرور)
+          // اگر داده لوکال ما جدیدتر است، به سرور اعتماد نکن
           if (lastUpdatedRef.current > serverTs && hasData(valueRef.current)) {
-            // داده لوکال معتبرتره، پس دست نزن
             setIsLoaded(true);
             setIsLoading(false);
             return;
@@ -197,7 +205,6 @@ export function useSyncedState<T>(key: string, initialValue: T) {
     return () => {
       ignore = true;
       isMountedRef.current = false;
-      // 🛡️ کش سراسری رو با آخرین مقدار معتبر به‌روز کن
       if (hasData(valueRef.current)) {
         globalCache.set(key, {
           value: valueRef.current,
@@ -206,9 +213,11 @@ export function useSyncedState<T>(key: string, initialValue: T) {
         });
       }
     };
-  }, [key]);
+  }, [key, initialValue]);
 
-  // ۲. onSnapshot
+  // ============================================================
+  // ۲. شنونده بلادرنگ (onSnapshot) با محافظت ضد پاک‌شدن
+  // ============================================================
   useEffect(() => {
     if (!isLoaded) return;
     isMountedRef.current = true;
@@ -219,18 +228,14 @@ export function useSyncedState<T>(key: string, initialValue: T) {
       (docSnap) => {
         if (!isMountedRef.current) return;
 
-        // echo خودمون رو ignore کن
+        // نادیده گرفتن بازخورد نوشتن خودمان (Echo cancellation)
         if (pendingWritesRef.current > 0 && docSnap.exists()) {
           const incomingStr = JSON.stringify(docSnap.data().value);
           if (incomingStr === lastLocalWriteRef.current) {
             const incomingTs = docSnap.data().lastUpdated || 0;
             if (incomingTs > lastUpdatedRef.current) {
               lastUpdatedRef.current = incomingTs;
-              globalCache.set(key, {
-                value: valueRef.current,
-                lastUpdated: incomingTs,
-                loaded: true,
-              });
+              globalCache.set(key, { value: valueRef.current, lastUpdated: incomingTs, loaded: true });
             }
             return;
           }
@@ -245,9 +250,11 @@ export function useSyncedState<T>(key: string, initialValue: T) {
           if (incomingTimestamp > lastUpdatedRef.current) {
             const hadData = hasData(valueRef.current);
             const isNowEmpty = isEmptyData(payload.value);
+            
+            // 🚨 محافظ ۱: جلوگیری از پاک شدن توسط سرور
             if (hadData && isNowEmpty) {
-              console.error(`🚨 [${key}] BLOCKED SERVER WIPEOUT!`);
-              return;
+              console.error(`🚨 [${key}] BLOCKED SERVER WIPEOUT! Server tried to send empty data.`);
+              return; 
             }
 
             lastUpdatedRef.current = incomingTimestamp;
@@ -275,7 +282,9 @@ export function useSyncedState<T>(key: string, initialValue: T) {
     };
   }, [key, isLoaded]);
 
-  // ۳. sync بین تب‌ها
+  // ============================================================
+  // ۳. همگام‌سازی بین تب‌های مرورگر
+  // ============================================================
   useEffect(() => {
     if (typeof window === "undefined") return;
     const handleStorage = (e: StorageEvent) => {
@@ -286,11 +295,7 @@ export function useSyncedState<T>(key: string, initialValue: T) {
             valueRef.current = parsed;
             setValue(parsed);
             lastUpdatedRef.current = Date.now();
-            globalCache.set(key, {
-              value: parsed,
-              lastUpdated: lastUpdatedRef.current,
-              loaded: true,
-            });
+            globalCache.set(key, { value: parsed, lastUpdated: lastUpdatedRef.current, loaded: true });
           }
         } catch {}
       }
@@ -299,7 +304,9 @@ export function useSyncedState<T>(key: string, initialValue: T) {
     return () => window.removeEventListener("storage", handleStorage);
   }, [key]);
 
-  // ۴. setSyncedValue
+  // ============================================================
+  // ۴. تابع به‌روزرسانی داده با محافظت نهایی (Hardened)
+  // ============================================================
   const setSyncedValue = useCallback(
     async (newValue: T | ((prev: T) => T)) => {
       pendingWritesRef.current += 1;
@@ -309,23 +316,32 @@ export function useSyncedState<T>(key: string, initialValue: T) {
             ? (newValue as (prev: T) => T)(valueRef.current)
             : newValue;
 
+        // 🚨 محافظ ۲: جلوگیری مطلق از پاک کردن داده‌های محلی
         const hadData = hasData(valueRef.current);
         const isNowEmpty = isEmptyData(resolvedValue);
+        
         if (hadData && isNowEmpty) {
-          console.error(`🚨 [${key}] BLOCKED LOCAL WIPEOUT!`);
-          return valueRef.current;
+          console.error(`🚨🚨🚨 [${key}] CRITICAL: Blocked attempt to wipe data locally!`);
+          console.trace("Call stack of the wipe attempt:");
+          alert(`⛔ خطای حیاتی: یک بخش از برنامه سعی کرد داده‌های "${key}" را پاک کند. این عملیات به دلایل امنیتی مسدود شد.`);
+          return valueRef.current; // لغو عملیات ذخیره‌سازی
+        }
+
+        // 🚨 محافظ ۳: جلوگیری از ذخیره undefined یا null به جای آرایه/آبجکت
+        if (resolvedValue === undefined || resolvedValue === null) {
+           console.warn(`⚠️ [${key}] Attempted to save undefined/null. Reverting to safe state.`);
+           return valueRef.current;
         }
 
         const newTimestamp = Date.now();
         const payload = { value: resolvedValue, lastUpdated: newTimestamp };
 
-        // آپدیت فوری
+        // آپدیت فوری حالت‌ها
         valueRef.current = resolvedValue;
         setValue(resolvedValue);
         lastUpdatedRef.current = newTimestamp;
         lastLocalWriteRef.current = JSON.stringify(resolvedValue);
 
-        // 🛡️ کش سراسری رو فوری آپدیت کن (جلوگیری از پرش در unmount)
         globalCache.set(key, {
           value: resolvedValue,
           lastUpdated: newTimestamp,
