@@ -30,19 +30,15 @@ interface UnifiedJournalEntry {
 
 const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00";
 
-// ✨ تبدیل ارقام انگلیسی به فارسی
 const toPersianDigits = (s: string): string => {
   return s.replace(/\d/g, d => "۰۱۲۳۴۵۶۷۸۹"[parseInt(d)]);
 };
 
-// ✨ استخراج سال شمسی از تاریخ
 const getShamsiYear = (dateStr: string): string => {
   try {
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return "1405";
-    const parts = new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
-      year: "numeric"
-    }).formatToParts(d);
+    const parts = new Intl.DateTimeFormat("fa-IR-u-ca-persian", { year: "numeric" }).formatToParts(d);
     const y = parts.find(p => p.type === "year")?.value || "1405";
     return y.replace(/[۰-۹]/g, c => String("۰۱۲۳۴۵۶۷۸۹".indexOf(c)));
   } catch {
@@ -50,28 +46,17 @@ const getShamsiYear = (dateStr: string): string => {
   }
 };
 
-// ✨ نرمال‌سازی کد پیگیری به فرمت یکدست
 const normalizeTrackingCode = (
   originalCode: string | undefined,
   source: "transaction" | "hawala" | "cash",
   date: string,
   index: number
 ): string => {
-  const prefix = {
-    "transaction": "TR",
-    "hawala": "HW",
-    "cash": "CS"
-  }[source];
-
+  const prefix = { "transaction": "TR", "hawala": "HW", "cash": "CS" }[source];
   const year = getShamsiYear(date);
   
-  // اگر کد اصلی وجود دارد، سعی می‌کنیم آن را یکدست کنیم
   if (originalCode && originalCode.trim()) {
-    // اگر فرمت آن از قبل درست است (مثل TR-1405-00442) همان را نگه می‌داریم
-    if (/^[A-Z]{2}-\d{4}-\d+$/.test(originalCode)) {
-      return originalCode;
-    }
-    // در غیر این صورت، فقط بخش عددی آخر را می‌گیریم
+    if (/^[A-Z]{2}-\d{4}-\d+$/.test(originalCode)) return originalCode;
     const numberMatch = originalCode.match(/(\d+)$/);
     if (numberMatch) {
       const num = numberMatch[1].padStart(5, "0");
@@ -79,7 +64,6 @@ const normalizeTrackingCode = (
     }
   }
   
-  // اگر کد وجود نداشت، از index استفاده می‌کنیم
   const num = String(index + 1).padStart(5, "0");
   return `${prefix}-${year}-${num}`;
 };
@@ -128,7 +112,40 @@ export default function JournalPage() {
     ? "border-slate-700 bg-slate-800/90 shadow-[0_16px_40px_-24px_rgba(0,0,0,0.6)]"
     : "border-emerald-100 bg-white/95 shadow-[0_16px_40px_-28px_rgba(16,185,129,0.35)]";
 
-  // ✅ ۱. ادغام هوشمند تمام داده‌ها + یکدست‌سازی کد پیگیری
+  // ✨ ساخت نقشه (map) مشتریان برای جستجوی سریع نام بر اساس ID
+  const customerMap = useMemo(() => {
+    const map = new Map<string, string>();
+    customers.forEach((c: any) => {
+      if (c && c.id) {
+        // سعی می‌کنیم نام را از فیلدهای مختلف بخوانیم
+        const name = c.name || c.fullName || c.customerName || c.title || "";
+        if (name && name.trim()) {
+          map.set(c.id, name.trim());
+        }
+      }
+    });
+    return map;
+  }, [customers]);
+
+  // ✨ تابع کمکی: پیدا کردن نام مشتری از ID یا نام مستقیم
+  const resolveCustomerName = (name?: string, id?: string): string => {
+    // اولویت ۱: اگر نام مستقیم وجود دارد و معتبر است
+    if (name && name.trim() && name !== "مشتری" && name !== "صندوق" && name !== "—") {
+      return name.trim();
+    }
+    // اولویت ۲: اگر ID وجود دارد، از customerMap پیدا کن
+    if (id && customerMap.has(id)) {
+      return customerMap.get(id)!;
+    }
+    // اولویت ۳: اگر نام وجود دارد ولی نامعتبر است
+    if (name && name.trim()) {
+      return name.trim();
+    }
+    // در غیر این صورت
+    return "نامشخص";
+  };
+
+  // ✅ ۱. ادغام هوشمند تمام داده‌ها
   const unifiedEntries = useMemo<UnifiedJournalEntry[]>(() => {
     const entries: Omit<UnifiedJournalEntry, "trackingCode">[] = [];
     
@@ -137,7 +154,16 @@ export default function JournalPage() {
       let type: TxType = "تبدیل";
       if (tx.type === "exchange") type = tx.dealType === "buy" ? "واریز" : "برداشت";
       else if (tx.type === "transfer") type = "انتقال";
-      const partyName = tx.type === "transfer" ? `${tx.senderName || "—"} به ${tx.receiverName || "—"}` : (tx.customerName || "مشتری");
+      
+      // ✨ نمایش نام مشتری با پشتیبانی از customerMap
+      let partyName: string;
+      if (tx.type === "transfer") {
+        const sender = resolveCustomerName(tx.senderName, tx.senderId);
+        const receiver = resolveCustomerName(tx.receiverName, tx.receiverId);
+        partyName = `${sender} ← ${receiver}`;
+      } else {
+        partyName = resolveCustomerName(tx.customerName, tx.customerId);
+      }
       
       entries.push({
         id: tx.id, date: tx.date, type,
@@ -151,17 +177,20 @@ export default function JournalPage() {
     hawalas.forEach((h: any) => {
       if (h.status === "cancelled") return;
       
+      const senderName = resolveCustomerName(h.senderName, h.senderId);
+      
       entries.push({
         id: h.id, date: h.date, type: "حواله",
-        description: `حواله به ${h.receiverName} (${h.destinationText || ""})`,
-        partyName: h.senderName, partyId: h.senderId, currency: h.currencyFrom,
+        description: `حواله به ${h.receiverName || "—"} (${h.destinationText || ""})`,
+        partyName: senderName, partyId: h.senderId, currency: h.currencyFrom,
         amount: h.amountFrom, status: "active", source: "hawala", sourceId: h.id
       });
       
       if (h.status === "paid") {
+        const receiverName = resolveCustomerName(h.receiverName, h.receiverId);
         entries.push({
           id: `${h.id}-paid`, date: h.paidAt || h.date, type: "واریز",
-          description: `تسویه حواله از ${h.senderName}`, partyName: h.receiverName,
+          description: `تسویه حواله از ${senderName}`, partyName: receiverName,
           partyId: h.receiverId, currency: h.currencyTo, amount: h.finalAmount,
           status: "active", source: "hawala", sourceId: h.id
         });
@@ -179,18 +208,21 @@ export default function JournalPage() {
       else if (ce.type === "fee" || ce.type === "commission_withdraw") type = "هزینه";
       else if (ce.type === "adjustment") type = "برداشت";
       
+      const partyName = ce.customerId 
+        ? resolveCustomerName(ce.customerName, ce.customerId)
+        : (ce.customerName && ce.customerName.trim() ? ce.customerName : "صندوق");
+      
       entries.push({
         id: ce.id, date: ce.date || new Date().toISOString(), type,
-        description: ce.reason || ce.type || "عملیات صندوق", partyName: ce.customerName || "صندوق",
-        partyId: ce.customerId, currency: ce.currency, amount: Number(ce.amount) || 0,
-        balanceAfter: ce.balanceAfter, status: ce.status || "active", source: "cash", sourceId: ce.id
+        description: ce.reason || ce.type || "عملیات صندوق", 
+        partyName, partyId: ce.customerId, currency: ce.currency, 
+        amount: Number(ce.amount) || 0, balanceAfter: ce.balanceAfter, 
+        status: ce.status || "active", source: "cash", sourceId: ce.id
       });
     });
     
-    // مرتب‌سازی بر اساس تاریخ (قدیمی‌ترین اول) برای شماره‌دهی صحیح
     entries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     
-    // ✨ یکدست‌سازی کد پیگیری برای همه تراکنش‌ها
     const entriesWithCode: UnifiedJournalEntry[] = entries.map((entry, index) => ({
       ...entry,
       trackingCode: normalizeTrackingCode(
@@ -205,9 +237,8 @@ export default function JournalPage() {
       )
     }));
     
-    // مرتب‌سازی نهایی: جدیدترین اول (برای نمایش)
     return entriesWithCode.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [transactions, hawalas, cashEntries]);
+  }, [transactions, hawalas, cashEntries, customerMap]);
 
   // ✅ ۲. فیلتر کردن داده‌ها
   const filteredEntries = useMemo(() => {
@@ -270,7 +301,7 @@ export default function JournalPage() {
 
   // ✅ ۶. خروجی CSV
   const handleExport = () => {
-    const headers = ["ردیف", "کد پیگیری", "تاریخ", "ساعت", "شرح", "نوع", "ارز", "مبلغ", "تراز بعد"];
+    const headers = ["ردیف", "کد پیگیری", "تاریخ", "ساعت", "مشتری/طرف حساب", "شرح", "نوع", "ارز", "مبلغ", "تراز بعد"];
     const escapeCsv = (val: any) => `"${String(val ?? "").replace(/"/g, '""')}"`;
     const rows = filteredEntries.map((e: any, index: number) => {
       const d = new Date(e.date);
@@ -279,6 +310,7 @@ export default function JournalPage() {
         escapeCsv(e.trackingCode),
         escapeCsv(d.toLocaleDateString("fa-IR")),
         escapeCsv(d.toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" })),
+        escapeCsv(e.partyName || "—"),
         escapeCsv(e.description), escapeCsv(e.type), escapeCsv(currencyLabels[e.currency as Currency]),
         e.amount, e.balanceAfter ?? ""
       ].join(",");
@@ -365,7 +397,7 @@ export default function JournalPage() {
               </div>
               <div className="relative">
                 <label className={`text-xs font-bold mb-1.5 block ${subText}`}>جستجو</label>
-                <input type="text" placeholder="نام، کد پیگیری، یا شرح..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className={`w-full border rounded-xl px-3 py-2.5 pr-9 text-sm outline-none focus:ring-2 focus:ring-blue-500 transition ${dk ? "bg-slate-900/50 border-slate-700 text-slate-100" : "bg-white border-slate-200 text-slate-800"}`} />
+                <input type="text" placeholder="نام مشتری، کد پیگیری، یا شرح..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className={`w-full border rounded-xl px-3 py-2.5 pr-9 text-sm outline-none focus:ring-2 focus:ring-blue-500 transition ${dk ? "bg-slate-900/50 border-slate-700 text-slate-100" : "bg-white border-slate-200 text-slate-800"}`} />
                 <svg className={`absolute right-3 top-9 w-4 h-4 ${subText}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
               </div>
             </div>
@@ -426,18 +458,19 @@ export default function JournalPage() {
               </div>
               <div className="flex-1 min-w-0">
                 <h2 className={`cs-display text-xl md:text-2xl leading-none ${heading}`}>لیست تراکنش‌ها</h2>
-                <p className={`mt-1 text-[11px] font-bold ${subText}`}>کد پیگیری یکدست از تمام بخش‌ها</p>
+                <p className={`mt-1 text-[11px] font-bold ${subText}`}>نمایش نام مشتری/طرف حساب در هر تراکنش</p>
               </div>
             </div>
 
             <div className="overflow-x-auto px-4 md:px-7 pb-4">
-              <table className="w-full min-w-[1100px] text-sm">
+              <table className="w-full min-w-[1250px] text-sm">
                 <thead>
                   <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
                     <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-12">ردیف</th>
                     <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">کد پیگیری</th>
                     <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">تاریخ</th>
                     <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">ساعت</th>
+                    <th className="px-3 py-3 text-right text-[11px] font-black text-slate-400 whitespace-nowrap">مشتری / طرف حساب</th>
                     <th className="px-3 py-3 text-right text-[11px] font-black text-slate-400 whitespace-nowrap">شرح</th>
                     <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">نوع</th>
                     <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">ارز</th>
@@ -449,7 +482,7 @@ export default function JournalPage() {
                 <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
                   {filteredEntries.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className={`px-4 py-12 text-center font-bold ${subText}`}>هیچ تراکنشی با این فیلترها یافت نشد.</td>
+                      <td colSpan={11} className={`px-4 py-12 text-center font-bold ${subText}`}>هیچ تراکنشی با این فیلترها یافت نشد.</td>
                     </tr>
                   ) : (
                     filteredEntries.map((entry: any, index: number) => {
@@ -472,6 +505,17 @@ export default function JournalPage() {
                           </td>
                           <td className={`px-3 py-3 text-center text-xs ${dk ? "text-slate-300" : "text-slate-600"}`}>{datePart}</td>
                           <td className={`px-3 py-3 text-center text-xs ${dk ? "text-slate-300" : "text-slate-600"}`}>{timePart}</td>
+                          
+                          {/* ✨ ستون مشتری / طرف حساب */}
+                          <td className={`px-3 py-3 text-right text-xs font-bold ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (dk ? "text-amber-300" : "text-amber-700")}`}>
+                            <div className="flex items-center gap-1.5 justify-end">
+                              <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] shrink-0 ${dk ? "bg-amber-400/20 text-amber-300" : "bg-amber-100 text-amber-700"}`}>
+                                👤
+                              </span>
+                              <span className="whitespace-nowrap">{entry.partyName || "—"}</span>
+                            </div>
+                          </td>
+                          
                           <td className={`px-3 py-3 text-right font-medium text-xs ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (dk ? "text-slate-200" : "text-slate-800")}`}>{entry.description}</td>
                           <td className="px-3 py-3 text-center">
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black ${getBadgeColor(entry.type, isVoided)}`}>{entry.type}</span>
@@ -502,19 +546,19 @@ export default function JournalPage() {
           {/* ═══════════ راهنما ═══════════ */}
           <section className={`cs-up rounded-2xl border-2 px-5 py-4 md:py-5 ${dk ? "border-slate-700/70 bg-gradient-to-r from-slate-800/60 to-slate-900/60" : "border-slate-200 bg-gradient-to-r from-white to-slate-50"}`} style={{ animationDelay: "280ms" }}>
             <h3 className={`text-sm font-black mb-3 flex items-center ${dk ? "text-slate-200" : "text-slate-700"}`}>
-              <span className={`w-2 h-2 rounded-full ml-2 ${dk ? "bg-blue-400" : "bg-blue-600"}`}></span> راهنمای کد پیگیری
+              <span className={`w-2 h-2 rounded-full ml-2 ${dk ? "bg-blue-400" : "bg-blue-600"}`}></span> راهنمای سیستم
             </h3>
             <ul className={`text-xs space-y-2 list-disc pr-4 ${dk ? "text-slate-400" : "text-slate-600"}`}>
-              <li>همه کدهای پیگیری <b className={dk ? "text-cyan-300" : "text-cyan-700"}>یکدست</b> و با فرمت یکسان نمایش داده می‌شوند</li>
+              <li>ستون <b className={dk ? "text-amber-300" : "text-amber-700"}>مشتری / طرف حساب</b> نام شخص یا طرف معامله را نمایش می‌دهد</li>
+              <li>اگر نام مشتری در تراکنش ذخیره نشده باشد، به صورت خودکار از لیست مشتریان خوانده می‌شود</li>
+              <li>در تراکنش‌های انتقال، هر دو طرف به صورت <span className="font-mono">فرستنده ← گیرنده</span> نمایش داده می‌شوند</li>
+              <li>می‌توانید با <b>نام مشتری</b> در بخش جستجو، تمام تراکنش‌های او را پیدا کنید</li>
               <li>
-                <b>پیشوندها:</b>{" "}
+                <b>پیشوندهای کد پیگیری:</b>{" "}
                 <span className="font-mono">TR</span> = معامله،{" "}
                 <span className="font-mono">HW</span> = حواله،{" "}
                 <span className="font-mono">CS</span> = صندوق
               </li>
-              <li>ساختار: <span className="font-mono">{`{پیشوند}-{سال شمسی}-{شماره ۵ رقمی}`}</span></li>
-              <li>نمونه: <span className="font-mono">TR-1405-00442</span>، <span className="font-mono">HW-1405-00158</span></li>
-              <li>می‌توانید با کد پیگیری در بخش <b>جستجو</b> تراکنش را پیدا کنید</li>
               <li>این روزنامه به صورت <b className={dk ? "text-slate-200" : "text-slate-800"}>آفلاین و آنلاین</b> کار می‌کند</li>
             </ul>
           </section>
