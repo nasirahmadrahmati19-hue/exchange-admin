@@ -11,6 +11,16 @@ const currencyLabels: Record<Currency, string> = { AFN: "افغانی", USD: "د
 
 type TxType = "واریز" | "برداشت" | "انتقال" | "تبدیل" | "هزینه" | "حواله";
 
+// ✨ نگاشت نوع تراکنش به مخفف فارسی
+const typePrefixMap: Record<TxType, string> = {
+  "واریز": "وار",
+  "برداشت": "برد",
+  "انتقال": "انت",
+  "تبدیل": "تبد",
+  "هزینه": "هز",
+  "حواله": "حو"
+};
+
 interface UnifiedJournalEntry {
   id: string;
   date: string;
@@ -25,19 +35,40 @@ interface UnifiedJournalEntry {
   voidedReason?: string;
   source: "transaction" | "hawala" | "cash";
   sourceId: string;
-  trackingCode: string; // ✨ کد پیگیری: واریز-۰۰۱
+  trackingCode: string; // ✨ کد پیگیری از بخش اصلی
 }
 
 const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00";
 
-// ✨ تبدیل ارقام انگلیسی به فارسی برای نمایش
+// ✨ تبدیل تاریخ میلادی به شمسی (۸ رقم: ۱۴۰۵۰۶۲۹)
+const toShamsiCompact = (dateStr: string): string => {
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return "00000000";
+    const parts = new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
+      year: "numeric", month: "2-digit", day: "2-digit"
+    }).formatToParts(d);
+    const y = parts.find(p => p.type === "year")?.value || "0000";
+    const m = parts.find(p => p.type === "month")?.value || "00";
+    const day = parts.find(p => p.type === "day")?.value || "00";
+    const toEn = (s: string) => s.replace(/[۰-۹]/g, c => String("۰۱۲۳۴۵۶۷۸۹".indexOf(c)));
+    return `${toEn(y)}${toEn(m).padStart(2, "0")}${toEn(day).padStart(2, "0")}`;
+  } catch {
+    return "00000000";
+  }
+};
+
+// ✨ تبدیل ارقام انگلیسی به فارسی
 const toPersianDigits = (s: string): string => {
   return s.replace(/\d/g, d => "۰۱۲۳۴۵۶۷۸۹"[parseInt(d)]);
 };
 
-// ✨ تبدیل عدد به فرمت ۳ رقمی با صفر سمت چپ (۰۰۱, ۰۰۲, ...)
-const padNumber = (n: number): string => {
-  return String(n).padStart(3, "0");
+// ✨ تولید کد پیگیری (اگر در تراکنش اصلی وجود نداشت)
+const generateTrackingCode = (type: TxType, date: string, id: string): string => {
+  const prefix = typePrefixMap[type] || "سایر";
+  const datePart = toShamsiCompact(date);
+  const idPart = id.slice(0, 4).toUpperCase();
+  return `${prefix}-${datePart}-${idPart}`;
 };
 
 function useUrlState(key: string, defaultValue: string) {
@@ -84,9 +115,9 @@ export default function JournalPage() {
     ? "border-slate-700 bg-slate-800/90 shadow-[0_16px_40px_-24px_rgba(0,0,0,0.6)]"
     : "border-emerald-100 bg-white/95 shadow-[0_16px_40px_-28px_rgba(16,185,129,0.35)]";
 
-  // ✅ ۱. ادغام هوشمند تمام داده‌ها + تولید کد پیگیری با شماره ردیف
+  // ✅ ۱. ادغام هوشمند تمام داده‌ها + استفاده از کد پیگیری اصلی
   const unifiedEntries = useMemo<UnifiedJournalEntry[]>(() => {
-    const entries: Omit<UnifiedJournalEntry, "trackingCode">[] = [];
+    const entries: UnifiedJournalEntry[] = [];
     
     transactions.forEach((tx: any) => {
       if (tx.status === "voided" && !tx.voidedReason) return;
@@ -94,29 +125,42 @@ export default function JournalPage() {
       if (tx.type === "exchange") type = tx.dealType === "buy" ? "واریز" : "برداشت";
       else if (tx.type === "transfer") type = "انتقال";
       const partyName = tx.type === "transfer" ? `${tx.senderName || "—"} به ${tx.receiverName || "—"}` : (tx.customerName || "مشتری");
+      
+      // ✨ استفاده از کد پیگیری اصلی تراکنش، یا تولید در صورت عدم وجود
+      const trackingCode = tx.trackingCode || generateTrackingCode(type, tx.date, tx.id);
+      
       entries.push({
         id: tx.id, date: tx.date, type,
         description: tx.description || `${tx.type} ${tx.fromCurrency} به ${tx.toCurrency}`,
         partyName, partyId: tx.customerId || tx.senderId, currency: tx.fromCurrency,
         amount: tx.fromAmount, balanceAfter: tx.balanceAfter, status: tx.status,
-        voidedReason: tx.voidedReason, source: "transaction", sourceId: tx.id
+        voidedReason: tx.voidedReason, source: "transaction", sourceId: tx.id,
+        trackingCode
       });
     });
     
     hawalas.forEach((h: any) => {
       if (h.status === "cancelled") return;
+      
+      const trackingCode1 = h.trackingCode || generateTrackingCode("حواله", h.date, h.id);
+      
       entries.push({
         id: h.id, date: h.date, type: "حواله",
         description: `حواله به ${h.receiverName} (${h.destinationText || ""})`,
         partyName: h.senderName, partyId: h.senderId, currency: h.currencyFrom,
-        amount: h.amountFrom, status: "active", source: "hawala", sourceId: h.id
+        amount: h.amountFrom, status: "active", source: "hawala", sourceId: h.id,
+        trackingCode: trackingCode1
       });
+      
       if (h.status === "paid") {
+        const trackingCode2 = h.paidTrackingCode || generateTrackingCode("واریز", h.paidAt || h.date, `${h.id}-paid`);
+        
         entries.push({
           id: `${h.id}-paid`, date: h.paidAt || h.date, type: "واریز",
           description: `تسویه حواله از ${h.senderName}`, partyName: h.receiverName,
           partyId: h.receiverId, currency: h.currencyTo, amount: h.finalAmount,
-          status: "active", source: "hawala", sourceId: h.id
+          status: "active", source: "hawala", sourceId: h.id,
+          trackingCode: trackingCode2
         });
       }
     });
@@ -124,40 +168,27 @@ export default function JournalPage() {
     cashEntries.forEach((ce: any) => {
       if (!ce || ce.status === "voided") return;
       if (ce.linkedExchangeId || ce.linkedTransferId || ce.linkedConvertId || ce.linkedHawalaId || ce.linkedHawalaSettleId) return;
+      
       let type: TxType = "هزینه";
       if (ce.type === "customer_deposit" || ce.type === "owner_deposit") type = "واریز";
       else if (ce.type === "customer_withdraw" || ce.type === "owner_withdraw") type = "برداشت";
       else if (ce.type === "loan_given" || ce.type === "loan_received") type = "انتقال";
       else if (ce.type === "fee" || ce.type === "commission_withdraw") type = "هزینه";
       else if (ce.type === "adjustment") type = "برداشت";
+      
+      // ✨ استفاده از کد پیگیری اصلی صندوق
+      const trackingCode = ce.trackingCode || generateTrackingCode(type, ce.date || new Date().toISOString(), ce.id);
+      
       entries.push({
         id: ce.id, date: ce.date || new Date().toISOString(), type,
         description: ce.reason || ce.type || "عملیات صندوق", partyName: ce.customerName || "صندوق",
         partyId: ce.customerId, currency: ce.currency, amount: Number(ce.amount) || 0,
-        balanceAfter: ce.balanceAfter, status: ce.status || "active", source: "cash", sourceId: ce.id
+        balanceAfter: ce.balanceAfter, status: ce.status || "active", source: "cash", sourceId: ce.id,
+        trackingCode
       });
     });
     
-    // ✅ مرتب‌سازی بر اساس تاریخ (قدیمی‌ترین اول) برای شماره‌دهی صحیح
-    entries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    
-    // ✅ تولید کد پیگیری با شماره ردیف بر اساس نوع تراکنش
-    const typeCounters: Record<TxType, number> = {
-      "واریز": 0, "برداشت": 0, "انتقال": 0,
-      "تبدیل": 0, "هزینه": 0, "حواله": 0
-    };
-    
-    const entriesWithCode: UnifiedJournalEntry[] = entries.map((entry) => {
-      typeCounters[entry.type]++;
-      const sequenceNum = padNumber(typeCounters[entry.type]);
-      return {
-        ...entry,
-        trackingCode: `${entry.type}-${sequenceNum}`
-      };
-    });
-    
-    // ✅ مرتب‌سازی نهایی: جدیدترین اول (برای نمایش)
-    return entriesWithCode.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [transactions, hawalas, cashEntries]);
 
   // ✅ ۲. فیلتر کردن داده‌ها
@@ -186,7 +217,7 @@ export default function JournalPage() {
     return { count };
   }, [filteredEntries]);
 
-  // ✅ ۴. محاسبه خلاصه ارزها (نمایش اجباری هر ۵ ارز)
+  // ✅ ۴. محاسبه خلاصه ارزها
   const currencyPeriodSummary = useMemo(() => {
     const summary: Record<string, { volume: number; net: number }> = {};
     currencies.forEach(curr => { summary[curr] = { volume: 0, net: 0 }; });
@@ -322,7 +353,7 @@ export default function JournalPage() {
             </div>
           </section>
 
-          {/* ═══════════ خلاصه دوره (گرید یکپارچه ۶ تایی) ═══════════ */}
+          {/* ═══════════ خلاصه دوره ═══════════ */}
           <section className="cs-up space-y-4 md:space-y-5" style={{ animationDelay: "140ms" }}>
             <div className={`relative overflow-hidden rounded-2xl md:rounded-3xl border-2 p-5 md:p-6 transition-all duration-300 ${dk ? "border-emerald-400/30 bg-gradient-to-br from-emerald-900/30 via-slate-900/60 to-teal-900/30" : "border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50"}`}>
               <div className={`absolute -top-24 -left-24 h-48 w-48 rounded-full blur-3xl opacity-20 ${dk ? "bg-emerald-400" : "bg-emerald-300"}`} />
@@ -338,7 +369,6 @@ export default function JournalPage() {
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 md:gap-4">
-                
                 <div className={`rounded-xl p-3 border text-center transition-all duration-300 hover:scale-[1.02] flex flex-col justify-center ${dk ? "border-slate-700 bg-slate-900/50" : "border-slate-200 bg-white/80"}`}>
                   <div className={`text-[11px] font-black mb-2 ${dk ? "text-slate-300" : "text-slate-600"}`}>تعداد کل</div>
                   <div className="flex-1 flex items-center justify-center">
@@ -378,7 +408,7 @@ export default function JournalPage() {
               </div>
               <div className="flex-1 min-w-0">
                 <h2 className={`cs-display text-xl md:text-2xl leading-none ${heading}`}>لیست تراکنش‌ها</h2>
-                <p className={`mt-1 text-[11px] font-bold ${subText}`}>جزئیات کامل عملیات ثبت‌شده در سیستم</p>
+                <p className={`mt-1 text-[11px] font-bold ${subText}`}>کد پیگیری از بخش‌های اصلی (معاملات، حواله‌ها، صندوق)</p>
               </div>
             </div>
 
@@ -412,15 +442,13 @@ export default function JournalPage() {
 
                       return (
                         <tr key={entry.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/70"}`}>
-                          {/* ستون ردیف با ارقام فارسی */}
                           <td className={`px-2 py-3 text-center tabular-nums font-black text-xs ${dk ? "text-slate-400" : "text-slate-500"}`}>
                             <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full ${dk ? "bg-slate-700/50 text-slate-200" : "bg-slate-100 text-slate-700"}`}>
                               {toPersianDigits(String(index + 1))}
                             </span>
                           </td>
-                          {/* ستون کد پیگیری: اسم کامل + شماره ردیف */}
-                          <td className={`px-3 py-3 text-center text-xs font-bold ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (dk ? "text-cyan-300" : "text-cyan-700")}`}>
-                            <span className={`inline-block px-2.5 py-1 rounded-md ${dk ? "bg-slate-700/40" : "bg-cyan-50"} whitespace-nowrap`}>
+                          <td className={`px-3 py-3 text-center text-[11px] font-bold tracking-wide ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (dk ? "text-cyan-300" : "text-cyan-700")}`}>
+                            <span className={`inline-block px-2 py-1 rounded-md font-mono ${dk ? "bg-slate-700/40" : "bg-cyan-50"} whitespace-nowrap`}>
                               {entry.trackingCode}
                             </span>
                           </td>
@@ -459,17 +487,14 @@ export default function JournalPage() {
               <span className={`w-2 h-2 rounded-full ml-2 ${dk ? "bg-blue-400" : "bg-blue-600"}`}></span> راهنمای کد پیگیری
             </h3>
             <ul className={`text-xs space-y-2 list-disc pr-4 ${dk ? "text-slate-400" : "text-slate-600"}`}>
-              <li>هر تراکنش دارای <b className={dk ? "text-cyan-300" : "text-cyan-700"}>کد پیگیری فارسی</b> منحصربه‌فرد است. نمونه: <span className="font-bold">واریز-۰۰۱</span></li>
-              <li>ساختار کد: <b>اسم کامل نوع تراکنش</b> + <b>شماره ردیف</b> (مثلاً: واریز-۰۰۱، برداشت-۰۰۲، حواله-۰۰۳)</li>
-              <li>شماره ردیف بر اساس ترتیب زمانی تراکنش‌ها اختصاص می‌یابد (قدیمی‌ترین = ۰۰۱)</li>
-              <li>هر نوع تراکنش شمارنده جداگانه دارد (واریز-۰۰۱، واریز-۰۰۲، ...)</li>
-              <li>می‌توانید با کد پیگیری در بخش <b>جستجو</b> تراکنش را پیدا کنید.</li>
-              <li>این روزنامه به صورت <b className={dk ? "text-slate-200" : "text-slate-800"}>آفلاین و آنلاین</b> کار می‌کند.</li>
-              <li>برای ابطال حواله، به تب <b className={dk ? "text-slate-200" : "text-slate-800"}>حواله‌جات</b> مراجعه کنید.</li>
+              <li>کد پیگیری از <b className={dk ? "text-cyan-300" : "text-cyan-700"}>بخش‌های اصلی</b> (معاملات، حواله‌ها، صندوق) خوانده می‌شود</li>
+              <li>اگر تراکنشی کد پیگیری نداشته باشد، به صورت خودکار تولید می‌شود</li>
+              <li>ساختار کد: <span className="font-mono">وار-۱۴۰۵۰۶۲۹-A3F2</span> (مخفف + تاریخ شمسی + شناسه)</li>
+              <li>می‌توانید با کد پیگیری در بخش <b>جستجو</b> تراکنش را پیدا کنید</li>
+              <li>این روزنامه به صورت <b className={dk ? "text-slate-200" : "text-slate-800"}>آفلاین و آنلاین</b> کار می‌کند</li>
             </ul>
           </section>
 
-          {/* ═══════════ فوتر ═══════════ */}
           <div className={`cs-up text-center py-4 text-[11px] font-bold ${subText}`} style={{ animationDelay: "350ms" }}>
             🏦 سیستم هماهنگ‌سازی هوشمند فعال است
           </div>
