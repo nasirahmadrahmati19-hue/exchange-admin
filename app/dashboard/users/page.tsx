@@ -30,19 +30,15 @@ interface UnifiedJournalEntry {
 
 const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00";
 
-// ✨ تبدیل ارقام انگلیسی به فارسی
 const toPersianDigits = (s: string): string => {
   return s.replace(/\d/g, d => "۰۱۲۳۴۵۶۷۸۹"[parseInt(d)]);
 };
 
-// ✨ استخراج سال شمسی از تاریخ
 const getShamsiYear = (dateStr: string): string => {
   try {
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return "1405";
-    const parts = new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
-      year: "numeric"
-    }).formatToParts(d);
+    const parts = new Intl.DateTimeFormat("fa-IR-u-ca-persian", { year: "numeric" }).formatToParts(d);
     const y = parts.find(p => p.type === "year")?.value || "1405";
     return y.replace(/[۰-۹]/g, c => String("۰۱۲۳۴۵۶۷۸۹".indexOf(c)));
   } catch {
@@ -50,25 +46,17 @@ const getShamsiYear = (dateStr: string): string => {
   }
 };
 
-// ✨ نرمال‌سازی کد پیگیری به فرمت یکدست
 const normalizeTrackingCode = (
   originalCode: string | undefined,
   source: "transaction" | "hawala" | "cash",
   date: string,
   index: number
 ): string => {
-  const prefix = {
-    "transaction": "TR",
-    "hawala": "HW",
-    "cash": "CS"
-  }[source];
-
+  const prefix = { "transaction": "TR", "hawala": "HW", "cash": "CS" }[source];
   const year = getShamsiYear(date);
   
   if (originalCode && originalCode.trim()) {
-    if (/^[A-Z]{2}-\d{4}-\d+$/.test(originalCode)) {
-      return originalCode;
-    }
+    if (/^[A-Z]{2}-\d{4}-\d+$/.test(originalCode)) return originalCode;
     const numberMatch = originalCode.match(/(\d+)$/);
     if (numberMatch) {
       const num = numberMatch[1].padStart(5, "0");
@@ -124,6 +112,22 @@ export default function JournalPage() {
     ? "border-slate-700 bg-slate-800/90 shadow-[0_16px_40px_-24px_rgba(0,0,0,0.6)]"
     : "border-emerald-100 bg-white/95 shadow-[0_16px_40px_-28px_rgba(16,185,129,0.35)]";
 
+  // ✨ ساخت نقشه (map) مشتریان برای جستجوی سریع نام بر اساس ID
+  const customerMap = useMemo(() => {
+    const map = new Map<string, string>();
+    customers.forEach((c: any) => {
+      if (c && c.id && c.name) map.set(c.id, c.name);
+    });
+    return map;
+  }, [customers]);
+
+  // ✨ تابع کمکی: پیدا کردن نام مشتری از ID یا نام مستقیم
+  const resolveCustomerName = (name?: string, id?: string): string => {
+    if (name && name.trim() && name !== "مشتری" && name !== "صندوق") return name;
+    if (id && customerMap.has(id)) return customerMap.get(id)!;
+    return name || "—";
+  };
+
   // ✅ ۱. ادغام هوشمند تمام داده‌ها
   const unifiedEntries = useMemo<UnifiedJournalEntry[]>(() => {
     const entries: Omit<UnifiedJournalEntry, "trackingCode">[] = [];
@@ -133,9 +137,16 @@ export default function JournalPage() {
       let type: TxType = "تبدیل";
       if (tx.type === "exchange") type = tx.dealType === "buy" ? "واریز" : "برداشت";
       else if (tx.type === "transfer") type = "انتقال";
-      const partyName = tx.type === "transfer" 
-        ? `${tx.senderName || "—"} به ${tx.receiverName || "—"}` 
-        : (tx.customerName || "مشتری");
+      
+      // ✨ نمایش نام مشتری با پشتیبانی از customerMap
+      let partyName: string;
+      if (tx.type === "transfer") {
+        const sender = resolveCustomerName(tx.senderName, tx.senderId);
+        const receiver = resolveCustomerName(tx.receiverName, tx.receiverId);
+        partyName = `${sender} ← ${receiver}`;
+      } else {
+        partyName = resolveCustomerName(tx.customerName, tx.customerId);
+      }
       
       entries.push({
         id: tx.id, date: tx.date, type,
@@ -149,17 +160,20 @@ export default function JournalPage() {
     hawalas.forEach((h: any) => {
       if (h.status === "cancelled") return;
       
+      const senderName = resolveCustomerName(h.senderName, h.senderId);
+      
       entries.push({
         id: h.id, date: h.date, type: "حواله",
-        description: `حواله به ${h.receiverName} (${h.destinationText || ""})`,
-        partyName: h.senderName || "فرستنده", partyId: h.senderId, currency: h.currencyFrom,
+        description: `حواله به ${h.receiverName || "—"} (${h.destinationText || ""})`,
+        partyName: senderName, partyId: h.senderId, currency: h.currencyFrom,
         amount: h.amountFrom, status: "active", source: "hawala", sourceId: h.id
       });
       
       if (h.status === "paid") {
+        const receiverName = resolveCustomerName(h.receiverName, h.receiverId);
         entries.push({
           id: `${h.id}-paid`, date: h.paidAt || h.date, type: "واریز",
-          description: `تسویه حواله از ${h.senderName}`, partyName: h.receiverName || "گیرنده",
+          description: `تسویه حواله از ${senderName}`, partyName: receiverName,
           partyId: h.receiverId, currency: h.currencyTo, amount: h.finalAmount,
           status: "active", source: "hawala", sourceId: h.id
         });
@@ -177,12 +191,16 @@ export default function JournalPage() {
       else if (ce.type === "fee" || ce.type === "commission_withdraw") type = "هزینه";
       else if (ce.type === "adjustment") type = "برداشت";
       
+      const partyName = ce.customerId 
+        ? resolveCustomerName(ce.customerName, ce.customerId)
+        : (ce.customerName || "صندوق");
+      
       entries.push({
         id: ce.id, date: ce.date || new Date().toISOString(), type,
         description: ce.reason || ce.type || "عملیات صندوق", 
-        partyName: ce.customerName || "صندوق",
-        partyId: ce.customerId, currency: ce.currency, amount: Number(ce.amount) || 0,
-        balanceAfter: ce.balanceAfter, status: ce.status || "active", source: "cash", sourceId: ce.id
+        partyName, partyId: ce.customerId, currency: ce.currency, 
+        amount: Number(ce.amount) || 0, balanceAfter: ce.balanceAfter, 
+        status: ce.status || "active", source: "cash", sourceId: ce.id
       });
     });
     
@@ -203,7 +221,7 @@ export default function JournalPage() {
     }));
     
     return entriesWithCode.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [transactions, hawalas, cashEntries]);
+  }, [transactions, hawalas, cashEntries, customerMap]);
 
   // ✅ ۲. فیلتر کردن داده‌ها
   const filteredEntries = useMemo(() => {
@@ -264,7 +282,7 @@ export default function JournalPage() {
     } finally { setVoidingId(null); }
   };
 
-  // ✅ ۶. خروجی CSV (با ستون مشتری)
+  // ✅ ۶. خروجی CSV
   const handleExport = () => {
     const headers = ["ردیف", "کد پیگیری", "تاریخ", "ساعت", "مشتری/طرف حساب", "شرح", "نوع", "ارز", "مبلغ", "تراز بعد"];
     const escapeCsv = (val: any) => `"${String(val ?? "").replace(/"/g, '""')}"`;
@@ -435,7 +453,7 @@ export default function JournalPage() {
                     <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">کد پیگیری</th>
                     <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">تاریخ</th>
                     <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">ساعت</th>
-                    <th className="px-3 py-3 text-right text-[11px] font-black text-slate-400 whitespace-nowrap">مشتری/طرف حساب</th>
+                    <th className="px-3 py-3 text-right text-[11px] font-black text-slate-400 whitespace-nowrap">مشتری / طرف حساب</th>
                     <th className="px-3 py-3 text-right text-[11px] font-black text-slate-400 whitespace-nowrap">شرح</th>
                     <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">نوع</th>
                     <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">ارز</th>
@@ -470,15 +488,17 @@ export default function JournalPage() {
                           </td>
                           <td className={`px-3 py-3 text-center text-xs ${dk ? "text-slate-300" : "text-slate-600"}`}>{datePart}</td>
                           <td className={`px-3 py-3 text-center text-xs ${dk ? "text-slate-300" : "text-slate-600"}`}>{timePart}</td>
-                          {/* ✨ ستون جدید: مشتری/طرف حساب */}
+                          
+                          {/* ✨ ستون مشتری / طرف حساب */}
                           <td className={`px-3 py-3 text-right text-xs font-bold ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (dk ? "text-amber-300" : "text-amber-700")}`}>
                             <div className="flex items-center gap-1.5 justify-end">
-                              <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] ${dk ? "bg-amber-400/20 text-amber-300" : "bg-amber-100 text-amber-700"}`}>
+                              <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] shrink-0 ${dk ? "bg-amber-400/20 text-amber-300" : "bg-amber-100 text-amber-700"}`}>
                                 👤
                               </span>
                               <span className="whitespace-nowrap">{entry.partyName || "—"}</span>
                             </div>
                           </td>
+                          
                           <td className={`px-3 py-3 text-right font-medium text-xs ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (dk ? "text-slate-200" : "text-slate-800")}`}>{entry.description}</td>
                           <td className="px-3 py-3 text-center">
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black ${getBadgeColor(entry.type, isVoided)}`}>{entry.type}</span>
@@ -512,16 +532,17 @@ export default function JournalPage() {
               <span className={`w-2 h-2 rounded-full ml-2 ${dk ? "bg-blue-400" : "bg-blue-600"}`}></span> راهنمای سیستم
             </h3>
             <ul className={`text-xs space-y-2 list-disc pr-4 ${dk ? "text-slate-400" : "text-slate-600"}`}>
-              <li>ستون <b className={dk ? "text-amber-300" : "text-amber-700"}>مشتری/طرف حساب</b> نام شخص یا طرف معامله را نمایش می‌دهد</li>
+              <li>ستون <b className={dk ? "text-amber-300" : "text-amber-700"}>مشتری / طرف حساب</b> نام شخص یا طرف معامله را نمایش می‌دهد</li>
+              <li>اگر نام مشتری در تراکنش ذخیره نشده باشد، به صورت خودکار از لیست مشتریان خوانده می‌شود</li>
+              <li>در تراکنش‌های انتقال، هر دو طرف به صورت <span className="font-mono">فرستنده ← گیرنده</span> نمایش داده می‌شوند</li>
+              <li>می‌توانید با <b>نام مشتری</b> در بخش جستجو، تمام تراکنش‌های او را پیدا کنید</li>
               <li>
                 <b>پیشوندهای کد پیگیری:</b>{" "}
                 <span className="font-mono">TR</span> = معامله،{" "}
                 <span className="font-mono">HW</span> = حواله،{" "}
                 <span className="font-mono">CS</span> = صندوق
               </li>
-              <li>می‌توانید با <b>نام مشتری</b> در بخش جستجو، تراکنش‌های او را پیدا کنید</li>
               <li>این روزنامه به صورت <b className={dk ? "text-slate-200" : "text-slate-800"}>آفلاین و آنلاین</b> کار می‌کند</li>
-              <li>برای ابطال حواله، به تب <b className={dk ? "text-slate-200" : "text-slate-800"}>حواله‌جات</b> مراجعه کنید</li>
             </ul>
           </section>
 
