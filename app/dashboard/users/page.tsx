@@ -523,25 +523,43 @@ export default function CustomersPage() {
     showToast(loanModalType === "give" ? `✅ ${fmt(amt)} ${labels[loanCurrency]} به "${selectedCustomer.name}" قرض داده شد.` : `✅ ${fmt(amt)} ${labels[loanCurrency]} از "${selectedCustomer.name}" دریافت شد.`);
   };
 
+  // ✅ تابع حذف کامل (Hard Delete) اصلاح‌شده
   const deleteCustomer = (id: string) => {
     if (id === CASH_BOX_ID || id === EXCHANGE_ACCOUNT_ID) return;
     setOpenMenuId(null);
     const c = customers.find(x => x.id === id);
     if (!c) return;
 
-    const confirmName = prompt(`برای تأیید حذف، نام مشتری "${c.name}" را دقیقاً تایپ کنید:`);
+    const confirmName = prompt(`برای تأیید حذف کامل و پاک کردن تمام سوابق، نام مشتری "${c.name}" را دقیقاً تایپ کنید:`);
     if (confirmName !== c.name) { showToast("❌ نام وارد شده مطابقت ندارد. عملیات لغو شد."); return; }
 
-    const hasBal = currencies.some(cur => allBalances[id][cur] !== 0);
-    if (hasBal) { alert("⚠️ هشدار: این مشتری دارای موجودی است! لطفاً قبل از حذف، موجودی را صفر کنید."); return; }
+    // ۱. حذف تمام تراکنش‌های مرتبط با این مشتری
+    setTransactions(prev => prev.filter((t: any) => 
+      t.customerId !== id && t.customerName !== c.name &&
+      t.senderId !== id && t.senderName !== c.name &&
+      t.receiverId !== id && t.receiverName !== c.name
+    ));
 
-    setTransactions(prev => prev.map((t: any) => { if (t.customerId === id || t.customerName === c.name || t.senderId === id || t.senderName === c.name || t.receiverId === id || t.receiverName === c.name) return { ...t, customerDeleted: true }; return t; }));
-    setHawalas(prev => prev.map((h: any) => { if (h.senderId === id || h.senderName === c.name || h.receiverId === id || h.receiverName === c.name) return { ...h, customerDeleted: true }; return h; }));
-    setCashEntries(prev => prev.map((ce: any) => { if (ce.customerId === id || ce.customerName === c.name) return { ...ce, customerDeleted: true }; return ce; }));
-    setCustomers(p => p.filter(x => x.id !== id));
+    // ۲. حذف تمام حواله‌های مرتبط با این مشتری
+    setHawalas(prev => prev.filter((h: any) => 
+      h.senderId !== id && h.senderName !== c.name &&
+      h.receiverId !== id && h.receiverName !== c.name
+    ));
 
-    if (selectedCustomerId === id) { setSelectedCustomerId(null); setActiveTab("list"); }
-    showToast(`"${c.name}" حذف شد.`);
+    // ۳. حذف تمام اسناد صندوق مرتبط با این مشتری
+    setCashEntries(prev => prev.filter((ce: any) => 
+      ce.customerId !== id && ce.customerName !== c.name
+    ));
+
+    // ۴. در نهایت حذف خود مشتری از لیست
+    setCustomers(prev => prev.filter(x => x.id !== id));
+
+    if (selectedCustomerId === id) { 
+      setSelectedCustomerId(null); 
+      setActiveTab("list"); 
+    }
+    
+    showToast(`✅ "${c.name}" و تمام سوابق مالی او با موفقیت حذف شدند.`);
   };
 
   const validateForm = () => {
@@ -820,7 +838,6 @@ export default function CustomersPage() {
             </section>
           )}
 
-          {/* ✅ بخش اصلاح‌شده: نمایش صورت حساب در نمای پرونده */}
           {activeTab === "profile" && selectedCustomer && (
             <section className={`cu-up space-y-4 p-4 md:p-6 ${uiCard}`}>
               <div className="flex items-center justify-between">
@@ -829,7 +846,7 @@ export default function CustomersPage() {
                 {!isCashBox && !isExchangeAccount && (
                   <div className="flex gap-2">
                     <button onClick={() => setCwModalOpen(true)} className="px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">واریز/برداشت</button>
-                    <button onClick={() => deleteCustomer(selectedCustomer.id)} className="px-3 py-1.5 text-xs font-bold rounded-lg bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">حذف</button>
+                    <button onClick={() => deleteCustomer(selectedCustomer.id)} className="px-3 py-1.5 text-xs font-bold rounded-lg bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">حذف کامل</button>
                   </div>
                 )}
               </div>
@@ -864,7 +881,6 @@ export default function CustomersPage() {
                 )}
               </div>
 
-              {/* ✅ اضافه شده: جدول صورت حساب و گردش مالی مشتری */}
               <div className="mt-6 pt-6 border-t border-dashed border-slate-200 dark:border-slate-700">
                 <h3 className={`text-lg font-black mb-4 flex items-center gap-2 ${headingText}`}>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-sky-500"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" /></svg>
@@ -924,7 +940,6 @@ export default function CustomersPage() {
             </section>
           )}
 
-          {/* Modal واریز/برداشت */}
           {cwModalOpen && selectedCustomer && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
               <div className={`w-full max-w-md rounded-2xl p-6 ${dk ? "bg-slate-800" : "bg-white"} shadow-2xl`}>
@@ -957,7 +972,6 @@ export default function CustomersPage() {
             </div>
           )}
 
-          {/* Modal قرض */}
           {loanModalOpen && selectedCustomer && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
               <div className={`w-full max-w-md rounded-2xl p-6 ${dk ? "bg-slate-800" : "bg-white"} shadow-2xl`}>
@@ -990,7 +1004,6 @@ export default function CustomersPage() {
             </div>
           )}
 
-          {/* Toast Notification */}
           {toast && (
             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
               <div className={`px-6 py-3 rounded-xl shadow-2xl text-sm font-bold text-white ${toast.includes("❌") ? "bg-rose-600" : "bg-emerald-600"}`}>
