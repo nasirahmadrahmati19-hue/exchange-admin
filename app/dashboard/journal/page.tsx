@@ -25,9 +25,22 @@ interface UnifiedJournalEntry {
   voidedReason?: string;
   source: "transaction" | "hawala" | "cash";
   sourceId: string;
+  trackingCode: string; // ✨ جدید: کد پیگیری
 }
 
 const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00";
+
+// ✨ تابع تولید کد پیگیری منحصربه‌فرد
+const generateTrackingCode = (type: TxType, date: string, id: string): string => {
+  const d = new Date(date);
+  const prefix = {
+    "واریز": "DEP", "برداشت": "WDR", "انتقال": "TRF",
+    "تبدیل": "EXC", "هزینه": "EXP", "حواله": "HWL"
+  }[type] || "TXN";
+  const datePart = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+  const idPart = id.slice(0, 4).toUpperCase();
+  return `${prefix}-${datePart}-${idPart}`;
+};
 
 function useUrlState(key: string, defaultValue: string) {
   const router = useRouter();
@@ -87,7 +100,8 @@ export default function JournalPage() {
         description: tx.description || `${tx.type} ${tx.fromCurrency} به ${tx.toCurrency}`,
         partyName, partyId: tx.customerId || tx.senderId, currency: tx.fromCurrency,
         amount: tx.fromAmount, balanceAfter: tx.balanceAfter, status: tx.status,
-        voidedReason: tx.voidedReason, source: "transaction", sourceId: tx.id
+        voidedReason: tx.voidedReason, source: "transaction", sourceId: tx.id,
+        trackingCode: generateTrackingCode(type, tx.date, tx.id)
       });
     });
     hawalas.forEach((h: any) => {
@@ -96,14 +110,16 @@ export default function JournalPage() {
         id: h.id, date: h.date, type: "حواله",
         description: `حواله به ${h.receiverName} (${h.destinationText || ""})`,
         partyName: h.senderName, partyId: h.senderId, currency: h.currencyFrom,
-        amount: h.amountFrom, status: "active", source: "hawala", sourceId: h.id
+        amount: h.amountFrom, status: "active", source: "hawala", sourceId: h.id,
+        trackingCode: generateTrackingCode("حواله", h.date, h.id)
       });
       if (h.status === "paid") {
         entries.push({
           id: `${h.id}-paid`, date: h.paidAt || h.date, type: "واریز",
           description: `تسویه حواله از ${h.senderName}`, partyName: h.receiverName,
           partyId: h.receiverId, currency: h.currencyTo, amount: h.finalAmount,
-          status: "active", source: "hawala", sourceId: h.id
+          status: "active", source: "hawala", sourceId: h.id,
+          trackingCode: generateTrackingCode("واریز", h.paidAt || h.date, `${h.id}-paid`)
         });
       }
     });
@@ -120,7 +136,8 @@ export default function JournalPage() {
         id: ce.id, date: ce.date || new Date().toISOString(), type,
         description: ce.reason || ce.type || "عملیات صندوق", partyName: ce.customerName || "صندوق",
         partyId: ce.customerId, currency: ce.currency, amount: Number(ce.amount) || 0,
-        balanceAfter: ce.balanceAfter, status: ce.status || "active", source: "cash", sourceId: ce.id
+        balanceAfter: ce.balanceAfter, status: ce.status || "active", source: "cash", sourceId: ce.id,
+        trackingCode: generateTrackingCode(type, ce.date || new Date().toISOString(), ce.id)
       });
     });
     return entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -136,7 +153,7 @@ export default function JournalPage() {
       if (dateTo && new Date(e.date) > new Date(dateTo)) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
-        return e.description.toLowerCase().includes(q) || e.partyName.toLowerCase().includes(q) || e.id.toLowerCase().includes(q);
+        return e.description.toLowerCase().includes(q) || e.partyName.toLowerCase().includes(q) || e.id.toLowerCase().includes(q) || (e.trackingCode && e.trackingCode.toLowerCase().includes(q));
       }
       return true;
     });
@@ -184,12 +201,14 @@ export default function JournalPage() {
 
   // ✅ ۶. خروجی CSV
   const handleExport = () => {
-    const headers = ["شماره سند", "تاریخ", "ساعت", "شرح", "نوع", "ارز", "مبلغ", "تراز بعد"];
+    const headers = ["ردیف", "کد پیگیری", "تاریخ", "ساعت", "شرح", "نوع", "ارز", "مبلغ", "تراز بعد"];
     const escapeCsv = (val: any) => `"${String(val ?? "").replace(/"/g, '""')}"`;
-    const rows = filteredEntries.map((e: any) => {
+    const rows = filteredEntries.map((e: any, index: number) => {
       const d = new Date(e.date);
       return [
-        escapeCsv(e.id.slice(0, 8)), escapeCsv(d.toLocaleDateString("fa-IR")),
+        index + 1,
+        escapeCsv(e.trackingCode),
+        escapeCsv(d.toLocaleDateString("fa-IR")),
         escapeCsv(d.toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" })),
         escapeCsv(e.description), escapeCsv(e.type), escapeCsv(currencyLabels[e.currency as Currency]),
         e.amount, e.balanceAfter ?? ""
@@ -277,7 +296,7 @@ export default function JournalPage() {
               </div>
               <div className="relative">
                 <label className={`text-xs font-bold mb-1.5 block ${subText}`}>جستجو</label>
-                <input type="text" placeholder="نام، کد، یا شرح..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className={`w-full border rounded-xl px-3 py-2.5 pr-9 text-sm outline-none focus:ring-2 focus:ring-blue-500 transition ${dk ? "bg-slate-900/50 border-slate-700 text-slate-100" : "bg-white border-slate-200 text-slate-800"}`} />
+                <input type="text" placeholder="نام، کد پیگیری، یا شرح..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className={`w-full border rounded-xl px-3 py-2.5 pr-9 text-sm outline-none focus:ring-2 focus:ring-blue-500 transition ${dk ? "bg-slate-900/50 border-slate-700 text-slate-100" : "bg-white border-slate-200 text-slate-800"}`} />
                 <svg className={`absolute right-3 top-9 w-4 h-4 ${subText}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
               </div>
             </div>
@@ -298,10 +317,8 @@ export default function JournalPage() {
                 </div>
               </div>
 
-              {/* ✅ گرید یکپارچه: ۱ کارت تعداد کل + ۵ کارت ارزها (همه هم‌اندازه) */}
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 md:gap-4">
                 
-                {/* کارت ۱: تعداد کل (هم‌استایل با کارت‌های ارز) */}
                 <div className={`rounded-xl p-3 border text-center transition-all duration-300 hover:scale-[1.02] flex flex-col justify-center ${dk ? "border-slate-700 bg-slate-900/50" : "border-slate-200 bg-white/80"}`}>
                   <div className={`text-[11px] font-black mb-2 ${dk ? "text-slate-300" : "text-slate-600"}`}>تعداد کل</div>
                   <div className="flex-1 flex items-center justify-center">
@@ -309,7 +326,6 @@ export default function JournalPage() {
                   </div>
                 </div>
 
-                {/* کارت‌های ۲ تا ۶: گردش ۵ ارز */}
                 {currencies.map((curr) => {
                   const data = currencyPeriodSummary[curr];
                   return (
@@ -347,10 +363,11 @@ export default function JournalPage() {
             </div>
 
             <div className="overflow-x-auto px-4 md:px-7 pb-4">
-              <table className="w-full min-w-[900px] text-sm">
+              <table className="w-full min-w-[1100px] text-sm">
                 <thead>
                   <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
-                    <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">شماره سند</th>
+                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-12">#</th>
+                    <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">کد پیگیری</th>
                     <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">تاریخ</th>
                     <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">ساعت</th>
                     <th className="px-3 py-3 text-right text-[11px] font-black text-slate-400 whitespace-nowrap">شرح</th>
@@ -364,10 +381,10 @@ export default function JournalPage() {
                 <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
                   {filteredEntries.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className={`px-4 py-12 text-center font-bold ${subText}`}>هیچ تراکنشی با این فیلترها یافت نشد.</td>
+                      <td colSpan={10} className={`px-4 py-12 text-center font-bold ${subText}`}>هیچ تراکنشی با این فیلترها یافت نشد.</td>
                     </tr>
                   ) : (
-                    filteredEntries.map((entry: any) => {
+                    filteredEntries.map((entry: any, index: number) => {
                       const isVoided = entry.status === "voided";
                       const d = new Date(entry.date);
                       const datePart = d.toLocaleDateString("fa-IR");
@@ -375,7 +392,18 @@ export default function JournalPage() {
 
                       return (
                         <tr key={entry.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/70"}`}>
-                          <td className={`px-3 py-3 text-center tabular-nums font-mono text-xs ${dk ? "text-slate-300" : "text-slate-600"}`}>{entry.id.slice(0, 8)}</td>
+                          {/* ستون شماره ردیف */}
+                          <td className={`px-2 py-3 text-center tabular-nums font-black text-xs ${dk ? "text-slate-400" : "text-slate-500"}`}>
+                            <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full ${dk ? "bg-slate-700/50 text-slate-200" : "bg-slate-100 text-slate-700"}`}>
+                              {index + 1}
+                            </span>
+                          </td>
+                          {/* ستون کد پیگیری */}
+                          <td className={`px-3 py-3 text-center font-mono text-[11px] font-bold tracking-wider ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (dk ? "text-cyan-300" : "text-cyan-700")}`}>
+                            <span className={`inline-block px-2 py-1 rounded-md ${dk ? "bg-slate-700/40" : "bg-cyan-50"} whitespace-nowrap`}>
+                              {entry.trackingCode}
+                            </span>
+                          </td>
                           <td className={`px-3 py-3 text-center text-xs ${dk ? "text-slate-300" : "text-slate-600"}`}>{datePart}</td>
                           <td className={`px-3 py-3 text-center text-xs ${dk ? "text-slate-300" : "text-slate-600"}`}>{timePart}</td>
                           <td className={`px-3 py-3 text-right font-medium text-xs ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (dk ? "text-slate-200" : "text-slate-800")}`}>{entry.description}</td>
@@ -411,10 +439,12 @@ export default function JournalPage() {
               <span className={`w-2 h-2 rounded-full ml-2 ${dk ? "bg-blue-400" : "bg-blue-600"}`}></span> راهنمای سیستم
             </h3>
             <ul className={`text-xs space-y-2 list-disc pr-4 ${dk ? "text-slate-400" : "text-slate-600"}`}>
+              <li>هر تراکنش دارای <b className={dk ? "text-cyan-300" : "text-cyan-700"}>کد پیگیری</b> منحصربه‌فرد است (مثلاً DEP-140506-A3F2).</li>
+              <li>پیشوند کد نشان‌دهنده نوع تراکنش است: DEP=واریز، WDR=برداشت، TRF=انتقال، EXC=تبدیل، EXP=هزینه، HWL=حواله.</li>
+              <li>می‌توانید با کد پیگیری در بخش جستجو تراکنش را پیدا کنید.</li>
               <li>این روزنامه به صورت <b className={dk ? "text-slate-200" : "text-slate-800"}>آفلاین و آنلاین</b> کار می‌کند.</li>
-              <li>در صورت ابطال، داده‌ها بازنویسی می‌شوند و در صورت اتصال دوباره به اینترنت، همگام می‌شوند.</li>
               <li>برای ابطال حواله، به تب <b className={dk ? "text-slate-200" : "text-slate-800"}>حواله‌جات</b> مراجعه کنید.</li>
-              <li>خروجی CSV شامل تمام تراکنش‌های فیلترشده است.</li>
+              <li>خروجی CSV شامل تمام تراکنش‌های فیلترشده با کد پیگیری است.</li>
             </ul>
           </section>
 
