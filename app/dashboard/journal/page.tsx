@@ -9,6 +9,13 @@ type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
 const currencyLabels: Record<Currency, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
 const currencyIcons: Record<Currency, string> = { AFN: "؋", USD: "$", EUR: "€", IRR: "﷼", PKR: "₨" };
+const currencyColors: Record<Currency, { from: string; to: string; text: string; bg: string }> = {
+  AFN: { from: "from-emerald-400", to: "to-teal-500", text: "text-emerald-400", bg: "bg-emerald-400/20" },
+  USD: { from: "from-blue-400", to: "to-cyan-500", text: "text-blue-400", bg: "bg-blue-400/20" },
+  EUR: { from: "from-purple-400", to: "to-pink-500", text: "text-purple-400", bg: "bg-purple-400/20" },
+  IRR: { from: "from-amber-400", to: "to-orange-500", text: "text-amber-400", bg: "bg-amber-400/20" },
+  PKR: { from: "from-rose-400", to: "to-red-500", text: "text-rose-400", bg: "bg-rose-400/20" }
+};
 
 type TxType = "واریز" | "برداشت" | "انتقال" | "تبدیل" | "هزینه" | "حواله";
 type SortField = "date" | "amount" | "partyName" | "type" | "trackingCode";
@@ -33,7 +40,6 @@ interface UnifiedJournalEntry {
 }
 
 const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00";
-
 const toPersianDigits = (s: string): string => s.replace(/\d/g, d => "۰۱۲۳۴۵۶۷۸۹"[parseInt(d)]);
 
 const getShamsiYear = (dateStr: string): string => {
@@ -123,7 +129,6 @@ export default function JournalPage() {
     return "نامشخص";
   };
 
-  // ✅ ادغام هوشمند تمام داده‌ها
   const unifiedEntries = useMemo<UnifiedJournalEntry[]>(() => {
     const entries: Omit<UnifiedJournalEntry, "trackingCode">[] = [];
     
@@ -207,7 +212,6 @@ export default function JournalPage() {
     return entriesWithCode.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [transactions, hawalas, cashEntries, customerMap]);
 
-  // ✅ فیلتر کردن
   const filteredEntries = useMemo(() => {
     return unifiedEntries.filter((e: any) => {
       if (e.status === "voided" && !e.voidedReason) return false;
@@ -223,7 +227,6 @@ export default function JournalPage() {
     });
   }, [unifiedEntries, dateFrom, dateTo, typeFilter, currencyFilter, searchQuery]);
 
-  // ✅ مرتب‌سازی
   const sortedEntries = useMemo(() => {
     const sorted = [...filteredEntries];
     sorted.sort((a, b) => {
@@ -238,7 +241,6 @@ export default function JournalPage() {
     return sorted;
   }, [filteredEntries, sortField, sortDirection]);
 
-  // ✅ صفحه‌بندی
   const paginatedEntries = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
     return sortedEntries.slice(start, start + itemsPerPage);
@@ -246,19 +248,17 @@ export default function JournalPage() {
 
   const totalPages = Math.ceil(sortedEntries.length / itemsPerPage);
 
-  // ✅ موجودی لحظه‌ای هر ارز
   const currentBalances = useMemo(() => {
     const balances: Record<string, number> = {};
     currencies.forEach(curr => { balances[curr] = 0; });
     unifiedEntries.forEach((e: any) => {
       if (e.status === "voided" || !balances.hasOwnProperty(e.currency)) return;
       if (e.type === "واریز") balances[e.currency] += e.amount;
-      else if (e.type === "برداشت" || e.type === "هزینه") balances[e.currency] -= e.amount;
+      else if (e.type === "برداشت" || e.type === "هزینه" || e.type === "حواله") balances[e.currency] -= e.amount;
     });
     return balances;
   }, [unifiedEntries]);
 
-  // ✅ گزارش سود/زیان
   const profitLoss = useMemo(() => {
     let totalFees = 0;
     let totalIncome = 0;
@@ -272,7 +272,6 @@ export default function JournalPage() {
     return { totalFees, totalIncome, totalExpenses, netProfit: totalFees + totalIncome - totalExpenses };
   }, [filteredEntries]);
 
-  // ✅ خلاصه
   const summary = useMemo(() => {
     let count = 0;
     filteredEntries.forEach((e: any) => { if (e.status !== "voided") count++; });
@@ -286,7 +285,7 @@ export default function JournalPage() {
       if (e.status === "voided" || !summary[e.currency]) return;
       summary[e.currency].volume += e.amount;
       if (e.type === "واریز") summary[e.currency].net += e.amount;
-      else if (e.type === "برداشت" || e.type === "هزینه") summary[e.currency].net -= e.amount;
+      else if (e.type === "برداشت" || e.type === "هزینه" || e.type === "حواله") summary[e.currency].net -= e.amount;
     });
     return summary;
   }, [filteredEntries]);
@@ -339,15 +338,18 @@ export default function JournalPage() {
   const getBadgeColor = (type: TxType, isVoided: boolean) => {
     if (isVoided) return "bg-slate-700/50 text-slate-400 line-through";
     const styles: Record<TxType, string> = {
-      "واریز": "bg-emerald-400/30 text-emerald-300", "برداشت": "bg-rose-400/30 text-rose-300",
-      "انتقال": "bg-blue-400/30 text-blue-300", "تبدیل": "bg-amber-400/30 text-amber-300",
-      "هزینه": "bg-purple-400/30 text-purple-300", "حواله": "bg-sky-400/30 text-sky-300"
+      "واریز": "bg-gradient-to-r from-emerald-500/20 to-teal-500/20 text-emerald-300 border border-emerald-500/30",
+      "برداشت": "bg-gradient-to-r from-rose-500/20 to-pink-500/20 text-rose-300 border border-rose-500/30",
+      "انتقال": "bg-gradient-to-r from-blue-500/20 to-indigo-500/20 text-blue-300 border border-blue-500/30",
+      "تبدیل": "bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-300 border border-amber-500/30",
+      "هزینه": "bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-purple-300 border border-purple-500/30",
+      "حواله": "bg-gradient-to-r from-sky-500/20 to-cyan-500/20 text-sky-300 border border-sky-500/30"
     };
     return styles[type] || "bg-slate-600 text-slate-200";
   };
 
   const SortIcon = ({ field }: { field: SortField }) => (
-    <span className="inline-block mr-1 text-[9px]">
+    <span className="inline-block mr-1 text-[9px] opacity-60">
       {sortField === field ? (sortDirection === "asc" ? "▲" : "▼") : "⇅"}
     </span>
   );
@@ -365,7 +367,7 @@ export default function JournalPage() {
 
   return (
     <div dir="rtl" className={dk ? "dark" : ""}>
-      <style>{`@import url("https://fonts.googleapis.com/css2?family=Lalezar&family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap");.cs-font{font-family:"Vazirmatn","Segoe UI",Tahoma,sans-serif}.cs-display{font-family:"Lalezar","Vazirmatn",Tahoma,sans-serif;letter-spacing:.01em}.dark{color-scheme:dark}@keyframes csUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}.cs-up{animation:csUp .5s cubic-bezier(.22,.8,.35,1) both}::selection{background:rgba(16,185,129,.25)}`}</style>
+      <style>{`@import url("https://fonts.googleapis.com/css2?family=Lalezar&family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap");.cs-font{font-family:"Vazirmatn","Segoe UI",Tahoma,sans-serif}.cs-display{font-family:"Lalezar","Vazirmatn",Tahoma,sans-serif;letter-spacing:.01em}.dark{color-scheme:dark}@keyframes csUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}.cs-up{animation:csUp .5s cubic-bezier(.22,.8,.35,1) both}::selection{background:rgba(16,185,129,.25)}@keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}.shimmer{background:linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent);background-size:200% 100%;animation:shimmer 3s infinite}@keyframes pulse-glow{0%,100%{box-shadow:0 0 20px rgba(16,185,129,.3)}50%{box-shadow:0 0 30px rgba(16,185,129,.5)}}.pulse-glow{animation:pulse-glow 2s infinite}`}</style>
 
       <div className={`cs-font relative min-h-screen overflow-x-hidden antialiased transition-colors duration-500 ${dk ? "bg-[#0f172a] text-slate-100" : "bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 text-slate-800"}`}>
         <div className={`fixed inset-x-0 top-0 z-30 h-1 bg-gradient-to-l ${dk ? "from-emerald-400 via-teal-400 to-cyan-400" : "from-emerald-500 via-teal-500 to-cyan-500"}`} />
@@ -394,7 +396,7 @@ export default function JournalPage() {
             </div>
           </header>
 
-          {/* ✨ موجودی لحظه‌ای صندوق */}
+          {/* موجودی لحظه‌ای */}
           <section className="cs-up" style={{ animationDelay: "50ms" }}>
             <div className={`relative overflow-hidden rounded-2xl md:rounded-3xl border-2 p-5 md:p-6 transition-all duration-300 ${dk ? "border-emerald-400/30 bg-gradient-to-br from-emerald-900/30 via-slate-900/60 to-teal-900/30" : "border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50"}`}>
               <div className={`absolute -top-24 -left-24 h-48 w-48 rounded-full blur-3xl opacity-20 ${dk ? "bg-emerald-400" : "bg-emerald-300"}`} />
@@ -410,13 +412,14 @@ export default function JournalPage() {
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                 {currencies.map((curr) => {
                   const balance = currentBalances[curr];
+                  const colors = currencyColors[curr];
                   return (
-                    <div key={curr} className={`relative overflow-hidden rounded-xl p-4 border transition-all duration-300 hover:scale-[1.02] ${dk ? "border-slate-700 bg-slate-900/50 hover:border-emerald-400/50" : "border-slate-200 bg-white/80 hover:border-emerald-400"}`}>
-                      <div className={`absolute top-0 right-0 w-20 h-20 rounded-full blur-2xl opacity-10 ${dk ? "bg-emerald-400" : "bg-emerald-500"}`} />
+                    <div key={curr} className={`relative overflow-hidden rounded-xl p-4 border transition-all duration-300 hover:scale-[1.03] hover:-translate-y-0.5 ${dk ? "border-slate-700 bg-slate-900/50 hover:border-emerald-400/50" : "border-slate-200 bg-white/80 hover:border-emerald-400"}`}>
+                      <div className={`absolute top-0 right-0 w-20 h-20 rounded-full blur-2xl opacity-10 bg-gradient-to-br ${colors.from} ${colors.to}`} />
                       <div className="relative">
                         <div className="flex items-center justify-between mb-2">
                           <span className={`text-xs font-black ${dk ? "text-slate-300" : "text-slate-600"}`}>{currencyLabels[curr]}</span>
-                          <span className={`text-lg font-black ${dk ? "text-emerald-400" : "text-emerald-600"}`}>{currencyIcons[curr]}</span>
+                          <span className={`text-lg font-black bg-gradient-to-br ${colors.from} ${colors.to} bg-clip-text text-transparent`}>{currencyIcons[curr]}</span>
                         </div>
                         <div className={`text-xl md:text-2xl font-black tabular-nums ${balance >= 0 ? (dk ? "text-emerald-300" : "text-emerald-700") : (dk ? "text-rose-400" : "text-rose-600")}`}>
                           {fmt(balance)}
@@ -429,7 +432,7 @@ export default function JournalPage() {
             </div>
           </section>
 
-          {/* ✨ گزارش سود/زیان */}
+          {/* گزارش سود/زیان */}
           <section className="cs-up" style={{ animationDelay: "100ms" }}>
             <div className={`relative overflow-hidden rounded-2xl md:rounded-3xl border-2 p-5 md:p-6 transition-all duration-300 ${dk ? "border-amber-400/30 bg-gradient-to-br from-amber-900/20 via-slate-900/60 to-orange-900/20" : "border-amber-200 bg-gradient-to-br from-amber-50 via-white to-orange-50"}`}>
               <div className={`absolute -top-24 -right-24 h-48 w-48 rounded-full blur-3xl opacity-20 ${dk ? "bg-amber-400" : "bg-amber-300"}`} />
@@ -493,39 +496,87 @@ export default function JournalPage() {
             </div>
           </section>
 
-          {/* خلاصه دوره */}
+          {/* ═══════════ بخش خلاصه دوره (استایل جدید) ═══════════ */}
           <section className="cs-up" style={{ animationDelay: "200ms" }}>
-            <div className={`relative overflow-hidden rounded-2xl md:rounded-3xl border-2 p-5 md:p-6 transition-all duration-300 ${dk ? "border-emerald-400/30 bg-gradient-to-br from-emerald-900/30 via-slate-900/60 to-teal-900/30" : "border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50"}`}>
-              <div className={`absolute -top-24 -left-24 h-48 w-48 rounded-full blur-3xl opacity-20 ${dk ? "bg-emerald-400" : "bg-emerald-300"}`} />
+            <div className={`relative overflow-hidden rounded-2xl md:rounded-3xl border-2 p-5 md:p-6 transition-all duration-300 ${dk ? "border-cyan-400/30 bg-gradient-to-br from-cyan-900/20 via-slate-900/60 to-blue-900/20" : "border-cyan-200 bg-gradient-to-br from-cyan-50 via-white to-blue-50"}`}>
+              {/* افکت‌های پس‌زمینه */}
+              <div className={`absolute -top-24 -right-24 h-48 w-48 rounded-full blur-3xl opacity-20 ${dk ? "bg-cyan-400" : "bg-cyan-300"}`} />
+              <div className={`absolute -bottom-24 -left-24 h-48 w-48 rounded-full blur-3xl opacity-10 ${dk ? "bg-blue-400" : "bg-blue-300"}`} />
+              
+              {/* هدر بخش */}
               <div className="relative flex items-center gap-3 mb-5">
-                <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl shadow-md ${dk ? "bg-gradient-to-br from-emerald-400 to-teal-400 text-slate-950" : "bg-gradient-to-br from-emerald-500 to-teal-500 text-white"}`}>
-                  <span className="text-xl">📊</span>
+                <div className={`relative grid h-12 w-12 shrink-0 place-items-center rounded-xl shadow-lg ${dk ? "bg-gradient-to-br from-cyan-400 to-blue-500 text-slate-950" : "bg-gradient-to-br from-cyan-500 to-blue-500 text-white"}`}>
+                  <span className="text-2xl">📊</span>
+                  <span className="absolute inset-0 rounded-xl bg-white/20 shimmer" />
                 </div>
-                <div>
+                <div className="flex-1">
                   <h2 className={`cs-display text-xl md:text-2xl leading-none ${heading}`}>خلاصه دوره انتخاب‌شده</h2>
                   <p className={`mt-0.5 text-[10px] md:text-xs font-bold ${subText}`}>آمار کلی و گردش ارزها در بازه زمانی فیلترشده</p>
                 </div>
+                <div className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-cyan-300 bg-cyan-50 text-cyan-700"}`}>
+                  <span className="text-xs font-black">{toPersianDigits(String(summary.count))}</span>
+                  <span className="text-[10px]">تراکنش</span>
+                </div>
               </div>
+
+              {/* گرید کارت‌ها */}
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 md:gap-4">
-                <div className={`rounded-xl p-3 border text-center transition-all duration-300 hover:scale-[1.02] flex flex-col justify-center ${dk ? "border-slate-700 bg-slate-900/50" : "border-slate-200 bg-white/80"}`}>
-                  <div className={`text-[11px] font-black mb-2 ${dk ? "text-slate-300" : "text-slate-600"}`}>تعداد کل</div>
-                  <div className="flex-1 flex items-center justify-center">
-                    <span className={`text-3xl font-black tabular-nums leading-none ${dk ? "text-emerald-300" : "text-emerald-700"}`}>{toPersianDigits(String(summary.count))}</span>
+                
+                {/* کارت تعداد کل - ویژه */}
+                <div className={`relative overflow-hidden rounded-xl p-4 border-2 text-center transition-all duration-300 hover:scale-[1.03] hover:-translate-y-0.5 pulse-glow ${dk ? "border-emerald-400/50 bg-gradient-to-br from-emerald-900/40 to-teal-900/40" : "border-emerald-300 bg-gradient-to-br from-emerald-50 to-teal-50"}`}>
+                  <div className="absolute inset-0 shimmer opacity-50" />
+                  <div className="relative">
+                    <div className={`inline-flex items-center justify-center w-10 h-10 rounded-full mb-2 ${dk ? "bg-emerald-400/20" : "bg-emerald-100"}`}>
+                      <span className="text-xl">🔢</span>
+                    </div>
+                    <div className={`text-[11px] font-black mb-1 ${dk ? "text-emerald-300" : "text-emerald-700"}`}>تعداد کل</div>
+                    <div className={`text-3xl font-black tabular-nums leading-none ${dk ? "text-white" : "text-emerald-800"}`}>
+                      {toPersianDigits(String(summary.count))}
+                    </div>
                   </div>
                 </div>
+
+                {/* کارت‌های ارزها */}
                 {currencies.map((curr) => {
                   const data = currencyPeriodSummary[curr];
+                  const colors = currencyColors[curr];
+                  const hasActivity = data.volume > 0;
+                  
                   return (
-                    <div key={curr} className={`rounded-xl p-3 border text-center transition-all duration-300 hover:scale-[1.02] ${dk ? "border-slate-700 bg-slate-900/50" : "border-slate-200 bg-white/80"}`}>
-                      <div className={`text-[11px] font-black mb-2 ${dk ? "text-slate-300" : "text-slate-600"}`}>{currencyLabels[curr]}</div>
-                      <div className="space-y-1.5">
-                        <div className="flex justify-between text-xs px-1">
-                          <span className={subText}>حجم کل:</span>
-                          <span className={`font-black tabular-nums ${dk ? "text-slate-200" : "text-slate-800"}`}>{fmt(data.volume)}</span>
+                    <div 
+                      key={curr} 
+                      className={`relative overflow-hidden rounded-xl p-3 border-2 text-center transition-all duration-300 hover:scale-[1.03] hover:-translate-y-0.5 ${
+                        hasActivity 
+                          ? (dk ? `${colors.bg} border-current ${colors.text}` : `bg-white border-current ${colors.text}`)
+                          : (dk ? "border-slate-700/50 bg-slate-900/30 opacity-60" : "border-slate-200 bg-white/50 opacity-60")
+                      }`}
+                    >
+                      {hasActivity && <div className="absolute inset-0 shimmer opacity-30" />}
+                      <div className="relative">
+                        {/* آیکون و نام ارز */}
+                        <div className="flex items-center justify-center gap-1.5 mb-2">
+                          <span className={`text-lg font-black bg-gradient-to-br ${colors.from} ${colors.to} bg-clip-text text-transparent`}>
+                            {currencyIcons[curr]}
+                          </span>
+                          <span className={`text-[11px] font-black ${dk ? "text-slate-200" : "text-slate-700"}`}>
+                            {currencyLabels[curr]}
+                          </span>
                         </div>
-                        <div className={`flex justify-between text-xs px-1 border-t pt-1.5 ${dk ? "border-slate-700/30" : "border-slate-200"}`}>
-                          <span className={subText}>تغییر خالص:</span>
-                          <span className={`font-black tabular-nums ${data.net >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{data.net >= 0 ? "+" : ""}{fmt(data.net)}</span>
+
+                        {/* حجم کل */}
+                        <div className={`rounded-lg p-1.5 mb-1.5 ${dk ? "bg-slate-900/50" : "bg-slate-50"}`}>
+                          <div className={`text-[9px] font-bold mb-0.5 ${subText}`}>حجم کل</div>
+                          <div className={`text-sm font-black tabular-nums ${dk ? "text-white" : "text-slate-800"}`}>
+                            {fmt(data.volume)}
+                          </div>
+                        </div>
+
+                        {/* تغییر خالص */}
+                        <div className={`rounded-lg p-1.5 ${data.net >= 0 ? (dk ? "bg-emerald-900/30" : "bg-emerald-50") : (dk ? "bg-rose-900/30" : "bg-rose-50")}`}>
+                          <div className={`text-[9px] font-bold mb-0.5 ${subText}`}>تغییر خالص</div>
+                          <div className={`text-sm font-black tabular-nums ${data.net >= 0 ? (dk ? "text-emerald-400" : "text-emerald-700") : (dk ? "text-rose-400" : "text-rose-700")}`}>
+                            {data.net >= 0 ? "▲" : "▼"} {data.net >= 0 ? "+" : ""}{fmt(data.net)}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -535,49 +586,70 @@ export default function JournalPage() {
             </div>
           </section>
 
-          {/* جدول تراکنش‌ها */}
+          {/* ═══════════ بخش جدول تراکنش‌ها (استایل جدید) ═══════════ */}
           <section className={`cs-up rounded-2xl md:rounded-3xl border-2 overflow-hidden ${uiCard}`} style={{ animationDelay: "250ms" }}>
-            <div className="flex items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
-              <div className={`grid h-11 w-11 md:h-12 md:w-12 place-items-center rounded-xl shadow-md ${dk ? "bg-gradient-to-br from-cyan-400 to-sky-500 text-slate-950" : "bg-gradient-to-br from-cyan-500 to-sky-500 text-white"}`}>
-                <span className="text-xl">📋</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <h2 className={`cs-display text-xl md:text-2xl leading-none ${heading}`}>لیست تراکنش‌ها</h2>
-                <p className={`mt-1 text-[11px] font-bold ${subText}`}>صفحه {toPersianDigits(String(currentPage))} از {toPersianDigits(String(totalPages || 1))} | {toPersianDigits(String(sortedEntries.length))} تراکنش</p>
+            
+            {/* هدر جدول - استایل ویژه */}
+            <div className={`relative overflow-hidden p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6 ${dk ? "bg-gradient-to-l from-slate-800/80 via-slate-800/50 to-transparent" : "bg-gradient-to-l from-emerald-50/80 via-white/50 to-transparent"}`}>
+              <div className={`absolute inset-0 shimmer opacity-30`} />
+              <div className="relative flex items-center gap-3">
+                <div className={`relative grid h-12 w-12 md:h-14 md:w-14 place-items-center rounded-xl shadow-lg ${dk ? "bg-gradient-to-br from-cyan-400 to-sky-500 text-slate-950" : "bg-gradient-to-br from-cyan-500 to-sky-500 text-white"}`}>
+                  <span className="text-2xl">📋</span>
+                  <span className="absolute inset-0 rounded-xl bg-white/20 shimmer" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h2 className={`cs-display text-xl md:text-2xl leading-none ${heading}`}>لیست تراکنش‌ها</h2>
+                  <p className={`mt-1 text-[11px] font-bold ${subText}`}>
+                    صفحه {toPersianDigits(String(currentPage))} از {toPersianDigits(String(totalPages || 1))} | {toPersianDigits(String(sortedEntries.length))} تراکنش
+                  </p>
+                </div>
+                <div className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border ${dk ? "border-sky-400/30 bg-sky-400/10 text-sky-300" : "border-sky-300 bg-sky-50 text-sky-700"}`}>
+                  <span className="text-[10px]">مرتب بر اساس:</span>
+                  <span className="text-xs font-black">
+                    {sortField === "date" ? "تاریخ" : sortField === "amount" ? "مبلغ" : sortField === "partyName" ? "مشتری" : sortField === "type" ? "نوع" : "کد"}
+                    {sortDirection === "asc" ? " ▲" : " ▼"}
+                  </span>
+                </div>
               </div>
             </div>
 
+            {/* جدول */}
             <div className="relative overflow-x-auto overflow-y-auto max-h-[600px] px-2 md:px-4 pb-4">
               <table className="w-full text-sm border-collapse">
                 <thead className="sticky top-0 z-10">
-                  <tr className={`${dk ? "bg-slate-800 border-b-2 border-slate-700" : "bg-slate-50 border-b-2 border-slate-200"}`}>
-                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-12">ردیف</th>
-                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-32 cursor-pointer hover:text-cyan-400 transition" onClick={() => handleSort("trackingCode")}>
-                      کد پیگیری <SortIcon field="trackingCode" />
+                  <tr className={`${dk ? "bg-gradient-to-l from-slate-800 via-slate-800/95 to-slate-800 border-b-2 border-slate-600" : "bg-gradient-to-l from-slate-100 via-slate-50 to-slate-100 border-b-2 border-slate-200"}`}>
+                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-12">#</th>
+                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-32 cursor-pointer hover:text-cyan-400 transition group" onClick={() => handleSort("trackingCode")}>
+                      <span className="inline-flex items-center gap-1">کد پیگیری <SortIcon field="trackingCode" /></span>
                     </th>
                     <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-24 cursor-pointer hover:text-cyan-400 transition" onClick={() => handleSort("date")}>
-                      تاریخ <SortIcon field="date" />
+                      <span className="inline-flex items-center gap-1">تاریخ <SortIcon field="date" /></span>
                     </th>
                     <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-16">ساعت</th>
                     <th className="px-2 py-3 text-right text-[11px] font-black text-slate-400 whitespace-nowrap w-36 cursor-pointer hover:text-cyan-400 transition" onClick={() => handleSort("partyName")}>
-                      مشتری / طرف حساب <SortIcon field="partyName" />
+                      <span className="inline-flex items-center gap-1">مشتری <SortIcon field="partyName" /></span>
                     </th>
                     <th className="px-2 py-3 text-right text-[11px] font-black text-slate-400">شرح</th>
                     <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-20 cursor-pointer hover:text-cyan-400 transition" onClick={() => handleSort("type")}>
-                      نوع <SortIcon field="type" />
+                      <span className="inline-flex items-center gap-1">نوع <SortIcon field="type" /></span>
                     </th>
                     <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-16">ارز</th>
                     <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-28 cursor-pointer hover:text-cyan-400 transition" onClick={() => handleSort("amount")}>
-                      مبلغ <SortIcon field="amount" />
+                      <span className="inline-flex items-center gap-1">مبلغ <SortIcon field="amount" /></span>
                     </th>
                     <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-24">تراز بعد</th>
                     <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-16">عملیات</th>
                   </tr>
                 </thead>
-                <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
+                <tbody className={`divide-y ${dk ? "divide-slate-700/40" : "divide-slate-100"}`}>
                   {paginatedEntries.length === 0 ? (
                     <tr>
-                      <td colSpan={11} className={`px-4 py-12 text-center font-bold ${subText}`}>هیچ تراکنشی با این فیلترها یافت نشد.</td>
+                      <td colSpan={11} className={`px-4 py-16 text-center ${subText}`}>
+                        <div className="flex flex-col items-center gap-2">
+                          <span className="text-4xl">📭</span>
+                          <span className="font-bold">هیچ تراکنشی با این فیلترها یافت نشد.</span>
+                        </div>
+                      </td>
                     </tr>
                   ) : (
                     paginatedEntries.map((entry: any, index: number) => {
@@ -586,37 +658,98 @@ export default function JournalPage() {
                       const datePart = d.toLocaleDateString("fa-IR");
                       const timePart = d.toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" });
                       const globalIndex = (currentPage - 1) * itemsPerPage + index + 1;
+                      const currColors = currencyColors[entry.currency as Currency];
 
                       return (
-                        <tr key={entry.id} className={`transition-colors cursor-pointer ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/70"}`} onClick={() => setSelectedEntry(entry)}>
-                          <td className={`px-2 py-2.5 text-center tabular-nums font-black text-xs ${dk ? "text-slate-400" : "text-slate-500"}`}>
-                            <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full ${dk ? "bg-slate-700/50 text-slate-200" : "bg-slate-100 text-slate-700"}`}>{toPersianDigits(String(globalIndex))}</span>
+                        <tr 
+                          key={entry.id} 
+                          className={`group transition-all duration-200 cursor-pointer ${
+                            isVoided 
+                              ? (dk ? "opacity-50" : "opacity-60") 
+                              : (dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/50")
+                          } ${dk ? "" : "even:bg-slate-50/30"}`}
+                          onClick={() => setSelectedEntry(entry)}
+                        >
+                          {/* ردیف */}
+                          <td className={`px-2 py-2.5 text-center`}>
+                            <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-black transition-all ${
+                              dk ? "bg-slate-700/50 text-slate-300 group-hover:bg-slate-600" : "bg-slate-100 text-slate-600 group-hover:bg-emerald-100 group-hover:text-emerald-700"
+                            }`}>
+                              {toPersianDigits(String(globalIndex))}
+                            </span>
                           </td>
-                          <td className={`px-2 py-2.5 text-center text-[11px] font-bold font-mono tracking-wider ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (dk ? "text-cyan-300" : "text-cyan-700")}`}>
-                            <span className={`inline-block px-2 py-0.5 rounded-md ${dk ? "bg-slate-700/40" : "bg-cyan-50"} whitespace-nowrap`}>{entry.trackingCode}</span>
+
+                          {/* کد پیگیری */}
+                          <td className="px-2 py-2.5 text-center">
+                            <span className={`inline-block px-2 py-1 rounded-md text-[11px] font-bold font-mono tracking-wider whitespace-nowrap transition-all ${
+                              isVoided 
+                                ? (dk ? "bg-slate-700/30 text-slate-500 line-through" : "bg-slate-100 text-slate-400 line-through")
+                                : (dk ? "bg-gradient-to-r from-cyan-500/20 to-sky-500/20 text-cyan-300 border border-cyan-500/30 group-hover:border-cyan-400/60" : "bg-gradient-to-r from-cyan-50 to-sky-50 text-cyan-700 border border-cyan-200 group-hover:border-cyan-400")
+                            }`}>
+                              {entry.trackingCode}
+                            </span>
                           </td>
-                          <td className={`px-2 py-2.5 text-center text-xs whitespace-nowrap ${dk ? "text-slate-300" : "text-slate-600"}`}>{datePart}</td>
-                          <td className={`px-2 py-2.5 text-center text-xs whitespace-nowrap ${dk ? "text-slate-300" : "text-slate-600"}`}>{timePart}</td>
+
+                          {/* تاریخ */}
+                          <td className={`px-2 py-2.5 text-center text-xs whitespace-nowrap font-bold ${dk ? "text-slate-300" : "text-slate-700"}`}>
+                            {datePart}
+                          </td>
+
+                          {/* ساعت */}
+                          <td className={`px-2 py-2.5 text-center text-xs whitespace-nowrap ${dk ? "text-slate-400" : "text-slate-500"}`}>
+                            {timePart}
+                          </td>
+                          
+                          {/* مشتری */}
                           <td className={`px-2 py-2.5 text-right text-xs font-bold ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (dk ? "text-amber-300" : "text-amber-700")}`}>
                             <div className="flex items-center gap-1 justify-end">
                               <span className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-[9px] shrink-0 ${dk ? "bg-amber-400/20 text-amber-300" : "bg-amber-100 text-amber-700"}`}>👤</span>
                               <span className="truncate max-w-[120px]" title={entry.partyName || "—"}>{entry.partyName || "—"}</span>
                             </div>
                           </td>
+
+                          {/* شرح */}
                           <td className={`px-2 py-2.5 text-right text-xs ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (dk ? "text-slate-200" : "text-slate-800")}`}>
                             <span className="truncate block max-w-[200px]" title={entry.description}>{entry.description}</span>
                           </td>
+
+                          {/* نوع - badge زیبا */}
                           <td className="px-2 py-2.5 text-center">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap ${getBadgeColor(entry.type, isVoided)}`}>{entry.type}</span>
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap ${getBadgeColor(entry.type, isVoided)}`}>
+                              {entry.type}
+                            </span>
                           </td>
-                          <td className={`px-2 py-2.5 text-center text-xs font-bold whitespace-nowrap ${dk ? "text-slate-300" : "text-slate-600"}`}>{currencyLabels[entry.currency as Currency]}</td>
-                          <td className={`px-2 py-2.5 text-center font-black tabular-nums text-xs whitespace-nowrap ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (entry.type === "واریز" ? "text-emerald-500" : "text-rose-500")}`}>
-                            {entry.type === "واریز" ? "+" : "-"} {fmt(entry.amount)}
+
+                          {/* ارز - با رنگ مخصوص */}
+                          <td className="px-2 py-2.5 text-center">
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap ${dk ? currColors.bg : "bg-slate-50"} ${currColors.text}`}>
+                              <span className="text-xs">{currencyIcons[entry.currency as Currency]}</span>
+                              <span>{currencyLabels[entry.currency as Currency]}</span>
+                            </span>
                           </td>
-                          <td className={`px-2 py-2.5 text-center tabular-nums text-xs font-mono whitespace-nowrap ${dk ? "text-slate-300" : "text-slate-600"}`}>{entry.balanceAfter ?? "—"}</td>
+
+                          {/* مبلغ - با افکت ویژه */}
+                          <td className={`px-2 py-2.5 text-center font-black tabular-nums text-xs whitespace-nowrap ${
+                            isVoided 
+                              ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through")
+                              : (entry.type === "واریز" ? "text-emerald-500" : "text-rose-500")
+                          }`}>
+                            <span className={`inline-block px-2 py-0.5 rounded-md ${
+                              isVoided ? "" : (entry.type === "واریز" ? (dk ? "bg-emerald-500/10" : "bg-emerald-50") : (dk ? "bg-rose-500/10" : "bg-rose-50"))
+                            }`}>
+                              {entry.type === "واریز" ? "+" : "-"} {fmt(entry.amount)}
+                            </span>
+                          </td>
+
+                          {/* تراز بعد */}
+                          <td className={`px-2 py-2.5 text-center tabular-nums text-xs font-mono whitespace-nowrap ${dk ? "text-slate-300" : "text-slate-600"}`}>
+                            {entry.balanceAfter ?? "—"}
+                          </td>
+
+                          {/* عملیات */}
                           <td className="px-2 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
                             {!isVoided ? (
-                              <button onClick={() => handleVoid(entry)} disabled={voidingId === entry.id} className={`text-[10px] px-2 py-1 rounded-lg font-black transition disabled:opacity-50 whitespace-nowrap ${dk ? "bg-rose-500/10 text-rose-400 hover:bg-rose-500/20" : "bg-rose-50 text-rose-600 hover:bg-rose-100"}`}>
+                              <button onClick={() => handleVoid(entry)} disabled={voidingId === entry.id} className={`text-[10px] px-2 py-1 rounded-lg font-black transition disabled:opacity-50 whitespace-nowrap ${dk ? "bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20" : "bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200"}`}>
                                 {voidingId === entry.id ? "..." : "ابطال"}
                               </button>
                             ) : (
@@ -631,26 +764,26 @@ export default function JournalPage() {
               </table>
             </div>
 
-            {/* ✨ صفحه‌بندی */}
+            {/* صفحه‌بندی زیبا */}
             {totalPages > 1 && (
-              <div className={`flex items-center justify-between px-4 md:px-7 py-4 border-t ${dk ? "border-slate-700" : "border-slate-200"}`}>
+              <div className={`flex flex-col sm:flex-row items-center justify-between gap-3 px-4 md:px-7 py-4 border-t ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50/50"}`}>
                 <div className={`text-xs font-bold ${subText}`}>
-                  نمایش {toPersianDigits(String((currentPage - 1) * itemsPerPage + 1))} تا {toPersianDigits(String(Math.min(currentPage * itemsPerPage, sortedEntries.length)))} از {toPersianDigits(String(sortedEntries.length))}
+                  نمایش <span className="font-black">{toPersianDigits(String((currentPage - 1) * itemsPerPage + 1))}</span> تا <span className="font-black">{toPersianDigits(String(Math.min(currentPage * itemsPerPage, sortedEntries.length)))}</span> از <span className="font-black">{toPersianDigits(String(sortedEntries.length))}</span>
                 </div>
                 <div className="flex items-center gap-1">
-                  <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1} className={`px-3 py-1.5 rounded-lg text-xs font-black transition disabled:opacity-30 ${dk ? "bg-slate-700/50 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}>
+                  <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1} className={`px-3 py-1.5 rounded-lg text-xs font-black transition disabled:opacity-30 ${dk ? "bg-slate-700/50 text-slate-300 hover:bg-slate-700" : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"}`}>
                     « اول
                   </button>
-                  <button onClick={() => setCurrentPage(currentPage - 1)} disabled={currentPage === 1} className={`px-3 py-1.5 rounded-lg text-xs font-black transition disabled:opacity-30 ${dk ? "bg-slate-700/50 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}>
+                  <button onClick={() => setCurrentPage(currentPage - 1)} disabled={currentPage === 1} className={`px-3 py-1.5 rounded-lg text-xs font-black transition disabled:opacity-30 ${dk ? "bg-slate-700/50 text-slate-300 hover:bg-slate-700" : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"}`}>
                     قبلی
                   </button>
-                  <div className={`px-4 py-1.5 rounded-lg text-xs font-black ${dk ? "bg-emerald-500/20 text-emerald-300" : "bg-emerald-100 text-emerald-700"}`}>
+                  <div className={`px-4 py-1.5 rounded-lg text-xs font-black ${dk ? "bg-gradient-to-r from-emerald-500/30 to-teal-500/30 text-emerald-300 border border-emerald-400/30" : "bg-gradient-to-r from-emerald-100 to-teal-100 text-emerald-700 border border-emerald-300"}`}>
                     {toPersianDigits(String(currentPage))} / {toPersianDigits(String(totalPages))}
                   </div>
-                  <button onClick={() => setCurrentPage(currentPage + 1)} disabled={currentPage === totalPages} className={`px-3 py-1.5 rounded-lg text-xs font-black transition disabled:opacity-30 ${dk ? "bg-slate-700/50 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}>
+                  <button onClick={() => setCurrentPage(currentPage + 1)} disabled={currentPage === totalPages} className={`px-3 py-1.5 rounded-lg text-xs font-black transition disabled:opacity-30 ${dk ? "bg-slate-700/50 text-slate-300 hover:bg-slate-700" : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"}`}>
                     بعدی
                   </button>
-                  <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages} className={`px-3 py-1.5 rounded-lg text-xs font-black transition disabled:opacity-30 ${dk ? "bg-slate-700/50 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}>
+                  <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages} className={`px-3 py-1.5 rounded-lg text-xs font-black transition disabled:opacity-30 ${dk ? "bg-slate-700/50 text-slate-300 hover:bg-slate-700" : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"}`}>
                     آخر »
                   </button>
                 </div>
@@ -666,6 +799,7 @@ export default function JournalPage() {
             <ul className={`text-xs space-y-2 list-disc pr-4 ${dk ? "text-slate-400" : "text-slate-600"}`}>
               <li>💰 <b>موجودی لحظه‌ای</b>: موجودی فعلی هر ارز در سیستم</li>
               <li>📈 <b>سود/زیان</b>: درآمد، هزینه، کارمزدها و سود خالص دوره</li>
+              <li>📊 <b>خلاصه دوره</b>: حجم کل (مجموع گردش) و تغییر خالص (واریز - برداشت)</li>
               <li>🔽 <b>مرتب‌سازی</b>: روی هدر ستون‌ها کلیک کنید</li>
               <li>📄 <b>صفحه‌بندی</b>: ۲۰ تراکنش در هر صفحه</li>
               <li>👤 <b>مشتری</b>: نام از لیست مشتریان خوانده می‌شود</li>
@@ -678,7 +812,7 @@ export default function JournalPage() {
           </div>
         </div>
 
-        {/* ✨ مودال جزئیات تراکنش */}
+        {/* مودال جزئیات */}
         {selectedEntry && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setSelectedEntry(null)}>
             <div className={`relative w-full max-w-lg rounded-2xl border-2 p-6 shadow-2xl ${dk ? "border-slate-700 bg-slate-800" : "border-emerald-200 bg-white"}`} onClick={(e) => e.stopPropagation()}>
