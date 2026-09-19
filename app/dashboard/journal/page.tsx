@@ -112,12 +112,10 @@ export default function JournalPage() {
     ? "border-slate-700 bg-slate-800/90 shadow-[0_16px_40px_-24px_rgba(0,0,0,0.6)]"
     : "border-emerald-100 bg-white/95 shadow-[0_16px_40px_-28px_rgba(16,185,129,0.35)]";
 
-  // ✨ ساخت نقشه (map) مشتریان برای جستجوی سریع نام بر اساس ID
   const customerMap = useMemo(() => {
     const map = new Map<string, string>();
     customers.forEach((c: any) => {
       if (c && c.id) {
-        // سعی می‌کنیم نام را از فیلدهای مختلف بخوانیم
         const name = c.name || c.fullName || c.customerName || c.title || "";
         if (name && name.trim()) {
           map.set(c.id, name.trim());
@@ -127,25 +125,19 @@ export default function JournalPage() {
     return map;
   }, [customers]);
 
-  // ✨ تابع کمکی: پیدا کردن نام مشتری از ID یا نام مستقیم
   const resolveCustomerName = (name?: string, id?: string): string => {
-    // اولویت ۱: اگر نام مستقیم وجود دارد و معتبر است
     if (name && name.trim() && name !== "مشتری" && name !== "صندوق" && name !== "—") {
       return name.trim();
     }
-    // اولویت ۲: اگر ID وجود دارد، از customerMap پیدا کن
     if (id && customerMap.has(id)) {
       return customerMap.get(id)!;
     }
-    // اولویت ۳: اگر نام وجود دارد ولی نامعتبر است
     if (name && name.trim()) {
       return name.trim();
     }
-    // در غیر این صورت
     return "نامشخص";
   };
 
-  // ✅ ۱. ادغام هوشمند تمام داده‌ها
   const unifiedEntries = useMemo<UnifiedJournalEntry[]>(() => {
     const entries: Omit<UnifiedJournalEntry, "trackingCode">[] = [];
     
@@ -155,7 +147,6 @@ export default function JournalPage() {
       if (tx.type === "exchange") type = tx.dealType === "buy" ? "واریز" : "برداشت";
       else if (tx.type === "transfer") type = "انتقال";
       
-      // ✨ نمایش نام مشتری با پشتیبانی از customerMap
       let partyName: string;
       if (tx.type === "transfer") {
         const sender = resolveCustomerName(tx.senderName, tx.senderId);
@@ -240,7 +231,6 @@ export default function JournalPage() {
     return entriesWithCode.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [transactions, hawalas, cashEntries, customerMap]);
 
-  // ✅ ۲. فیلتر کردن داده‌ها
   const filteredEntries = useMemo(() => {
     return unifiedEntries.filter((e: any) => {
       if (e.status === "voided" && !e.voidedReason) return false;
@@ -259,14 +249,12 @@ export default function JournalPage() {
     });
   }, [unifiedEntries, dateFrom, dateTo, typeFilter, currencyFilter, searchQuery]);
 
-  // ✅ ۳. محاسبه آنی خلاصه کلی
   const summary = useMemo(() => {
     let count = 0;
     filteredEntries.forEach((e: any) => { if (e.status !== "voided") count++; });
     return { count };
   }, [filteredEntries]);
 
-  // ✅ ۴. محاسبه خلاصه ارزها
   const currencyPeriodSummary = useMemo(() => {
     const summary: Record<string, { volume: number; net: number }> = {};
     currencies.forEach(curr => { summary[curr] = { volume: 0, net: 0 }; });
@@ -279,7 +267,6 @@ export default function JournalPage() {
     return summary;
   }, [filteredEntries]);
 
-  // ✅ ۵. منطق ابطال امن
   const handleVoid = async (entry: UnifiedJournalEntry) => {
     const reason = prompt("دلیل ابطال این تراکنش را وارد کنید:");
     if (!reason) return;
@@ -299,7 +286,6 @@ export default function JournalPage() {
     } finally { setVoidingId(null); }
   };
 
-  // ✅ ۶. خروجی CSV
   const handleExport = () => {
     const headers = ["ردیف", "کد پیگیری", "تاریخ", "ساعت", "مشتری/طرف حساب", "شرح", "نوع", "ارز", "مبلغ", "تراز بعد"];
     const escapeCsv = (val: any) => `"${String(val ?? "").replace(/"/g, '""')}"`;
@@ -324,7 +310,6 @@ export default function JournalPage() {
     URL.revokeObjectURL(url);
   };
 
-  // ✅ ۷. توابع کمکی استایل
   const getBadgeColor = (type: TxType, isVoided: boolean) => {
     if (isVoided) return "bg-slate-700/50 text-slate-400 line-through";
     const styles: Record<TxType, string> = {
@@ -355,7 +340,6 @@ export default function JournalPage() {
 
         <div className="relative z-10 mx-auto w-full max-w-7xl space-y-4 md:space-y-6 px-3 pb-16 pt-5 md:px-8 md:pt-9">
 
-          {/* ═══════════ هدر ═══════════ */}
           <header className="cs-up flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 md:gap-3.5 min-w-0">
               <div className="relative grid h-11 w-11 md:h-14 md:w-14 shrink-0 place-items-center rounded-xl md:rounded-2xl bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-400 text-white shadow-lg shadow-emerald-500/30 ring-1 ring-white/30">
@@ -377,7 +361,6 @@ export default function JournalPage() {
             </div>
           </header>
 
-          {/* ═══════════ فیلترها ═══════════ */}
           <section className={`cs-up rounded-2xl border p-4 md:p-5 shadow-sm transition-colors duration-300 ${uiCard}`} style={{ animationDelay: "70ms" }}>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
               <div>
@@ -403,7 +386,6 @@ export default function JournalPage() {
             </div>
           </section>
 
-          {/* ═══════════ خلاصه دوره ═══════════ */}
           <section className="cs-up space-y-4 md:space-y-5" style={{ animationDelay: "140ms" }}>
             <div className={`relative overflow-hidden rounded-2xl md:rounded-3xl border-2 p-5 md:p-6 transition-all duration-300 ${dk ? "border-emerald-400/30 bg-gradient-to-br from-emerald-900/30 via-slate-900/60 to-teal-900/30" : "border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50"}`}>
               <div className={`absolute -top-24 -left-24 h-48 w-48 rounded-full blur-3xl opacity-20 ${dk ? "bg-emerald-400" : "bg-emerald-300"}`} />
@@ -450,7 +432,7 @@ export default function JournalPage() {
             </div>
           </section>
 
-          {/* ═══════════ جدول تراکنش‌ها ═══════════ */}
+          {/* ═══════════ جدول تراکنش‌ها (بهبودیافته) ═══════════ */}
           <section className={`cs-up rounded-2xl md:rounded-3xl border-2 overflow-hidden ${uiCard}`} style={{ animationDelay: "210ms" }}>
             <div className="flex items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
               <div className={`grid h-11 w-11 md:h-12 md:w-12 place-items-center rounded-xl shadow-md ${dk ? "bg-gradient-to-br from-cyan-400 to-sky-500 text-slate-950" : "bg-gradient-to-br from-cyan-500 to-sky-500 text-white"}`}>
@@ -458,25 +440,26 @@ export default function JournalPage() {
               </div>
               <div className="flex-1 min-w-0">
                 <h2 className={`cs-display text-xl md:text-2xl leading-none ${heading}`}>لیست تراکنش‌ها</h2>
-                <p className={`mt-1 text-[11px] font-bold ${subText}`}>نمایش نام مشتری/طرف حساب در هر تراکنش</p>
+                <p className={`mt-1 text-[11px] font-bold ${subText}`}>جدول منظم با هدر چسبان و ستون‌های بهینه</p>
               </div>
             </div>
 
-            <div className="overflow-x-auto px-4 md:px-7 pb-4">
-              <table className="w-full min-w-[1250px] text-sm">
-                <thead>
-                  <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
+            {/* ✨ کانتینر جدول با اسکرول عمودی و هدر چسبان */}
+            <div className="relative overflow-x-auto overflow-y-auto max-h-[600px] px-2 md:px-4 pb-4">
+              <table className="w-full text-sm border-collapse">
+                <thead className="sticky top-0 z-10">
+                  <tr className={`${dk ? "bg-slate-800 border-b-2 border-slate-700" : "bg-slate-50 border-b-2 border-slate-200"}`}>
                     <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-12">ردیف</th>
-                    <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">کد پیگیری</th>
-                    <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">تاریخ</th>
-                    <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">ساعت</th>
-                    <th className="px-3 py-3 text-right text-[11px] font-black text-slate-400 whitespace-nowrap">مشتری / طرف حساب</th>
-                    <th className="px-3 py-3 text-right text-[11px] font-black text-slate-400 whitespace-nowrap">شرح</th>
-                    <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">نوع</th>
-                    <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">ارز</th>
-                    <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">مبلغ</th>
-                    <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">تراز بعد</th>
-                    <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">عملیات</th>
+                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-32">کد پیگیری</th>
+                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-24">تاریخ</th>
+                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-16">ساعت</th>
+                    <th className="px-2 py-3 text-right text-[11px] font-black text-slate-400 whitespace-nowrap w-36">مشتری / طرف حساب</th>
+                    <th className="px-2 py-3 text-right text-[11px] font-black text-slate-400">شرح</th>
+                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-20">نوع</th>
+                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-16">ارز</th>
+                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-28">مبلغ</th>
+                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-24">تراز بعد</th>
+                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-16">عملیات</th>
                   </tr>
                 </thead>
                 <tbody className={`divide-y ${dk ? "divide-slate-700/60" : "divide-slate-100"}`}>
@@ -493,45 +476,47 @@ export default function JournalPage() {
 
                       return (
                         <tr key={entry.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/70"}`}>
-                          <td className={`px-2 py-3 text-center tabular-nums font-black text-xs ${dk ? "text-slate-400" : "text-slate-500"}`}>
+                          <td className={`px-2 py-2.5 text-center tabular-nums font-black text-xs ${dk ? "text-slate-400" : "text-slate-500"}`}>
                             <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full ${dk ? "bg-slate-700/50 text-slate-200" : "bg-slate-100 text-slate-700"}`}>
                               {toPersianDigits(String(index + 1))}
                             </span>
                           </td>
-                          <td className={`px-3 py-3 text-center text-xs font-bold font-mono tracking-wider ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (dk ? "text-cyan-300" : "text-cyan-700")}`}>
-                            <span className={`inline-block px-2.5 py-1 rounded-md ${dk ? "bg-slate-700/40" : "bg-cyan-50"} whitespace-nowrap`}>
+                          <td className={`px-2 py-2.5 text-center text-[11px] font-bold font-mono tracking-wider ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (dk ? "text-cyan-300" : "text-cyan-700")}`}>
+                            <span className={`inline-block px-2 py-0.5 rounded-md ${dk ? "bg-slate-700/40" : "bg-cyan-50"} whitespace-nowrap`}>
                               {entry.trackingCode}
                             </span>
                           </td>
-                          <td className={`px-3 py-3 text-center text-xs ${dk ? "text-slate-300" : "text-slate-600"}`}>{datePart}</td>
-                          <td className={`px-3 py-3 text-center text-xs ${dk ? "text-slate-300" : "text-slate-600"}`}>{timePart}</td>
+                          <td className={`px-2 py-2.5 text-center text-xs whitespace-nowrap ${dk ? "text-slate-300" : "text-slate-600"}`}>{datePart}</td>
+                          <td className={`px-2 py-2.5 text-center text-xs whitespace-nowrap ${dk ? "text-slate-300" : "text-slate-600"}`}>{timePart}</td>
                           
-                          {/* ✨ ستون مشتری / طرف حساب */}
-                          <td className={`px-3 py-3 text-right text-xs font-bold ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (dk ? "text-amber-300" : "text-amber-700")}`}>
-                            <div className="flex items-center gap-1.5 justify-end">
-                              <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] shrink-0 ${dk ? "bg-amber-400/20 text-amber-300" : "bg-amber-100 text-amber-700"}`}>
+                          <td className={`px-2 py-2.5 text-right text-xs font-bold ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (dk ? "text-amber-300" : "text-amber-700")}`}>
+                            <div className="flex items-center gap-1 justify-end">
+                              <span className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-[9px] shrink-0 ${dk ? "bg-amber-400/20 text-amber-300" : "bg-amber-100 text-amber-700"}`}>
                                 👤
                               </span>
-                              <span className="whitespace-nowrap">{entry.partyName || "—"}</span>
+                              <span className="truncate max-w-[120px]" title={entry.partyName || "—"}>{entry.partyName || "—"}</span>
                             </div>
                           </td>
                           
-                          <td className={`px-3 py-3 text-right font-medium text-xs ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (dk ? "text-slate-200" : "text-slate-800")}`}>{entry.description}</td>
-                          <td className="px-3 py-3 text-center">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black ${getBadgeColor(entry.type, isVoided)}`}>{entry.type}</span>
+                          <td className={`px-2 py-2.5 text-right text-xs ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (dk ? "text-slate-200" : "text-slate-800")}`}>
+                            <span className="truncate block max-w-[200px]" title={entry.description}>{entry.description}</span>
                           </td>
-                          <td className={`px-3 py-3 text-center text-xs font-bold ${dk ? "text-slate-300" : "text-slate-600"}`}>{currencyLabels[entry.currency as Currency]}</td>
-                          <td className={`px-3 py-3 text-center font-black tabular-nums text-xs ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (entry.type === "واریز" ? "text-emerald-500" : "text-rose-500")}`}>
+                          
+                          <td className="px-2 py-2.5 text-center">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap ${getBadgeColor(entry.type, isVoided)}`}>{entry.type}</span>
+                          </td>
+                          <td className={`px-2 py-2.5 text-center text-xs font-bold whitespace-nowrap ${dk ? "text-slate-300" : "text-slate-600"}`}>{currencyLabels[entry.currency as Currency]}</td>
+                          <td className={`px-2 py-2.5 text-center font-black tabular-nums text-xs whitespace-nowrap ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (entry.type === "واریز" ? "text-emerald-500" : "text-rose-500")}`}>
                             {entry.type === "واریز" ? "+" : "-"} {fmt(entry.amount)}
                           </td>
-                          <td className={`px-3 py-3 text-center tabular-nums text-xs font-mono ${dk ? "text-slate-300" : "text-slate-600"}`}>{entry.balanceAfter ?? "—"}</td>
-                          <td className="px-3 py-3 text-center">
+                          <td className={`px-2 py-2.5 text-center tabular-nums text-xs font-mono whitespace-nowrap ${dk ? "text-slate-300" : "text-slate-600"}`}>{entry.balanceAfter ?? "—"}</td>
+                          <td className="px-2 py-2.5 text-center">
                             {!isVoided ? (
-                              <button onClick={() => handleVoid(entry)} disabled={voidingId === entry.id} className={`text-[10px] px-2.5 py-1 rounded-lg font-black transition disabled:opacity-50 ${dk ? "bg-rose-500/10 text-rose-400 hover:bg-rose-500/20" : "bg-rose-50 text-rose-600 hover:bg-rose-100"}`}>
+                              <button onClick={() => handleVoid(entry)} disabled={voidingId === entry.id} className={`text-[10px] px-2 py-1 rounded-lg font-black transition disabled:opacity-50 whitespace-nowrap ${dk ? "bg-rose-500/10 text-rose-400 hover:bg-rose-500/20" : "bg-rose-50 text-rose-600 hover:bg-rose-100"}`}>
                                 {voidingId === entry.id ? "..." : "ابطال"}
                               </button>
                             ) : (
-                              <span className={`text-[9px] px-2 py-1 rounded font-black ${dk ? "text-slate-400 bg-slate-700/50" : "text-slate-500 bg-slate-200"}`}>باطل‌شده</span>
+                              <span className={`text-[9px] px-2 py-1 rounded font-black whitespace-nowrap ${dk ? "text-slate-400 bg-slate-700/50" : "text-slate-500 bg-slate-200"}`}>باطل‌شده</span>
                             )}
                           </td>
                         </tr>
@@ -543,7 +528,6 @@ export default function JournalPage() {
             </div>
           </section>
 
-          {/* ═══════════ راهنما ═══════════ */}
           <section className={`cs-up rounded-2xl border-2 px-5 py-4 md:py-5 ${dk ? "border-slate-700/70 bg-gradient-to-r from-slate-800/60 to-slate-900/60" : "border-slate-200 bg-gradient-to-r from-white to-slate-50"}`} style={{ animationDelay: "280ms" }}>
             <h3 className={`text-sm font-black mb-3 flex items-center ${dk ? "text-slate-200" : "text-slate-700"}`}>
               <span className={`w-2 h-2 rounded-full ml-2 ${dk ? "bg-blue-400" : "bg-blue-600"}`}></span> راهنمای سیستم
