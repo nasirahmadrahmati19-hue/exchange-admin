@@ -116,16 +116,33 @@ export default function JournalPage() {
   const customerMap = useMemo(() => {
     const map = new Map<string, string>();
     customers.forEach((c: any) => {
-      if (c && c.id && c.name) map.set(c.id, c.name);
+      if (c && c.id) {
+        // سعی می‌کنیم نام را از فیلدهای مختلف بخوانیم
+        const name = c.name || c.fullName || c.customerName || c.title || "";
+        if (name && name.trim()) {
+          map.set(c.id, name.trim());
+        }
+      }
     });
     return map;
   }, [customers]);
 
   // ✨ تابع کمکی: پیدا کردن نام مشتری از ID یا نام مستقیم
   const resolveCustomerName = (name?: string, id?: string): string => {
-    if (name && name.trim() && name !== "مشتری" && name !== "صندوق") return name;
-    if (id && customerMap.has(id)) return customerMap.get(id)!;
-    return name || "—";
+    // اولویت ۱: اگر نام مستقیم وجود دارد و معتبر است
+    if (name && name.trim() && name !== "مشتری" && name !== "صندوق" && name !== "—") {
+      return name.trim();
+    }
+    // اولویت ۲: اگر ID وجود دارد، از customerMap پیدا کن
+    if (id && customerMap.has(id)) {
+      return customerMap.get(id)!;
+    }
+    // اولویت ۳: اگر نام وجود دارد ولی نامعتبر است
+    if (name && name.trim()) {
+      return name.trim();
+    }
+    // در غیر این صورت
+    return "نامشخص";
   };
 
   // ✅ ۱. ادغام هوشمند تمام داده‌ها
@@ -193,7 +210,7 @@ export default function JournalPage() {
       
       const partyName = ce.customerId 
         ? resolveCustomerName(ce.customerName, ce.customerId)
-        : (ce.customerName || "صندوق");
+        : (ce.customerName && ce.customerName.trim() ? ce.customerName : "صندوق");
       
       entries.push({
         id: ce.id, date: ce.date || new Date().toISOString(), type,
