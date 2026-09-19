@@ -19,7 +19,10 @@ function removeUndefinedFields(obj: any): any {
 }
 
 function isEmptyData(data: any): boolean {
-  if (Array.isArray(data)) return data.length === 0;
+  // ✅ اصلاح حیاتی: آرایه خالی [] یک حالت معتبر است (مثلاً وقتی همه تراکنش‌ها حذف می‌شوند).
+  // بنابراین آن را به عنوان "داده خالی خطرناک" در نظر نمی‌گیریم تا جلوی حذف قانونی گرفته نشود.
+  if (Array.isArray(data)) return false;
+  
   if (typeof data === "object" && data !== null) return Object.keys(data).length === 0;
   return data === null || data === undefined || data === "";
 }
@@ -316,18 +319,8 @@ export function useSyncedState<T>(key: string, initialValue: T) {
             ? (newValue as (prev: T) => T)(valueRef.current)
             : newValue;
 
-        // 🚨 محافظ ۲: جلوگیری مطلق از پاک کردن داده‌های محلی
-        const hadData = hasData(valueRef.current);
-        const isNowEmpty = isEmptyData(resolvedValue);
-        
-        if (hadData && isNowEmpty) {
-          console.error(`🚨🚨🚨 [${key}] CRITICAL: Blocked attempt to wipe data locally!`);
-          console.trace("Call stack of the wipe attempt:");
-          alert(`⛔ خطای حیاتی: یک بخش از برنامه سعی کرد داده‌های "${key}" را پاک کند. این عملیات به دلایل امنیتی مسدود شد.`);
-          return valueRef.current; // لغو عملیات ذخیره‌سازی
-        }
-
-        // 🚨 محافظ ۳: جلوگیری از ذخیره undefined یا null به جای آرایه/آبجکت
+        // 🚨 محافظ ۲ اصلاح‌شده: جلوگیری مطلق از ذخیره null یا undefined
+        // (آرایه خالی [] دیگر مسدود نمی‌شود و به عنوان یک حالت معتبر پذیرفته می‌شود)
         if (resolvedValue === undefined || resolvedValue === null) {
            console.warn(`⚠️ [${key}] Attempted to save undefined/null. Reverting to safe state.`);
            return valueRef.current;
