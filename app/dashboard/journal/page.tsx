@@ -11,6 +11,16 @@ const currencyLabels: Record<Currency, string> = { AFN: "افغانی", USD: "د
 
 type TxType = "واریز" | "برداشت" | "انتقال" | "تبدیل" | "هزینه" | "حواله";
 
+// ✨ نگاشت نوع تراکنش به مخفف فارسی
+const typePrefixMap: Record<TxType, string> = {
+  "واریز": "وار",
+  "برداشت": "برد",
+  "انتقال": "انت",
+  "تبدیل": "تبد",
+  "هزینه": "هز",
+  "حواله": "حو"
+};
+
 interface UnifiedJournalEntry {
   id: string;
   date: string;
@@ -25,21 +35,21 @@ interface UnifiedJournalEntry {
   voidedReason?: string;
   source: "transaction" | "hawala" | "cash";
   sourceId: string;
-  trackingCode: string; // ✨ جدید: کد پیگیری
+  trackingCode: string; // ✨ کد پیگیری (بدون تاریخ)
 }
 
 const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00";
 
-// ✨ تابع تولید کد پیگیری منحصربه‌فرد
-const generateTrackingCode = (type: TxType, date: string, id: string): string => {
-  const d = new Date(date);
-  const prefix = {
-    "واریز": "DEP", "برداشت": "WDR", "انتقال": "TRF",
-    "تبدیل": "EXC", "هزینه": "EXP", "حواله": "HWL"
-  }[type] || "TXN";
-  const datePart = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+// ✨ تبدیل ارقام انگلیسی به فارسی برای نمایش
+const toPersianDigits = (s: string): string => {
+  return s.replace(/\d/g, d => "۰۱۲۳۴۵۶۷۸۹"[parseInt(d)]);
+};
+
+// ✨ تابع تولید کد پیگیری فارسی (بدون تاریخ): وار-A3F2
+const generateTrackingCode = (type: TxType, id: string): string => {
+  const prefix = typePrefixMap[type] || "سایر";
   const idPart = id.slice(0, 4).toUpperCase();
-  return `${prefix}-${datePart}-${idPart}`;
+  return `${prefix}-${idPart}`;
 };
 
 function useUrlState(key: string, defaultValue: string) {
@@ -101,7 +111,7 @@ export default function JournalPage() {
         partyName, partyId: tx.customerId || tx.senderId, currency: tx.fromCurrency,
         amount: tx.fromAmount, balanceAfter: tx.balanceAfter, status: tx.status,
         voidedReason: tx.voidedReason, source: "transaction", sourceId: tx.id,
-        trackingCode: generateTrackingCode(type, tx.date, tx.id)
+        trackingCode: generateTrackingCode(type, tx.id)
       });
     });
     hawalas.forEach((h: any) => {
@@ -111,7 +121,7 @@ export default function JournalPage() {
         description: `حواله به ${h.receiverName} (${h.destinationText || ""})`,
         partyName: h.senderName, partyId: h.senderId, currency: h.currencyFrom,
         amount: h.amountFrom, status: "active", source: "hawala", sourceId: h.id,
-        trackingCode: generateTrackingCode("حواله", h.date, h.id)
+        trackingCode: generateTrackingCode("حواله", h.id)
       });
       if (h.status === "paid") {
         entries.push({
@@ -119,7 +129,7 @@ export default function JournalPage() {
           description: `تسویه حواله از ${h.senderName}`, partyName: h.receiverName,
           partyId: h.receiverId, currency: h.currencyTo, amount: h.finalAmount,
           status: "active", source: "hawala", sourceId: h.id,
-          trackingCode: generateTrackingCode("واریز", h.paidAt || h.date, `${h.id}-paid`)
+          trackingCode: generateTrackingCode("واریز", `${h.id}-paid`)
         });
       }
     });
@@ -137,7 +147,7 @@ export default function JournalPage() {
         description: ce.reason || ce.type || "عملیات صندوق", partyName: ce.customerName || "صندوق",
         partyId: ce.customerId, currency: ce.currency, amount: Number(ce.amount) || 0,
         balanceAfter: ce.balanceAfter, status: ce.status || "active", source: "cash", sourceId: ce.id,
-        trackingCode: generateTrackingCode(type, ce.date || new Date().toISOString(), ce.id)
+        trackingCode: generateTrackingCode(type, ce.id)
       });
     });
     return entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -153,7 +163,10 @@ export default function JournalPage() {
       if (dateTo && new Date(e.date) > new Date(dateTo)) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
-        return e.description.toLowerCase().includes(q) || e.partyName.toLowerCase().includes(q) || e.id.toLowerCase().includes(q) || (e.trackingCode && e.trackingCode.toLowerCase().includes(q));
+        return e.description.toLowerCase().includes(q) 
+            || e.partyName.toLowerCase().includes(q) 
+            || e.id.toLowerCase().includes(q) 
+            || (e.trackingCode && e.trackingCode.toLowerCase().includes(q));
       }
       return true;
     });
@@ -206,7 +219,7 @@ export default function JournalPage() {
     const rows = filteredEntries.map((e: any, index: number) => {
       const d = new Date(e.date);
       return [
-        index + 1,
+        toPersianDigits(String(index + 1)),
         escapeCsv(e.trackingCode),
         escapeCsv(d.toLocaleDateString("fa-IR")),
         escapeCsv(d.toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" })),
@@ -322,7 +335,7 @@ export default function JournalPage() {
                 <div className={`rounded-xl p-3 border text-center transition-all duration-300 hover:scale-[1.02] flex flex-col justify-center ${dk ? "border-slate-700 bg-slate-900/50" : "border-slate-200 bg-white/80"}`}>
                   <div className={`text-[11px] font-black mb-2 ${dk ? "text-slate-300" : "text-slate-600"}`}>تعداد کل</div>
                   <div className="flex-1 flex items-center justify-center">
-                    <span className={`text-3xl font-black tabular-nums leading-none ${dk ? "text-emerald-300" : "text-emerald-700"}`}>{summary.count}</span>
+                    <span className={`text-3xl font-black tabular-nums leading-none ${dk ? "text-emerald-300" : "text-emerald-700"}`}>{toPersianDigits(String(summary.count))}</span>
                   </div>
                 </div>
 
@@ -366,7 +379,7 @@ export default function JournalPage() {
               <table className="w-full min-w-[1100px] text-sm">
                 <thead>
                   <tr className={`border-y ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}>
-                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-12">#</th>
+                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-12">ردیف</th>
                     <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">کد پیگیری</th>
                     <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">تاریخ</th>
                     <th className="px-3 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap">ساعت</th>
@@ -392,18 +405,19 @@ export default function JournalPage() {
 
                       return (
                         <tr key={entry.id} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/70"}`}>
-                          {/* ستون شماره ردیف */}
+                          {/* ستون ردیف با ارقام فارسی */}
                           <td className={`px-2 py-3 text-center tabular-nums font-black text-xs ${dk ? "text-slate-400" : "text-slate-500"}`}>
                             <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full ${dk ? "bg-slate-700/50 text-slate-200" : "bg-slate-100 text-slate-700"}`}>
-                              {index + 1}
+                              {toPersianDigits(String(index + 1))}
                             </span>
                           </td>
-                          {/* ستون کد پیگیری */}
-                          <td className={`px-3 py-3 text-center font-mono text-[11px] font-bold tracking-wider ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (dk ? "text-cyan-300" : "text-cyan-700")}`}>
-                            <span className={`inline-block px-2 py-1 rounded-md ${dk ? "bg-slate-700/40" : "bg-cyan-50"} whitespace-nowrap`}>
+                          {/* ستون کد پیگیری فارسی (بدون تاریخ) */}
+                          <td className={`px-3 py-3 text-center text-[11px] font-bold tracking-wide ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (dk ? "text-cyan-300" : "text-cyan-700")}`}>
+                            <span className={`inline-block px-2 py-1 rounded-md font-mono ${dk ? "bg-slate-700/40" : "bg-cyan-50"} whitespace-nowrap`}>
                               {entry.trackingCode}
                             </span>
                           </td>
+                          {/* ستون تاریخ جداگانه */}
                           <td className={`px-3 py-3 text-center text-xs ${dk ? "text-slate-300" : "text-slate-600"}`}>{datePart}</td>
                           <td className={`px-3 py-3 text-center text-xs ${dk ? "text-slate-300" : "text-slate-600"}`}>{timePart}</td>
                           <td className={`px-3 py-3 text-right font-medium text-xs ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (dk ? "text-slate-200" : "text-slate-800")}`}>{entry.description}</td>
@@ -436,15 +450,24 @@ export default function JournalPage() {
           {/* ═══════════ راهنما ═══════════ */}
           <section className={`cs-up rounded-2xl border-2 px-5 py-4 md:py-5 ${dk ? "border-slate-700/70 bg-gradient-to-r from-slate-800/60 to-slate-900/60" : "border-slate-200 bg-gradient-to-r from-white to-slate-50"}`} style={{ animationDelay: "280ms" }}>
             <h3 className={`text-sm font-black mb-3 flex items-center ${dk ? "text-slate-200" : "text-slate-700"}`}>
-              <span className={`w-2 h-2 rounded-full ml-2 ${dk ? "bg-blue-400" : "bg-blue-600"}`}></span> راهنمای سیستم
+              <span className={`w-2 h-2 rounded-full ml-2 ${dk ? "bg-blue-400" : "bg-blue-600"}`}></span> راهنمای کد پیگیری
             </h3>
             <ul className={`text-xs space-y-2 list-disc pr-4 ${dk ? "text-slate-400" : "text-slate-600"}`}>
-              <li>هر تراکنش دارای <b className={dk ? "text-cyan-300" : "text-cyan-700"}>کد پیگیری</b> منحصربه‌فرد است (مثلاً DEP-140506-A3F2).</li>
-              <li>پیشوند کد نشان‌دهنده نوع تراکنش است: DEP=واریز، WDR=برداشت، TRF=انتقال، EXC=تبدیل، EXP=هزینه، HWL=حواله.</li>
-              <li>می‌توانید با کد پیگیری در بخش جستجو تراکنش را پیدا کنید.</li>
+              <li>هر تراکنش دارای <b className={dk ? "text-cyan-300" : "text-cyan-700"}>کد پیگیری فارسی</b> منحصربه‌فرد است. نمونه: <span className="font-mono">وار-A3F2</span></li>
+              <li>
+                <b>مخفف‌های فارسی:</b>{" "}
+                <span className="font-mono">وار</span>=واریز،{" "}
+                <span className="font-mono">برد</span>=برداشت،{" "}
+                <span className="font-mono">انت</span>=انتقال،{" "}
+                <span className="font-mono">تبد</span>=تبدیل،{" "}
+                <span className="font-mono">هز</span>=هزینه،{" "}
+                <span className="font-mono">حو</span>=حواله
+              </li>
+              <li>بخش دوم کد، ۴ حرف اول شناسه یکتای تراکنش است.</li>
+              <li>ستون <b>تاریخ</b> و <b>کد پیگیری</b> کاملاً جدا از هم هستند.</li>
+              <li>می‌توانید با کد پیگیری در بخش <b>جستجو</b> تراکنش را پیدا کنید.</li>
               <li>این روزنامه به صورت <b className={dk ? "text-slate-200" : "text-slate-800"}>آفلاین و آنلاین</b> کار می‌کند.</li>
               <li>برای ابطال حواله، به تب <b className={dk ? "text-slate-200" : "text-slate-800"}>حواله‌جات</b> مراجعه کنید.</li>
-              <li>خروجی CSV شامل تمام تراکنش‌های فیلترشده با کد پیگیری است.</li>
             </ul>
           </section>
 
