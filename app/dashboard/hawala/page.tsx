@@ -3,14 +3,15 @@ import { useEffect, useMemo, useState, useRef, useCallback, memo, type ReactNode
 import { 
   collection, addDoc, updateDoc, doc, onSnapshot, writeBatch, serverTimestamp 
 } from "firebase/firestore";
-import { db } from "../dashboard/lib/firebase"; // مسیر فایل firebase خود را بررسی کنید
-import { getNextTrackingCode, consumeTrackingCode, initTrackingCode, getTrackingNumberValue } from "../lib/trackingCode";
 
-// حذف useSyncedState و استفاده از دیتای مستقیم فایربیس برای همگام‌سازی واقعی
-const CUSTOMERS_KEY = "customers";
-const TRANSACTIONS_KEY = "transactions";
-const HAWALAS_KEY = "hawalas";
-const CASH_KEY = "cash_entries";
+// ✅ مسیر اصلاح‌شده برای رفع خطای بیلد ورسل (حذف dashboard اضافه)
+import { db } from "../lib/firebase"; 
+import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem, getTrackingNumberValue } from "../lib/trackingCode";
+
+const CUSTOMERS_KEY = "fx-customers";
+const TRANSACTIONS_KEY = "fx-transactions";
+const HAWALAS_KEY = "fx-hawalas";
+const CASH_KEY = "fx-cash";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type RateMode = "same" | "afn" | "direct";
@@ -702,9 +703,6 @@ export default function HawalaPage() {
       const batch = writeBatch(db);
       batch.update(doc(db, HAWALAS_KEY, cancelTarget.id), updatedHawala);
       
-      // حذف اسناد مرتبط از فایربیس (اختیاری، اما برای تمیزی دیتابیس بهتر است)
-      // در اینجا فقط آپدیت وضعیت کافی است، اما اگر می‌خواهید entries ها هم پاک شوند باید منطق حذف را اضافه کنید.
-      // برای سادگی و جلوگیری از باگ، فقط بالانس‌ها را آپدیت می‌کنیم.
       for (const c of updatedCustomers) {
         if (String(c.id) !== String(CASH_BOX_ID) && String(c.id) !== String(EXCHANGE_ACCOUNT_ID)) {
           batch.update(doc(db, CUSTOMERS_KEY, String(c.id)), { balances: c.balances });
