@@ -2,24 +2,17 @@
 import { useEffect, useState, useRef, useCallback, type ReactNode } from "react";
 import {
   doc, setDoc, getDoc, onSnapshot,
-  collection, collectionGroup, getDocs, writeBatch,
-  query, orderBy, startAfter, limit, documentId,
-  Timestamp, GeoPoint,
+  collection, getDocs, writeBatch, deleteDoc, Timestamp
 } from "firebase/firestore";
 import { db } from "../dashboard/lib/firebase";
-const CUSTOMERS_KEY = "fx-customers";
-const TRANSACTIONS_KEY = "fx-transactions";
-const HAWALAS_KEY = "fx-hawalas";
-const CASH_KEY = "fx-cash";
+
 const SETTINGS_KEY = "fx-settings";
-const LOCAL_KEYS = [CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY, SETTINGS_KEY];
+
 const FIREBASE_COLLECTIONS = [
-  "customers", "transactions", "hawalas", "cash",
-  "exchanges", "rates", "settings", "users", "logs",
-  "app_settings",
+  'customers', 'transactions', 'hawalas', 'cash',
+  'exchanges', 'rates', 'settings', 'users', 'logs'
 ];
-const WRITE_CHUNK = 400;
-const READ_CHUNK = 400;
+
 type Settings = {
   email: string;
   supportEmail: string;
@@ -37,6 +30,7 @@ type Settings = {
     notifyExchange: boolean;
   };
 };
+
 const defaultSettings: Settings = {
   email: "",
   supportEmail: "",
@@ -54,26 +48,7 @@ const defaultSettings: Settings = {
     notifyExchange: true,
   },
 };
-function isTimestampLike(data: any): boolean {
-  if (!data || typeof data !== "object") return false;
-  const seconds = data._seconds ?? data.seconds;
-  const nanoseconds = data._nanoseconds ?? data.nanoseconds;
-  if (typeof seconds !== "number" || typeof nanoseconds !== "number") return false;
-  const keys = Object.keys(data);
-  return keys.every((k) =>
-    ["_seconds", "_nanoseconds", "seconds", "nanoseconds", "type"].includes(k)
-  );
-}
-function isGeoPointLike(data: any): boolean {
-  if (!data || typeof data !== "object") return false;
-  const lat = data._lat ?? data.latitude;
-  const lng = data._long ?? data.longitude;
-  if (typeof lat !== "number" || typeof lng !== "number") return false;
-  const keys = Object.keys(data);
-  return keys.every((k) =>
-    ["_lat", "_long", "latitude", "longitude"].includes(k)
-  );
-}
+
 function loadSettings(): Settings {
   if (typeof window === "undefined") return defaultSettings;
   try {
@@ -95,95 +70,31 @@ function loadSettings(): Settings {
       telegram: {
         ...defaultSettings.telegram,
         ...parsed.telegram,
-        chatIds: migratedChatIds,
-      },
+        chatIds: migratedChatIds
+      }
     };
   } catch {
     return defaultSettings;
   }
 }
+
+// ✅ بازسازی انواع خاص Firebase (مثل Timestamp) از JSON
 function restoreFirestoreTypes(data: any): any {
   if (data === null || data === undefined) return data;
   if (typeof data === "object") {
-    if (isTimestampLike(data)) {
-      return new Timestamp(
-        data._seconds ?? data.seconds,
-        data._nanoseconds ?? data.nanoseconds
-      );
+    if (data._seconds !== undefined && data._nanoseconds !== undefined) {
+      return new Timestamp(data._seconds, data._nanoseconds);
     }
-    if (isGeoPointLike(data)) {
-      return new GeoPoint(
-        data._lat ?? data.latitude,
-        data._long ?? data.longitude
-      );
-    }
-    if (Array.isArray(data)) {
-      return data.map(restoreFirestoreTypes);
-    }
+    if (Array.isArray(data)) return data.map(restoreFirestoreTypes);
     const restored: any = {};
     for (const key in data) {
-      if (Object.prototype.hasOwnProperty.call(data, key)) {
-        const value = restoreFirestoreTypes(data[key]);
-        if (value !== undefined) restored[key] = value;
-      }
+      restored[key] = restoreFirestoreTypes(data[key]);
     }
     return restored;
   }
   return data;
 }
-function safeSerialize(data: any): any {
-  if (data === null || data === undefined) return data;
-  if (
-    data instanceof Timestamp ||
-    (data && typeof data.toDate === "function" && typeof data.seconds === "number")
-  ) {
-    return { _seconds: data.seconds, _nanoseconds: data.nanoseconds ?? 0 };
-  }
-  if (
-    data instanceof GeoPoint ||
-    (data && typeof data.latitude === "number" && typeof data.longitude === "number" && typeof data.isEqual === "function")
-  ) {
-    return { _lat: data.latitude, _long: data.longitude };
-  }
-  if (data instanceof Date) {
-    return { _seconds: Math.floor(data.getTime() / 1000), _nanoseconds: 0 };
-  }
-  if (Array.isArray(data)) {
-    return data.map(safeSerialize);
-  }
-  if (typeof data === "object") {
-    const result: any = {};
-    for (const key in data) {
-      if (!Object.prototype.hasOwnProperty.call(data, key)) continue;
-      if (typeof data[key] === "function") continue;
-      result[key] = safeSerialize(data[key]);
-    }
-    return result;
-  }
-  return data;
-}
-function serializeDoc(d: { id: string; ref: { path: string }; data: () => any }) {
-  return safeSerialize({
-    ...d.data(),
-    __docId: d.id,
-    __path: d.ref.path,
-  });
-}
-async function fetchAllFromQuery(baseQuery: any) {
-  const docs: any[] = [];
-  let last: any = null;
-  for (;;) {
-    const pageQuery = last
-      ? query(baseQuery, orderBy(documentId()), startAfter(last), limit(READ_CHUNK))
-      : query(baseQuery, orderBy(documentId()), limit(READ_CHUNK));
-    const snapshot = await getDocs(pageQuery);
-    if (snapshot.empty) break;
-    docs.push(...snapshot.docs);
-    last = snapshot.docs[snapshot.docs.length - 1];
-    if (snapshot.size < READ_CHUNK) break;
-  }
-  return docs;
-}
+
 const Ic = ({ n, className = "h-5 w-5" }: { n: string; className?: string }) => {
   const paths: Record<string, string> = {
     gear: "M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
@@ -206,6 +117,7 @@ const Ic = ({ n, className = "h-5 w-5" }: { n: string; className?: string }) => 
     </svg>
   );
 };
+
 export default function SettingsDrawer() {
   const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
@@ -218,24 +130,27 @@ export default function SettingsDrawer() {
   const [isRestoring, setIsRestoring] = useState(false);
   const [showDiagnosis, setShowDiagnosis] = useState(false);
   const [diagnosisData, setDiagnosisData] = useState<any>(null);
-  const [restoreLog, setRestoreLog] = useState<string[]>([]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const latestSettingsRef = useRef(settings);
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   latestSettingsRef.current = settings;
+
   useEffect(() => {
     try {
       const s = window.localStorage.getItem("fx-theme");
       if (s === "dark" || s === "light") setTheme(s);
     } catch {}
   }, []);
+
   useEffect(() => {
-    try {
-      window.localStorage.setItem("fx-theme", theme);
-    } catch {}
+    try { window.localStorage.setItem("fx-theme", theme); } catch {}
   }, [theme]);
+
   const dk = theme === "dark";
+
   useEffect(() => {
     const loadInitialSettings = async () => {
       try {
@@ -250,7 +165,7 @@ export default function SettingsDrawer() {
           const finalSettings: Settings = {
             ...defaultSettings,
             ...fbSettings,
-            telegram: { ...defaultSettings.telegram, ...fbSettings?.telegram, chatIds: migratedChatIds },
+            telegram: { ...defaultSettings.telegram, ...fbSettings?.telegram, chatIds: migratedChatIds }
           };
           localStorage.setItem(SETTINGS_KEY, JSON.stringify(finalSettings));
           setSettings(finalSettings);
@@ -265,7 +180,8 @@ export default function SettingsDrawer() {
       }
     };
     loadInitialSettings();
-  }, []);
+  }, [db]);
+
   useEffect(() => {
     const docRef = doc(db, "app_settings", "global_settings");
     const unsubscribe = onSnapshot(docRef, (snapshot) => {
@@ -279,7 +195,7 @@ export default function SettingsDrawer() {
           const finalSettings: Settings = {
             ...defaultSettings,
             ...fbSettings,
-            telegram: { ...defaultSettings.telegram, ...fbSettings?.telegram, chatIds: migratedChatIds },
+            telegram: { ...defaultSettings.telegram, ...fbSettings?.telegram, chatIds: migratedChatIds }
           };
           localStorage.setItem(SETTINGS_KEY, JSON.stringify(finalSettings));
           setSettings(finalSettings);
@@ -287,21 +203,23 @@ export default function SettingsDrawer() {
       }
     });
     return () => unsubscribe();
-  }, []);
+  }, [db]);
+
   useEffect(() => {
     if (!mounted) return;
     const timer = setTimeout(async () => {
       try {
         await setDoc(doc(db, "app_settings", "global_settings"), {
           value: settings,
-          updatedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
         }, { merge: true });
       } catch (error) {
         console.error("❌ خطا در ذخیره فایربیس:", error);
       }
     }, 1000);
     return () => clearTimeout(timer);
-  }, [settings, mounted]);
+  }, [settings, mounted, db]);
+
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
@@ -313,104 +231,93 @@ export default function SettingsDrawer() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
+
   const showToast = useCallback((message: string, type: "success" | "error" = "success") => {
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     setToast(message);
     setToastType(type);
-    toastTimeoutRef.current = setTimeout(() => setToast(""), 5000);
+    toastTimeoutRef.current = setTimeout(() => setToast(""), 4000);
   }, []);
+
   const updateSettings = useCallback((updates: Partial<Settings>) => {
-    setSettings((prev) => ({ ...prev, ...updates }));
+    setSettings(prev => ({ ...prev, ...updates }));
   }, []);
+
   const updateTelegram = useCallback((updates: Partial<Settings["telegram"]>) => {
-    setSettings((prev) => ({ ...prev, telegram: { ...prev.telegram, ...updates } }));
+    setSettings(prev => ({ ...prev, telegram: { ...prev.telegram, ...updates } }));
   }, []);
+
   const scanLocalStorage = () => {
     const result: Record<string, any> = {};
-    for (const key of LOCAL_KEYS) {
-      const raw = localStorage.getItem(key);
-      if (raw == null) continue;
-      try {
-        result[key] = JSON.parse(raw);
-      } catch {
-        result[key] = raw;
-      }
-    }
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (!key || result[key] !== undefined) continue;
-      try {
-        result[key] = JSON.parse(localStorage.getItem(key) || "null");
-      } catch {
-        result[key] = localStorage.getItem(key);
+      if (key) {
+        try {
+          result[key] = JSON.parse(localStorage.getItem(key) || 'null');
+        } catch {
+          result[key] = localStorage.getItem(key);
+        }
       }
     }
     return result;
   };
+
   const scanSessionStorage = () => {
     const result: Record<string, any> = {};
     for (let i = 0; i < sessionStorage.length; i++) {
       const key = sessionStorage.key(i);
-      if (!key) continue;
-      try {
-        result[key] = JSON.parse(sessionStorage.getItem(key) || "null");
-      } catch {
-        result[key] = sessionStorage.getItem(key);
+      if (key) {
+        try {
+          result[key] = JSON.parse(sessionStorage.getItem(key) || 'null');
+        } catch {
+          result[key] = sessionStorage.getItem(key);
+        }
       }
     }
     return result;
   };
+
   const scanFirebase = async () => {
     const result: Record<string, any[]> = {};
-    const errors: Record<string, string> = {};
     for (const col of FIREBASE_COLLECTIONS) {
-      const byPath = new Map<string, any>();
       try {
-        const topDocs = await fetchAllFromQuery(collection(db, col));
-        for (const d of topDocs) byPath.set(d.ref.path, serializeDoc(d));
-      } catch (err: any) {
-        errors[col] = err?.message || String(err);
+        const snapshot = await getDocs(collection(db, col));
+        result[col] = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      } catch (err) {
+        console.warn(`⚠️ خطا در خواندن collection ${col}:`, err);
+        result[col] = [];
       }
-      try {
-        const groupDocs = await fetchAllFromQuery(collectionGroup(db, col));
-        for (const d of groupDocs) {
-          if (!byPath.has(d.ref.path)) byPath.set(d.ref.path, serializeDoc(d));
-        }
-      } catch (err: any) {
-        if (!errors[col]) errors[`${col}__group`] = err?.message || String(err);
-      }
-      result[col] = Array.from(byPath.values());
     }
-    return { result, errors };
+    return result;
   };
+
+  // ===================== بک‌آپ =====================
   const handleBackup = useCallback(async () => {
     setIsBackingUp(true);
     try {
       showToast("⏳ در حال جمع‌آوری داده‌ها از Firebase...");
-      const { result: firebaseData, errors } = await scanFirebase();
+
+      const firebaseData = await scanFirebase();
       const localStorageData = scanLocalStorage();
       const sessionStorageData = scanSessionStorage();
-      const stats: Record<string, number> = {};
-      let totalDocs = 0;
-      for (const [col, docs] of Object.entries(firebaseData)) {
-        stats[col] = docs.length;
-        totalDocs += docs.length;
-      }
-      if (totalDocs === 0) {
-        showToast("⚠️ هیچ سندی از Firebase خوانده نشد. فایل را بررسی کنید", "error");
-      }
+
       const data = {
         version: "3.1",
         exportDate: new Date().toISOString(),
-        settings,
+        settings: settings,
         localStorage: localStorageData,
         sessionStorage: sessionStorageData,
         firebase: firebaseData,
-        _errors: errors,
-        _stats: stats,
-        _totalDocs: totalDocs,
       };
-      console.log("📦 گزارش بک‌آپ:", { stats, totalDocs, errors });
+
+      console.log("📦 گزارش بک‌آپ جامع:", {
+        localStorageKeys: Object.keys(localStorageData),
+        sessionStorageKeys: Object.keys(sessionStorageData),
+        firebaseCollections: Object.fromEntries(
+          Object.entries(firebaseData).map(([k, v]) => [k, v.length])
+        ),
+      });
+
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -420,27 +327,21 @@ export default function SettingsDrawer() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      const errorCount = Object.keys(errors).length;
-      showToast(
-        errorCount
-          ? `⚠️ پشتیبان دانلود شد (${totalDocs} سند، ${errorCount} خطا)`
-          : `✅ پشتیبان دانلود شد (${totalDocs} سند از Firebase)`
-      );
-    } catch (err: any) {
+
+      showToast("✅ پشتیبان کامل (Firebase + LocalStorage) دانلود شد");
+    } catch (err) {
       console.error("❌ خطای بک‌آپ:", err);
-      showToast(`❌ خطا: ${err.message}`, "error");
+      showToast("❌ خطا در ایجاد پشتیبان", "error");
     } finally {
       setIsBackingUp(false);
     }
   }, [settings, showToast]);
+
+  // ===================== بازیابی (اصلاح خطای TypeScript) =====================
   const handleRestore = useCallback(async (file: File) => {
     setIsRestoring(true);
-    setRestoreLog([]);
-    const addLog = (msg: string) => {
-      console.log(msg);
-      setRestoreLog((prev) => [...prev, msg]);
-    };
     const reader = new FileReader();
+
     reader.onload = async (e) => {
       try {
         const result = e.target?.result;
@@ -449,89 +350,99 @@ export default function SettingsDrawer() {
           setIsRestoring(false);
           return;
         }
+
         const data = JSON.parse(result as string);
         if (!data.version) {
-          showToast("❌ فایل نامعتبر است (نسخه ندارد)", "error");
+          showToast("❌ فرمت فایل پشتیبان نامعتبر است", "error");
           setIsRestoring(false);
           return;
         }
-        addLog(`🚀 شروع بازیابی نسخه ${data.version}`);
-        if (data._totalDocs === 0) {
-          addLog("⚠️ این فایل ۰ سند Firebase دارد. معاملات از Firebase برنمی‌گردند");
-        }
+
+        console.log("🚀 [شروع بازیابی] نسخه:", data.version);
+
+        // ۱. بازیابی localStorage
         if (data.localStorage) {
-          const keys = Object.keys(data.localStorage);
-          addLog(`💾 بازیابی localStorage: ${keys.length} کلید`);
-          for (const [key, value] of Object.entries(data.localStorage)) {
+          console.log("💾 بازیابی LocalStorage...", Object.keys(data.localStorage).length, "کلید");
+          Object.entries(data.localStorage).forEach(([key, value]) => {
             if (value !== null && value !== undefined) {
-              try {
-                localStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value));
-              } catch (err: any) {
-                addLog(`⚠️ خطا در نوشتن کلید ${key}: ${err.message}`);
-              }
+              localStorage.setItem(key, JSON.stringify(value));
             }
-          }
-          addLog("✅ localStorage بازیابی شد");
+          });
         }
+
+        // ۲. بازیابی sessionStorage
         if (data.sessionStorage) {
-          const keys = Object.keys(data.sessionStorage);
-          addLog(`💾 بازیابی sessionStorage: ${keys.length} کلید`);
-          for (const [key, value] of Object.entries(data.sessionStorage)) {
+          console.log("💾 بازیابی SessionStorage...", Object.keys(data.sessionStorage).length, "کلید");
+          Object.entries(data.sessionStorage).forEach(([key, value]) => {
             if (value !== null && value !== undefined) {
-              try {
-                sessionStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value));
-              } catch (err: any) {
-                addLog(`⚠️ خطا در نوشتن کلید ${key}: ${err.message}`);
-              }
+              sessionStorage.setItem(key, JSON.stringify(value));
             }
-          }
-          addLog("✅ sessionStorage بازیابی شد");
+          });
         }
+
+        // ۳. بازیابی Firebase
         if (data.firebase) {
-          addLog("🔥 شروع بازیابی Firebase (بدون پاک‌کردن کل داده‌های فعلی)...");
-          const collections = Object.entries(data.firebase);
-          let totalRestored = 0;
-          for (const [colName, docs] of collections) {
+          showToast("⏳ در حال بازیابی داده‌های Firebase (لطفاً صبر کنید)...");
+          console.log("🔥 شروع بازیابی Firebase...");
+
+          for (const [colName, docs] of Object.entries(data.firebase)) {
             if (!Array.isArray(docs) || docs.length === 0) {
-              addLog(`⏭️ ${colName}: خالی (پرش — چیزی حذف نشد)`);
+              console.log(`⏭️ پرش از ${colName} (خالی است)`);
               continue;
             }
-            addLog(`📂 ${colName}: ${docs.length} سند در حال نوشتن...`);
+
+            console.log(`📂 پردازش collection: ${colName} (${(docs as any[]).length} سند)`);
+
             try {
-              for (let i = 0; i < docs.length; i += WRITE_CHUNK) {
-                const chunk = docs.slice(i, i + WRITE_CHUNK);
-                const batch = writeBatch(db);
-                for (const docData of chunk) {
-                  const raw = docData as any;
-                  const docId = String(raw.__docId || raw.id || "");
-                  const path = typeof raw.__path === "string" ? raw.__path : "";
-                  let docRef;
-                  if (path && path.split("/").filter(Boolean).length >= 2) {
-                    docRef = doc(db, ...path.split("/").filter(Boolean));
-                  } else if (docId && docId !== "undefined" && docId !== "null") {
-                    docRef = doc(db, colName, docId);
-                  } else {
-                    addLog(`⚠️ سند بدون ID در ${colName} رد شد`);
-                    continue;
-                  }
-                  const { __docId, __path, ...rest } = raw;
-                  const cleanData = restoreFirestoreTypes(rest);
-                  batch.set(docRef, cleanData);
+              // الف) حذف اسناد قدیمی به صورت تکه‌تکه (رفع محدودیت ۵۰۰ تایی)
+              const oldSnapshot = await getDocs(collection(db, colName));
+              if (oldSnapshot.size > 0) {
+                console.log(`🗑️ در حال حذف ${oldSnapshot.size} سند قدیمی از ${colName}...`);
+                const deleteChunkSize = 400;
+                for (let i = 0; i < oldSnapshot.size; i += deleteChunkSize) {
+                  const deleteBatch = writeBatch(db);
+                  oldSnapshot.docs.slice(i, i + deleteChunkSize).forEach(d => deleteBatch.delete(d.ref));
+                  await deleteBatch.commit();
                 }
-                await batch.commit();
-                const written = Math.min(i + WRITE_CHUNK, docs.length);
-                addLog(`✅ ${colName}: ${written} از ${docs.length} نوشته شد`);
+                console.log(`✅ حذف اسناد قدیمی ${colName} تکمیل شد.`);
               }
-              totalRestored += docs.length;
+
+              // ب) نوشتن اسناد جدید به صورت تکه‌تکه
+              const writeChunkSize = 400;
+              const totalDocs = (docs as any[]).length;
+
+              for (let i = 0; i < totalDocs; i += writeChunkSize) {
+                const chunk = (docs as any[]).slice(i, i + writeChunkSize);
+                const batch = writeBatch(db);
+
+                chunk.forEach((docData: any) => {
+                  const { id, path, ...rest } = docData;
+                  const cleanData = restoreFirestoreTypes(rest);
+                  
+                  let docRef;
+                  // ✅ اصلاح خطای TypeScript: استفاده مستقیم از رشته path به جای spread
+                  if (path && typeof path === "string" && path.trim().length > 0) {
+                    docRef = doc(db, path);
+                  } else {
+                    docRef = doc(db, colName, String(id));
+                  }
+                  
+                  batch.set(docRef, cleanData);
+                });
+
+                await batch.commit();
+                console.log(`✅ نوشته شد: ${i + chunk.length} از ${totalDocs} در ${colName}`);
+              }
+
             } catch (err: any) {
-              addLog(`❌ خطا در ${colName}: ${err.message}`);
-              throw new Error(`شکست در ${colName}: ${err.message}`);
+              console.error(`❌ خطای فاجعه‌بار در ${colName}:`, err);
+              throw new Error(`شکست در بازیابی ${colName}: ${err.message}`);
             }
           }
-          addLog(`🎉 بازیابی Firebase تکمیل شد: ${totalRestored} سند`);
         }
+
+        // ۴. بازیابی تنظیمات
         if (data.settings) {
-          addLog("⚙️ بازیابی تنظیمات...");
           let migratedChatIds: string[] = [];
           if (data.settings.telegram?.chatIds && Array.isArray(data.settings.telegram.chatIds)) {
             migratedChatIds = data.settings.telegram.chatIds;
@@ -541,92 +452,93 @@ export default function SettingsDrawer() {
               .map((id: string) => id.trim())
               .filter(Boolean);
           }
+
           const finalSettings: Settings = {
             ...defaultSettings,
             ...data.settings,
             telegram: {
               ...defaultSettings.telegram,
               ...data.settings.telegram,
-              chatIds: migratedChatIds,
-            },
+              chatIds: migratedChatIds
+            }
           };
+
           localStorage.setItem(SETTINGS_KEY, JSON.stringify(finalSettings));
           try {
             await setDoc(doc(db, "app_settings", "global_settings"), {
               value: finalSettings,
-              updatedAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
             }, { merge: true });
-          } catch (fbErr: any) {
-            addLog(`⚠️ خطا در همگام‌سازی تنظیمات: ${fbErr.message}`);
+          } catch (fbErr) {
+            console.warn("⚠️ خطا در همگام‌سازی تنظیمات:", fbErr);
           }
-          addLog("✅ تنظیمات بازیابی شد");
         }
-        addLog("🏁 پایان موفقیت‌آمیز بازیابی!");
-        showToast("✅ تمام داده‌ها بازیابی شدند. صفحه در حال بروزرسانی...", "success");
+
+        console.log("🎉 [پایان موفقیت‌آمیز] تمام داده‌ها بازیابی شدند.");
+        showToast("✅ بازیابی با موفقیت انجام شد. صفحه در حال رفرش...", "success");
+
+        // ارسال رویداد برای کامپوننت‌های دیگر
+        window.dispatchEvent(new CustomEvent('fx-data-restored', { 
+          detail: { timestamp: Date.now() } 
+        }));
+
+        // رفرش واقعی صفحه
         setTimeout(() => {
-          window.location.replace(window.location.origin + window.location.pathname + "?r=" + Date.now());
-        }, 2500);
+          window.location.reload();
+        }, 2000);
+
       } catch (err: any) {
-        addLog(`💥 خطای نهایی: ${err.message}`);
-        console.error("💥 خطای بازیابی:", err);
-        showToast(`❌ خطا: ${err.message}`, "error");
+        console.error("💥 [خطای مرگبار بازیابی]:", err);
+        showToast(`❌ خطا: ${err.message || "فایل نامعتبر است"}`, "error");
         setIsRestoring(false);
       }
     };
+
     reader.onerror = () => {
       showToast("❌ خطا در خواندن فایل", "error");
       setIsRestoring(false);
     };
     reader.readAsText(file);
-  }, [showToast]);
+  }, [showToast, db]);
+
+  // ===================== تشخیص =====================
   const runDiagnosis = useCallback(async () => {
     const summary: any = {
       localStorage: scanLocalStorage(),
       sessionStorage: scanSessionStorage(),
       firebase: {},
     };
+
     for (const col of FIREBASE_COLLECTIONS) {
       try {
-        const topDocs = await fetchAllFromQuery(collection(db, col));
-        let groupCount = 0;
-        try {
-          const groupDocs = await fetchAllFromQuery(collectionGroup(db, col));
-          groupCount = groupDocs.length;
-        } catch (err: any) {
-          summary.firebase[col] = {
-            count: topDocs.length,
-            groupCount: 0,
-            groupError: err.message,
-            sample: topDocs.slice(0, 2).map((d: any) => ({ id: d.id, path: d.ref.path })),
-          };
-          continue;
-        }
+        const snapshot = await getDocs(collection(db, col));
         summary.firebase[col] = {
-          count: topDocs.length,
-          groupCount,
-          sample: topDocs.slice(0, 2).map((d: any) => ({ id: d.id, path: d.ref.path })),
+          count: snapshot.size,
+          sample: snapshot.docs.slice(0, 2).map(d => ({ id: d.id, ...d.data() }))
         };
-      } catch (err: any) {
-        summary.firebase[col] = { error: err.message, count: 0 };
+      } catch (err) {
+        summary.firebase[col] = { error: String(err) };
       }
     }
+
     setDiagnosisData(summary);
     setShowDiagnosis(true);
     console.log("🔍 گزارش تشخیص جامع:", summary);
   }, []);
+
   if (!mounted) return null;
+
   const heading = dk ? "text-white" : "text-slate-900";
   const subText = dk ? "text-slate-500" : "text-slate-400";
   const panelBg = dk ? "bg-slate-900 border-slate-700" : "bg-white border-slate-200";
   const inputShell = `rounded-xl border text-sm font-medium shadow-sm outline-none transition-all duration-200 focus:ring-4 ${dk ? "border-slate-600 bg-slate-800 text-slate-100 placeholder:text-slate-500 hover:border-slate-500 focus:border-emerald-400 focus:ring-emerald-400/10" : "border-slate-200 bg-white text-slate-800 placeholder:text-slate-400 hover:border-emerald-400 focus:border-emerald-500 focus:ring-emerald-500/10"}`;
   const uiInput = `h-11 w-full px-3.5 ${inputShell}`;
   const uiLabel = `mb-1.5 block text-[11px] font-black tracking-wide ${dk ? "text-slate-400" : "text-slate-500"}`;
+
   const fld = (label: string, node: ReactNode) => (
-    <div>
-      <label className={uiLabel}>{label}</label>
-      {node}
-    </div>
+    <div><label className={uiLabel}>{label}</label>{node}</div>
   );
+
   const AccordionItem = ({ id, icon, title, children }: { id: string; icon: string; title: string; children: ReactNode }) => {
     const isOpen = activeAccordion === id;
     return (
@@ -648,6 +560,7 @@ export default function SettingsDrawer() {
       </div>
     );
   };
+
   const Toggle = ({ enabled, onChange, label }: { enabled: boolean; onChange: (v: boolean) => void; label?: string }) => (
     <button type="button" onClick={() => onChange(!enabled)} className="flex items-center gap-3 cursor-pointer group">
       <span className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-300 ${enabled ? "bg-emerald-500" : dk ? "bg-slate-600" : "bg-slate-300"}`}>
@@ -656,6 +569,7 @@ export default function SettingsDrawer() {
       {label && <span className={`text-sm font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>{label}</span>}
     </button>
   );
+
   return (
     <>
       <button
@@ -666,7 +580,9 @@ export default function SettingsDrawer() {
       >
         <Ic n="gear" className={`h-6 w-6 transition-transform duration-500 ${open ? "rotate-90" : ""}`} />
       </button>
+
       {open && <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm transition-opacity" onClick={() => setOpen(false)} />}
+
       <div ref={panelRef} className={`fixed top-0 left-0 z-50 h-full w-full max-w-md transform transition-transform duration-300 ease-in-out ${open ? "translate-x-0" : "-translate-x-full"} ${panelBg} border-r shadow-2xl overflow-y-auto`}>
         <div className={`sticky top-0 z-10 flex items-center justify-between border-b px-5 py-4 backdrop-blur ${dk ? "bg-slate-900/95 border-slate-700" : "bg-white/95 border-slate-200"}`}>
           <div className="flex items-center gap-3">
@@ -682,23 +598,25 @@ export default function SettingsDrawer() {
             <Ic n="x" className="h-5 w-5" />
           </button>
         </div>
+
         <div className="space-y-3 p-4">
           <AccordionItem id="email" icon="mail" title="ایمیل (جیمیل)">
             <div className="space-y-3">
-              {fld("ایمیل صرافی", <input type="email" dir="ltr" value={settings.email} onChange={(e) => updateSettings({ email: e.target.value })} placeholder="example@gmail.com" className={`${uiInput} text-left`} />)}
-              {fld("ایمیل پشتیبانی", <input type="email" dir="ltr" value={settings.supportEmail} onChange={(e) => updateSettings({ supportEmail: e.target.value })} placeholder="support@gmail.com" className={`${uiInput} text-left`} />)}
+              {fld("ایمیل صرافی", <input type="email" dir="ltr" value={settings.email} onChange={e => updateSettings({ email: e.target.value })} placeholder="example@gmail.com" className={`${uiInput} text-left`} />)}
+              {fld("ایمیل پشتیبانی", <input type="email" dir="ltr" value={settings.supportEmail} onChange={e => updateSettings({ supportEmail: e.target.value })} placeholder="support@gmail.com" className={`${uiInput} text-left`} />)}
               <button onClick={() => showToast("تغییرات به صورت خودکار ذخیره می‌شوند")} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white transition-all hover:bg-emerald-600 active:scale-95">
                 <Ic n="check" className="h-4 w-4" /> ذخیره ایمیل
               </button>
             </div>
           </AccordionItem>
+
           <AccordionItem id="language" icon="globe" title="زبان سیستم">
             <div className="space-y-2">
               {([
                 { value: "dari", label: "دری (فارسی)", flag: "🇦🇫" },
                 { value: "pashto", label: "پشتو", flag: "🇦🇫" },
                 { value: "english", label: "English", flag: "🇬🇧" },
-              ] as const).map((lang) => (
+              ] as const).map(lang => (
                 <button key={lang.value} onClick={() => { updateSettings({ language: lang.value }); showToast(`زبان به ${lang.label} تغییر کرد`); }} className={`flex w-full items-center gap-3 rounded-xl border px-4 py-3 transition-all ${settings.language === lang.value ? dk ? "border-emerald-400 bg-emerald-400/10" : "border-emerald-500 bg-emerald-50" : dk ? "border-slate-600 hover:border-slate-500" : "border-slate-200 hover:border-slate-300"}`}>
                   <span className="text-xl">{lang.flag}</span>
                   <span className={`flex-1 text-right text-sm font-bold ${heading}`}>{lang.label}</span>
@@ -707,23 +625,25 @@ export default function SettingsDrawer() {
               ))}
             </div>
           </AccordionItem>
+
           <AccordionItem id="team" icon="users" title="اطلاعات تیم">
             <div className="space-y-3">
-              {fld("نام تیم / صرافی", <input value={settings.teamName} onChange={(e) => updateSettings({ teamName: e.target.value })} placeholder="صرافی برادران نورزاد" className={uiInput} />)}
-              {fld("آدرس", <input value={settings.teamAddress} onChange={(e) => updateSettings({ teamAddress: e.target.value })} placeholder="هرات، افغانستان" className={uiInput} />)}
-              {fld("شماره تماس", <input dir="ltr" value={settings.teamPhone} onChange={(e) => updateSettings({ teamPhone: e.target.value })} placeholder="+93 700 000 000" className={`${uiInput} text-left`} />)}
+              {fld("نام تیم / صرافی", <input value={settings.teamName} onChange={e => updateSettings({ teamName: e.target.value })} placeholder="صرافی برادران نورزاد" className={uiInput} />)}
+              {fld("آدرس", <input value={settings.teamAddress} onChange={e => updateSettings({ teamAddress: e.target.value })} placeholder="هرات، افغانستان" className={uiInput} />)}
+              {fld("شماره تماس", <input dir="ltr" value={settings.teamPhone} onChange={e => updateSettings({ teamPhone: e.target.value })} placeholder="+93 700 000 000" className={`${uiInput} text-left`} />)}
               <button onClick={() => showToast("تغییرات به صورت خودکار ذخیره می‌شوند")} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white transition-all hover:bg-emerald-600 active:scale-95">
                 <Ic n="check" className="h-4 w-4" /> ذخیره اطلاعات تیم
               </button>
             </div>
           </AccordionItem>
+
           <AccordionItem id="backup" icon="backup" title="پشتیبان‌گیری جامع">
             <div className="space-y-3">
               <div className={`rounded-xl p-3 text-xs ${dk ? "bg-amber-500/10 border border-amber-500/30 text-amber-200" : "bg-amber-50 border border-amber-200 text-amber-800"}`}>
-                💡 این بک‌آپ شامل <b>تمام داده‌ها</b> از Firebase و حافظه محلی است.
-                <br />
-                <span className="text-[10px] opacity-80">نسخه ۳.۱: مسیر سند + Timestamp + بدون حذف کل دیتابیس هنگام بازیابی</span>
+                💡 این بک‌آپ شامل <b>تمام داده‌ها</b> از Firebase و حافظه محلی است.<br />
+                <span className="text-[10px] opacity-80">نسخه ۳.۱: رفع خطای TypeScript در Vercel Build.</span>
               </div>
+
               <button
                 onClick={handleBackup}
                 disabled={isBackingUp}
@@ -732,6 +652,7 @@ export default function SettingsDrawer() {
                 <Ic n="download" className="h-4 w-4" />
                 {isBackingUp ? "در حال جمع‌آوری..." : "دانلود پشتیبان کامل"}
               </button>
+
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isRestoring}
@@ -740,37 +661,29 @@ export default function SettingsDrawer() {
                 <Ic n="upload" className="h-4 w-4" />
                 {isRestoring ? "در حال بازیابی..." : "بازیابی از فایل"}
               </button>
-              <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleRestore(file); e.target.value = ""; }} />
+              <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={e => { const file = e.target.files?.[0]; if (file) handleRestore(file); e.target.value = ""; }} />
+
               <button onClick={runDiagnosis} className={`flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed text-sm font-black transition-all active:scale-95 ${dk ? "border-amber-500/50 text-amber-300 hover:bg-amber-500/10" : "border-amber-500 text-amber-600 hover:bg-amber-50"}`}>
                 <Ic n="info" className="h-4 w-4" /> تشخیص ذخیره‌سازی
               </button>
-              {restoreLog.length > 0 && (
-                <div className={`rounded-xl border p-3 max-h-48 overflow-y-auto text-[11px] font-mono space-y-1 ${dk ? "border-slate-600 bg-slate-800 text-slate-300" : "border-slate-200 bg-slate-50 text-slate-700"}`}>
-                  <p className={`text-xs font-black mb-2 ${heading}`}>📋 گزارش بازیابی:</p>
-                  {restoreLog.map((log, i) => (
-                    <p key={i} className={log.includes("❌") || log.includes("💥") ? "text-rose-500" : log.includes("✅") || log.includes("🎉") ? "text-emerald-500" : ""}>
-                      {log}
-                    </p>
-                  ))}
-                </div>
-              )}
             </div>
           </AccordionItem>
+
           <AccordionItem id="telegram" icon="telegram" title="تنظیمات تلگرام">
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <span className={`text-sm font-bold ${heading}`}>فعال‌سازی تلگرام</span>
-                <Toggle enabled={settings.telegram.enabled} onChange={(v) => updateTelegram({ enabled: v })} />
+                <Toggle enabled={settings.telegram.enabled} onChange={v => updateTelegram({ enabled: v })} />
               </div>
               {settings.telegram.enabled && (
                 <>
-                  {fld("توکن بات (Bot Token)", <input dir="ltr" value={settings.telegram.botToken} onChange={(e) => updateTelegram({ botToken: e.target.value })} placeholder="123456789:ABCdefGHI..." className={`${uiInput} text-left font-mono text-xs`} />)}
+                  {fld("توکن بات (Bot Token)", <input dir="ltr" value={settings.telegram.botToken} onChange={e => updateTelegram({ botToken: e.target.value })} placeholder="123456789:ABCdefGHI..." className={`${uiInput} text-left font-mono text-xs`} />)}
                   <div className="space-y-2">
                     <label className={uiLabel}>لیست چت آی‌دی‌ها (Chat IDs)</label>
                     <div className="space-y-2">
                       {settings.telegram.chatIds.map((id, idx) => (
                         <div key={idx} className="flex items-center gap-2">
-                          <input dir="ltr" value={id} onChange={(e) => {
+                          <input dir="ltr" value={id} onChange={e => {
                             const newIds = [...settings.telegram.chatIds];
                             newIds[idx] = e.target.value;
                             updateTelegram({ chatIds: newIds });
@@ -788,13 +701,6 @@ export default function SettingsDrawer() {
                       </button>
                     </div>
                   </div>
-                  <div className={`rounded-xl border p-3 space-y-3 ${dk ? "border-slate-600" : "border-slate-200"}`}>
-                    <p className={`text-xs font-black ${heading}`}>اعلان‌ها:</p>
-                    <Toggle enabled={settings.telegram.notifyNewHawala} onChange={(v) => updateTelegram({ notifyNewHawala: v })} label="حواله جدید" />
-                    <Toggle enabled={settings.telegram.notifySettlement} onChange={(v) => updateTelegram({ notifySettlement: v })} label="تسویه حواله" />
-                    <Toggle enabled={settings.telegram.notifyVoid} onChange={(v) => updateTelegram({ notifyVoid: v })} label="لغو حواله" />
-                    <Toggle enabled={settings.telegram.notifyExchange} onChange={(v) => updateTelegram({ notifyExchange: v })} label="تبادل ارز" />
-                  </div>
                   <button onClick={() => showToast("✅ تنظیمات با موفقیت همگام‌سازی شد")} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white transition-all hover:bg-emerald-600 active:scale-95">
                     <Ic n="check" className="h-4 w-4" /> تأیید و همگام‌سازی تنظیمات
                   </button>
@@ -802,14 +708,16 @@ export default function SettingsDrawer() {
               )}
             </div>
           </AccordionItem>
+
           <div className={`mt-4 rounded-xl p-4 text-center ${dk ? "bg-slate-800/50" : "bg-slate-50"}`}>
             <p className={`text-[10px] font-bold ${subText}`}>نسخه ۳.۱.۰ — صرافی برادران نورزاد</p>
           </div>
         </div>
       </div>
+
       {showDiagnosis && diagnosisData && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowDiagnosis(false)}>
-          <div className={`w-full max-w-2xl max-h-[80vh] overflow-y-auto rounded-2xl shadow-2xl ${dk ? "bg-slate-900 border border-slate-700" : "bg-white"}`} onClick={(e) => e.stopPropagation()}>
+          <div className={`w-full max-w-2xl max-h-[80vh] overflow-y-auto rounded-2xl shadow-2xl ${dk ? "bg-slate-900 border border-slate-700" : "bg-white"}`} onClick={e => e.stopPropagation()}>
             <div className={`sticky top-0 flex items-center justify-between border-b px-5 py-4 ${dk ? "bg-slate-900 border-slate-700" : "bg-white border-slate-200"}`}>
               <h3 className={`text-lg font-black ${heading}`}>🔍 گزارش تشخیص جامع</h3>
               <button onClick={() => setShowDiagnosis(false)} className={`grid h-9 w-9 place-items-center rounded-lg ${dk ? "hover:bg-slate-700" : "hover:bg-slate-100"}`}>
@@ -824,7 +732,7 @@ export default function SettingsDrawer() {
                     <div key={key} className={`flex items-center justify-between p-2 rounded text-xs ${dk ? "bg-slate-700/50" : "bg-white"}`}>
                       <span className={`font-mono ${heading}`}>{key}</span>
                       <span className={subText}>
-                        {Array.isArray(value) ? `${(value as any[]).length} آیتم` : typeof value === "object" && value ? "Object" : "string"}
+                        {Array.isArray(value) ? `${value.length} آیتم` : typeof value === 'object' ? 'Object' : 'string'}
                       </span>
                     </div>
                   ))}
@@ -836,8 +744,8 @@ export default function SettingsDrawer() {
                   {Object.entries(diagnosisData.firebase).map(([col, info]: [string, any]) => (
                     <div key={col} className={`flex items-center justify-between p-2 rounded-lg ${dk ? "bg-slate-700/50" : "bg-white"}`}>
                       <span className={`text-xs font-mono ${heading}`}>{col}</span>
-                      <span className={`text-xs font-black ${info.count > 0 || info.groupCount > 0 ? "text-emerald-500" : "text-rose-500"}`}>
-                        {info.error ? `خطا: ${info.error}` : `${info.count} سند${info.groupCount ? ` / group ${info.groupCount}` : ""}`}
+                      <span className={`text-xs font-black ${info.count > 0 ? "text-emerald-500" : "text-rose-500"}`}>
+                        {info.error ? "خطا" : `${info.count} سند`}
                       </span>
                     </div>
                   ))}
@@ -847,6 +755,7 @@ export default function SettingsDrawer() {
           </div>
         </div>
       )}
+
       {toast && (
         <div className={`fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-xl px-5 py-3 text-sm font-black shadow-lg transition-all duration-300 ${toastType === "success" ? dk ? "bg-emerald-400 text-slate-900" : "bg-emerald-500 text-white" : dk ? "bg-rose-400 text-slate-900" : "bg-rose-500 text-white"}`}>
           {toast}
