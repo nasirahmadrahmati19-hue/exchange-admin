@@ -6,6 +6,10 @@ import {
 } from "firebase/firestore";
 import { db } from "../dashboard/lib/firebase";
 
+const CUSTOMERS_KEY = "fx-customers";
+const TRANSACTIONS_KEY = "fx-transactions";
+const HAWALAS_KEY = "fx-hawalas";
+const CASH_KEY = "fx-cash";
 const SETTINGS_KEY = "fx-settings";
 
 const FIREBASE_COLLECTIONS = [
@@ -78,7 +82,7 @@ function loadSettings(): Settings {
   }
 }
 
-// ✅ بازسازی انواع خاص Firebase (مثل Timestamp) از JSON
+// ✅ بازسازی انواع خاص Firebase (Timestamp و ...) از JSON
 function restoreFirestoreTypes(data: any): any {
   if (data === null || data === undefined) return data;
   if (typeof data === "object") {
@@ -302,7 +306,7 @@ export default function SettingsDrawer() {
       const sessionStorageData = scanSessionStorage();
 
       const data = {
-        version: "3.1",
+        version: "3.0",
         exportDate: new Date().toISOString(),
         settings: settings,
         localStorage: localStorageData,
@@ -337,7 +341,7 @@ export default function SettingsDrawer() {
     }
   }, [settings, showToast]);
 
-  // ===================== بازیابی (اصلاح خطای TypeScript) =====================
+  // ===================== بازیابی (نسخه نهایی با رفرش واقعی) =====================
   const handleRestore = useCallback(async (file: File) => {
     setIsRestoring(true);
     const reader = new FileReader();
@@ -394,7 +398,7 @@ export default function SettingsDrawer() {
             console.log(`📂 پردازش collection: ${colName} (${(docs as any[]).length} سند)`);
 
             try {
-              // الف) حذف اسناد قدیمی به صورت تکه‌تکه (رفع محدودیت ۵۰۰ تایی)
+              // الف) حذف اسناد قدیمی به صورت تکه‌تکه
               const oldSnapshot = await getDocs(collection(db, colName));
               if (oldSnapshot.size > 0) {
                 console.log(`🗑️ در حال حذف ${oldSnapshot.size} سند قدیمی از ${colName}...`);
@@ -416,17 +420,10 @@ export default function SettingsDrawer() {
                 const batch = writeBatch(db);
 
                 chunk.forEach((docData: any) => {
-                  const { id, path, ...rest } = docData;
+                  const docId = String(docData.id);
+                  const { id, ...rest } = docData;
                   const cleanData = restoreFirestoreTypes(rest);
-                  
-                  let docRef;
-                  // ✅ اصلاح خطای TypeScript: استفاده مستقیم از رشته path به جای spread
-                  if (path && typeof path === "string" && path.trim().length > 0) {
-                    docRef = doc(db, path);
-                  } else {
-                    docRef = doc(db, colName, String(id));
-                  }
-                  
+                  const docRef = doc(db, colName, docId);
                   batch.set(docRef, cleanData);
                 });
 
@@ -477,12 +474,12 @@ export default function SettingsDrawer() {
         console.log("🎉 [پایان موفقیت‌آمیز] تمام داده‌ها بازیابی شدند.");
         showToast("✅ بازیابی با موفقیت انجام شد. صفحه در حال رفرش...", "success");
 
-        // ارسال رویداد برای کامپوننت‌های دیگر
+        // ✅ ارسال رویداد سفارشی برای اطلاع‌رسانی به سایر کامپوننت‌ها
         window.dispatchEvent(new CustomEvent('fx-data-restored', { 
           detail: { timestamp: Date.now() } 
         }));
 
-        // رفرش واقعی صفحه
+        // ✅ رفرش واقعی صفحه پس از ۲ ثانیه
         setTimeout(() => {
           window.location.reload();
         }, 2000);
@@ -600,6 +597,8 @@ export default function SettingsDrawer() {
         </div>
 
         <div className="space-y-3 p-4">
+
+          {/* ===== ایمیل ===== */}
           <AccordionItem id="email" icon="mail" title="ایمیل (جیمیل)">
             <div className="space-y-3">
               {fld("ایمیل صرافی", <input type="email" dir="ltr" value={settings.email} onChange={e => updateSettings({ email: e.target.value })} placeholder="example@gmail.com" className={`${uiInput} text-left`} />)}
@@ -610,6 +609,7 @@ export default function SettingsDrawer() {
             </div>
           </AccordionItem>
 
+          {/* ===== زبان ===== */}
           <AccordionItem id="language" icon="globe" title="زبان سیستم">
             <div className="space-y-2">
               {([
@@ -626,6 +626,7 @@ export default function SettingsDrawer() {
             </div>
           </AccordionItem>
 
+          {/* ===== اطلاعات تیم ===== */}
           <AccordionItem id="team" icon="users" title="اطلاعات تیم">
             <div className="space-y-3">
               {fld("نام تیم / صرافی", <input value={settings.teamName} onChange={e => updateSettings({ teamName: e.target.value })} placeholder="صرافی برادران نورزاد" className={uiInput} />)}
@@ -637,11 +638,12 @@ export default function SettingsDrawer() {
             </div>
           </AccordionItem>
 
+          {/* ===== پشتیبان‌گیری ===== */}
           <AccordionItem id="backup" icon="backup" title="پشتیبان‌گیری جامع">
             <div className="space-y-3">
               <div className={`rounded-xl p-3 text-xs ${dk ? "bg-amber-500/10 border border-amber-500/30 text-amber-200" : "bg-amber-50 border border-amber-200 text-amber-800"}`}>
-                💡 این بک‌آپ شامل <b>تمام داده‌ها</b> از Firebase و حافظه محلی است.<br />
-                <span className="text-[10px] opacity-80">نسخه ۳.۱: رفع خطای TypeScript در Vercel Build.</span>
+                💡 این بک‌آپ شامل <b>تمام داده‌ها</b> از Firebase و حافظه محلی است (حواله‌ها، معاملات، مشتریان و...).<br />
+                <span className="text-[10px] opacity-80">نسخه ۳.۰: رفع مشکل Timestamp و محدودیت ۵۰۰ تایی Batch.</span>
               </div>
 
               <button
@@ -669,6 +671,7 @@ export default function SettingsDrawer() {
             </div>
           </AccordionItem>
 
+          {/* ===== تلگرام ===== */}
           <AccordionItem id="telegram" icon="telegram" title="تنظیمات تلگرام">
             <div className="space-y-4">
               <div className="flex items-center justify-between">
@@ -678,6 +681,7 @@ export default function SettingsDrawer() {
               {settings.telegram.enabled && (
                 <>
                   {fld("توکن بات (Bot Token)", <input dir="ltr" value={settings.telegram.botToken} onChange={e => updateTelegram({ botToken: e.target.value })} placeholder="123456789:ABCdefGHI..." className={`${uiInput} text-left font-mono text-xs`} />)}
+
                   <div className="space-y-2">
                     <label className={uiLabel}>لیست چت آی‌دی‌ها (Chat IDs)</label>
                     <div className="space-y-2">
@@ -701,6 +705,15 @@ export default function SettingsDrawer() {
                       </button>
                     </div>
                   </div>
+
+                  <div className={`rounded-xl border p-3 space-y-3 ${dk ? "border-slate-600" : "border-slate-200"}`}>
+                    <p className={`text-xs font-black ${heading}`}>اعلان‌ها:</p>
+                    <Toggle enabled={settings.telegram.notifyNewHawala} onChange={v => updateTelegram({ notifyNewHawala: v })} label="حواله جدید" />
+                    <Toggle enabled={settings.telegram.notifySettlement} onChange={v => updateTelegram({ notifySettlement: v })} label="تسویه حواله" />
+                    <Toggle enabled={settings.telegram.notifyVoid} onChange={v => updateTelegram({ notifyVoid: v })} label="لغو حواله" />
+                    <Toggle enabled={settings.telegram.notifyExchange} onChange={v => updateTelegram({ notifyExchange: v })} label="تبادل ارز" />
+                  </div>
+
                   <button onClick={() => showToast("✅ تنظیمات با موفقیت همگام‌سازی شد")} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white transition-all hover:bg-emerald-600 active:scale-95">
                     <Ic n="check" className="h-4 w-4" /> تأیید و همگام‌سازی تنظیمات
                   </button>
@@ -710,11 +723,12 @@ export default function SettingsDrawer() {
           </AccordionItem>
 
           <div className={`mt-4 rounded-xl p-4 text-center ${dk ? "bg-slate-800/50" : "bg-slate-50"}`}>
-            <p className={`text-[10px] font-bold ${subText}`}>نسخه ۳.۱.۰ — صرافی برادران نورزاد</p>
+            <p className={`text-[10px] font-bold ${subText}`}>نسخه ۳.۰.۰ — صرافی برادران نورزاد</p>
           </div>
         </div>
       </div>
 
+      {/* ===== مودال تشخیص ===== */}
       {showDiagnosis && diagnosisData && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowDiagnosis(false)}>
           <div className={`w-full max-w-2xl max-h-[80vh] overflow-y-auto rounded-2xl shadow-2xl ${dk ? "bg-slate-900 border border-slate-700" : "bg-white"}`} onClick={e => e.stopPropagation()}>
@@ -738,6 +752,7 @@ export default function SettingsDrawer() {
                   ))}
                 </div>
               </div>
+
               <div className={`rounded-xl p-4 ${dk ? "bg-slate-800" : "bg-slate-50"}`}>
                 <h4 className={`text-sm font-black mb-3 ${heading}`}>🔥 Firebase Collections:</h4>
                 <div className="space-y-2">
@@ -751,11 +766,21 @@ export default function SettingsDrawer() {
                   ))}
                 </div>
               </div>
+
+              <div className={`rounded-xl p-4 border-2 ${dk ? "border-emerald-500/50 bg-emerald-500/10" : "border-emerald-500 bg-emerald-50"}`}>
+                <p className={`text-xs font-black mb-2 ${heading}`}>💡 نتیجه:</p>
+                <ul className={`text-xs space-y-1 ${subText}`}>
+                  <li>• اگر collection های Firebase (مثل hawalas, transactions) تعداد زیادی سند دارند، <b>داده‌های شما در Firebase ذخیره می‌شوند</b>.</li>
+                  <li>• بک‌آپ نسخه ۳.۰ <b>هم Firebase و هم localStorage</b> را ذخیره می‌کند و مشکل Timestampها را حل کرده است.</li>
+                  <li>• این گزارش را در کنسول (F12) هم می‌توانید ببینید.</li>
+                </ul>
+              </div>
             </div>
           </div>
         </div>
       )}
 
+      {/* ===== Toast ===== */}
       {toast && (
         <div className={`fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-xl px-5 py-3 text-sm font-black shadow-lg transition-all duration-300 ${toastType === "success" ? dk ? "bg-emerald-400 text-slate-900" : "bg-emerald-500 text-white" : dk ? "bg-rose-400 text-slate-900" : "bg-rose-500 text-white"}`}>
           {toast}
