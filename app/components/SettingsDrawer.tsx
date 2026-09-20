@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef, useCallback, type ReactNode } from "react";
 import { 
   doc, setDoc, getDoc, onSnapshot, 
-  collection, getDocs, writeBatch, deleteDoc 
+  collection, getDocs, writeBatch, deleteDoc, Timestamp 
 } from "firebase/firestore";
 import { db } from "../dashboard/lib/firebase";
 
@@ -12,7 +12,6 @@ const HAWALAS_KEY = "fx-hawalas";
 const CASH_KEY = "fx-cash";
 const SETTINGS_KEY = "fx-settings";
 
-// لیست تمام collection های احتمالی Firebase
 const FIREBASE_COLLECTIONS = [
   'customers', 'transactions', 'hawalas', 'cash', 
   'exchanges', 'rates', 'settings', 'users', 'logs'
@@ -83,6 +82,32 @@ function loadSettings(): Settings {
   } catch { 
     return defaultSettings; 
   }
+}
+
+// ✅ تابع کمکی برای بازسازی انواع داده‌های خاص Firebase (مثل Timestamp) از JSON
+function restoreFirestoreTypes(data: any): any {
+  if (data === null || data === undefined) return data;
+  
+  if (typeof data === "object") {
+    // بازسازی Timestamp
+    if (data._seconds !== undefined && data._nanoseconds !== undefined) {
+      return new Timestamp(data._seconds, data._nanoseconds);
+    }
+    
+    // بازسازی آرایه‌ها
+    if (Array.isArray(data)) {
+      return data.map(restoreFirestoreTypes);
+    }
+    
+    // بازسازی اشیاء تو در تو
+    const restored: any = {};
+    for (const key in data) {
+      restored[key] = restoreFirestoreTypes(data[key]);
+    }
+    return restored;
+  }
+  
+  return data;
 }
 
 const Ic = ({ n, className = "h-5 w-5" }: { n: string; className?: string }) => {
@@ -230,7 +255,6 @@ export default function SettingsDrawer() {
     setSettings(prev => ({ ...prev, telegram: { ...prev.telegram, ...updates } }));
   }, []);
 
-  // ✅ اسکن تمام localStorage
   const scanLocalStorage = () => {
     const result: Record<string, any> = {};
     for (let i = 0; i < localStorage.length; i++) {
@@ -246,7 +270,6 @@ export default function SettingsDrawer() {
     return result;
   };
 
-  // ✅ اسکن تمام sessionStorage
   const scanSessionStorage = () => {
     const result: Record<string, any> = {};
     for (let i = 0; i < sessionStorage.length; i++) {
@@ -262,7 +285,6 @@ export default function SettingsDrawer() {
     return result;
   };
 
-  // ✅ اسکن تمام collection های Firebase
   const scanFirebase = async () => {
     const result: Record<string, any[]> = {};
     for (const col of FIREBASE_COLLECTIONS) {
@@ -277,21 +299,17 @@ export default function SettingsDrawer() {
     return result;
   };
 
-  // ✅ بک‌آپ جامع: Firebase + localStorage + sessionStorage
   const handleBackup = useCallback(async () => {
     setIsBackingUp(true);
     try {
       showToast("⏳ در حال جمع‌آوری داده‌ها از Firebase...");
       
-      // ۱. اسکن Firebase
       const firebaseData = await scanFirebase();
-      
-      // ۲. اسکن localStorage و sessionStorage
       const localStorageData = scanLocalStorage();
       const sessionStorageData = scanSessionStorage();
 
       const data = {
-        version: "2.0",
+        version: "2.1", // نسخه ارتقا یافته برای ردیابی فرمت صحیح
         exportDate: new Date().toISOString(),
         settings: settings,
         localStorage: localStorageData,
@@ -299,7 +317,6 @@ export default function SettingsDrawer() {
         firebase: firebaseData,
       };
       
-      // لاگ تشخیص
       console.log("📦 گزارش بک‌آپ جامع:", {
         localStorageKeys: Object.keys(localStorageData),
         sessionStorageKeys: Object.keys(sessionStorageData),
@@ -327,10 +344,11 @@ export default function SettingsDrawer() {
     }
   }, [settings, showToast]);
 
-  // ✅ بازیابی جامع: Firebase + localStorage + sessionStorage
+  // ✅ نسخه اصلاح‌شده و کامل بازیابی
   const handleRestore = useCallback(async (file: File) => {
     setIsRestoring(true);
     const reader = new FileReader();
+    
     reader.onload = async (e) => {
       try {
         const result = e.target?.result;
@@ -342,7 +360,7 @@ export default function SettingsDrawer() {
         
         const data = JSON.parse(result as string);
         if (!data.version) { 
-          showToast("❌ فایل نامعتبر است", "error"); 
+          showToast("❌ فرمت فایل پشتیبان نامعتبر است", "error"); 
           setIsRestoring(false);
           return; 
         }
@@ -356,7 +374,6 @@ export default function SettingsDrawer() {
               localStorage.setItem(key, JSON.stringify(value));
             }
           });
-          console.log("✅ localStorage بازیابی شد");
         }
 
         // ۲. بازیابی sessionStorage
@@ -366,40 +383,53 @@ export default function SettingsDrawer() {
               sessionStorage.setItem(key, JSON.stringify(value));
             }
           });
-          console.log("✅ sessionStorage بازیابی شد");
         }
 
-        // ۳. بازیابی Firebase (با Batch برای سرعت و کارایی)
+        // ۳. بازیابی Firebase (با رفع باگ Timestamp و محدودیت ۵۰۰ تایی)
         if (data.firebase) {
-          showToast("⏳ در حال بازیابی داده‌های Firebase...");
+          showToast("⏳ در حال بازیابی داده‌های Firebase (لطفاً صبر کنید)...");
           
           for (const [colName, docs] of Object.entries(data.firebase)) {
             if (!Array.isArray(docs) || docs.length === 0) continue;
             
             try {
-              // حذف اسناد قدیمی collection
+              // الف) حذف اسناد قدیمی collection
               const oldSnapshot = await getDocs(collection(db, colName));
-              const deleteBatch = writeBatch(db);
-              oldSnapshot.docs.forEach(d => deleteBatch.delete(d.ref));
-              await deleteBatch.commit();
+              if (oldSnapshot.size > 0) {
+                const deleteBatch = writeBatch(db);
+                oldSnapshot.docs.forEach(d => deleteBatch.delete(d.ref));
+                await deleteBatch.commit();
+              }
               
-              // نوشتن اسناد جدید
-              const writeBatchInstance = writeBatch(db);
-              docs.forEach((docData: any) => {
-                const { id, ...rest } = docData;
-                const docRef = doc(db, colName, id);
-                writeBatchInstance.set(docRef, rest);
-              });
-              await writeBatchInstance.commit();
+              // ب) نوشتن اسناد جدید به صورت تکه‌تکه (Chunking) برای دور زدن محدودیت ۵۰۰ تایی
+              const CHUNK_SIZE = 400; // عددی کمتر از ۵۰۰ برای اطمینان
+              const totalDocs = docs.length;
               
-              console.log(`✅ Collection ${colName}: ${docs.length} سند بازیابی شد`);
-            } catch (err) {
-              console.error(`❌ خطا در بازیابی collection ${colName}:`, err);
+              for (let i = 0; i < totalDocs; i += CHUNK_SIZE) {
+                const chunk = docs.slice(i, i + CHUNK_SIZE);
+                const batch = writeBatch(db);
+                
+                chunk.forEach((docData: any) => {
+                  const { id, ...rest } = docData;
+                  // ✅ تبدیل مجدد Timestampها به فرمت صحیح Firebase
+                  const cleanData = restoreFirestoreTypes(rest);
+                  const docRef = doc(db, colName, id);
+                  batch.set(docRef, cleanData);
+                });
+                
+                // اجرای batch فعلی
+                await batch.commit();
+                console.log(`✅ بخشی از ${colName} بازیابی شد (${i + chunk.length} از ${totalDocs})`);
+              }
+              
+            } catch (err: any) {
+              console.error(`❌ خطای جدی در بازیابی collection ${colName}:`, err);
+              throw new Error(`شکست در بازیابی ${colName}: ${err.message}`); // توقف کل فرآیند در صورت خطا
             }
           }
         }
 
-        // ۴. بازیابی تنظیمات با Migration
+        // ۴. بازیابی تنظیمات
         if (data.settings) {
           let migratedChatIds: string[] = [];
           if (data.settings.telegram?.chatIds && Array.isArray(data.settings.telegram.chatIds)) {
@@ -422,36 +452,33 @@ export default function SettingsDrawer() {
           };
 
           localStorage.setItem(SETTINGS_KEY, JSON.stringify(finalSettings));
-          try {
-            await setDoc(doc(db, "app_settings", "global_settings"), {
-              value: finalSettings,
-              updatedAt: new Date().toISOString()
-            }, { merge: true });
-          } catch (fbErr) {
-            console.warn("⚠️ خطا در همگام‌سازی تنظیمات:", fbErr);
-          }
+          await setDoc(doc(db, "app_settings", "global_settings"), {
+            value: finalSettings,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
         }
 
-        showToast("✅ تمام داده‌ها با موفقیت بازیابی شدند. صفحه در حال بروزرسانی...");
+        showToast("✅ تمام داده‌ها با موفقیت و با فرمت صحیح بازیابی شدند. صفحه در حال بروزرسانی...");
         
         setTimeout(() => {
           window.location.replace(window.location.href);
-        }, 2000);
+        }, 2500);
 
-      } catch (err) {
+      } catch (err: any) {
         console.error("❌ خطا در بازیابی:", err);
-        showToast("❌ خطا در خواندن فایل", "error");
+        showToast(`❌ خطا در بازیابی: ${err.message || "فایل نامعتبر است"}`, "error");
         setIsRestoring(false);
       }
     };
+    
     reader.onerror = () => {
       showToast("❌ خطا در خواندن فایل", "error");
       setIsRestoring(false);
     };
+    
     reader.readAsText(file);
   }, [showToast, db]);
 
-  // ✅ تشخیص جامع
   const runDiagnosis = useCallback(async () => {
     const summary: any = {
       localStorage: scanLocalStorage(),
@@ -579,7 +606,8 @@ export default function SettingsDrawer() {
           <AccordionItem id="backup" icon="backup" title="پشتیبان‌گیری جامع">
             <div className="space-y-3">
               <div className={`rounded-xl p-3 text-xs ${dk ? "bg-amber-500/10 border border-amber-500/30 text-amber-200" : "bg-amber-50 border border-amber-200 text-amber-800"}`}>
-                💡 این بک‌آپ شامل <b>تمام داده‌ها</b> از Firebase و حافظه محلی است (حواله‌ها، معاملات، مشتریان و...).
+                💡 این بک‌آپ شامل <b>تمام داده‌ها</b> از Firebase و حافظه محلی است (حواله‌ها، معاملات، مشتریان و...). <br/>
+                <span className="text-[10px] opacity-80">نسخه ۲.۱: رفع مشکل تاریخ‌ها و محدودیت حجم بازیابی.</span>
               </div>
               
               <button 
@@ -658,7 +686,7 @@ export default function SettingsDrawer() {
           </AccordionItem>
 
           <div className={`mt-4 rounded-xl p-4 text-center ${dk ? "bg-slate-800/50" : "bg-slate-50"}`}>
-            <p className={`text-[10px] font-bold ${subText}`}>نسخه ۲.۰.۰ — صرافی برادران نورزاد</p>
+            <p className={`text-[10px] font-bold ${subText}`}>نسخه ۲.۱.۰ — صرافی برادران نورزاد</p>
           </div>
         </div>
       </div>
@@ -705,8 +733,7 @@ export default function SettingsDrawer() {
                 <p className={`text-xs font-black mb-2 ${heading}`}>💡 نتیجه:</p>
                 <ul className={`text-xs space-y-1 ${subText}`}>
                   <li>• اگر collection های Firebase (مثل hawalas, transactions) تعداد زیادی سند دارند، <b>داده‌های شما در Firebase ذخیره می‌شوند</b>.</li>
-                  <li>• بک‌آپ جدید (نسخه ۲.۰) <b>هم Firebase و هم localStorage</b> را ذخیره می‌کند.</li>
-                  <li>• این گزارش را در کنسول (F12) هم می‌توانید ببینید.</li>
+                  <li>• بک‌آپ جدید (نسخه ۲.۱) <b>هم Firebase و هم localStorage</b> را ذخیره می‌کند و مشکل Timestampها را حل کرده است.</li>
                 </ul>
               </div>
             </div>
