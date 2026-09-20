@@ -2,8 +2,7 @@
 import { useEffect, useState, useRef, useCallback, type ReactNode } from "react";
 import {
   doc, setDoc, getDoc, onSnapshot,
-  collection, getDocs, writeBatch, deleteDoc,
-  Timestamp, GeoPoint
+  collection, getDocs, writeBatch, deleteDoc, Timestamp
 } from "firebase/firestore";
 import { db } from "../dashboard/lib/firebase";
 
@@ -13,13 +12,9 @@ const HAWALAS_KEY = "fx-hawalas";
 const CASH_KEY = "fx-cash";
 const SETTINGS_KEY = "fx-settings";
 
-// ⚠️ بسیار مهم: این نام‌ها باید دقیقاً با نام collection های شما در Firebase یکی باشند
-// اگر نام collection شما در Firebase متفاوت است (مثلاً "Hawalas" به جای "hawalas")
-// حتماً اینجا اصلاح کنید. از بخش "تشخیص ذخیره‌سازی" برای فهمیدن نام‌های واقعی استفاده کنید.
 const FIREBASE_COLLECTIONS = [
   'customers', 'transactions', 'hawalas', 'cash',
-  'exchanges', 'rates', 'settings', 'users', 'logs',
-  'app_settings'
+  'exchanges', 'rates', 'settings', 'users', 'logs'
 ];
 
 type Settings = {
@@ -64,7 +59,6 @@ function loadSettings(): Settings {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (!raw) return defaultSettings;
     const parsed = JSON.parse(raw);
-
     let migratedChatIds: string[] = [];
     if (parsed.telegram?.chatIds && Array.isArray(parsed.telegram.chatIds)) {
       migratedChatIds = parsed.telegram.chatIds;
@@ -74,7 +68,6 @@ function loadSettings(): Settings {
         .map((id: string) => id.trim())
         .filter(Boolean);
     }
-
     return {
       ...defaultSettings,
       ...parsed,
@@ -89,79 +82,20 @@ function loadSettings(): Settings {
   }
 }
 
-// ✅ تابع بازسازی انواع داده‌های خاص Firebase از JSON
-// این تابع Timestamp و GeoPoint را که هنگام JSON.stringify خراب شده‌اند، دوباره می‌سازد
+// ✅ بازسازی انواع خاص Firebase (Timestamp و ...) از JSON
 function restoreFirestoreTypes(data: any): any {
   if (data === null || data === undefined) return data;
-
   if (typeof data === "object") {
-    // بازسازی Timestamp فایربیس
-    if (
-      data._seconds !== undefined &&
-      data._nanoseconds !== undefined &&
-      Object.keys(data).length === 2
-    ) {
+    if (data._seconds !== undefined && data._nanoseconds !== undefined) {
       return new Timestamp(data._seconds, data._nanoseconds);
     }
-
-    // بازسازی GeoPoint فایربیس
-    if (
-      data._lat !== undefined &&
-      data._long !== undefined &&
-      Object.keys(data).length === 2
-    ) {
-      return new GeoPoint(data._lat, data._long);
-    }
-
-    // بازسازی آرایه‌ها
-    if (Array.isArray(data)) {
-      return data.map(restoreFirestoreTypes);
-    }
-
-    // بازسازی اشیاء تو در تو
+    if (Array.isArray(data)) return data.map(restoreFirestoreTypes);
     const restored: any = {};
     for (const key in data) {
-      if (Object.prototype.hasOwnProperty.call(data, key)) {
-        restored[key] = restoreFirestoreTypes(data[key]);
-      }
+      restored[key] = restoreFirestoreTypes(data[key]);
     }
     return restored;
   }
-
-  return data;
-}
-
-// ✅ تابع تبدیل ایمن داده‌های Firebase به JSON (برای بک‌آپ)
-// این تابع مطمئن می‌شود که Timestamp و GeoPoint به درستی سریالایز شوند
-function safeSerialize(data: any): any {
-  if (data === null || data === undefined) return data;
-
-  if (data instanceof Timestamp) {
-    return { _seconds: data.seconds, _nanoseconds: data.nanoseconds };
-  }
-
-  if (data instanceof GeoPoint) {
-    return { _lat: data.latitude, _long: data.longitude };
-  }
-
-  if (data instanceof Date) {
-    return { _seconds: Math.floor(data.getTime() / 1000), _nanoseconds: 0 };
-  }
-
-  if (Array.isArray(data)) {
-    return data.map(safeSerialize);
-  }
-
-  if (typeof data === "object") {
-    const result: any = {};
-    for (const key in data) {
-      if (Object.prototype.hasOwnProperty.call(data, key)) {
-        result[key] = safeSerialize(data[key]);
-      }
-    }
-    return result;
-  }
-
   return data;
 }
 
@@ -200,7 +134,6 @@ export default function SettingsDrawer() {
   const [isRestoring, setIsRestoring] = useState(false);
   const [showDiagnosis, setShowDiagnosis] = useState(false);
   const [diagnosisData, setDiagnosisData] = useState<any>(null);
-  const [restoreLog, setRestoreLog] = useState<string[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -217,9 +150,7 @@ export default function SettingsDrawer() {
   }, []);
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem("fx-theme", theme);
-    } catch {}
+    try { window.localStorage.setItem("fx-theme", theme); } catch {}
   }, [theme]);
 
   const dk = theme === "dark";
@@ -229,20 +160,17 @@ export default function SettingsDrawer() {
       try {
         const docRef = doc(db, "app_settings", "global_settings");
         const docSnap = await getDoc(docRef);
-
         if (docSnap.exists()) {
           const fbSettings = docSnap.data().value as Settings;
           let migratedChatIds: string[] = [];
           if (fbSettings?.telegram?.chatIds && Array.isArray(fbSettings.telegram.chatIds)) {
             migratedChatIds = fbSettings.telegram.chatIds;
           }
-
           const finalSettings: Settings = {
             ...defaultSettings,
             ...fbSettings,
             telegram: { ...defaultSettings.telegram, ...fbSettings?.telegram, chatIds: migratedChatIds }
           };
-
           localStorage.setItem(SETTINGS_KEY, JSON.stringify(finalSettings));
           setSettings(finalSettings);
         } else {
@@ -268,13 +196,11 @@ export default function SettingsDrawer() {
           if (fbSettings?.telegram?.chatIds && Array.isArray(fbSettings.telegram.chatIds)) {
             migratedChatIds = fbSettings.telegram.chatIds;
           }
-
           const finalSettings: Settings = {
             ...defaultSettings,
             ...fbSettings,
             telegram: { ...defaultSettings.telegram, ...fbSettings?.telegram, chatIds: migratedChatIds }
           };
-
           localStorage.setItem(SETTINGS_KEY, JSON.stringify(finalSettings));
           setSettings(finalSettings);
         }
@@ -295,7 +221,6 @@ export default function SettingsDrawer() {
         console.error("❌ خطا در ذخیره فایربیس:", error);
       }
     }, 1000);
-
     return () => clearTimeout(timer);
   }, [settings, mounted, db]);
 
@@ -315,7 +240,7 @@ export default function SettingsDrawer() {
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     setToast(message);
     setToastType(type);
-    toastTimeoutRef.current = setTimeout(() => setToast(""), 5000);
+    toastTimeoutRef.current = setTimeout(() => setToast(""), 4000);
   }, []);
 
   const updateSettings = useCallback((updates: Partial<Settings>) => {
@@ -361,18 +286,16 @@ export default function SettingsDrawer() {
     for (const col of FIREBASE_COLLECTIONS) {
       try {
         const snapshot = await getDocs(collection(db, col));
-        // ✅ استفاده از safeSerialize برای تبدیل صحیح Timestamp و GeoPoint
-        result[col] = snapshot.docs.map(d => safeSerialize({ id: d.id, ...d.data() }));
-        console.log(`📂 [بک‌آپ] ${col}: ${snapshot.size} سند پیدا شد`);
-      } catch (err: any) {
-        console.warn(`⚠️ [بک‌آپ] خطا در خواندن ${col}:`, err.message);
+        result[col] = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      } catch (err) {
+        console.warn(`⚠️ خطا در خواندن collection ${col}:`, err);
         result[col] = [];
       }
     }
     return result;
   };
 
-  // ✅ بک‌آپ جامع
+  // ===================== بک‌آپ =====================
   const handleBackup = useCallback(async () => {
     setIsBackingUp(true);
     try {
@@ -382,14 +305,6 @@ export default function SettingsDrawer() {
       const localStorageData = scanLocalStorage();
       const sessionStorageData = scanSessionStorage();
 
-      // محاسبه آمار
-      const stats: Record<string, number> = {};
-      let totalDocs = 0;
-      for (const [col, docs] of Object.entries(firebaseData)) {
-        stats[col] = docs.length;
-        totalDocs += docs.length;
-      }
-
       const data = {
         version: "3.0",
         exportDate: new Date().toISOString(),
@@ -397,11 +312,15 @@ export default function SettingsDrawer() {
         localStorage: localStorageData,
         sessionStorage: sessionStorageData,
         firebase: firebaseData,
-        _stats: stats,
-        _totalDocs: totalDocs,
       };
 
-      console.log("📦 گزارش بک‌آپ:", { stats, totalDocs });
+      console.log("📦 گزارش بک‌آپ جامع:", {
+        localStorageKeys: Object.keys(localStorageData),
+        sessionStorageKeys: Object.keys(sessionStorageData),
+        firebaseCollections: Object.fromEntries(
+          Object.entries(firebaseData).map(([k, v]) => [k, v.length])
+        ),
+      });
 
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
@@ -413,25 +332,18 @@ export default function SettingsDrawer() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      showToast(`✅ پشتیبان دانلود شد (${totalDocs} سند از Firebase)`);
-    } catch (err: any) {
+      showToast("✅ پشتیبان کامل (Firebase + LocalStorage) دانلود شد");
+    } catch (err) {
       console.error("❌ خطای بک‌آپ:", err);
-      showToast(`❌ خطا: ${err.message}`, "error");
+      showToast("❌ خطا در ایجاد پشتیبان", "error");
     } finally {
       setIsBackingUp(false);
     }
   }, [settings, showToast]);
 
-  // ✅ بازیابی جامع (نسخه نهایی ضدگلوله)
+  // ===================== بازیابی (نسخه نهایی با رفرش واقعی) =====================
   const handleRestore = useCallback(async (file: File) => {
     setIsRestoring(true);
-    setRestoreLog([]);
-
-    const addLog = (msg: string) => {
-      console.log(msg);
-      setRestoreLog(prev => [...prev, msg]);
-    };
-
     const reader = new FileReader();
 
     reader.onload = async (e) => {
@@ -445,111 +357,89 @@ export default function SettingsDrawer() {
 
         const data = JSON.parse(result as string);
         if (!data.version) {
-          showToast("❌ فایل نامعتبر است (نسخه ندارد)", "error");
+          showToast("❌ فرمت فایل پشتیبان نامعتبر است", "error");
           setIsRestoring(false);
           return;
         }
 
-        addLog(`🚀 شروع بازیابی نسخه ${data.version}`);
+        console.log("🚀 [شروع بازیابی] نسخه:", data.version);
 
         // ۱. بازیابی localStorage
         if (data.localStorage) {
-          const keys = Object.keys(data.localStorage);
-          addLog(`💾 بازیابی localStorage: ${keys.length} کلید`);
-          for (const [key, value] of Object.entries(data.localStorage)) {
+          console.log("💾 بازیابی LocalStorage...", Object.keys(data.localStorage).length, "کلید");
+          Object.entries(data.localStorage).forEach(([key, value]) => {
             if (value !== null && value !== undefined) {
-              try {
-                localStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value));
-              } catch (err: any) {
-                addLog(`⚠️ خطا در نوشتن کلید ${key}: ${err.message}`);
-              }
+              localStorage.setItem(key, JSON.stringify(value));
             }
-          }
-          addLog("✅ localStorage بازیابی شد");
+          });
         }
 
         // ۲. بازیابی sessionStorage
         if (data.sessionStorage) {
-          const keys = Object.keys(data.sessionStorage);
-          addLog(`💾 بازیابی sessionStorage: ${keys.length} کلید`);
-          for (const [key, value] of Object.entries(data.sessionStorage)) {
+          console.log("💾 بازیابی SessionStorage...", Object.keys(data.sessionStorage).length, "کلید");
+          Object.entries(data.sessionStorage).forEach(([key, value]) => {
             if (value !== null && value !== undefined) {
-              try {
-                sessionStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value));
-              } catch (err: any) {
-                addLog(`⚠️ خطا در نوشتن کلید ${key}: ${err.message}`);
-              }
+              sessionStorage.setItem(key, JSON.stringify(value));
             }
-          }
-          addLog("✅ sessionStorage بازیابی شد");
+          });
         }
 
         // ۳. بازیابی Firebase
         if (data.firebase) {
-          addLog("🔥 شروع بازیابی Firebase...");
+          showToast("⏳ در حال بازیابی داده‌های Firebase (لطفاً صبر کنید)...");
+          console.log("🔥 شروع بازیابی Firebase...");
 
-          const collections = Object.entries(data.firebase);
-          let totalRestored = 0;
-
-          for (const [colName, docs] of collections) {
+          for (const [colName, docs] of Object.entries(data.firebase)) {
             if (!Array.isArray(docs) || docs.length === 0) {
-              addLog(`⏭️ ${colName}: خالی (پرش)`);
+              console.log(`⏭️ پرش از ${colName} (خالی است)`);
               continue;
             }
 
-            addLog(`📂 ${colName}: ${docs.length} سند در حال پردازش...`);
+            console.log(`📂 پردازش collection: ${colName} (${(docs as any[]).length} سند)`);
 
             try {
               // الف) حذف اسناد قدیمی به صورت تکه‌تکه
               const oldSnapshot = await getDocs(collection(db, colName));
               if (oldSnapshot.size > 0) {
-                addLog(`🗑️ حذف ${oldSnapshot.size} سند قدیمی از ${colName}...`);
-                const DELETE_CHUNK = 400;
-                for (let i = 0; i < oldSnapshot.docs.length; i += DELETE_CHUNK) {
+                console.log(`🗑️ در حال حذف ${oldSnapshot.size} سند قدیمی از ${colName}...`);
+                const deleteChunkSize = 400;
+                for (let i = 0; i < oldSnapshot.size; i += deleteChunkSize) {
                   const deleteBatch = writeBatch(db);
-                  const chunk = oldSnapshot.docs.slice(i, i + DELETE_CHUNK);
-                  chunk.forEach(d => deleteBatch.delete(d.ref));
+                  oldSnapshot.docs.slice(i, i + deleteChunkSize).forEach(d => deleteBatch.delete(d.ref));
                   await deleteBatch.commit();
                 }
-                addLog(`✅ حذف قدیمی‌ها تکمیل شد`);
+                console.log(`✅ حذف اسناد قدیمی ${colName} تکمیل شد.`);
               }
 
               // ب) نوشتن اسناد جدید به صورت تکه‌تکه
-              const WRITE_CHUNK = 400;
-              for (let i = 0; i < docs.length; i += WRITE_CHUNK) {
-                const chunk = docs.slice(i, i + WRITE_CHUNK);
+              const writeChunkSize = 400;
+              const totalDocs = (docs as any[]).length;
+
+              for (let i = 0; i < totalDocs; i += writeChunkSize) {
+                const chunk = (docs as any[]).slice(i, i + writeChunkSize);
                 const batch = writeBatch(db);
 
-                for (const docData of chunk) {
-                  const { id, ...rest } = docData as any;
-                  const docId = String(id);
-                  if (!docId || docId === "undefined" || docId === "null") {
-                    addLog(`⚠️ سند بدون ID در ${colName} رد شد`);
-                    continue;
-                  }
+                chunk.forEach((docData: any) => {
+                  const docId = String(docData.id);
+                  const { id, ...rest } = docData;
                   const cleanData = restoreFirestoreTypes(rest);
                   const docRef = doc(db, colName, docId);
                   batch.set(docRef, cleanData);
-                }
+                });
 
                 await batch.commit();
-                const written = Math.min(i + WRITE_CHUNK, docs.length);
-                addLog(`✅ ${colName}: ${written} از ${docs.length} نوشته شد`);
+                console.log(`✅ نوشته شد: ${i + chunk.length} از ${totalDocs} در ${colName}`);
               }
 
-              totalRestored += docs.length;
             } catch (err: any) {
-              addLog(`❌ خطای فاجعه‌بار در ${colName}: ${err.message}`);
-              throw new Error(`شکست در ${colName}: ${err.message}`);
+              console.error(`❌ خطای فاجعه‌بار در ${colName}:`, err);
+              throw new Error(`شکست در بازیابی ${colName}: ${err.message}`);
             }
           }
-
-          addLog(`🎉 بازیابی Firebase تکمیل شد: ${totalRestored} سند`);
         }
 
         // ۴. بازیابی تنظیمات
         if (data.settings) {
-          addLog("⚙️ بازیابی تنظیمات...");
           let migratedChatIds: string[] = [];
           if (data.settings.telegram?.chatIds && Array.isArray(data.settings.telegram.chatIds)) {
             migratedChatIds = data.settings.telegram.chatIds;
@@ -576,24 +466,27 @@ export default function SettingsDrawer() {
               value: finalSettings,
               updatedAt: new Date().toISOString()
             }, { merge: true });
-          } catch (fbErr: any) {
-            addLog(`⚠️ خطا در همگام‌سازی تنظیمات: ${fbErr.message}`);
+          } catch (fbErr) {
+            console.warn("⚠️ خطا در همگام‌سازی تنظیمات:", fbErr);
           }
-          addLog("✅ تنظیمات بازیابی شد");
         }
 
-        addLog("🏁 پایان موفقیت‌آمیز بازیابی!");
-        showToast("✅ تمام داده‌ها بازیابی شدند. صفحه در حال بروزرسانی...", "success");
+        console.log("🎉 [پایان موفقیت‌آمیز] تمام داده‌ها بازیابی شدند.");
+        showToast("✅ بازیابی با موفقیت انجام شد. صفحه در حال رفرش...", "success");
 
-        // رفرش سخت برای پاک کردن کش
+        // ✅ ارسال رویداد سفارشی برای اطلاع‌رسانی به سایر کامپوننت‌ها
+        window.dispatchEvent(new CustomEvent('fx-data-restored', { 
+          detail: { timestamp: Date.now() } 
+        }));
+
+        // ✅ رفرش واقعی صفحه پس از ۲ ثانیه
         setTimeout(() => {
-          window.location.replace(window.location.origin + window.location.pathname + "?r=" + Date.now());
-        }, 2500);
+          window.location.reload();
+        }, 2000);
 
       } catch (err: any) {
-        addLog(`💥 خطای نهایی: ${err.message}`);
-        console.error("💥 خطای بازیابی:", err);
-        showToast(`❌ خطا: ${err.message}`, "error");
+        console.error("💥 [خطای مرگبار بازیابی]:", err);
+        showToast(`❌ خطا: ${err.message || "فایل نامعتبر است"}`, "error");
         setIsRestoring(false);
       }
     };
@@ -605,7 +498,7 @@ export default function SettingsDrawer() {
     reader.readAsText(file);
   }, [showToast, db]);
 
-  // ✅ تشخیص جامع
+  // ===================== تشخیص =====================
   const runDiagnosis = useCallback(async () => {
     const summary: any = {
       localStorage: scanLocalStorage(),
@@ -620,8 +513,8 @@ export default function SettingsDrawer() {
           count: snapshot.size,
           sample: snapshot.docs.slice(0, 2).map(d => ({ id: d.id, ...d.data() }))
         };
-      } catch (err: any) {
-        summary.firebase[col] = { error: err.message };
+      } catch (err) {
+        summary.firebase[col] = { error: String(err) };
       }
     }
 
@@ -640,10 +533,7 @@ export default function SettingsDrawer() {
   const uiLabel = `mb-1.5 block text-[11px] font-black tracking-wide ${dk ? "text-slate-400" : "text-slate-500"}`;
 
   const fld = (label: string, node: ReactNode) => (
-    <div>
-      <label className={uiLabel}>{label}</label>
-      {node}
-    </div>
+    <div><label className={uiLabel}>{label}</label>{node}</div>
   );
 
   const AccordionItem = ({ id, icon, title, children }: { id: string; icon: string; title: string; children: ReactNode }) => {
@@ -736,7 +626,7 @@ export default function SettingsDrawer() {
             </div>
           </AccordionItem>
 
-          {/* ===== تیم ===== */}
+          {/* ===== اطلاعات تیم ===== */}
           <AccordionItem id="team" icon="users" title="اطلاعات تیم">
             <div className="space-y-3">
               {fld("نام تیم / صرافی", <input value={settings.teamName} onChange={e => updateSettings({ teamName: e.target.value })} placeholder="صرافی برادران نورزاد" className={uiInput} />)}
@@ -748,13 +638,12 @@ export default function SettingsDrawer() {
             </div>
           </AccordionItem>
 
-          {/* ===== بک‌آپ ===== */}
+          {/* ===== پشتیبان‌گیری ===== */}
           <AccordionItem id="backup" icon="backup" title="پشتیبان‌گیری جامع">
             <div className="space-y-3">
               <div className={`rounded-xl p-3 text-xs ${dk ? "bg-amber-500/10 border border-amber-500/30 text-amber-200" : "bg-amber-50 border border-amber-200 text-amber-800"}`}>
-                💡 این بک‌آپ شامل <b>تمام داده‌ها</b> از Firebase و حافظه محلی است (حواله‌ها، معاملات، مشتریان و...).
-                <br />
-                <span className="text-[10px] opacity-80">نسخه ۳.۰: رفع مشکل Timestamp + محدودیت ۵۰۰ تایی + GeoPoint</span>
+                💡 این بک‌آپ شامل <b>تمام داده‌ها</b> از Firebase و حافظه محلی است (حواله‌ها، معاملات، مشتریان و...).<br />
+                <span className="text-[10px] opacity-80">نسخه ۳.۰: رفع مشکل Timestamp و محدودیت ۵۰۰ تایی Batch.</span>
               </div>
 
               <button
@@ -779,18 +668,6 @@ export default function SettingsDrawer() {
               <button onClick={runDiagnosis} className={`flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed text-sm font-black transition-all active:scale-95 ${dk ? "border-amber-500/50 text-amber-300 hover:bg-amber-500/10" : "border-amber-500 text-amber-600 hover:bg-amber-50"}`}>
                 <Ic n="info" className="h-4 w-4" /> تشخیص ذخیره‌سازی
               </button>
-
-              {/* نمایش لاگ بازیابی */}
-              {restoreLog.length > 0 && (
-                <div className={`rounded-xl border p-3 max-h-48 overflow-y-auto text-[11px] font-mono space-y-1 ${dk ? "border-slate-600 bg-slate-800 text-slate-300" : "border-slate-200 bg-slate-50 text-slate-700"}`}>
-                  <p className={`text-xs font-black mb-2 ${heading}`}>📋 گزارش بازیابی:</p>
-                  {restoreLog.map((log, i) => (
-                    <p key={i} className={log.includes("❌") || log.includes("💥") ? "text-rose-500" : log.includes("✅") || log.includes("🎉") ? "text-emerald-500" : ""}>
-                      {log}
-                    </p>
-                  ))}
-                </div>
-              )}
             </div>
           </AccordionItem>
 
@@ -883,7 +760,7 @@ export default function SettingsDrawer() {
                     <div key={col} className={`flex items-center justify-between p-2 rounded-lg ${dk ? "bg-slate-700/50" : "bg-white"}`}>
                       <span className={`text-xs font-mono ${heading}`}>{col}</span>
                       <span className={`text-xs font-black ${info.count > 0 ? "text-emerald-500" : "text-rose-500"}`}>
-                        {info.error ? `خطا: ${info.error}` : `${info.count} سند`}
+                        {info.error ? "خطا" : `${info.count} سند`}
                       </span>
                     </div>
                   ))}
@@ -894,9 +771,8 @@ export default function SettingsDrawer() {
                 <p className={`text-xs font-black mb-2 ${heading}`}>💡 نتیجه:</p>
                 <ul className={`text-xs space-y-1 ${subText}`}>
                   <li>• اگر collection های Firebase (مثل hawalas, transactions) تعداد زیادی سند دارند، <b>داده‌های شما در Firebase ذخیره می‌شوند</b>.</li>
-                  <li>• اگر همه collection ها <b>۰ سند</b> نشان می‌دهند، یعنی نام collection ها در کد با نام واقعی Firebase مطابقت ندارد.</li>
-                  <li>• در این صورت به <b>Firebase Console</b> بروید و نام دقیق collection ها را ببینید و در آرایه <code className="bg-slate-200 px-1 rounded">FIREBASE_COLLECTIONS</code> اصلاح کنید.</li>
-                  <li>• بک‌آپ نسخه ۳.۰ هم Timestamp و هم GeoPoint را به درستی ذخیره و بازیابی می‌کند.</li>
+                  <li>• بک‌آپ نسخه ۳.۰ <b>هم Firebase و هم localStorage</b> را ذخیره می‌کند و مشکل Timestampها را حل کرده است.</li>
+                  <li>• این گزارش را در کنسول (F12) هم می‌توانید ببینید.</li>
                 </ul>
               </div>
             </div>
