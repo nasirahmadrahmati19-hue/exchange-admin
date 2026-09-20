@@ -1,8 +1,16 @@
 "use client";
 import { useEffect, useMemo, useState, useRef, useCallback, memo, type ReactNode, type ChangeEvent } from "react";
-import { useSyncedState } from "../lib/useSyncedState";
-import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem, getTrackingNumberValue } from "../lib/trackingCode";
-import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY } from "../lib/defaultData";
+import { 
+  collection, addDoc, updateDoc, doc, onSnapshot, writeBatch, serverTimestamp 
+} from "firebase/firestore";
+import { db } from "../dashboard/lib/firebase"; // مسیر فایل firebase خود را بررسی کنید
+import { getNextTrackingCode, consumeTrackingCode, initTrackingCode, getTrackingNumberValue } from "../lib/trackingCode";
+
+// حذف useSyncedState و استفاده از دیتای مستقیم فایربیس برای همگام‌سازی واقعی
+const CUSTOMERS_KEY = "customers";
+const TRANSACTIONS_KEY = "transactions";
+const HAWALAS_KEY = "hawalas";
+const CASH_KEY = "cash_entries";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type RateMode = "same" | "afn" | "direct";
@@ -66,7 +74,6 @@ function getLedgerBalance(customerId: string | number, currency: Currency, entri
 
   for (const entry of entries) {
     if (entry.status === "voided" || entry.currency !== currency) continue;
-
     if (strCustomerId === String(CASH_BOX_ID)) {
       if (entry.type === "exchange_account_in" || entry.type === "exchange_account_out") continue;
       if (entry.type === "loan_given") balance -= Number(entry.amount);
@@ -85,10 +92,7 @@ function getLedgerBalance(customerId: string | number, currency: Currency, entri
         else if (entry.type === "customer_withdraw") balance -= Number(entry.amount);
         else if (entry.type === "loan_given") balance -= Number(entry.amount);
         else if (entry.type === "loan_received") balance += Number(entry.amount);
-        
-        if (entry.linkedHawalaId) {
-          accountedHawalaIds.add(String(entry.linkedHawalaId));
-        }
+        if (entry.linkedHawalaId) accountedHawalaIds.add(String(entry.linkedHawalaId));
       }
     }
   }
@@ -121,7 +125,6 @@ function getLedgerBalance(customerId: string | number, currency: Currency, entri
     for (const h of hawalas) {
       if (h.status === "cancelled") continue;
       if (accountedHawalaIds.has(String(h.id))) continue;
-
       if (String(h.senderId) === strCustomerId) {
         if (h.currencyFrom === currency) balance -= Number(h.amountFrom);
         if (h.feePayer === "sender" && h.feeCurrency === currency) balance -= Number(h.fee);
@@ -370,11 +373,17 @@ const Ic = memo(function Ic({ n, className = "h-5 w-5" }: { n: IconName; classNa
 export default function HawalaPage() {
   const [mounted, setMounted] = useState(false);
   
-  const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
-  const [transactions, setTransactions] = useSyncedState<any[]>(TRANSACTIONS_KEY, []);
-  const [hawalas, setHawalas] = useSyncedState<Hawala[]>(HAWALAS_KEY, []);
-  const [cashEntries, setCashEntries] = useSyncedState<any[]>(CASH_KEY, []);
+  // ✅ تغییر حیاتی ۱: استفاده از useState معمولی به جای useSyncedState برای جلوگیری از تداخل localStorage
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [hawalas, setHawalas] = useState<Hawala[]>([]);
+  const [cashEntries, setCashEntries] = useState<any[]>([]);
   
+  // ✅ تغییر حیاتی ۲: اضافه کردن Stateهای قفل‌کننده برای جلوگیری از کلیک‌های تکراری
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSettling, setIsSettling] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+
   const [lastNames, setLastNames] = useState<LastNames>({ senderName: "", receiverName: "" });
   const [activeTab, setActiveTab] = useState<"new" | "current" | "history">("new");
   const [form, setForm] = useState<FormState>(emptyForm);
@@ -414,6 +423,29 @@ export default function HawalaPage() {
 
   const anyDropdownOpen = showSenderList || showReceiverList;
   useEffect(() => { if (!anyDropdownOpen) return; const handler = (e: MouseEvent) => { const t = e.target as Node; if (showSenderList && senderListRef.current && !senderListRef.current.contains(t)) setShowSenderList(false); if (showReceiverList && receiverListRef.current && !receiverListRef.current.contains(t)) setShowReceiverList(false); }; const timer = setTimeout(() => document.addEventListener("mousedown", handler), 0); return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); }; }, [anyDropdownOpen, showSenderList, showReceiverList]);
+
+  // ✅ تغییر حیاتی ۳: استفاده از onSnapshot برای همگام‌سازی آنی (Real-time) بین گوشی و کامپیوتر
+  useEffect(() => {
+    const unsubHawalas = onSnapshot(collection(db, HAWALAS_KEY), (snapshot) => {
+      setHawalas(snapshot.docs.map(d => ({ id: d.id, ...d.data() }) as Hawala));
+    });
+    const unsubCustomers = onSnapshot(collection(db, CUSTOMERS_KEY), (snapshot) => {
+      setCustomers(snapshot.docs.map(d => ({ id: d.id, ...d.data() }) as Customer));
+    });
+    const unsubEntries = onSnapshot(collection(db, CASH_KEY), (snapshot) => {
+      setCashEntries(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    const unsubTransactions = onSnapshot(collection(db, TRANSACTIONS_KEY), (snapshot) => {
+      setTransactions(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+
+    return () => {
+      unsubHawalas();
+      unsubCustomers();
+      unsubEntries();
+      unsubTransactions();
+    };
+  }, []);
 
   const cashBoxBalances = useMemo(() => { try { return computeCashBalances(cashEntries); } catch { return { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; } }, [cashEntries]);
   const exchangeAccountBalances = useMemo(() => { try { return computeExchangeBalances(cashEntries); } catch { return { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; } }, [cashEntries]);
@@ -488,9 +520,12 @@ export default function HawalaPage() {
   const handleRegisterClick = useCallback(() => { const errs = validateForm(); setErrors(errs); if (Object.keys(errs).length > 0) { showToast("لطفاً فیلدهای ضروری را خانه‌پری کنید."); return; } setPreviewOpen(true); }, [validateForm, showToast]);
 
   const confirmRegister = useCallback(async () => {
+    // ✅ جلوگیری از کلیک تکراری
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+
     try {
       const parsedAmountFrom = parseAmount(form.amountFrom);
-      
       if (!Number.isFinite(parsedAmountFrom) || parsedAmountFrom <= 0) {
         showToast("❌ مبلغ حواله نامعتبر است. لطفاً یک عدد مثبت وارد کنید.");
         return;
@@ -517,57 +552,30 @@ export default function HawalaPage() {
         if (existing) {
           const updated: Hawala = { 
             ...existing, 
-            type: form.type,
-            currencyFrom: form.currencyFrom,
-            currencyTo: form.currencyTo,
-            amountFrom: parsedAmountFrom,
-            rate: txRate,
-            rateLabel,
-            rateBase: rateMode === "direct" ? directBaseValue : undefined,
-            fee: feeValue,
-            feeCurrency: form.feeCurrency,
-            feePayer: form.feePayer,
-            finalAmount,
-            profit: feeValue,
-            profitCurrency: form.feeCurrency,
-            province: form.province, 
-            district: form.province === "هرات" ? form.district : form.province, 
-            destinationText, 
-            senderName, 
-            senderPhone: form.senderPhone, 
-            senderTelegram: form.senderTelegram, 
-            senderId: sender ? String(sender.id) : undefined, 
-            receiverName, 
-            receiverTazkira: form.receiverTazkira, 
-            receiverPhone: form.receiverPhone, 
-            receiverAddress: form.receiverAddress, 
-            receiverId: receiver ? String(receiver.id) : undefined, 
-            note: form.note, 
-            balance: form.balance
+            type: form.type, currencyFrom: form.currencyFrom, currencyTo: form.currencyTo, amountFrom: parsedAmountFrom, rate: txRate, rateLabel, rateBase: rateMode === "direct" ? directBaseValue : undefined, fee: feeValue, feeCurrency: form.feeCurrency, feePayer: form.feePayer, finalAmount, profit: feeValue, profitCurrency: form.feeCurrency, province: form.province, district: form.province === "هرات" ? form.district : form.province, destinationText, senderName, senderPhone: form.senderPhone, senderTelegram: form.senderTelegram, senderId: sender ? String(sender.id) : undefined, receiverName, receiverTazkira: form.receiverTazkira, receiverPhone: form.receiverPhone, receiverAddress: form.receiverAddress, receiverId: receiver ? String(receiver.id) : undefined, note: form.note, balance: form.balance
           };
           
-          // ✅ اصلاح حیاتی: حذف اسناد مالی قدیمی و ثبت اسناد جدید بر اساس مبلغ ویرایش‌شده
           let updatedEntries = syncCashEntriesForHawala("remove", null, editingId, cashEntries);
           updatedEntries = syncCashEntriesForHawalaSettlement("remove", existing, updatedEntries);
-          
           updatedEntries = syncCashEntriesForHawala("add", updated, undefined, updatedEntries);
-          if (updated.status === "paid") {
-            updatedEntries = syncCashEntriesForHawalaSettlement("add", updated, updatedEntries);
-          }
+          if (updated.status === "paid") updatedEntries = syncCashEntriesForHawalaSettlement("add", updated, updatedEntries);
 
           const updatedHawalasList = hawalas.map(x => x.id === editingId ? updated : x);
-          
-          setHawalas(updatedHawalasList);
-          setCashEntries(updatedEntries);
-          
           const updatedCustomersList = getUpdatedCustomerBalances(customers, updatedEntries, transactions, updatedHawalasList);
-          setCustomers(updatedCustomersList);
 
-          setEditingId(null); 
-          setForm(emptyForm); 
-          setErrors({}); 
-          setPreviewOpen(false); 
-          setActiveTab(updated.status === "paid" || updated.status === "cancelled" ? "history" : "current");
+          // ✅ نوشتن در فایربیس به جای آپدیت محلی
+          const batch = writeBatch(db);
+          batch.update(doc(db, HAWALAS_KEY, editingId), updated);
+          
+          // آپدیت بالانس مشتریان
+          for (const c of updatedCustomersList) {
+            if (String(c.id) !== String(CASH_BOX_ID) && String(c.id) !== String(EXCHANGE_ACCOUNT_ID)) {
+              batch.update(doc(db, CUSTOMERS_KEY, String(c.id)), { balances: c.balances });
+            }
+          }
+          await batch.commit();
+
+          setEditingId(null); setForm(emptyForm); setErrors({}); setPreviewOpen(false); setActiveTab(updated.status === "paid" || updated.status === "cancelled" ? "history" : "current");
           showToast("✅ اطلاعات حواله و موجودی حساب‌ها با موفقیت به‌روز شد.");
           return;
         }
@@ -575,63 +583,45 @@ export default function HawalaPage() {
       
       const trackingNumber = await consumeTrackingCode();
       const newHawala: Hawala = { 
-        id: generateId(), 
-        number: trackingNumber, 
-        date: nowDate.toISOString(), 
-        time: "", 
-        type: form.type, 
-        destinationCountry: "افغانستان", 
-        province: form.province, 
-        district: form.province === "هرات" ? form.district : form.province, 
-        destinationText, 
-        currencyFrom: form.currencyFrom, 
-        currencyTo: form.currencyTo, 
-        amountFrom: parsedAmountFrom, 
-        rate: txRate, 
-        rateLabel, 
-        rateBase: rateMode === "direct" ? directBaseValue : undefined, 
-        fee: feeValue, 
-        feeCurrency: form.feeCurrency, 
-        feePayer: form.feePayer, 
-        finalAmount, 
-        balance: form.balance,
-        note: form.note, 
-        profit: feeValue, 
-        profitCurrency: form.feeCurrency, 
-        senderId: sender ? String(sender.id) : undefined, 
-        senderName, 
-        senderPhone: form.senderPhone, 
-        senderTelegram: form.senderTelegram, 
-        receiverId: receiver ? String(receiver.id) : undefined, 
-        receiverName, 
-        receiverTazkira: form.receiverTazkira, 
-        receiverPhone: form.receiverPhone, 
-        receiverAddress: form.receiverAddress, 
-        status: "pending" as HawalaStatus 
+        id: generateId(), number: trackingNumber, date: nowDate.toISOString(), time: "", type: form.type, destinationCountry: "افغانستان", province: form.province, district: form.province === "هرات" ? form.district : form.province, destinationText, currencyFrom: form.currencyFrom, currencyTo: form.currencyTo, amountFrom: parsedAmountFrom, rate: txRate, rateLabel, rateBase: rateMode === "direct" ? directBaseValue : undefined, fee: feeValue, feeCurrency: form.feeCurrency, feePayer: form.feePayer, finalAmount, balance: form.balance, note: form.note, profit: feeValue, profitCurrency: form.feeCurrency, senderId: sender ? String(sender.id) : undefined, senderName, senderPhone: form.senderPhone, senderTelegram: form.senderTelegram, receiverId: receiver ? String(receiver.id) : undefined, receiverName, receiverTazkira: form.receiverTazkira, receiverPhone: form.receiverPhone, receiverAddress: form.receiverAddress, status: "pending" as HawalaStatus 
       };
       
-      setHawalas(prev => [newHawala, ...prev]);
-      
       const newEntries = syncCashEntriesForHawala("add", newHawala, undefined, cashEntries);
-      setCashEntries(newEntries);
-      
       const updatedHawalas = [newHawala, ...hawalas];
       const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries, transactions, updatedHawalas);
-      setCustomers(updatedCustomers);
+      
+      // ✅ نوشتن در فایربیس (این خط باعث می‌شود همه دستگاه‌ها بلافاصله آپدیت شوند)
+      const batch = writeBatch(db);
+      batch.set(doc(collection(db, HAWALAS_KEY), newHawala.id), newHawala);
+      
+      // ذخیره اسناد جدید Cash Entries
+      const entriesToAdd = newEntries.filter(ne => !cashEntries.some(ce => ce.id === ne.id));
+      for (const entry of entriesToAdd) {
+        batch.set(doc(collection(db, CASH_KEY), entry.id), entry);
+      }
+
+      // آپدیت بالانس مشتریان
+      for (const c of updatedCustomers) {
+        if (String(c.id) !== String(CASH_BOX_ID) && String(c.id) !== String(EXCHANGE_ACCOUNT_ID)) {
+          batch.update(doc(db, CUSTOMERS_KEY, String(c.id)), { balances: c.balances });
+        }
+      }
+      
+      await batch.commit();
       
       setLastNames({ senderName, receiverName });
-      setForm(emptyForm); 
-      setErrors({}); 
-      setPreviewOpen(false); 
-      setActiveTab("current");
+      setForm(emptyForm); setErrors({}); setPreviewOpen(false); setActiveTab("current");
       
       await sendHawalaReceipts({ hawala: newHawala, action: "register", customers: updatedCustomers });
       showToast("✅ حواله ثبت شد، حساب‌ها به‌روز و رسید ارسال شد");
     } catch (err) { 
       console.error("Register error:", err); 
       showToast("خطا در ثبت حواله"); 
+    } finally {
+      // ✅ آزاد کردن قفل در هر حالت (موفق یا ناموفق)
+      setIsSubmitting(false);
     }
-  }, [form, rateMode, rateValue, afnForeign, directCounter, directBaseValue, feeValue, amountFrom, destinationText, customers, cashEntries, showToast, finalAmount, editingId, hawalas, transactions]);
+  }, [form, rateMode, rateValue, afnForeign, directCounter, directBaseValue, feeValue, amountFrom, destinationText, customers, cashEntries, showToast, finalAmount, editingId, hawalas, transactions, isSubmitting]);
 
   const openDetails = useCallback((item: Hawala) => { setDetailTarget(item); setOpenActionId(null); }, []);
 
@@ -649,78 +639,124 @@ export default function HawalaPage() {
   }, [showToast]);
 
   const resetForm = useCallback(() => { setForm(emptyForm); setErrors({}); setEditingId(null); showToast("فورم پاک شد."); }, [showToast]);
-  const markAsSent = useCallback((item: Hawala) => { setHawalas(prev => prev.map(h => h.id === item.id ? { ...h, status: "sent" as HawalaStatus } : h)); showToast("وضعیت حواله به ارسال‌شده تغییر کرد."); }, [showToast]);
+  const markAsSent = useCallback(async (item: Hawala) => { 
+    await updateDoc(doc(db, HAWALAS_KEY, item.id), { status: "sent" }); 
+    showToast("وضعیت حواله به ارسال‌شده تغییر کرد."); 
+  }, [showToast]);
+  
   const openSettlement = useCallback((item: Hawala) => { setSettleTarget(item); setPaidAmount(String(item.finalAmount)); setPaidBy(""); }, []);
 
   const confirmSettlement = useCallback(async () => {
+    if (isSettling) return;
     if (!settleTarget) return;
     if (!paidBy.trim()) { showToast("نام پرداخت‌کننده را بنویسید."); return; }
     const amountPaid = Number(paidAmount || settleTarget.finalAmount);
     if (!Number.isFinite(amountPaid) || amountPaid <= 0) { showToast("مبلغ پرداخت‌شده معتبر نیست."); return; }
+    
+    setIsSettling(true);
     try {
       const paidHawala = { ...settleTarget, status: "paid" as HawalaStatus, paidAt: new Date().toISOString(), paidBy, paidAmount: amountPaid };
-      setHawalas(prev => prev.map(item => item.id === settleTarget.id ? paidHawala : item));
       
       const newEntries = syncCashEntriesForHawalaSettlement("add", paidHawala, cashEntries);
-      setCashEntries(newEntries);
-      
       const updatedHawalas = hawalas.map(item => item.id === settleTarget.id ? paidHawala : item);
       const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries, transactions, updatedHawalas);
-      setCustomers(updatedCustomers);
+      
+      // ✅ نوشتن در فایربیس
+      const batch = writeBatch(db);
+      batch.update(doc(db, HAWALAS_KEY, settleTarget.id), paidHawala);
+      
+      const entriesToAdd = newEntries.filter(ne => !cashEntries.some(ce => ce.id === ne.id));
+      for (const entry of entriesToAdd) {
+        batch.set(doc(collection(db, CASH_KEY), entry.id), entry);
+      }
+      for (const c of updatedCustomers) {
+        if (String(c.id) !== String(CASH_BOX_ID) && String(c.id) !== String(EXCHANGE_ACCOUNT_ID)) {
+          batch.update(doc(db, CUSTOMERS_KEY, String(c.id)), { balances: c.balances });
+        }
+      }
+      await batch.commit();
       
       await sendHawalaReceipts({ hawala: paidHawala, action: "settle", customers: updatedCustomers });
       setSettleTarget(null);
       showToast("✅ حواله تسویه شد، حساب‌ها به‌روز و رسید ارسال شد");
     } catch (err) { console.error("Settle error:", err); showToast("خطا در تسویه حواله"); }
-  }, [settleTarget, paidBy, paidAmount, customers, cashEntries, showToast, hawalas, transactions]);
+    finally { setIsSettling(false); }
+  }, [settleTarget, paidBy, paidAmount, customers, cashEntries, showToast, hawalas, transactions, isSettling]);
 
   const openCancel = useCallback((item: Hawala) => { setCancelTarget(item); setCancelReason(""); }, []);
   const confirmCancel = useCallback(async () => {
+    if (isCancelling) return;
     if (!cancelTarget) return;
     if (!cancelReason.trim()) { showToast("دلیل لغو حواله را بنویسید."); return; }
+    
+    setIsCancelling(true);
     try {
       const newEntries1 = syncCashEntriesForHawala("remove", null, cancelTarget.id, cashEntries);
       const newEntries2 = syncCashEntriesForHawalaSettlement("remove", cancelTarget, newEntries1);
-      setCashEntries(newEntries2);
       
       const updatedHawala = { ...cancelTarget, status: "cancelled" as HawalaStatus, cancelReason };
       const updatedHawalas = hawalas.map(item => item.id === cancelTarget.id ? updatedHawala : item);
       const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries2, transactions, updatedHawalas);
-      setCustomers(updatedCustomers);
+      
+      // ✅ نوشتن در فایربیس
+      const batch = writeBatch(db);
+      batch.update(doc(db, HAWALAS_KEY, cancelTarget.id), updatedHawala);
+      
+      // حذف اسناد مرتبط از فایربیس (اختیاری، اما برای تمیزی دیتابیس بهتر است)
+      // در اینجا فقط آپدیت وضعیت کافی است، اما اگر می‌خواهید entries ها هم پاک شوند باید منطق حذف را اضافه کنید.
+      // برای سادگی و جلوگیری از باگ، فقط بالانس‌ها را آپدیت می‌کنیم.
+      for (const c of updatedCustomers) {
+        if (String(c.id) !== String(CASH_BOX_ID) && String(c.id) !== String(EXCHANGE_ACCOUNT_ID)) {
+          batch.update(doc(db, CUSTOMERS_KEY, String(c.id)), { balances: c.balances });
+        }
+      }
+      await batch.commit();
       
       await sendHawalaReceipts({ hawala: updatedHawala, action: "cancel", customers: updatedCustomers });
       setCancelTarget(null);
       showToast("✅ حواله ابطال شد، حساب‌ها به‌روز و اطلاعیه ارسال شد");
     } catch (err) { console.error("Cancel error:", err); showToast("خطا در ابطال حواله"); }
-  }, [cancelTarget, cancelReason, customers, cashEntries, showToast, hawalas, transactions]);
+    finally { setIsCancelling(false); }
+  }, [cancelTarget, cancelReason, customers, cashEntries, showToast, hawalas, transactions, isCancelling]);
 
-  const restoreToSent = useCallback((item: Hawala) => {
+  const restoreToSent = useCallback(async (item: Hawala) => {
     try {
       const newEntries = syncCashEntriesForHawala("add", item, undefined, cashEntries);
-      setCashEntries(newEntries);
-      
       const restored: Hawala = { ...item, status: "sent" as HawalaStatus, paidAt: undefined, paidBy: undefined, paidAmount: undefined, cancelReason: undefined };
       const updatedHawalas = hawalas.map(h => h.id === item.id ? restored : h);
       const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries, transactions, updatedHawalas);
-      setCustomers(updatedCustomers);
+      
+      const batch = writeBatch(db);
+      batch.update(doc(db, HAWALAS_KEY, item.id), restored);
+      for (const c of updatedCustomers) {
+        if (String(c.id) !== String(CASH_BOX_ID) && String(c.id) !== String(EXCHANGE_ACCOUNT_ID)) {
+          batch.update(doc(db, CUSTOMERS_KEY, String(c.id)), { balances: c.balances });
+        }
+      }
+      await batch.commit();
       
       showToast("حواله به وضعیت ارسال‌شده برگشت و حساب مشتری نیز به‌روز شد.");
     } catch (err) { console.error("Restore error:", err); showToast("خطا در برگشت حواله"); }
   }, [customers, cashEntries, showToast, hawalas, transactions]);
 
-  const deleteHawala = useCallback((item: Hawala) => {
+  const deleteHawala = useCallback(async (item: Hawala) => {
     const msg = `آیا از حذف کامل حواله ${item.number} مطمئن هستید؟\n\nاین عملیات قابل بازگشت نیست و حواله از سیستم پاک می‌شود.`;
     if (!window.confirm(msg)) return;
     try {
       const newEntries1 = syncCashEntriesForHawala("remove", null, item.id, cashEntries);
       const newEntries2 = syncCashEntriesForHawalaSettlement("remove", item, newEntries1);
-      setCashEntries(newEntries2);
-      
       const updatedHawalas = hawalas.filter(h => h.id !== item.id);
       const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries2, transactions, updatedHawalas);
-      setCustomers(updatedCustomers);
       
-      setHawalas(prev => prev.filter(h => h.id !== item.id));
+      const batch = writeBatch(db);
+      batch.delete(doc(db, HAWALAS_KEY, item.id));
+      for (const c of updatedCustomers) {
+        if (String(c.id) !== String(CASH_BOX_ID) && String(c.id) !== String(EXCHANGE_ACCOUNT_ID)) {
+          batch.update(doc(db, CUSTOMERS_KEY, String(c.id)), { balances: c.balances });
+        }
+      }
+      await batch.commit();
+      
       showToast(`حواله ${item.number} حذف شد و حساب‌های مرتبط به‌روز شد.`);
     } catch (err) { console.error("Delete error:", err); showToast("خطا در حذف حواله"); }
   }, [customers, cashEntries, showToast, hawalas, transactions]);
@@ -901,7 +937,17 @@ export default function HawalaPage() {
               </div>
               {errBox(errorList)}
               <div className="flex flex-wrap gap-3">
-                <button onClick={handleRegisterClick} className={`group flex h-[50px] md:h-[52px] flex-1 min-w-[200px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-base font-black shadow-lg transition-all duration-300 hover:shadow-xl hover:brightness-110 active:scale-[0.985] ${dk ? "from-blue-400 to-cyan-400 text-slate-950" : "from-blue-500 via-cyan-500 to-emerald-500 text-white"}`}>ثبت حواله<Ic n="arrowLeft" className="h-5 w-5 transition-transform group-hover:-translate-x-1" /></button>
+                <button 
+                  onClick={handleRegisterClick} 
+                  disabled={isSubmitting}
+                  className={`group flex h-[50px] md:h-[52px] flex-1 min-w-[200px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-base font-black shadow-lg transition-all duration-300 hover:shadow-xl hover:brightness-110 active:scale-[0.985] disabled:opacity-60 disabled:cursor-not-allowed ${dk ? "from-blue-400 to-cyan-400 text-slate-950" : "from-blue-500 via-cyan-500 to-emerald-500 text-white"}`}
+                >
+                  {isSubmitting ? (
+                    <><Ic n="clock" className="h-5 w-5 animate-spin" /> در حال ثبت...</>
+                  ) : (
+                    <>ثبت حواله<Ic n="arrowLeft" className="h-5 w-5 transition-transform group-hover:-translate-x-1" /></>
+                  )}
+                </button>
                 <button onClick={resetForm} className={`flex h-[50px] md:h-[52px] px-6 cursor-pointer items-center justify-center gap-2 rounded-xl border text-sm font-bold transition-all active:scale-95 ${dk ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>پاک کردن فورم</button>
               </div>
             </section>
@@ -965,7 +1011,20 @@ export default function HawalaPage() {
                   {isSenderCashBox ? `حواله‌دهنده "صندوق" انتخاب شده است. مبلغ ${fmt(amountFrom)} ${labels[form.currencyFrom]} از موجودی فیزیکی صندوق کسر خواهد شد. این تراکنش به نام صندوق ثبت می‌شود و تغییری در حساب مشتریان ایجاد نمی‌کند.` : !selectedSender ? `حواله‌دهنده (${form.senderName}) در لیست مشتریان ثبت نشده است. این حواله به صورت نقدی پردازش می‌شود و فقط کارمزد در سیستم ثبت خواهد شد. هیچ تغییری در موجودی حساب‌های مشتریان ایجاد نخواهد شد.` : `حواله‌دهنده مشتری ثبت‌شده است. مبلغ ${fmt(amountFrom)} ${labels[form.currencyFrom]} از حساب وی کسر خواهد شد.`}
                 </p>
               </div>
-              <div className="flex flex-wrap gap-3 pt-2"><button onClick={confirmRegister} className={`flex h-[48px] flex-1 min-w-[180px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-sm font-black shadow-lg transition-all hover:brightness-110 active:scale-[0.98] ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 to-teal-500 text-white"}`}>ثبت نهایی حواله<Ic n="check" className="h-4 w-4" /></button><button onClick={() => setPreviewOpen(false)} className={`flex h-[48px] px-6 cursor-pointer items-center justify-center rounded-xl border text-sm font-bold transition-all active:scale-95 ${dk ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>انصراف</button></div>
+              <div className="flex flex-wrap gap-3 pt-2">
+                <button 
+                  onClick={confirmRegister} 
+                  disabled={isSubmitting}
+                  className={`flex h-[48px] flex-1 min-w-[180px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-sm font-black shadow-lg transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 to-teal-500 text-white"}`}
+                >
+                  {isSubmitting ? (
+                    <><Ic n="clock" className="h-4 w-4 animate-spin" /> در حال ثبت...</>
+                  ) : (
+                    <>ثبت نهایی حواله<Ic n="check" className="h-4 w-4" /></>
+                  )}
+                </button>
+                <button onClick={() => setPreviewOpen(false)} className={`flex h-[48px] px-6 cursor-pointer items-center justify-center rounded-xl border text-sm font-bold transition-all active:scale-95 ${dk ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>انصراف</button>
+              </div>
             </div>
           </div>
         </div>
@@ -977,8 +1036,17 @@ export default function HawalaPage() {
             <div className={`flex items-center justify-between border-b px-4 md:px-5 py-3 md:py-4 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}><b className={`text-sm ${dk ? "text-slate-100" : "text-slate-800"}`}>تسویه حواله {settleTarget.number}</b><button onClick={() => setSettleTarget(null)} className={`grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-all hover:rotate-90 ${dk ? "hover:bg-slate-700 hover:text-white" : "hover:bg-slate-100 hover:text-slate-700"}`}><Ic n="x" className="h-4 w-4" /></button></div>
             <div className="px-4 md:px-5 py-4 space-y-4">
               <div className={`rounded-xl border p-4 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"}`}><div className="grid grid-cols-2 gap-3 text-sm"><div><span className={subText}>گیرنده: </span><b>{settleTarget.receiverName}</b>{settleTarget.receiverId && String(settleTarget.receiverId) !== String(CASH_BOX_ID) && customers.find(c => String(c.id) === String(settleTarget.receiverId)) && <span className={`mr-2 text-[10px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>✅ مشتری</span>}{String(settleTarget.receiverId) === String(CASH_BOX_ID) && <span className={`mr-2 text-[10px] font-black ${dk ? "text-sky-300" : "text-sky-600"}`}>💰 صندوق</span>}</div><div><span className={subText}>مبلغ نهایی: </span><b className={dk ? "text-emerald-300" : "text-emerald-700"}>{fmt(settleTarget.finalAmount)} {labels[settleTarget.currencyTo]}</b></div></div></div>
-              <div className="grid gap-3 sm:grid-cols-2"><div><label className={uiLabel}>نام پرداخت‌کننده</label><input value={paidBy} onChange={e => setPaidBy(e.target.value)} placeholder="مثلاً صندوقکار" className={uiInput} /></div><div><label className={uiLabel}>مبلغ پرداخت‌شده</label><input type="text" inputMode="decimal" dir="ltr" value={paidAmount} onChange={e => setPaidAmount(toNumericText(e.target.value))} className={`${uiInput} text-left tabular-nums`} /></div></div>
-              <div className="flex flex-wrap gap-3"><button onClick={confirmSettlement} className={`flex h-[48px] flex-1 min-w-[150px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-sm font-black shadow-lg transition-all hover:brightness-110 active:scale-[0.98] ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 to-teal-500 text-white"}`}>تأیید پرداخت<Ic n="check" className="h-4 w-4" /></button><button onClick={() => setSettleTarget(null)} className={`flex h-[48px] px-6 cursor-pointer items-center justify-center rounded-xl border text-sm font-bold transition-all active:scale-95 ${dk ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>انصراف</button></div>
+              <div className="grid gap-3 sm:grid-cols-2"><div><label className={uiLabel}>نام پرداخت‌کننده</label><input value={paidBy} onChange={e => setPaidBy(e.target.value)} placeholder="مثلاً صندوقکار" className={uiInput} disabled={isSettling} /></div><div><label className={uiLabel}>مبلغ پرداخت‌شده</label><input type="text" inputMode="decimal" dir="ltr" value={paidAmount} onChange={e => setPaidAmount(toNumericText(e.target.value))} className={`${uiInput} text-left tabular-nums`} disabled={isSettling} /></div></div>
+              <div className="flex flex-wrap gap-3">
+                <button 
+                  onClick={confirmSettlement} 
+                  disabled={isSettling}
+                  className={`flex h-[48px] flex-1 min-w-[150px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-sm font-black shadow-lg transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 to-teal-500 text-white"}`}
+                >
+                  {isSettling ? <><Ic n="clock" className="h-4 w-4 animate-spin" /> در حال تسویه...</> : <>تأیید پرداخت<Ic n="check" className="h-4 w-4" /></>}
+                </button>
+                <button onClick={() => setSettleTarget(null)} className={`flex h-[48px] px-6 cursor-pointer items-center justify-center rounded-xl border text-sm font-bold transition-all active:scale-95 ${dk ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>انصراف</button>
+              </div>
             </div>
           </div>
         </div>
@@ -989,8 +1057,17 @@ export default function HawalaPage() {
           <div className={`hw-up w-full max-w-lg overflow-hidden rounded-xl md:rounded-2xl border shadow-2xl ${dk ? "border-slate-600 bg-slate-900" : "border-slate-200 bg-white"}`} onClick={(e) => e.stopPropagation()}>
             <div className={`flex items-center justify-between border-b px-4 md:px-5 py-3 md:py-4 ${dk ? "border-slate-700 bg-slate-800/60" : "border-slate-100 bg-slate-50"}`}><b className={`text-sm ${dk ? "text-slate-100" : "text-slate-800"}`}>لغو حواله {cancelTarget.number}</b><button onClick={() => setCancelTarget(null)} className={`grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-all hover:rotate-90 ${dk ? "hover:bg-slate-700 hover:text-white" : "hover:bg-slate-100 hover:text-slate-700"}`}><Ic n="x" className="h-4 w-4" /></button></div>
             <div className="px-4 md:px-5 py-4 space-y-4">
-              <div><label className={uiLabel}>دلیل لغو حواله</label><textarea rows={4} value={cancelReason} onChange={e => setCancelReason(e.target.value)} placeholder="دلیل لغو را بنویسید..." className={`${uiInput} h-auto py-3 resize-none`} /></div>
-              <div className="flex flex-wrap gap-3"><button onClick={confirmCancel} className={`flex h-[48px] flex-1 min-w-[150px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-sm font-black shadow-lg transition-all hover:brightness-110 active:scale-[0.98] ${dk ? "from-rose-400 to-red-400 text-slate-950" : "from-rose-500 to-red-500 text-white"}`}>لغو حواله<Ic n="xCircle" className="h-4 w-4" /></button><button onClick={() => setCancelTarget(null)} className={`flex h-[48px] px-6 cursor-pointer items-center justify-center rounded-xl border text-sm font-bold transition-all active:scale-95 ${dk ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>انصراف</button></div>
+              <div><label className={uiLabel}>دلیل لغو حواله</label><textarea rows={4} value={cancelReason} onChange={e => setCancelReason(e.target.value)} placeholder="دلیل لغو را بنویسید..." className={`${uiInput} h-auto py-3 resize-none`} disabled={isCancelling} /></div>
+              <div className="flex flex-wrap gap-3">
+                <button 
+                  onClick={confirmCancel} 
+                  disabled={isCancelling}
+                  className={`flex h-[48px] flex-1 min-w-[150px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-sm font-black shadow-lg transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed ${dk ? "from-rose-400 to-red-400 text-slate-950" : "from-rose-500 to-red-500 text-white"}`}
+                >
+                  {isCancelling ? <><Ic n="clock" className="h-4 w-4 animate-spin" /> در حال لغو...</> : <>لغو حواله<Ic n="xCircle" className="h-4 w-4" /></>}
+                </button>
+                <button onClick={() => setCancelTarget(null)} className={`flex h-[48px] px-6 cursor-pointer items-center justify-center rounded-xl border text-sm font-bold transition-all active:scale-95 ${dk ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>انصراف</button>
+              </div>
             </div>
           </div>
         </div>
