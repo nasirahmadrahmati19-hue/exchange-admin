@@ -320,7 +320,7 @@ export default function SettingsDrawer() {
       const sessionStorageData = scanSessionStorage();
 
       const data = {
-        version: "3.2", // نسخه نهایی و پایدار
+        version: "3.3", // ارتقا نسخه به دلیل اصلاحات جدید
         exportDate: new Date().toISOString(),
         settings: settings,
         localStorage: localStorageData,
@@ -355,14 +355,13 @@ export default function SettingsDrawer() {
     }
   }, [settings, showToast]);
 
-  // ===================== بازیابی (نسخه نهایی با پاکسازی هسته‌ای) =====================
+  // ===================== بازیابی (نسخه نهایی با پاکسازی کش فایربیس) =====================
   const handleRestore = useCallback(async (file: File) => {
     setIsRestoring(true);
     try {
       showToast("⏳ در حال آماده‌سازی سیستم برای بازیابی...");
 
       // ✅ ۱. پاکسازی هسته‌ای (Nuclear Wipe): حذف تمام داده‌های محلی قبل از هر کاری
-      // این کار تضمین می‌کند که هوک useSyncedState نمی‌تواند داده‌های جدید را پیدا کند
       for (let i = localStorage.length - 1; i >= 0; i--) {
         const key = localStorage.key(i);
         if (key && (key.startsWith('synced_') || key === SETTINGS_KEY || key === 'fx-theme')) {
@@ -370,14 +369,33 @@ export default function SettingsDrawer() {
         }
       }
 
-      // حذف کامل دیتابیس IndexedDB برای جلوگیری از تداخل "ترمیم خودکار"
+      // حذف کامل دیتابیس IndexedDB سفارسی
       await new Promise<void>((resolve) => {
         const req = indexedDB.deleteDatabase("AppSyncDB");
         req.onsuccess = () => resolve();
         req.onerror = () => resolve();
         req.onblocked = () => resolve();
       });
-      console.log("🧹 پاکسازی هسته‌ای LocalStorage و IndexedDB با موفقیت انجام شد.");
+
+      // ✅ تغییر حیاتی جدید: پاکسازی کش داخلی فایربیس (Firebase IndexedDB)
+      // فایربیس داده‌ها را کش می‌کند و با رفرش صفحه پاک نمی‌شود. این کش باید دستی حذف شود.
+      const dbNames = await new Promise<string[]>((resolve) => {
+        const req = indexedDB.databases();
+        req.onsuccess = () => resolve(req.result.map((db: any) => db.name));
+        req.onerror = () => resolve([]);
+      });
+
+      for (const dbName of dbNames) {
+        if (dbName && (dbName.includes('firebase') || dbName.includes('firestore') || dbName.includes('appId'))) {
+          await new Promise<void>((resolve) => {
+            const req = indexedDB.deleteDatabase(dbName);
+            req.onsuccess = () => resolve();
+            req.onerror = () => resolve();
+            req.onblocked = () => resolve();
+          });
+        }
+      }
+      console.log("🧹 پاکسازی کامل: LocalStorage، IndexedDB سفارشی و کش فایربیس انجام شد.");
 
       // ✅ ۲. خواندن فایل بک‌آپ
       const text = await file.text();
@@ -639,7 +657,7 @@ export default function SettingsDrawer() {
             <div className="space-y-3">
               <div className={`rounded-xl p-3 text-xs ${dk ? "bg-amber-500/10 border border-amber-500/30 text-amber-200" : "bg-amber-50 border border-amber-200 text-amber-800"}`}>
                 💡 این بک‌آپ شامل <b>تمام داده‌ها</b> (شامل appData، حواله‌ها، معاملات و...) از Firebase و حافظه محلی است.<br />
-                <span className="text-[10px] opacity-80">نسخه ۳.۲: رفع کامل مشکل عدم نمایش داده‌ها پس از بازیابی.</span>
+                <span className="text-[10px] opacity-80">نسخه ۳.۳: رفع کامل مشکل کش فایربیس و بازگشت واقعی به عقب.</span>
               </div>
 
               <button
@@ -718,7 +736,7 @@ export default function SettingsDrawer() {
           </AccordionItem>
 
           <div className={`mt-4 rounded-xl p-4 text-center ${dk ? "bg-slate-800/50" : "bg-slate-50"}`}>
-            <p className={`text-[10px] font-bold ${subText}`}>نسخه ۳.۲.۰ — صرافی برادران نورزاد</p>
+            <p className={`text-[10px] font-bold ${subText}`}>نسخه ۳.۳.۰ — صرافی برادران نورزاد</p>
           </div>
         </div>
       </div>
@@ -765,7 +783,7 @@ export default function SettingsDrawer() {
                 <p className={`text-xs font-black mb-2 ${heading}`}>💡 نتیجه:</p>
                 <ul className={`text-xs space-y-1 ${subText}`}>
                   <li>• اگر collection های Firebase (مخصوصاً <b>appData</b>) تعداد زیادی سند دارند، داده‌های شما سالم هستند.</li>
-                  <li>• بک‌آپ نسخه ۳.۲ مشکل مقادیر undefined و عدم نمایش داده‌ها پس از بازیابی را کاملاً حل کرده است.</li>
+                  <li>• بک‌آپ نسخه ۳.۳ مشکل کش فایربیس و بازگشت به عقب (Rollback) را کاملاً حل کرده است.</li>
                 </ul>
               </div>
             </div>
