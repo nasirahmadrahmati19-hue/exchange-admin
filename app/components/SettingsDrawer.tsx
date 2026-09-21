@@ -82,17 +82,31 @@ function loadSettings(): Settings {
   }
 }
 
-// ✅ بازسازی انواع خاص Firebase (Timestamp و ...) از JSON
+// ✅ نسخه اصلاح‌شده و ایمن: بازسازی انواع خاص Firebase و حذف مقادیر undefined
 function restoreFirestoreTypes(data: any): any {
-  if (data === null || data === undefined) return data;
+  if (data === null) return null;
+  if (data === undefined) return null; // فایربیس مقدار undefined را در batch قبول نمی‌کند
+  
   if (typeof data === "object") {
+    // تشخیص و بازسازی Timestamp
     if (data._seconds !== undefined && data._nanoseconds !== undefined) {
       return new Timestamp(data._seconds, data._nanoseconds);
     }
-    if (Array.isArray(data)) return data.map(restoreFirestoreTypes);
+    
+    // پردازش آرایه‌ها
+    if (Array.isArray(data)) {
+      return data.map(restoreFirestoreTypes).filter(item => item !== undefined);
+    }
+    
+    // پردازش آبجکت‌ها
     const restored: any = {};
     for (const key in data) {
-      restored[key] = restoreFirestoreTypes(data[key]);
+      if (Object.prototype.hasOwnProperty.call(data, key)) {
+        const val = restoreFirestoreTypes(data[key]);
+        if (val !== undefined) {
+          restored[key] = val;
+        }
+      }
     }
     return restored;
   }
@@ -306,7 +320,7 @@ export default function SettingsDrawer() {
       const sessionStorageData = scanSessionStorage();
 
       const data = {
-        version: "3.0",
+        version: "3.1", // ارتقا نسخه برای ردیابی اصلاحات
         exportDate: new Date().toISOString(),
         settings: settings,
         localStorage: localStorageData,
@@ -341,7 +355,7 @@ export default function SettingsDrawer() {
     }
   }, [settings, showToast]);
 
-  // ===================== بازیابی (نسخه نهایی با رفرش واقعی) =====================
+  // ===================== بازیابی (نسخه نهایی و مقاوم در برابر خطا) =====================
   const handleRestore = useCallback(async (file: File) => {
     setIsRestoring(true);
     const reader = new FileReader();
@@ -384,14 +398,14 @@ export default function SettingsDrawer() {
           });
         }
 
-        // ۳. بازیابی Firebase
+        // ۳. بازیابی Firebase (بخش اصلاح‌شده و ایمن)
         if (data.firebase) {
           showToast("⏳ در حال بازیابی داده‌های Firebase (لطفاً صبر کنید)...");
           console.log("🔥 شروع بازیابی Firebase...");
 
           for (const [colName, docs] of Object.entries(data.firebase)) {
             if (!Array.isArray(docs) || docs.length === 0) {
-              console.log(`⏭️ پرش از ${colName} (خالی است)`);
+              console.log(`⏭️ پرش از ${colName} (خالی است یا داده‌ای ندارد)`);
               continue;
             }
 
@@ -411,28 +425,44 @@ export default function SettingsDrawer() {
                 console.log(`✅ حذف اسناد قدیمی ${colName} تکمیل شد.`);
               }
 
-              // ب) نوشتن اسناد جدید به صورت تکه‌تکه
+              // ب) نوشتن اسناد جدید به صورت تکه‌تکه با پاکسازی داده‌ها
               const writeChunkSize = 400;
               const totalDocs = (docs as any[]).length;
+              let successCount = 0;
 
               for (let i = 0; i < totalDocs; i += writeChunkSize) {
                 const chunk = (docs as any[]).slice(i, i + writeChunkSize);
                 const batch = writeBatch(db);
 
                 chunk.forEach((docData: any) => {
+                  // بررسی اعتبار ID
+                  if (!docData || !docData.id) {
+                    console.warn("⚠️ یک سند بدون ID معتبر نادیده گرفته شد:", docData);
+                    return;
+                  }
+
                   const docId = String(docData.id);
-                  const { id, ...rest } = docData;
+                  const { id, ...rest } = docData; // جداسازی ID از داده‌ها
+                  
+                  // بازسازی انواع داده (مثل Timestamp)
                   const cleanData = restoreFirestoreTypes(rest);
+                  
+                  // پاکسازی نهایی: حذف هرگونه مقدار undefined که باعث کرش فایربیس می‌شود
+                  const sanitizedData = Object.fromEntries(
+                    Object.entries(cleanData).filter(([_, value]) => value !== undefined)
+                  );
+
                   const docRef = doc(db, colName, docId);
-                  batch.set(docRef, cleanData);
+                  batch.set(docRef, sanitizedData);
+                  successCount++;
                 });
 
                 await batch.commit();
-                console.log(`✅ نوشته شد: ${i + chunk.length} از ${totalDocs} در ${colName}`);
+                console.log(`✅ نوشته شد: ${successCount} از ${totalDocs} در ${colName}`);
               }
 
             } catch (err: any) {
-              console.error(`❌ خطای فاجعه‌بار در ${colName}:`, err);
+              console.error(`❌ خطای فاجعه‌بار در collection ${colName}:`, err);
               throw new Error(`شکست در بازیابی ${colName}: ${err.message}`);
             }
           }
@@ -474,12 +504,12 @@ export default function SettingsDrawer() {
         console.log("🎉 [پایان موفقیت‌آمیز] تمام داده‌ها بازیابی شدند.");
         showToast("✅ بازیابی با موفقیت انجام شد. صفحه در حال رفرش...", "success");
 
-        // ✅ ارسال رویداد سفارشی برای اطلاع‌رسانی به سایر کامپوننت‌ها
+        // ارسال رویداد سفارشی برای اطلاع‌رسانی به سایر کامپوننت‌ها
         window.dispatchEvent(new CustomEvent('fx-data-restored', { 
           detail: { timestamp: Date.now() } 
         }));
 
-        // ✅ رفرش واقعی صفحه پس از ۲ ثانیه
+        // رفرش واقعی صفحه پس از ۲ ثانیه
         setTimeout(() => {
           window.location.reload();
         }, 2000);
@@ -643,7 +673,7 @@ export default function SettingsDrawer() {
             <div className="space-y-3">
               <div className={`rounded-xl p-3 text-xs ${dk ? "bg-amber-500/10 border border-amber-500/30 text-amber-200" : "bg-amber-50 border border-amber-200 text-amber-800"}`}>
                 💡 این بک‌آپ شامل <b>تمام داده‌ها</b> از Firebase و حافظه محلی است (حواله‌ها، معاملات، مشتریان و...).<br />
-                <span className="text-[10px] opacity-80">نسخه ۳.۰: رفع مشکل Timestamp و محدودیت ۵۰۰ تایی Batch.</span>
+                <span className="text-[10px] opacity-80">نسخه ۳.۱: رفع مشکل مقادیر undefined و بهبود پایدارنویسی Batch.</span>
               </div>
 
               <button
@@ -723,7 +753,7 @@ export default function SettingsDrawer() {
           </AccordionItem>
 
           <div className={`mt-4 rounded-xl p-4 text-center ${dk ? "bg-slate-800/50" : "bg-slate-50"}`}>
-            <p className={`text-[10px] font-bold ${subText}`}>نسخه ۳.۰.۰ — صرافی برادران نورزاد</p>
+            <p className={`text-[10px] font-bold ${subText}`}>نسخه ۳.۱.۰ — صرافی برادران نورزاد</p>
           </div>
         </div>
       </div>
@@ -771,7 +801,7 @@ export default function SettingsDrawer() {
                 <p className={`text-xs font-black mb-2 ${heading}`}>💡 نتیجه:</p>
                 <ul className={`text-xs space-y-1 ${subText}`}>
                   <li>• اگر collection های Firebase (مثل hawalas, transactions) تعداد زیادی سند دارند، <b>داده‌های شما در Firebase ذخیره می‌شوند</b>.</li>
-                  <li>• بک‌آپ نسخه ۳.۰ <b>هم Firebase و هم localStorage</b> را ذخیره می‌کند و مشکل Timestampها را حل کرده است.</li>
+                  <li>• بک‌آپ نسخه ۳.۱ <b>هم Firebase و هم localStorage</b> را ذخیره می‌کند و مشکل مقادیر undefined را حل کرده است.</li>
                   <li>• این گزارش را در کنسول (F12) هم می‌توانید ببینید.</li>
                 </ul>
               </div>
