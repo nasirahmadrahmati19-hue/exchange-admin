@@ -7,10 +7,11 @@ import {
 import { db } from "../lib/firebase"; 
 import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem, getTrackingNumberValue } from "../lib/trackingCode";
 
-const CUSTOMERS_KEY = "fx-customers";
-const TRANSACTIONS_KEY = "fx-transactions";
-const HAWALAS_KEY = "fx-hawalas";
-const CASH_KEY = "fx-cash";
+// ✅ اصلاح حیاتی: همگام‌سازی نام کالکشن‌ها با سایر تب‌های برنامه (حذف پیشوند fx-)
+const CUSTOMERS_KEY = "customers";
+const TRANSACTIONS_KEY = "transactions";
+const HAWALAS_KEY = "hawalas";
+const CASH_KEY = "cash";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type RateMode = "same" | "afn" | "direct";
@@ -427,6 +428,7 @@ export default function HawalaPage() {
   const anyDropdownOpen = showSenderList || showReceiverList;
   useEffect(() => { if (!anyDropdownOpen) return; const handler = (e: MouseEvent) => { const t = e.target as Node; if (showSenderList && senderListRef.current && !senderListRef.current.contains(t)) setShowSenderList(false); if (showReceiverList && receiverListRef.current && !receiverListRef.current.contains(t)) setShowReceiverList(false); }; const timer = setTimeout(() => document.addEventListener("mousedown", handler), 0); return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); }; }, [anyDropdownOpen, showSenderList, showReceiverList]);
 
+  // ✅ شنونده‌های Realtime اکنون به کالکشن‌های صحیح و مشترک با سایر تب‌ها متصل هستند
   useEffect(() => {
     const unsubHawalas = onSnapshot(collection(db, HAWALAS_KEY), (snapshot) => {
       setHawalas(snapshot.docs.map(d => ({ id: d.id, ...d.data() }) as Hawala));
