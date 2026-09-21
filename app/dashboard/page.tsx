@@ -150,16 +150,23 @@ function formatShamsiDate(d: Date) {
   return `${s.year}/${s.month}/${s.day}`;
 }
 
+// ✅ اصلاح شده: نرمال‌سازی ارقام قبل از مقایسه برای حل مشکل نمایش ندادن معاملات
 function isToday(dateStr: string | number | undefined | null): boolean {
   if (!dateStr) return false;
   try {
-    const str = String(dateStr);
+    const normalizedStr = normalizeDigits(String(dateStr));
     const now = new Date();
+    
+    // بررسی فرمت ISO (مثلاً: 2024-10-22)
     const todayISO = now.toISOString().split("T")[0];
-    if (str.startsWith(todayISO)) return true;
+    if (normalizedStr.startsWith(todayISO)) return true;
+    
+    // بررسی فرمت شمسی (مثلاً: 1403/07/30)
     const todayFa = formatShamsiDate(now);
-    if (str.includes(todayFa)) return true;
-    const num = Number(dateStr);
+    if (normalizedStr.includes(todayFa)) return true;
+    
+    // بررسی فرمت Timestamp (عدد بزرگ)
+    const num = Number(normalizedStr);
     if (!isNaN(num) && num > 1000000000000) {
       const d = new Date(num);
       return d.toDateString() === now.toDateString();
@@ -168,7 +175,6 @@ function isToday(dateStr: string | number | undefined | null): boolean {
   return false;
 }
 
-// ✅ اصلاح شده: اضافه شدن پارامتر hawalas برای محاسبه دقیق موجودی
 function getLedgerBalance(customerId: string, currency: Currency, entries: any[], transactions: any[], hawalas: any[]): number {
   let balance = 0;
   
@@ -221,7 +227,6 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: any[]
       }
     }
 
-    // ✅ اضافه شدن منطق حواله‌ها که قبلاً فراموش شده بود و باعث ناهماهنگی می‌شد
     for (const h of hawalas) {
       if (h.status === "cancelled") continue;
       if (h.senderId === customerId && h.currencyFrom === currency) {
@@ -261,7 +266,6 @@ export default function DashboardPage() {
     setLastUpdated(new Date());
   }, []);
 
-  // ✅ اصلاح شده: ارسال hawalas به تابع محاسبه
   const customerDeposits = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
@@ -274,7 +278,6 @@ export default function DashboardPage() {
     return totals;
   }, [customers, entries, transactions, hawalas]);
 
-  // ✅ اصلاح شده: ارسال hawalas به تابع محاسبه
   const customerDebts = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
@@ -399,7 +402,6 @@ export default function DashboardPage() {
     return result;
   }, [hawalas]);
 
-  // ✅ اصلاح شده: ارسال hawalas به تابع محاسبه
   const debtorsCount = useMemo(() => {
     return customers.filter(c => {
       if (c.id === CASH_BOX_ID || c.id === EXCHANGE_ACCOUNT_ID) return false;
