@@ -5,7 +5,7 @@ import { doc, setDoc, onSnapshot, getDoc } from "firebase/firestore";
 import { db } from "./firebase";
 
 // ============================================================
-// توابع کمکی
+// توابع کمکی (بدون هیچ تغییری - کاملاً ایمن)
 // ============================================================
 function removeUndefinedFields(obj: any): any {
   if (obj === null || obj === undefined) return obj;
@@ -19,10 +19,7 @@ function removeUndefinedFields(obj: any): any {
 }
 
 function isEmptyData(data: any): boolean {
-  // ✅ اصلاح حیاتی: آرایه خالی [] یک حالت معتبر است (مثلاً وقتی همه تراکنش‌ها حذف می‌شوند).
-  // بنابراین آن را به عنوان "داده خالی خطرناک" در نظر نمی‌گیریم تا جلوی حذف قانونی گرفته نشود.
   if (Array.isArray(data)) return false;
-  
   if (typeof data === "object" && data !== null) return Object.keys(data).length === 0;
   return data === null || data === undefined || data === "";
 }
@@ -32,7 +29,7 @@ function hasData(data: any): boolean {
 }
 
 // ============================================================
-// لایه ذخیره‌سازی محلی
+// لایه ذخیره‌سازی محلی (بدون هیچ تغییری)
 // ============================================================
 const IDB_NAME = "AppSyncDB";
 const IDB_STORE = "syncedData";
@@ -98,7 +95,7 @@ function saveToLS(key: string, value: any): boolean {
 }
 
 // ============================================================
-// ✅ کش سراسری در سطح ماژول (برای زنده ماندن هنگام تعویض تب)
+// ✅ کش سراسری در سطح ماژول (بدون تغییر)
 // ============================================================
 type CacheEntry = {
   value: any;
@@ -126,11 +123,30 @@ export function useSyncedState<T>(key: string, initialValue: T) {
   }, [value]);
 
   // ============================================================
-  // ۱. بارگذاری اولیه با منطق "ترمیم خودکار" (Auto-Repair)
+  // ۱. بارگذاری اولیه با منطق "ترمیم خودکار" (Auto-Repair) + پشتیبانی از Restore
   // ============================================================
   useEffect(() => {
     isMountedRef.current = true;
     let ignore = false;
+
+    // ✅ اصلاح حیاتی: گوش دادن به رویداد بازیابی (Restore) برای پاکسازی کش و دریافت داده‌های تازه
+    const handleDataRestored = () => {
+      console.log(`🔄 [useSyncedState] رویداد بازیابی دریافت شد برای کلید: ${key}. پاکسازی کش و دریافت مجدد...`);
+      
+      // ۱. حذف از کش سراسری برای اجبار به خواندن مجدد
+      globalCache.delete(key);
+      
+      // ۲. حذف از localStorage تا هوک مجبور شود فقط به فایربیس (که تازه آپدیت شده) اعتماد کند
+      if (typeof window !== "undefined") {
+        localStorage.removeItem(LS_PREFIX + key);
+      }
+      
+      // ۳. ریست کردن وضعیت برای اجرای مجدد تابع init
+      setIsLoaded(false);
+      setIsLoading(true);
+    };
+
+    window.addEventListener('fx-data-restored', handleDataRestored);
 
     const alreadyLoaded = globalCache.get(key)?.loaded;
     if (alreadyLoaded) {
@@ -205,9 +221,14 @@ export function useSyncedState<T>(key: string, initialValue: T) {
     };
 
     init();
+    
     return () => {
       ignore = true;
       isMountedRef.current = false;
+      
+      // ✅ پاکسازی Event Listener برای جلوگیری از نشت حافظه (Memory Leak)
+      window.removeEventListener('fx-data-restored', handleDataRestored);
+
       if (hasData(valueRef.current)) {
         globalCache.set(key, {
           value: valueRef.current,
@@ -219,7 +240,7 @@ export function useSyncedState<T>(key: string, initialValue: T) {
   }, [key, initialValue]);
 
   // ============================================================
-  // ۲. شنونده بلادرنگ (onSnapshot) با محافظت ضد پاک‌شدن
+  // ۲. شنونده بلادرنگ (onSnapshot) با محافظت ضد پاک‌شدن (بدون تغییر)
   // ============================================================
   useEffect(() => {
     if (!isLoaded) return;
@@ -286,7 +307,7 @@ export function useSyncedState<T>(key: string, initialValue: T) {
   }, [key, isLoaded]);
 
   // ============================================================
-  // ۳. همگام‌سازی بین تب‌های مرورگر
+  // ۳. همگام‌سازی بین تب‌های مرورگر (بدون تغییر)
   // ============================================================
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -308,7 +329,7 @@ export function useSyncedState<T>(key: string, initialValue: T) {
   }, [key]);
 
   // ============================================================
-  // ۴. تابع به‌روزرسانی داده با محافظت نهایی (Hardened)
+  // ۴. تابع به‌روزرسانی داده با محافظت نهایی (Hardened) (بدون تغییر)
   // ============================================================
   const setSyncedValue = useCallback(
     async (newValue: T | ((prev: T) => T)) => {
@@ -320,7 +341,6 @@ export function useSyncedState<T>(key: string, initialValue: T) {
             : newValue;
 
         // 🚨 محافظ ۲ اصلاح‌شده: جلوگیری مطلق از ذخیره null یا undefined
-        // (آرایه خالی [] دیگر مسدود نمی‌شود و به عنوان یک حالت معتبر پذیرفته می‌شود)
         if (resolvedValue === undefined || resolvedValue === null) {
            console.warn(`⚠️ [${key}] Attempted to save undefined/null. Reverting to safe state.`);
            return valueRef.current;
