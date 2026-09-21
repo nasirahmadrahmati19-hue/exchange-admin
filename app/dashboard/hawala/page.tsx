@@ -4,7 +4,6 @@ import {
   collection, addDoc, updateDoc, doc, onSnapshot, writeBatch, serverTimestamp 
 } from "firebase/firestore";
 
-// ✅ مسیر اصلاح‌شده برای رفع خطای بیلد ورسل (حذف dashboard اضافه)
 import { db } from "../lib/firebase"; 
 import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem, getTrackingNumberValue } from "../lib/trackingCode";
 
@@ -374,13 +373,16 @@ const Ic = memo(function Ic({ n, className = "h-5 w-5" }: { n: IconName; classNa
 export default function HawalaPage() {
   const [mounted, setMounted] = useState(false);
   
-  // ✅ تغییر حیاتی ۱: استفاده از useState معمولی به جای useSyncedState برای جلوگیری از تداخل localStorage
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [hawalas, setHawalas] = useState<Hawala[]>([]);
   const [cashEntries, setCashEntries] = useState<any[]>([]);
   
-  // ✅ تغییر حیاتی ۲: اضافه کردن Stateهای قفل‌کننده برای جلوگیری از کلیک‌های تکراری
+  // ✅ اصلاح حیاتی ۱: استفاده از useRef برای قفل‌کردن آنی عملیات و جلوگیری ۱۰۰٪ از کلیک چندباره
+  const isSubmittingRef = useRef(false);
+  const isSettlingRef = useRef(false);
+  const isCancellingRef = useRef(false);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSettling, setIsSettling] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -425,7 +427,6 @@ export default function HawalaPage() {
   const anyDropdownOpen = showSenderList || showReceiverList;
   useEffect(() => { if (!anyDropdownOpen) return; const handler = (e: MouseEvent) => { const t = e.target as Node; if (showSenderList && senderListRef.current && !senderListRef.current.contains(t)) setShowSenderList(false); if (showReceiverList && receiverListRef.current && !receiverListRef.current.contains(t)) setShowReceiverList(false); }; const timer = setTimeout(() => document.addEventListener("mousedown", handler), 0); return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); }; }, [anyDropdownOpen, showSenderList, showReceiverList]);
 
-  // ✅ تغییر حیاتی ۳: استفاده از onSnapshot برای همگام‌سازی آنی (Real-time) بین گوشی و کامپیوتر
   useEffect(() => {
     const unsubHawalas = onSnapshot(collection(db, HAWALAS_KEY), (snapshot) => {
       setHawalas(snapshot.docs.map(d => ({ id: d.id, ...d.data() }) as Hawala));
@@ -521,9 +522,10 @@ export default function HawalaPage() {
   const handleRegisterClick = useCallback(() => { const errs = validateForm(); setErrors(errs); if (Object.keys(errs).length > 0) { showToast("لطفاً فیلدهای ضروری را خانه‌پری کنید."); return; } setPreviewOpen(true); }, [validateForm, showToast]);
 
   const confirmRegister = useCallback(async () => {
-    // ✅ جلوگیری از کلیک تکراری
-    if (isSubmitting) return;
-    setIsSubmitting(true);
+    // ✅ اصلاح حیاتی ۲: بررسی آنی و همگام (Synchronous) برای جلوگیری از کلیک چندباره
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setIsSubmitting(true); // برای غیرفعال کردن ظاهری دکمه
 
     try {
       const parsedAmountFrom = parseAmount(form.amountFrom);
@@ -564,11 +566,9 @@ export default function HawalaPage() {
           const updatedHawalasList = hawalas.map(x => x.id === editingId ? updated : x);
           const updatedCustomersList = getUpdatedCustomerBalances(customers, updatedEntries, transactions, updatedHawalasList);
 
-          // ✅ نوشتن در فایربیس به جای آپدیت محلی
           const batch = writeBatch(db);
           batch.update(doc(db, HAWALAS_KEY, editingId), updated);
           
-          // آپدیت بالانس مشتریان
           for (const c of updatedCustomersList) {
             if (String(c.id) !== String(CASH_BOX_ID) && String(c.id) !== String(EXCHANGE_ACCOUNT_ID)) {
               batch.update(doc(db, CUSTOMERS_KEY, String(c.id)), { balances: c.balances });
@@ -591,17 +591,14 @@ export default function HawalaPage() {
       const updatedHawalas = [newHawala, ...hawalas];
       const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries, transactions, updatedHawalas);
       
-      // ✅ نوشتن در فایربیس (این خط باعث می‌شود همه دستگاه‌ها بلافاصله آپدیت شوند)
       const batch = writeBatch(db);
       batch.set(doc(collection(db, HAWALAS_KEY), newHawala.id), newHawala);
       
-      // ذخیره اسناد جدید Cash Entries
       const entriesToAdd = newEntries.filter(ne => !cashEntries.some(ce => ce.id === ne.id));
       for (const entry of entriesToAdd) {
         batch.set(doc(collection(db, CASH_KEY), entry.id), entry);
       }
 
-      // آپدیت بالانس مشتریان
       for (const c of updatedCustomers) {
         if (String(c.id) !== String(CASH_BOX_ID) && String(c.id) !== String(EXCHANGE_ACCOUNT_ID)) {
           batch.update(doc(db, CUSTOMERS_KEY, String(c.id)), { balances: c.balances });
@@ -613,16 +610,18 @@ export default function HawalaPage() {
       setLastNames({ senderName, receiverName });
       setForm(emptyForm); setErrors({}); setPreviewOpen(false); setActiveTab("current");
       
-      await sendHawalaReceipts({ hawala: newHawala, action: "register", customers: updatedCustomers });
+      // ارسال تلگرام در پس‌زمینه انجام می‌شود تا UI قفل نشود
+      sendHawalaReceipts({ hawala: newHawala, action: "register", customers: updatedCustomers });
       showToast("✅ حواله ثبت شد، حساب‌ها به‌روز و رسید ارسال شد");
     } catch (err) { 
       console.error("Register error:", err); 
       showToast("خطا در ثبت حواله"); 
     } finally {
-      // ✅ آزاد کردن قفل در هر حالت (موفق یا ناموفق)
+      // ✅ اصلاح حیاتی ۳: آزاد کردن قفل در هر حالت (موفق یا ناموفق)
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
-  }, [form, rateMode, rateValue, afnForeign, directCounter, directBaseValue, feeValue, amountFrom, destinationText, customers, cashEntries, showToast, finalAmount, editingId, hawalas, transactions, isSubmitting]);
+  }, [form, rateMode, rateValue, afnForeign, directCounter, directBaseValue, feeValue, amountFrom, destinationText, customers, cashEntries, showToast, finalAmount, editingId, hawalas, transactions]);
 
   const openDetails = useCallback((item: Hawala) => { setDetailTarget(item); setOpenActionId(null); }, []);
 
@@ -648,12 +647,13 @@ export default function HawalaPage() {
   const openSettlement = useCallback((item: Hawala) => { setSettleTarget(item); setPaidAmount(String(item.finalAmount)); setPaidBy(""); }, []);
 
   const confirmSettlement = useCallback(async () => {
-    if (isSettling) return;
+    if (isSettlingRef.current) return;
     if (!settleTarget) return;
     if (!paidBy.trim()) { showToast("نام پرداخت‌کننده را بنویسید."); return; }
     const amountPaid = Number(paidAmount || settleTarget.finalAmount);
     if (!Number.isFinite(amountPaid) || amountPaid <= 0) { showToast("مبلغ پرداخت‌شده معتبر نیست."); return; }
     
+    isSettlingRef.current = true;
     setIsSettling(true);
     try {
       const paidHawala = { ...settleTarget, status: "paid" as HawalaStatus, paidAt: new Date().toISOString(), paidBy, paidAmount: amountPaid };
@@ -662,7 +662,6 @@ export default function HawalaPage() {
       const updatedHawalas = hawalas.map(item => item.id === settleTarget.id ? paidHawala : item);
       const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries, transactions, updatedHawalas);
       
-      // ✅ نوشتن در فایربیس
       const batch = writeBatch(db);
       batch.update(doc(db, HAWALAS_KEY, settleTarget.id), paidHawala);
       
@@ -677,19 +676,23 @@ export default function HawalaPage() {
       }
       await batch.commit();
       
-      await sendHawalaReceipts({ hawala: paidHawala, action: "settle", customers: updatedCustomers });
+      sendHawalaReceipts({ hawala: paidHawala, action: "settle", customers: updatedCustomers });
       setSettleTarget(null);
       showToast("✅ حواله تسویه شد، حساب‌ها به‌روز و رسید ارسال شد");
     } catch (err) { console.error("Settle error:", err); showToast("خطا در تسویه حواله"); }
-    finally { setIsSettling(false); }
-  }, [settleTarget, paidBy, paidAmount, customers, cashEntries, showToast, hawalas, transactions, isSettling]);
+    finally { 
+      isSettlingRef.current = false;
+      setIsSettling(false); 
+    }
+  }, [settleTarget, paidBy, paidAmount, customers, cashEntries, showToast, hawalas, transactions]);
 
   const openCancel = useCallback((item: Hawala) => { setCancelTarget(item); setCancelReason(""); }, []);
   const confirmCancel = useCallback(async () => {
-    if (isCancelling) return;
+    if (isCancellingRef.current) return;
     if (!cancelTarget) return;
     if (!cancelReason.trim()) { showToast("دلیل لغو حواله را بنویسید."); return; }
     
+    isCancellingRef.current = true;
     setIsCancelling(true);
     try {
       const newEntries1 = syncCashEntriesForHawala("remove", null, cancelTarget.id, cashEntries);
@@ -699,7 +702,6 @@ export default function HawalaPage() {
       const updatedHawalas = hawalas.map(item => item.id === cancelTarget.id ? updatedHawala : item);
       const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries2, transactions, updatedHawalas);
       
-      // ✅ نوشتن در فایربیس
       const batch = writeBatch(db);
       batch.update(doc(db, HAWALAS_KEY, cancelTarget.id), updatedHawala);
       
@@ -710,12 +712,15 @@ export default function HawalaPage() {
       }
       await batch.commit();
       
-      await sendHawalaReceipts({ hawala: updatedHawala, action: "cancel", customers: updatedCustomers });
+      sendHawalaReceipts({ hawala: updatedHawala, action: "cancel", customers: updatedCustomers });
       setCancelTarget(null);
       showToast("✅ حواله ابطال شد، حساب‌ها به‌روز و اطلاعیه ارسال شد");
     } catch (err) { console.error("Cancel error:", err); showToast("خطا در ابطال حواله"); }
-    finally { setIsCancelling(false); }
-  }, [cancelTarget, cancelReason, customers, cashEntries, showToast, hawalas, transactions, isCancelling]);
+    finally { 
+      isCancellingRef.current = false;
+      setIsCancelling(false); 
+    }
+  }, [cancelTarget, cancelReason, customers, cashEntries, showToast, hawalas, transactions]);
 
   const restoreToSent = useCallback(async (item: Hawala) => {
     try {
