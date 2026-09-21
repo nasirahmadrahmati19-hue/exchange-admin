@@ -140,6 +140,11 @@ export function useSyncedState<T>(key: string, initialValue: T) {
       if (typeof window !== "undefined") {
         localStorage.removeItem(LS_PREFIX + key);
       }
+
+      // ✅ تغییر جراحی شده برای حل مشکل Rollback: صفر کردن تایم‌استمپ محلی!
+      // این کار باعث می‌شود هوک دیگر فکر نکند داده‌هایش جدیدتر از سرور است
+      // و مجبور می‌شود داده‌های بک‌آپ (حتی اگر قدیمی باشند) را بپذیرد.
+      lastUpdatedRef.current = 0;
       
       // ۳. ریست کردن وضعیت برای اجرای مجدد تابع init
       setIsLoaded(false);
