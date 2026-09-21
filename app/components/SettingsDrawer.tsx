@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef, useCallback, type ReactNode } from "react";
 import {
   doc, setDoc, getDoc, onSnapshot,
-  collection, getDocs, writeBatch, deleteDoc, Timestamp
+  collection, getDocs, writeBatch, Timestamp
 } from "firebase/firestore";
 import { db } from "../dashboard/lib/firebase";
 
@@ -11,7 +11,7 @@ const SETTINGS_KEY = "fx-settings";
 const FIREBASE_COLLECTIONS = [
   'appData', 'app_settings', 'customers', 'transactions', 'hawalas', 'cash',
   'exchanges', 'rates', 'settings', 'users', 'logs', 'markets', 'trades', 
-  'wallets', 'withdrawals', 'journal', 'kyc', 'reports'
+  'wallets', 'withdrawals', 'journal', 'kyc', 'reports', 'cashEntries'
 ];
 
 type Settings = {
@@ -24,7 +24,8 @@ type Settings = {
   telegram: {
     enabled: boolean;
     botToken: string;
-    chatIds: string[];
+    chatIds?: string[];
+    chatId?: string; // برای سازگاری با نسخه‌های قدیمی
     notifyNewHawala: boolean;
     notifySettlement: boolean;
     notifyVoid: boolean;
@@ -35,7 +36,7 @@ type Settings = {
 const defaultSettings: Settings = {
   email: "", supportEmail: "", language: "dari", teamName: "صرافی برادران نورزاد",
   teamAddress: "هرات، افغانستان", teamPhone: "",
-  telegram: { enabled: false, botToken: "", chatIds: [], notifyNewHawala: true, notifySettlement: true, notifyVoid: true, notifyExchange: true },
+  telegram: { enabled: false, botToken: "", notifyNewHawala: true, notifySettlement: true, notifyVoid: true, notifyExchange: true },
 };
 
 function loadSettings(): Settings {
@@ -189,7 +190,13 @@ export default function SettingsDrawer() {
       showToast("⏳ در حال جمع‌آوری داده‌ها...");
       const firebaseData = await scanFirebase();
       const localStorageData = scanLocalStorage();
-      const data = { version: "4.0", exportDate: new Date().toISOString(), settings, localStorage: localStorageData, firebase: firebaseData };
+      const data = { 
+        version: "5.0", // نسخه جدید برای اطمینان از فرمت صحیح
+        exportDate: new Date().toISOString(), 
+        settings, 
+        localStorage: localStorageData, 
+        firebase: firebaseData 
+      };
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a"); a.href = url; a.download = `backup-${new Date().toISOString().slice(0, 10)}.json`;
@@ -210,7 +217,6 @@ export default function SettingsDrawer() {
       }
       await new Promise<void>(resolve => { const req = indexedDB.deleteDatabase("AppSyncDB"); req.onsuccess = req.onerror = req.onblocked = () => resolve(); });
       
-      // پاکسازی کش فایربیس
       const dbs = await (indexedDB as any).databases();
       for (const dbInfo of (dbs || [])) {
         if (dbInfo.name && (dbInfo.name.includes('firebase') || dbInfo.name.includes('firestore'))) {
@@ -218,23 +224,38 @@ export default function SettingsDrawer() {
         }
       }
 
-      // ۲. خواندن و پردازش فایل
+      // ۲. خواندن فایل
       const data = JSON.parse(await file.text());
       if (!data.version) throw new Error("فرمت نامعتبر");
 
-      // ۳. بازنویسی فایربیس
-      if (data.firebase) {
+      // ۳. تشخیص هوشمند فرمت فایل (پشتیبانی از نسخه 1.0 قدیمی و 4.0/5.0 جدید)
+      const collectionsToRestore = data.firebase || data; 
+
+      const collectionKeys = Object.keys(collectionsToRestore).filter(
+        key => !['version', 'exportDate', 'settings', 'localStorage', 'sessionStorage', 'firebase'].includes(key)
+      );
+
+      if (collectionsToRestore !== data && Object.keys(collectionsToRestore).length > 0) {
         showToast("⏳ در حال بازنویسی داده‌های سرور...");
-        for (const [colName, docs] of Object.entries(data.firebase)) {
-          if (!Array.isArray(docs) || docs.length === 0) continue;
-          const oldSnap = await getDocs(collection(db, colName));
-          if (oldSnap.size > 0) {
-            for (let i = 0; i < oldSnap.size; i += 400) {
-              const batch = writeBatch(db);
-              oldSnap.docs.slice(i, i + 400).forEach(d => batch.delete(d.ref));
-              await batch.commit();
-            }
+      }
+
+      // ۴. پردازش هر کالکشن (حتی اگر خالی باشد، برای پاکسازی داده‌های جدید)
+      for (const colName of collectionKeys) {
+        const docs = collectionsToRestore[colName];
+        if (!Array.isArray(docs)) continue;
+
+        // الف) حذف بی‌قیدوشرط تمام داده‌های فعلی این کالکشن در فایربیس (برای تضمین Rollback)
+        const oldSnap = await getDocs(collection(db, colName));
+        if (oldSnap.size > 0) {
+          for (let i = 0; i < oldSnap.size; i += 400) {
+            const batch = writeBatch(db);
+            oldSnap.docs.slice(i, i + 400).forEach(d => batch.delete(d.ref));
+            await batch.commit();
           }
+        }
+
+        // ب) اگر در بک‌آپ داده‌ای وجود دارد، آن را بنویس. (اگر آرایه خالی باشد، همین که بالا پاک شد کافی است)
+        if (docs.length > 0) {
           for (let i = 0; i < docs.length; i += 400) {
             const batch = writeBatch(db);
             docs.slice(i, i + 400).forEach((docData: any) => {
@@ -248,7 +269,7 @@ export default function SettingsDrawer() {
         }
       }
 
-      // ۴. بازیابی تنظیمات
+      // ۵. بازیابی تنظیمات
       if (data.settings) {
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(data.settings));
         await setDoc(doc(db, "app_settings", "global_settings"), { value: data.settings, updatedAt: new Date().toISOString() }, { merge: true });
@@ -256,7 +277,7 @@ export default function SettingsDrawer() {
 
       showToast("✅ بازیابی موفق. در حال بازنشانی سیستم...");
       
-      // ۵. بازنشانی سخت (Hard Reset) برای نابودی کامل کش جاوااسکریپت و فایربیس
+      // ۶. بازنشانی سخت (Hard Reset)
       setTimeout(() => {
         window.location.replace(window.location.href);
       }, 1000);
@@ -354,7 +375,7 @@ export default function SettingsDrawer() {
             <div className="space-y-3">
               <div className={`rounded-xl p-3 text-xs ${dk ? "bg-amber-500/10 border border-amber-500/30 text-amber-200" : "bg-amber-50 border border-amber-200 text-amber-800"}`}>
                 💡 این بک‌آپ شامل <b>تمام داده‌ها</b> (شامل appData) است.<br/>
-                <span className="text-[10px] opacity-80">نسخه ۴.۰: بازنشانی سخت (Hard Reset) برای تضمین بازگشت به عقب.</span>
+                <span className="text-[10px] opacity-80">نسخه ۵.۰: پشتیبانی از فرمت‌های قدیمی و حذف قطعی داده‌های جدید هنگام بازیابی.</span>
               </div>
               <button onClick={handleBackup} disabled={isBackingUp} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white transition-all hover:bg-emerald-600 active:scale-95 disabled:opacity-50">
                 <Ic n="download" className="h-4 w-4" /> {isBackingUp ? "در حال جمع‌آوری..." : "دانلود پشتیبان کامل"}
@@ -379,13 +400,13 @@ export default function SettingsDrawer() {
                   {fld("توکن بات", <input dir="ltr" value={settings.telegram.botToken} onChange={e => updateTelegram({ botToken: e.target.value })} className={`${uiInput} text-left font-mono text-xs`} />)}
                   <div className="space-y-2">
                     <label className={uiLabel}>لیست چت آی‌دی‌ها</label>
-                    {settings.telegram.chatIds.map((id, idx) => (
+                    {(settings.telegram.chatIds || []).map((id, idx) => (
                       <div key={idx} className="flex items-center gap-2">
-                        <input dir="ltr" value={id} onChange={e => { const newIds = [...settings.telegram.chatIds]; newIds[idx] = e.target.value; updateTelegram({ chatIds: newIds }); }} className={`${uiInput} text-left font-mono text-xs flex-1`} />
-                        <button onClick={() => updateTelegram({ chatIds: settings.telegram.chatIds.filter((_, i) => i !== idx) })} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-rose-200 bg-rose-50 text-rose-600"><Ic n="x" className="h-4 w-4" /></button>
+                        <input dir="ltr" value={id} onChange={e => { const newIds = [...(settings.telegram.chatIds || [])]; newIds[idx] = e.target.value; updateTelegram({ chatIds: newIds }); }} className={`${uiInput} text-left font-mono text-xs flex-1`} />
+                        <button onClick={() => updateTelegram({ chatIds: (settings.telegram.chatIds || []).filter((_, i) => i !== idx) })} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-rose-200 bg-rose-50 text-rose-600"><Ic n="x" className="h-4 w-4" /></button>
                       </div>
                     ))}
-                    <button onClick={() => updateTelegram({ chatIds: [...settings.telegram.chatIds, ""] })} className={`flex w-full items-center justify-center gap-2 rounded-xl border border-dashed py-2.5 text-xs font-bold ${dk ? "border-slate-600 text-slate-400" : "border-slate-300 text-slate-500"}`}>
+                    <button onClick={() => updateTelegram({ chatIds: [...(settings.telegram.chatIds || []), ""] })} className={`flex w-full items-center justify-center gap-2 rounded-xl border border-dashed py-2.5 text-xs font-bold ${dk ? "border-slate-600 text-slate-400" : "border-slate-300 text-slate-500"}`}>
                       <Ic n="plus" className="h-4 w-4" /> افزودن چت آی‌دی
                     </button>
                   </div>
@@ -401,7 +422,7 @@ export default function SettingsDrawer() {
             </div>
           </AccordionItem>
           <div className={`mt-4 rounded-xl p-4 text-center ${dk ? "bg-slate-800/50" : "bg-slate-50"}`}>
-            <p className={`text-[10px] font-bold ${subText}`}>نسخه ۴.۰.۰ — صرافی برادران نورزاد</p>
+            <p className={`text-[10px] font-bold ${subText}`}>نسخه ۵.۰.۰ — صرافی برادران نورزاد</p>
           </div>
         </div>
       </div>
