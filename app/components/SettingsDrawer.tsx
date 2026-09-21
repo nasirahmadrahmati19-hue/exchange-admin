@@ -358,6 +358,22 @@ export default function SettingsDrawer() {
   // ===================== بازیابی (نسخه نهایی و ضدگلوله) =====================
   const handleRestore = useCallback(async (file: File) => {
     setIsRestoring(true);
+
+    // ✅ تغییر جراحی شده برای حل مشکل Rollback: پاکسازی تهاجمی کش محلی قبل از بازیابی
+    // این کار تضمین می‌کند که داده‌های جدیدی که بعد از بک‌آپ ساخته شده‌اند، 
+    // هیچ شانسی برای تداخل با فرآیند بازگشت به عقب ندارند.
+    if (typeof window !== "undefined") {
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('synced_') || key === SETTINGS_KEY)) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(key => localStorage.removeItem(key));
+      console.log("🧹 حافظه محلی برای جلوگیری از تداخل با داده‌های بک‌آپ پاکسازی شد.");
+    }
+
     const reader = new FileReader();
 
     reader.onload = async (e) => {
@@ -800,4 +816,4 @@ export default function SettingsDrawer() {
       )}
     </>
   );
-} 
+}
