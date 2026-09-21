@@ -369,7 +369,7 @@ export default function SettingsDrawer() {
         }
       }
 
-      // حذف کامل دیتابیس IndexedDB سفارسی
+      // حذف کامل دیتابیس IndexedDB سفارشی
       await new Promise<void>((resolve) => {
         const req = indexedDB.deleteDatabase("AppSyncDB");
         req.onsuccess = () => resolve();
@@ -378,12 +378,14 @@ export default function SettingsDrawer() {
       });
 
       // ✅ تغییر حیاتی جدید: پاکسازی کش داخلی فایربیس (Firebase IndexedDB)
-      // فایربیس داده‌ها را کش می‌کند و با رفرش صفحه پاک نمی‌شود. این کش باید دستی حذف شود.
-      const dbNames = await new Promise<string[]>((resolve) => {
-        const req = indexedDB.databases();
-        req.onsuccess = () => resolve(req.result.map((db: any) => db.name));
-        req.onerror = () => resolve([]);
-      });
+      // اصلاح خطای TypeScript: استفاده از async/await به جای onsuccess
+      let dbNames: string[] = [];
+      try {
+        const dbs = await (indexedDB as any).databases();
+        dbNames = (dbs || []).map((db: any) => db.name).filter(Boolean);
+      } catch (e) {
+        console.warn("خطا در لیست کردن دیتابیس‌ها:", e);
+      }
 
       for (const dbName of dbNames) {
         if (dbName && (dbName.includes('firebase') || dbName.includes('firestore') || dbName.includes('appId'))) {
