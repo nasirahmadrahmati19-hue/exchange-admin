@@ -378,7 +378,7 @@ export default function HawalaPage() {
   const [hawalas, setHawalas] = useState<Hawala[]>([]);
   const [cashEntries, setCashEntries] = useState<any[]>([]);
   
-  // ✅ اصلاح حیاتی ۱: استفاده از useRef برای قفل‌کردن آنی عملیات و جلوگیری ۱۰۰٪ از کلیک چندباره
+  // ✅ اصلاح حیاتی: استفاده از useRef برای قفل‌کردن آنی عملیات و جلوگیری ۱۰۰٪ از کلیک چندباره
   const isSubmittingRef = useRef(false);
   const isSettlingRef = useRef(false);
   const isCancellingRef = useRef(false);
@@ -522,10 +522,9 @@ export default function HawalaPage() {
   const handleRegisterClick = useCallback(() => { const errs = validateForm(); setErrors(errs); if (Object.keys(errs).length > 0) { showToast("لطفاً فیلدهای ضروری را خانه‌پری کنید."); return; } setPreviewOpen(true); }, [validateForm, showToast]);
 
   const confirmRegister = useCallback(async () => {
-    // ✅ اصلاح حیاتی ۲: بررسی آنی و همگام (Synchronous) برای جلوگیری از کلیک چندباره
     if (isSubmittingRef.current) return;
     isSubmittingRef.current = true;
-    setIsSubmitting(true); // برای غیرفعال کردن ظاهری دکمه
+    setIsSubmitting(true);
 
     try {
       const parsedAmountFrom = parseAmount(form.amountFrom);
@@ -566,8 +565,9 @@ export default function HawalaPage() {
           const updatedHawalasList = hawalas.map(x => x.id === editingId ? updated : x);
           const updatedCustomersList = getUpdatedCustomerBalances(customers, updatedEntries, transactions, updatedHawalasList);
 
+          // ✅ اصلاح خطای TypeScript: استفاده از set با merge به جای update
           const batch = writeBatch(db);
-          batch.update(doc(db, HAWALAS_KEY, editingId), updated);
+          batch.set(doc(db, HAWALAS_KEY, editingId), updated, { merge: true });
           
           for (const c of updatedCustomersList) {
             if (String(c.id) !== String(CASH_BOX_ID) && String(c.id) !== String(EXCHANGE_ACCOUNT_ID)) {
@@ -610,14 +610,12 @@ export default function HawalaPage() {
       setLastNames({ senderName, receiverName });
       setForm(emptyForm); setErrors({}); setPreviewOpen(false); setActiveTab("current");
       
-      // ارسال تلگرام در پس‌زمینه انجام می‌شود تا UI قفل نشود
       sendHawalaReceipts({ hawala: newHawala, action: "register", customers: updatedCustomers });
       showToast("✅ حواله ثبت شد، حساب‌ها به‌روز و رسید ارسال شد");
     } catch (err) { 
       console.error("Register error:", err); 
       showToast("خطا در ثبت حواله"); 
     } finally {
-      // ✅ اصلاح حیاتی ۳: آزاد کردن قفل در هر حالت (موفق یا ناموفق)
       isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
@@ -662,8 +660,9 @@ export default function HawalaPage() {
       const updatedHawalas = hawalas.map(item => item.id === settleTarget.id ? paidHawala : item);
       const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries, transactions, updatedHawalas);
       
+      // ✅ اصلاح خطای TypeScript: استفاده از set با merge به جای update
       const batch = writeBatch(db);
-      batch.update(doc(db, HAWALAS_KEY, settleTarget.id), paidHawala);
+      batch.set(doc(db, HAWALAS_KEY, settleTarget.id), paidHawala, { merge: true });
       
       const entriesToAdd = newEntries.filter(ne => !cashEntries.some(ce => ce.id === ne.id));
       for (const entry of entriesToAdd) {
@@ -702,8 +701,9 @@ export default function HawalaPage() {
       const updatedHawalas = hawalas.map(item => item.id === cancelTarget.id ? updatedHawala : item);
       const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries2, transactions, updatedHawalas);
       
+      // ✅ اصلاح خطای TypeScript: استفاده از set با merge به جای update
       const batch = writeBatch(db);
-      batch.update(doc(db, HAWALAS_KEY, cancelTarget.id), updatedHawala);
+      batch.set(doc(db, HAWALAS_KEY, cancelTarget.id), updatedHawala, { merge: true });
       
       for (const c of updatedCustomers) {
         if (String(c.id) !== String(CASH_BOX_ID) && String(c.id) !== String(EXCHANGE_ACCOUNT_ID)) {
@@ -729,8 +729,9 @@ export default function HawalaPage() {
       const updatedHawalas = hawalas.map(h => h.id === item.id ? restored : h);
       const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries, transactions, updatedHawalas);
       
+      // ✅ اصلاح خطای TypeScript: استفاده از set با merge به جای update
       const batch = writeBatch(db);
-      batch.update(doc(db, HAWALAS_KEY, item.id), restored);
+      batch.set(doc(db, HAWALAS_KEY, item.id), restored, { merge: true });
       for (const c of updatedCustomers) {
         if (String(c.id) !== String(CASH_BOX_ID) && String(c.id) !== String(EXCHANGE_ACCOUNT_ID)) {
           batch.update(doc(db, CUSTOMERS_KEY, String(c.id)), { balances: c.balances });
