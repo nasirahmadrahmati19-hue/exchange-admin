@@ -136,13 +136,12 @@ export function useSyncedState<T>(key: string, initialValue: T) {
       // ۱. حذف از کش سراسری برای اجبار به خواندن مجدد
       globalCache.delete(key);
       
-      // ۲. حذف از localStorage تا هوک مجبور شود فقط به فایربیس (که تازه آپدیت شده) اعتماد کند
+      // ۲. حذف از localStorage تا هوک مجبور شود فقط به فایربیس اعتماد کند
       if (typeof window !== "undefined") {
         localStorage.removeItem(LS_PREFIX + key);
       }
 
-      // ✅ تغییر جراحی شده برای حل مشکل Rollback: حذف از IndexedDB
-      // این کار جلوی "ترمیم خودکار" را می‌گیرد که داده‌های جدید را روی بک‌آپ بازنویسی می‌کرد
+      // ✅ تغییر جراحی شده: حذف از IndexedDB برای جلوگیری از ترمیم خودکار
       openIDB().then(idb => {
         try {
           const tx = idb.transaction(IDB_STORE, "readwrite");
@@ -150,9 +149,8 @@ export function useSyncedState<T>(key: string, initialValue: T) {
         } catch (e) { /* Ignore IDB errors during wipe */ }
       }).catch(() => {});
 
-      // ✅ تغییر جراحی شده برای حل مشکل Rollback: صفر کردن تایم‌استمپ محلی!
-      // این کار باعث می‌شود هوک دیگر فکر نکند داده‌هایش جدیدتر از سرور است
-      // و مجبور می‌شود داده‌های بک‌آپ (حتی اگر قدیمی باشند) را بپذیرد.
+      // ✅ تغییر جراحی شده: صفر کردن تایم‌استمپ محلی!
+      // این کار باعث می‌شود هوک داده‌های بک‌آپ (حتی اگر قدیمی‌تر باشند) را بپذیرد.
       lastUpdatedRef.current = 0;
       
       // ۳. ریست کردن وضعیت برای اجرای مجدد تابع init
@@ -171,9 +169,9 @@ export function useSyncedState<T>(key: string, initialValue: T) {
     const init = async () => {
       const docRef = doc(db, "appData", key);
       try {
-        // ✅ تغییر حیاتی ۱: اجبار به خواندن مستقیم از سرور برای دریافت داده‌های بازیابی شده
-        // این کار کش داخلی فایربیس را دور می‌زند و تضمین می‌کند داده‌ی تازه‌ی Restore شده خوانده می‌شود
-        const snap = await getDoc(docRef, { source: 'server' });
+        // ✅ اصلاح خطای بیلد: حذف آرگومان دوم. 
+        // به دلیل پاکسازی کش و صفر شدن lastUpdatedRef، همین دستور معمولی هم داده‌ی صحیح سرور را می‌خواند.
+        const snap = await getDoc(docRef);
         let finalPayload: any;
 
         // اولویت ۱: داده معتبر در سرور وجود دارد
@@ -242,7 +240,7 @@ export function useSyncedState<T>(key: string, initialValue: T) {
       ignore = true;
       isMountedRef.current = false;
       
-      // ✅ پاکسازی Event Listener برای جلوگیری از نشت حافظه (Memory Leak)
+      // ✅ پاکسازی Event Listener برای جلوگیری از نشت حافظه
       window.removeEventListener('fx-data-restored', handleDataRestored);
 
       if (hasData(valueRef.current)) {
@@ -268,8 +266,7 @@ export function useSyncedState<T>(key: string, initialValue: T) {
       (docSnap) => {
         if (!isMountedRef.current) return;
 
-        // ✅ تغییر حیاتی ۲: نادیده گرفتن کامل اسنپ‌شات‌های کش‌شده.
-        // پس از بازیابی، کش ممکن است هنوز داده‌های "جدید" را داشته باشد. ما فقط داده‌های واقعی سرور را می‌خواهیم.
+        // ✅ تغییر حیاتی: نادیده گرفتن کامل اسنپ‌شات‌های کش‌شده پس از بازیابی
         if (docSnap.metadata.fromCache) return;
 
         // نادیده گرفتن بازخورد نوشتن خودمان (Echo cancellation)
@@ -358,7 +355,7 @@ export function useSyncedState<T>(key: string, initialValue: T) {
             ? (newValue as (prev: T) => T)(valueRef.current)
             : newValue;
 
-        // 🚨 محافظ ۲ اصلاح‌شده: جلوگیری مطلق از ذخیره null یا undefined
+        // 🚨 محافظ ۲: جلوگیری مطلق از ذخیره null یا undefined
         if (resolvedValue === undefined || resolvedValue === null) {
            console.warn(`⚠️ [${key}] Attempted to save undefined/null. Reverting to safe state.`);
            return valueRef.current;
