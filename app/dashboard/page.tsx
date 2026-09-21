@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useSyncedState } from "./lib/useSyncedState";
 import {
   CUSTOMERS_KEY,
@@ -113,6 +113,7 @@ interface CashEntry {
   direction: "in" | "out";
   status: "active" | "voided";
   customerId?: string;
+  linkedHawalaId?: string; // ✅ اضافه شد برای هماهنگی با بخش حواله
 }
 
 // ============================================================
@@ -150,92 +151,118 @@ function formatShamsiDate(d: Date) {
   return `${s.year}/${s.month}/${s.day}`;
 }
 
-// ✅ اصلاح شده: نرمال‌سازی ارقام قبل از مقایسه برای حل مشکل نمایش ندادن معاملات
+// ✅ اصلاح شده و بسیار هوشمند: تشخیص امروز برای هر فرمت تاریخی (شمسی، میلادی، Timestamp)
 function isToday(dateStr: string | number | undefined | null): boolean {
   if (!dateStr) return false;
   try {
     const normalizedStr = normalizeDigits(String(dateStr));
     const now = new Date();
     
-    // بررسی فرمت ISO (مثلاً: 2024-10-22)
-    const todayISO = now.toISOString().split("T")[0];
-    if (normalizedStr.startsWith(todayISO)) return true;
-    
-    // بررسی فرمت شمسی (مثلاً: 1403/07/30)
-    const todayFa = formatShamsiDate(now);
-    if (normalizedStr.includes(todayFa)) return true;
-    
-    // بررسی فرمت Timestamp (عدد بزرگ)
+    // 1. بررسی فرمت Timestamp (عدد بزرگ)
     const num = Number(normalizedStr);
     if (!isNaN(num) && num > 1000000000000) {
       const d = new Date(num);
-      return d.toDateString() === now.toDateString();
+      return d.getFullYear() === now.getFullYear() && 
+             d.getMonth() === now.getMonth() && 
+             d.getDate() === now.getDate();
     }
-  } catch {}
+
+    // 2. بررسی فرمت ISO میلادی (مثلاً: 2024-10-22)
+    const todayISO = now.toISOString().split("T")[0];
+    if (normalizedStr.startsWith(todayISO)) return true;
+
+    // 3. بررسی فرمت شمسی (با جداکننده / یا -)
+    const parts = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", {
+      year: "numeric", month: "2-digit", day: "2-digit",
+    }).formatToParts(now);
+    const y = parts.find(p => p.type === "year")?.value || "0";
+    const m = parts.find(p => p.type === "month")?.value || "0";
+    const d = parts.find(p => p.type === "day")?.value || "0";
+    
+    const todayFa = `${y}/${m}/${d}`;
+    const todayFaDash = `${y}-${m}-${d}`;
+    
+    if (normalizedStr.includes(todayFa) || normalizedStr.includes(todayFaDash)) return true;
+
+  } catch (e) {
+    console.warn("isToday error:", e);
+  }
   return false;
 }
 
+// ✅ اصلاح شده: اضافه شدن accountedHawalaIds برای جلوگیری از محاسبه دوگانه
 function getLedgerBalance(customerId: string, currency: Currency, entries: any[], transactions: any[], hawalas: any[]): number {
   let balance = 0;
-  
+  const strCustomerId = String(customerId);
+  const accountedHawalaIds = new Set<string>(); // ✅ کلید حل مشکل دو برابر محاسبه
+
   for (const entry of entries) {
     if (entry.status === "voided" || entry.currency !== currency) continue;
-    if (customerId === CASH_BOX_ID) {
+    if (strCustomerId === String(CASH_BOX_ID)) {
       if (entry.type === "exchange_account_in" || entry.type === "exchange_account_out") continue;
-      if (entry.type === "loan_given") balance -= entry.amount;
-      else if (entry.type === "loan_received") balance += entry.amount;
-      else { const physicalMultiplier = entry.direction === "in" ? 1 : -1; balance += entry.amount * physicalMultiplier; }
-    } else if (customerId === EXCHANGE_ACCOUNT_ID) {
-      if (entry.type === "owner_deposit") balance += entry.amount;
-      else if (entry.type === "owner_withdraw") balance -= entry.amount;
-      else if (entry.type === "exchange_account_in") balance += entry.amount;
-      else if (entry.type === "exchange_account_out") balance -= entry.amount;
-      else if (entry.type === "loan_given") balance -= entry.amount;
-      else if (entry.type === "loan_received") balance += entry.amount;
+      if (entry.type === "loan_given") balance -= Number(entry.amount);
+      else if (entry.type === "loan_received") balance += Number(entry.amount);
+      else { const physicalMultiplier = entry.direction === "in" ? 1 : -1; balance += Number(entry.amount) * physicalMultiplier; }
+    } else if (strCustomerId === String(EXCHANGE_ACCOUNT_ID)) {
+      if (entry.type === "owner_deposit") balance += Number(entry.amount);
+      else if (entry.type === "owner_withdraw") balance -= Number(entry.amount);
+      else if (entry.type === "exchange_account_in") balance += Number(entry.amount);
+      else if (entry.type === "exchange_account_out") balance -= Number(entry.amount);
+      else if (entry.type === "loan_given") balance -= Number(entry.amount);
+      else if (entry.type === "loan_received") balance += Number(entry.amount);
     } else {
-      if (entry.customerId === customerId) {
-        if (entry.type === "customer_deposit") balance += entry.amount;
-        else if (entry.type === "customer_withdraw") balance -= entry.amount;
-        else if (entry.type === "loan_given") balance -= entry.amount;
-        else if (entry.type === "loan_received") balance += entry.amount;
+      if (String(entry.customerId) === strCustomerId) {
+        if (entry.type === "customer_deposit") balance += Number(entry.amount);
+        else if (entry.type === "customer_withdraw") balance -= Number(entry.amount);
+        else if (entry.type === "loan_given") balance -= Number(entry.amount);
+        else if (entry.type === "loan_received") balance += Number(entry.amount);
+        
+        // ✅ اگر این سند به یک حواله لینک شده، آی‌دی آن را ذخیره کن تا دوباره محاسبه نشود
+        if (entry.linkedHawalaId) {
+          accountedHawalaIds.add(String(entry.linkedHawalaId));
+        }
       }
     }
   }
 
-  if (customerId !== CASH_BOX_ID && customerId !== EXCHANGE_ACCOUNT_ID) {
+  if (strCustomerId !== String(CASH_BOX_ID) && strCustomerId !== String(EXCHANGE_ACCOUNT_ID)) {
     for (const tx of transactions) {
       if (tx.status === "voided") continue;
-      if (tx.type === "exchange" && tx.customerId === customerId) {
-        if (tx.fromCurrency === currency) balance -= (tx.fromAmount || 0);
-        if (tx.toCurrency === currency) balance += (tx.toAmount || 0);
-        if (tx.commission && tx.commissionCurrency === currency) balance -= (tx.commission || 0);
+      if (tx.type === "exchange" && String(tx.customerId) === strCustomerId) {
+        if (tx.fromCurrency === currency) balance -= Number(tx.fromAmount || 0);
+        if (tx.toCurrency === currency) balance += Number(tx.toAmount || 0);
+        if (tx.commission && tx.commissionCurrency === currency) balance -= Number(tx.commission || 0);
       }
       if (tx.type === "transfer") {
-        if (tx.senderId === customerId) {
-          if (tx.fromCurrency === currency) balance -= (tx.fromAmount || 0);
-          if (tx.commissionPayer === "sender" && tx.commission && tx.commissionCurrency === currency) balance -= (tx.commission || 0);
+        if (String(tx.senderId) === strCustomerId) {
+          if (tx.fromCurrency === currency) balance -= Number(tx.fromAmount || 0);
+          if (tx.commissionPayer === "sender" && tx.commission && tx.commissionCurrency === currency) balance -= Number(tx.commission || 0);
         }
-        if (tx.receiverId === customerId) {
-          if (tx.toCurrency === currency) balance += (tx.toAmount || 0);
-          if (tx.commissionPayer === "receiver" && tx.commission && tx.commissionCurrency === currency) balance -= (tx.commission || 0);
+        if (String(tx.receiverId) === strCustomerId) {
+          if (tx.toCurrency === currency) balance += Number(tx.toAmount || 0);
+          if (tx.commissionPayer === "receiver" && tx.commission && tx.commissionCurrency === currency) balance -= Number(tx.commission || 0);
         }
       }
-      if (tx.type === "convert" && tx.customerId === customerId) {
-        if (tx.fromCurrency === currency) balance -= (tx.fromAmount || 0);
-        if (tx.toCurrency === currency) balance += (tx.toAmount || 0);
-        if (tx.commission && tx.commissionCurrency === currency) balance -= (tx.commission || 0);
+      if (tx.type === "convert" && String(tx.customerId) === strCustomerId) {
+        if (tx.fromCurrency === currency) balance -= Number(tx.fromAmount || 0);
+        if (tx.toCurrency === currency) balance += Number(tx.toAmount || 0);
+        if (tx.commission && tx.commissionCurrency === currency) balance -= Number(tx.commission || 0);
       }
     }
 
     for (const h of hawalas) {
       if (h.status === "cancelled") continue;
-      if (h.senderId === customerId && h.currencyFrom === currency) {
-        balance -= (h.amountFrom || 0);
-        if (h.feePayer === "sender" && h.feeCurrency === currency) balance -= (h.fee || 0);
+      
+      // ✅ جلوگیری از محاسبه دوگانه: اگر این حواله قبلاً در entries محاسبه شده، از آن رد شو
+      if (accountedHawalaIds.has(String(h.id))) continue;
+
+      if (String(h.senderId) === strCustomerId) {
+        if (h.currencyFrom === currency) balance -= Number(h.amountFrom || 0);
+        if (h.feePayer === "sender" && h.feeCurrency === currency) balance -= Number(h.fee || 0);
       }
-      if (h.status === "paid" && h.receiverId === customerId && h.currencyTo === currency) {
-        balance += (h.finalAmount || 0);
-        if (h.feePayer === "receiver" && h.feeCurrency === currency) balance -= (h.fee || 0);
+      if (h.status === "paid" && String(h.receiverId) === strCustomerId) {
+        if (h.currencyTo === currency) balance += Number(h.finalAmount || 0);
+        if (h.feePayer === "receiver" && h.feeCurrency === currency) balance -= Number(h.fee || 0);
       }
     }
   }
@@ -250,10 +277,10 @@ export default function DashboardPage() {
   const [mounted, setMounted] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   
-  const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
-  const [entries, setEntries] = useSyncedState<CashEntry[]>(CASH_KEY, []);
-  const [transactions, setTransactions] = useSyncedState<Transaction[]>(TRANSACTIONS_KEY, []);
-  const [hawalas, setHawalas] = useSyncedState<Hawala[]>(HAWALAS_KEY, []);
+  const [customers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
+  const [entries] = useSyncedState<CashEntry[]>(CASH_KEY, []);
+  const [transactions] = useSyncedState<Transaction[]>(TRANSACTIONS_KEY, []);
+  const [hawalas] = useSyncedState<Hawala[]>(HAWALAS_KEY, []);
   
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
@@ -296,8 +323,8 @@ export default function DashboardPage() {
       let ownerBalance = 0;
       for (const entry of entries) {
         if (entry.status === "voided" || entry.currency !== cur) continue;
-        if (entry.type === "owner_deposit") ownerBalance += entry.amount;
-        else if (entry.type === "owner_withdraw") ownerBalance -= entry.amount;
+        if (entry.type === "owner_deposit") ownerBalance += Number(entry.amount);
+        else if (entry.type === "owner_withdraw") ownerBalance -= Number(entry.amount);
       }
       balances[cur] = ownerBalance - (customerDebts[cur] || 0);
     }
@@ -317,13 +344,13 @@ export default function DashboardPage() {
     for (const tx of transactions) {
       if (tx.status === "voided") continue;
       if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
-        totals[tx.commissionCurrency] += tx.commission;
+        totals[tx.commissionCurrency] += Number(tx.commission);
       }
     }
     for (const h of hawalas) {
       if (h.status === "cancelled") continue;
       if (h.fee && h.fee > 0 && h.feeCurrency) {
-        totals[h.feeCurrency] += h.fee;
+        totals[h.feeCurrency] += Number(h.fee);
       }
     }
     return totals;
@@ -333,7 +360,7 @@ export default function DashboardPage() {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const e of entries) {
       if (e.type === "commission_withdraw" && e.status === "active" && e.direction === "out") {
-        totals[e.currency] += e.amount;
+        totals[e.currency] += Number(e.amount);
       }
     }
     return totals;
@@ -371,10 +398,10 @@ export default function DashboardPage() {
     for (const tx of transactions) {
       if (tx.status === "voided") continue;
       if (isToday(tx.date)) {
-        result[tx.fromCurrency].amount += tx.fromAmount || 0;
+        result[tx.fromCurrency].amount += Number(tx.fromAmount || 0);
         result[tx.fromCurrency].count++;
         if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
-          result[tx.commissionCurrency].commission += tx.commission;
+          result[tx.commissionCurrency].commission += Number(tx.commission);
         }
       }
     }
@@ -392,10 +419,10 @@ export default function DashboardPage() {
     for (const h of hawalas) {
       if (h.status === "cancelled") continue;
       if (isToday(h.date)) {
-        result[h.currencyFrom].amount += h.amountFrom || 0;
+        result[h.currencyFrom].amount += Number(h.amountFrom || 0);
         result[h.currencyFrom].count++;
         if (h.fee && h.fee > 0 && h.feeCurrency) {
-          result[h.feeCurrency].fee += h.fee;
+          result[h.feeCurrency].fee += Number(h.fee);
         }
       }
     }
