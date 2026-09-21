@@ -355,183 +355,147 @@ export default function SettingsDrawer() {
     }
   }, [settings, showToast]);
 
-  // ===================== بازیابی (نسخه نهایی و ضدگلوله) =====================
+  // ===================== بازیابی (نسخه نهایی با پاکسازی هسته‌ای) =====================
   const handleRestore = useCallback(async (file: File) => {
     setIsRestoring(true);
+    try {
+      showToast("⏳ در حال آماده‌سازی سیستم برای بازیابی...");
 
-    // ✅ تغییر جراحی شده برای حل مشکل Rollback: پاکسازی تهاجمی کش محلی قبل از بازیابی
-    // این کار تضمین می‌کند که داده‌های جدیدی که بعد از بک‌آپ ساخته شده‌اند، 
-    // هیچ شانسی برای تداخل با فرآیند بازگشت به عقب ندارند.
-    if (typeof window !== "undefined") {
-      const keysToRemove = [];
-      for (let i = 0; i < localStorage.length; i++) {
+      // ✅ ۱. پاکسازی هسته‌ای (Nuclear Wipe): حذف تمام داده‌های محلی قبل از هر کاری
+      // این کار تضمین می‌کند که هوک useSyncedState نمی‌تواند داده‌های جدید را پیدا کند
+      for (let i = localStorage.length - 1; i >= 0; i--) {
         const key = localStorage.key(i);
-        if (key && (key.startsWith('synced_') || key === SETTINGS_KEY)) {
-          keysToRemove.push(key);
+        if (key && (key.startsWith('synced_') || key === SETTINGS_KEY || key === 'fx-theme')) {
+          localStorage.removeItem(key);
         }
       }
-      keysToRemove.forEach(key => localStorage.removeItem(key));
-      console.log("🧹 حافظه محلی برای جلوگیری از تداخل با داده‌های بک‌آپ پاکسازی شد.");
-    }
 
-    const reader = new FileReader();
+      // حذف کامل دیتابیس IndexedDB برای جلوگیری از تداخل "ترمیم خودکار"
+      await new Promise<void>((resolve) => {
+        const req = indexedDB.deleteDatabase("AppSyncDB");
+        req.onsuccess = () => resolve();
+        req.onerror = () => resolve();
+        req.onblocked = () => resolve();
+      });
+      console.log("🧹 پاکسازی هسته‌ای LocalStorage و IndexedDB با موفقیت انجام شد.");
 
-    reader.onload = async (e) => {
-      try {
-        const result = e.target?.result;
-        if (!result) {
-          showToast("❌ فایل خالی یا نامعتبر است", "error");
-          setIsRestoring(false);
-          return;
-        }
-
-        const data = JSON.parse(result as string);
-        if (!data.version) {
-          showToast("❌ فرمت فایل پشتیبان نامعتبر است", "error");
-          setIsRestoring(false);
-          return;
-        }
-
-        console.log("🚀 [شروع بازیابی] نسخه:", data.version);
-
-        // ۱. بازیابی localStorage
-        if (data.localStorage) {
-          Object.entries(data.localStorage).forEach(([key, value]) => {
-            if (value !== null && value !== undefined) {
-              localStorage.setItem(key, JSON.stringify(value));
-            }
-          });
-        }
-
-        // ۲. بازیابی sessionStorage
-        if (data.sessionStorage) {
-          Object.entries(data.sessionStorage).forEach(([key, value]) => {
-            if (value !== null && value !== undefined) {
-              sessionStorage.setItem(key, JSON.stringify(value));
-            }
-          });
-        }
-
-        // ۳. بازیابی Firebase (با پاکسازی نهایی داده‌ها)
-        if (data.firebase) {
-          showToast("⏳ در حال بازیابی داده‌های Firebase (لطفاً صبر کنید)...");
-          console.log("🔥 شروع بازیابی Firebase...");
-
-          for (const [colName, docs] of Object.entries(data.firebase)) {
-            if (!Array.isArray(docs) || docs.length === 0) {
-              console.log(`⏭️ پرش از ${colName} (خالی است)`);
-              continue;
-            }
-
-            console.log(`📂 پردازش collection: ${colName} (${(docs as any[]).length} سند)`);
-
-            try {
-              // الف) حذف اسناد قدیمی
-              const oldSnapshot = await getDocs(collection(db, colName));
-              if (oldSnapshot.size > 0) {
-                const deleteChunkSize = 400;
-                for (let i = 0; i < oldSnapshot.size; i += deleteChunkSize) {
-                  const deleteBatch = writeBatch(db);
-                  oldSnapshot.docs.slice(i, i + deleteChunkSize).forEach(d => deleteBatch.delete(d.ref));
-                  await deleteBatch.commit();
-                }
-              }
-
-              // ب) نوشتن اسناد جدید با پاکسازی مقادیر undefined
-              const writeChunkSize = 400;
-              const totalDocs = (docs as any[]).length;
-              let successCount = 0;
-
-              for (let i = 0; i < totalDocs; i += writeChunkSize) {
-                const chunk = (docs as any[]).slice(i, i + writeChunkSize);
-                const batch = writeBatch(db);
-
-                chunk.forEach((docData: any) => {
-                  if (!docData || !docData.id) return;
-
-                  const docId = String(docData.id);
-                  const { id, ...rest } = docData;
-                  
-                  // بازسازی Timestamp و حذف undefined
-                  const cleanData = restoreFirestoreTypes(rest);
-                  const sanitizedData = Object.fromEntries(
-                    Object.entries(cleanData).filter(([_, value]) => value !== undefined)
-                  );
-
-                  const docRef = doc(db, colName, docId);
-                  batch.set(docRef, sanitizedData);
-                  successCount++;
-                });
-
-                await batch.commit();
-                console.log(`✅ نوشته شد: ${successCount} از ${totalDocs} در ${colName}`);
-              }
-
-            } catch (err: any) {
-              console.error(`❌ خطا در collection ${colName}:`, err);
-              throw new Error(`شکست در بازیابی ${colName}: ${err.message}`);
-            }
-          }
-        }
-
-        // ۴. بازیابی تنظیمات
-        if (data.settings) {
-          let migratedChatIds: string[] = [];
-          if (data.settings.telegram?.chatIds && Array.isArray(data.settings.telegram.chatIds)) {
-            migratedChatIds = data.settings.telegram.chatIds;
-          } else if (data.settings.telegram?.chatId) {
-            migratedChatIds = String(data.settings.telegram.chatId)
-              .split(/[\n,]+/)
-              .map((id: string) => id.trim())
-              .filter(Boolean);
-          }
-
-          const finalSettings: Settings = {
-            ...defaultSettings,
-            ...data.settings,
-            telegram: {
-              ...defaultSettings.telegram,
-              ...data.settings.telegram,
-              chatIds: migratedChatIds
-            }
-          };
-
-          localStorage.setItem(SETTINGS_KEY, JSON.stringify(finalSettings));
-          try {
-            await setDoc(doc(db, "app_settings", "global_settings"), {
-              value: finalSettings,
-              updatedAt: new Date().toISOString()
-            }, { merge: true });
-          } catch (fbErr) {
-            console.warn("⚠️ خطا در همگام‌سازی تنظیمات:", fbErr);
-          }
-        }
-
-        console.log("🎉 [پایان موفقیت‌آمیز] تمام داده‌ها بازیابی شدند.");
-        showToast("✅ بازیابی با موفقیت انجام شد. صفحه در حال رفرش...", "success");
-
-        // ✅ ارسال رویداد به useSyncedState برای پاکسازی کش و خواندن داده‌های جدید
-        window.dispatchEvent(new CustomEvent('fx-data-restored', { 
-          detail: { timestamp: Date.now() } 
-        }));
-
-        // رفرش صفحه پس از ۲ ثانیه
-        setTimeout(() => {
-          window.location.reload();
-        }, 2000);
-
-      } catch (err: any) {
-        console.error("💥 [خطای بازیابی]:", err);
-        showToast(`❌ خطا: ${err.message || "فایل نامعتبر است"}`, "error");
+      // ✅ ۲. خواندن فایل بک‌آپ
+      const text = await file.text();
+      const data = JSON.parse(text);
+      
+      if (!data.version) {
+        showToast("❌ فرمت فایل پشتیبان نامعتبر است", "error");
         setIsRestoring(false);
+        return;
       }
-    };
 
-    reader.onerror = () => {
-      showToast("❌ خطا در خواندن فایل", "error");
+      console.log("🚀 [شروع بازیابی] نسخه:", data.version);
+
+      // ✅ ۳. بازیابی Firebase (منبع حقیقت) - اولویت اول
+      if (data.firebase) {
+        showToast("⏳ در حال بازنویسی داده‌های Firebase...");
+        for (const [colName, docs] of Object.entries(data.firebase)) {
+          if (!Array.isArray(docs) || docs.length === 0) continue;
+
+          try {
+            // الف) حذف اسناد قدیمی
+            const oldSnapshot = await getDocs(collection(db, colName));
+            if (oldSnapshot.size > 0) {
+              const deleteChunkSize = 400;
+              for (let i = 0; i < oldSnapshot.size; i += deleteChunkSize) {
+                const deleteBatch = writeBatch(db);
+                oldSnapshot.docs.slice(i, i + deleteChunkSize).forEach(d => deleteBatch.delete(d.ref));
+                await deleteBatch.commit();
+              }
+            }
+
+            // ب) نوشتن اسناد جدید بک‌آپ
+            const writeChunkSize = 400;
+            const totalDocs = (docs as any[]).length;
+            for (let i = 0; i < totalDocs; i += writeChunkSize) {
+              const chunk = (docs as any[]).slice(i, i + writeChunkSize);
+              const batch = writeBatch(db);
+
+              chunk.forEach((docData: any) => {
+                if (!docData || !docData.id) return;
+                const docId = String(docData.id);
+                const { id, ...rest } = docData;
+                
+                const cleanData = restoreFirestoreTypes(rest);
+                const sanitizedData = Object.fromEntries(
+                  Object.entries(cleanData).filter(([_, value]) => value !== undefined)
+                );
+
+                batch.set(doc(db, colName, docId), sanitizedData);
+              });
+              await batch.commit();
+            }
+          } catch (err: any) {
+            console.error(`❌ خطا در collection ${colName}:`, err);
+            throw new Error(`شکست در بازیابی ${colName}: ${err.message}`);
+          }
+        }
+      }
+
+      // ✅ ۴. بازیابی LocalStorage (فقط بعد از اطمینان از صحت Firebase)
+      if (data.localStorage) {
+        Object.entries(data.localStorage).forEach(([key, value]) => {
+          if (value !== null && value !== undefined) {
+            localStorage.setItem(key, JSON.stringify(value));
+          }
+        });
+      }
+
+      // ✅ ۵. بازیابی تنظیمات
+      if (data.settings) {
+        let migratedChatIds: string[] = [];
+        if (data.settings.telegram?.chatIds && Array.isArray(data.settings.telegram.chatIds)) {
+          migratedChatIds = data.settings.telegram.chatIds;
+        } else if (data.settings.telegram?.chatId) {
+          migratedChatIds = String(data.settings.telegram.chatId)
+            .split(/[\n,]+/)
+            .map((id: string) => id.trim())
+            .filter(Boolean);
+        }
+
+        const finalSettings: Settings = {
+          ...defaultSettings,
+          ...data.settings,
+          telegram: {
+            ...defaultSettings.telegram,
+            ...data.settings.telegram,
+            chatIds: migratedChatIds
+          }
+        };
+
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify(finalSettings));
+        try {
+          await setDoc(doc(db, "app_settings", "global_settings"), {
+            value: finalSettings,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+        } catch (fbErr) {
+          console.warn("⚠️ خطا در همگام‌سازی تنظیمات:", fbErr);
+        }
+      }
+
+      console.log("🎉 [پایان موفقیت‌آمیز] تمام داده‌ها بازیابی شدند.");
+      showToast("✅ بازیابی با موفقیت انجام شد. صفحه در حال رفرش...", "success");
+
+      window.dispatchEvent(new CustomEvent('fx-data-restored', { 
+        detail: { timestamp: Date.now() } 
+      }));
+
+      // رفرش صفحه برای اطمینان از پاک شدن کامل کش‌های حافظه‌ی موقت
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+
+    } catch (err: any) {
+      console.error("💥 [خطای بازیابی]:", err);
+      showToast(`❌ خطا: ${err.message || "فایل نامعتبر است"}`, "error");
       setIsRestoring(false);
-    };
-    reader.readAsText(file);
+    }
   }, [showToast, db]);
 
   // ===================== تشخیص =====================
