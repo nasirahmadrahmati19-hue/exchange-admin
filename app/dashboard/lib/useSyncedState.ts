@@ -171,7 +171,9 @@ export function useSyncedState<T>(key: string, initialValue: T) {
     const init = async () => {
       const docRef = doc(db, "appData", key);
       try {
-        const snap = await getDoc(docRef);
+        // ✅ تغییر حیاتی ۱: اجبار به خواندن مستقیم از سرور برای دریافت داده‌های بازیابی شده
+        // این کار کش داخلی فایربیس را دور می‌زند و تضمین می‌کند داده‌ی تازه‌ی Restore شده خوانده می‌شود
+        const snap = await getDoc(docRef, { source: 'server' });
         let finalPayload: any;
 
         // اولویت ۱: داده معتبر در سرور وجود دارد
@@ -254,7 +256,7 @@ export function useSyncedState<T>(key: string, initialValue: T) {
   }, [key, initialValue]);
 
   // ============================================================
-  // ۲. شنونده بلادرنگ (onSnapshot) با محافظت ضد پاک‌شدن (بدون تغییر)
+  // ۲. شنونده بلادرنگ (onSnapshot) با محافظت ضد پاک‌شدن
   // ============================================================
   useEffect(() => {
     if (!isLoaded) return;
@@ -265,6 +267,10 @@ export function useSyncedState<T>(key: string, initialValue: T) {
       docRef,
       (docSnap) => {
         if (!isMountedRef.current) return;
+
+        // ✅ تغییر حیاتی ۲: نادیده گرفتن کامل اسنپ‌شات‌های کش‌شده.
+        // پس از بازیابی، کش ممکن است هنوز داده‌های "جدید" را داشته باشد. ما فقط داده‌های واقعی سرور را می‌خواهیم.
+        if (docSnap.metadata.fromCache) return;
 
         // نادیده گرفتن بازخورد نوشتن خودمان (Echo cancellation)
         if (pendingWritesRef.current > 0 && docSnap.exists()) {
@@ -278,8 +284,6 @@ export function useSyncedState<T>(key: string, initialValue: T) {
             return;
           }
         }
-
-        if (docSnap.metadata.fromCache && lastUpdatedRef.current > 0) return;
 
         if (docSnap.exists() && docSnap.data().value !== undefined) {
           const payload = docSnap.data();
