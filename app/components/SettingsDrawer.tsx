@@ -2,16 +2,18 @@
 import { useEffect, useState, useRef, useCallback, type ReactNode } from "react";
 import {
   doc, setDoc, getDoc, onSnapshot,
-  collection, getDocs, writeBatch, Timestamp
+  writeBatch, Timestamp
 } from "firebase/firestore";
 import { db } from "../dashboard/lib/firebase";
 
 const SETTINGS_KEY = "fx-settings";
 
-const FIREBASE_COLLECTIONS = [
-  'appData', 'app_settings', 'customers', 'transactions', 'hawalas', 'cash',
-  'exchanges', 'rates', 'settings', 'users', 'logs', 'markets', 'trades',
-  'wallets', 'withdrawals', 'journal', 'kyc', 'reports', 'cashEntries'
+// ✅ مسیرهای واقعی ذخیره‌سازی داده‌ها (هماهنگ با useSyncedState)
+const APP_DATA_KEYS = [
+  "fx-customers",
+  "fx-transactions",
+  "fx-hawalas",
+  "fx-cash",
 ];
 
 type Settings = {
@@ -101,6 +103,8 @@ export default function SettingsDrawer() {
   const [activeAccordion, setActiveAccordion] = useState<string | null>("email");
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
+  const [showDiagnosis, setShowDiagnosis] = useState(false);
+  const [diagnosisData, setDiagnosisData] = useState<any>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -174,17 +178,41 @@ export default function SettingsDrawer() {
     return result;
   };
 
+  // ✅ اسکن صحیح Firebase با استفاده از مسیرهای واقعی appData
   const scanFirebase = async () => {
-    const result: Record<string, any[]> = {};
-    for (const col of FIREBASE_COLLECTIONS) {
-      try { const snapshot = await getDocs(collection(db, col)); result[col] = snapshot.docs.map(d => ({ id: d.id, ...d.data() })); } catch { result[col] = []; }
+    const result: Record<string, any> = {};
+    
+    // ۱. خواندن داده‌های appData (مشتریان، معاملات، حواله‌ها، صندوق)
+    for (const key of APP_DATA_KEYS) {
+      try {
+        const docSnap = await getDoc(doc(db, "appData", key));
+        if (docSnap.exists()) {
+          result[key] = docSnap.data(); // شامل value و lastUpdated
+        } else {
+          result[key] = { value: [], lastUpdated: 0 };
+        }
+      } catch (err) {
+        console.warn(`⚠️ خطا در خواندن ${key}:`, err);
+        result[key] = { value: [], lastUpdated: 0, error: String(err) };
+      }
     }
+    
+    // ۲. خواندن تنظیمات
+    try {
+      const settingsSnap = await getDoc(doc(db, "app_settings", "global_settings"));
+      if (settingsSnap.exists()) {
+        result["app_settings_global"] = settingsSnap.data();
+      }
+    } catch (err) {
+      console.warn("⚠️ خطا در خواندن تنظیمات:", err);
+    }
+    
     return result;
   };
 
   const handleBackup = useCallback(async () => {
-    alert("✅ کد نسخه ۵.۰ اجرا شد!");
-    console.warn("🚨🚨🚨 کد نسخه ۵.۰ در حال اجرا است! 🚨🚨🚨");
+    alert("✅ کد نسخه ۶.۰ اجرا شد!");
+    console.warn("🚨🚨🚨 کد نسخه ۶.۰ در حال اجرا است! 🚨🚨🚨");
     setIsBackingUp(true);
     try {
       showToast("⏳ در حال جمع‌آوری داده‌ها...");
@@ -192,7 +220,7 @@ export default function SettingsDrawer() {
       const localStorageData = scanLocalStorage();
 
       const data = {
-        version: "5.0",
+        version: "6.0",
         exportDate: new Date().toISOString(),
         settings,
         localStorage: localStorageData,
@@ -201,21 +229,23 @@ export default function SettingsDrawer() {
 
       console.log("📦 ساختار بک‌آپ:", {
         version: data.version,
-        hasFirebase: !!data.firebase,
-        collections: Object.keys(data.firebase || {})
+        firebaseKeys: Object.keys(firebaseData),
+        dataCounts: Object.fromEntries(
+          Object.entries(firebaseData).map(([k, v]) => [k, Array.isArray(v?.value) ? v.value.length : 'object'])
+        )
       });
 
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `backup-v5-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `backup-v6-${new Date().toISOString().slice(0, 10)}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      showToast("✅ پشتیبان نسخه 5.0 دانلود شد");
+      showToast("✅ پشتیبان نسخه 6.0 دانلود شد");
     } catch (err) {
       console.error("❌ خطای بک‌آپ:", err);
       showToast("❌ خطا در ایجاد پشتیبان", "error");
@@ -224,11 +254,13 @@ export default function SettingsDrawer() {
     }
   }, [settings, showToast]);
 
+  // ✅ بازیابی صحیح با نوشتن در مسیرهای واقعی
   const handleRestore = useCallback(async (file: File) => {
     setIsRestoring(true);
     try {
       showToast("⏳ در حال آماده‌سازی سیستم...");
 
+      // ۱. پاکسازی کش محلی
       for (let i = localStorage.length - 1; i >= 0; i--) {
         const key = localStorage.key(i);
         if (key && (key.startsWith('synced_') || key === SETTINGS_KEY || key === 'fx-theme')) localStorage.removeItem(key);
@@ -245,40 +277,64 @@ export default function SettingsDrawer() {
       const data = JSON.parse(await file.text());
       if (!data.version) throw new Error("فرمت نامعتبر");
 
-      const collectionsToRestore = data.firebase || data;
-      const collectionKeys = Object.keys(collectionsToRestore).filter(
-        key => !['version', 'exportDate', 'settings', 'localStorage', 'sessionStorage', 'firebase'].includes(key)
-      );
-
       showToast("⏳ در حال بازنویسی داده‌های سرور...");
 
-      for (const colName of collectionKeys) {
-        const docs = collectionsToRestore[colName];
-        if (!Array.isArray(docs)) continue;
+      // ۲. بازیابی داده‌های appData
+      if (data.firebase) {
+        for (const key of APP_DATA_KEYS) {
+          const docData = data.firebase[key];
+          if (!docData) continue;
 
-        const oldSnap = await getDocs(collection(db, colName));
-        if (oldSnap.size > 0) {
-          for (let i = 0; i < oldSnap.size; i += 400) {
-            const batch = writeBatch(db);
-            oldSnap.docs.slice(i, i + 400).forEach(d => batch.delete(d.ref));
-            await batch.commit();
+          try {
+            const docRef = doc(db, "appData", key);
+            const cleanData = restoreFirestoreTypes(docData);
+            const sanitizedData = Object.fromEntries(
+              Object.entries(cleanData).filter(([_, v]) => v !== undefined)
+            );
+            await setDoc(docRef, sanitizedData, { merge: false });
+            console.log(`✅ بازیابی ${key} موفق بود`);
+          } catch (err: any) {
+            console.error(`❌ خطا در بازیابی ${key}:`, err);
+            throw new Error(`شکست در بازیابی ${key}: ${err.message}`);
           }
         }
 
-        if (docs.length > 0) {
-          for (let i = 0; i < docs.length; i += 400) {
-            const batch = writeBatch(db);
-            docs.slice(i, i + 400).forEach((docData: any) => {
-              if (!docData?.id) return;
-              const cleanData = Object.fromEntries(Object.entries(restoreFirestoreTypes(docData)).filter(([_, v]) => v !== undefined));
-              const { id, ...rest } = cleanData;
-              batch.set(doc(db, colName, String(id)), rest);
-            });
-            await batch.commit();
+        // ۳. بازیابی تنظیمات
+        if (data.firebase.app_settings_global) {
+          try {
+            const cleanData = restoreFirestoreTypes(data.firebase.app_settings_global);
+            await setDoc(doc(db, "app_settings", "global_settings"), cleanData, { merge: false });
+          } catch (err: any) {
+            console.error("❌ خطا در بازیابی تنظیمات:", err);
+          }
+        }
+      } 
+      // پشتیبانی از فرمت قدیمی (نسخه 1.0)
+      else if (data.version === "1.0") {
+        const keyMap: Record<string, string> = {
+          customers: "fx-customers",
+          transactions: "fx-transactions",
+          hawalas: "fx-hawalas",
+          cashEntries: "fx-cash"
+        };
+
+        for (const [oldKey, newKey] of Object.entries(keyMap)) {
+          if (data[oldKey] !== undefined) {
+            try {
+              const docRef = doc(db, "appData", newKey);
+              await setDoc(docRef, {
+                value: data[oldKey],
+                lastUpdated: Date.now()
+              }, { merge: false });
+              console.log(`✅ بازیابی ${newKey} از فرمت قدیمی موفق بود`);
+            } catch (err: any) {
+              console.error(`❌ خطا در بازیابی ${newKey}:`, err);
+            }
           }
         }
       }
 
+      // ۴. بازیابی تنظیمات از سطح بالا
       if (data.settings) {
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(data.settings));
         await setDoc(doc(db, "app_settings", "global_settings"), { value: data.settings, updatedAt: new Date().toISOString() }, { merge: true });
@@ -296,6 +352,49 @@ export default function SettingsDrawer() {
       setIsRestoring(false);
     }
   }, [showToast, db]);
+
+  // ✅ تشخیص صحیح با شمارش واقعی داده‌ها
+  const runDiagnosis = useCallback(async () => {
+    const summary: any = {
+      localStorage: scanLocalStorage(),
+      firebase: {}
+    };
+
+    // شمارش داده‌های appData
+    for (const key of APP_DATA_KEYS) {
+      try {
+        const docSnap = await getDoc(doc(db, "appData", key));
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          const valueArray = data.value;
+          summary.firebase[key] = {
+            count: Array.isArray(valueArray) ? valueArray.length : 0,
+            lastUpdated: data.lastUpdated || 0,
+            sample: Array.isArray(valueArray) ? valueArray.slice(0, 2) : []
+          };
+        } else {
+          summary.firebase[key] = { count: 0, lastUpdated: 0, sample: [] };
+        }
+      } catch (err) {
+        summary.firebase[key] = { error: String(err) };
+      }
+    }
+
+    // شمارش تنظیمات
+    try {
+      const settingsSnap = await getDoc(doc(db, "app_settings", "global_settings"));
+      summary.firebase["app_settings_global"] = {
+        exists: settingsSnap.exists(),
+        hasValue: settingsSnap.exists() && settingsSnap.data().value !== undefined
+      };
+    } catch (err) {
+      summary.firebase["app_settings_global"] = { error: String(err) };
+    }
+
+    setDiagnosisData(summary);
+    setShowDiagnosis(true);
+    console.log("🔍 گزارش تشخیص جامع:", summary);
+  }, []);
 
   if (!mounted) return null;
   const heading = dk ? "text-white" : "text-slate-900";
@@ -374,15 +473,18 @@ export default function SettingsDrawer() {
           <AccordionItem id="backup" icon="backup" title="پشتیبان‌گیری جامع">
             <div className="space-y-3">
               <div className={`rounded-xl p-3 text-xs ${dk ? "bg-amber-500/10 border border-amber-500/30 text-amber-200" : "bg-amber-50 border border-amber-200 text-amber-800"}`}>
-                💡 نسخه ۵.۰: ساختار جدید با firebase object و پشتیبانی از Rollback کامل
+                💡 نسخه ۶.۰: خواندن و نوشتن در مسیرهای واقعی appData
               </div>
               <button onClick={handleBackup} disabled={isBackingUp} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white transition-all hover:bg-emerald-600 active:scale-95 disabled:opacity-50">
-                <Ic n="download" className="h-4 w-4" /> {isBackingUp ? "در حال جمع‌آوری..." : "دانلود پشتیبان (نسخه 5.0)"}
+                <Ic n="download" className="h-4 w-4" /> {isBackingUp ? "در حال جمع‌آوری..." : "دانلود پشتیبان (نسخه 6.0)"}
               </button>
               <button onClick={() => fileInputRef.current?.click()} disabled={isRestoring} className={`flex h-11 w-full items-center justify-center gap-2 rounded-xl border text-sm font-black transition-all active:scale-95 disabled:opacity-50 ${dk ? "border-slate-600 text-slate-200 hover:bg-slate-700" : "border-slate-300 text-slate-700 hover:bg-slate-50"}`}>
                 <Ic n="upload" className="h-4 w-4" /> {isRestoring ? "در حال بازیابی..." : "بازیابی از فایل"}
               </button>
               <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={e => { const file = e.target.files?.[0]; if (file) handleRestore(file); e.target.value = ""; }} />
+              <button onClick={runDiagnosis} className={`flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed text-sm font-black transition-all active:scale-95 ${dk ? "border-amber-500/50 text-amber-300 hover:bg-amber-500/10" : "border-amber-500 text-amber-600 hover:bg-amber-50"}`}>
+                <Ic n="info" className="h-4 w-4" /> تشخیص ذخیره‌سازی
+              </button>
             </div>
           </AccordionItem>
           <AccordionItem id="telegram" icon="telegram" title="تنظیمات تلگرام">
@@ -411,10 +513,56 @@ export default function SettingsDrawer() {
             </div>
           </AccordionItem>
           <div className={`mt-4 rounded-xl p-4 text-center ${dk ? "bg-slate-800/50" : "bg-slate-50"}`}>
-            <p className={`text-[10px] font-bold ${subText}`}>نسخه ۵.۰.۰ — صرافی برادران نورزاد</p>
+            <p className={`text-[10px] font-bold ${subText}`}>نسخه ۶.۰.۰ — صرافی برادران نورزاد</p>
           </div>
         </div>
       </div>
+      {showDiagnosis && diagnosisData && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowDiagnosis(false)}>
+          <div className={`w-full max-w-2xl max-h-[80vh] overflow-y-auto rounded-2xl shadow-2xl ${dk ? "bg-slate-900 border border-slate-700" : "bg-white"}`} onClick={e => e.stopPropagation()}>
+            <div className={`sticky top-0 flex items-center justify-between border-b px-5 py-4 ${dk ? "bg-slate-900 border-slate-700" : "bg-white border-slate-200"}`}>
+              <h3 className={`text-lg font-black ${heading}`}>🔍 گزارش تشخیص جامع</h3>
+              <button onClick={() => setShowDiagnosis(false)} className={`grid h-9 w-9 place-items-center rounded-lg ${dk ? "hover:bg-slate-700" : "hover:bg-slate-100"}`}><Ic n="x" className="h-5 w-5" /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className={`rounded-xl p-4 ${dk ? "bg-slate-800" : "bg-slate-50"}`}>
+                <h4 className={`text-sm font-black mb-3 ${heading}`}>🔥 Firebase - appData (مسیرهای واقعی):</h4>
+                <div className="space-y-2">
+                  {Object.entries(diagnosisData.firebase).map(([key, info]: [string, any]) => (
+                    <div key={key} className={`flex items-center justify-between p-3 rounded-lg ${dk ? "bg-slate-700/50" : "bg-white"}`}>
+                      <div className="flex-1">
+                        <div className={`text-xs font-mono font-bold ${heading}`}>{key}</div>
+                        {info.lastUpdated && (
+                          <div className={`text-[10px] ${subText}`}>
+                            آخرین بروزرسانی: {new Date(info.lastUpdated).toLocaleString('fa-IR')}
+                          </div>
+                        )}
+                      </div>
+                      <div className={`text-sm font-black ${
+                        info.error ? "text-rose-500" : 
+                        (info.count > 0 ? "text-emerald-500" : "text-amber-500")
+                      }`}>
+                        {info.error ? "خطا" : 
+                         info.exists !== undefined ? (info.exists ? "✅ موجود" : "❌ خالی") :
+                         `${info.count} آیتم`}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className={`rounded-xl p-4 border-2 ${dk ? "border-emerald-500/50 bg-emerald-500/10" : "border-emerald-500 bg-emerald-50"}`}>
+                <p className={`text-xs font-black mb-2 ${heading}`}>💡 نتیجه:</p>
+                <ul className={`text-xs space-y-1 ${subText}`}>
+                  <li>• اگر تعداد آیتم‌ها بیشتر از صفر است، داده‌های شما سالم هستند.</li>
+                  <li>• نسخه ۶.۰ مسیرهای واقعی appData را می‌خواند و می‌نویسد.</li>
+                  <li>• برای تست Rollback: ابتدا بک‌آپ بگیرید، سپس تغییر ایجاد کنید، سپس بازیابی کنید.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {toast && (
         <div className={`fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-xl px-5 py-3 text-sm font-black shadow-lg transition-all duration-300 ${toastType === "success" ? dk ? "bg-emerald-400 text-slate-900" : "bg-emerald-500 text-white" : dk ? "bg-rose-400 text-slate-900" : "bg-rose-500 text-white"}`}>
           {toast}
