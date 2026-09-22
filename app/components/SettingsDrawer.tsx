@@ -182,9 +182,9 @@ export default function SettingsDrawer() {
     return result;
   };
 
-  // ✅ تغییر حیاتی برای تست: لاگ اجباری و تغییر متن دکمه
+  // ✅ بخش بک‌آپ با نسخه 5.0 و ساختار صحیح
   const handleBackup = useCallback(async () => {
-    console.log("🚨🚨🚨 کد نسخه 5.0 در حال اجرا است! 🚨🚨🚨");
+    console.warn("✅✅✅ کد نسخه 5.0 در حال اجرا است! ✅✅✅");
     setIsBackingUp(true);
     try {
       showToast("⏳ در حال جمع‌آوری داده‌ها...");
@@ -192,11 +192,11 @@ export default function SettingsDrawer() {
       const localStorageData = scanLocalStorage();
       
       const data = { 
-        version: "5.0", // این باید 5.0 باشد
+        version: "5.0", // این خط تضمین می‌کند نسخه 5 است
         exportDate: new Date().toISOString(), 
         settings, 
         localStorage: localStorageData, 
-        firebase: firebaseData 
+        firebase: firebaseData // داده‌ها داخل این آبجکت قرار می‌گیرند
       };
       
       console.log("📦 ساختار بک‌آپ:", {
@@ -224,11 +224,13 @@ export default function SettingsDrawer() {
     }
   }, [settings, showToast]);
 
+  // ✅ بخش بازیابی هوشمند (پشتیبانی از فرمت 1.0 و 5.0)
   const handleRestore = useCallback(async (file: File) => {
     setIsRestoring(true);
     try {
       showToast("⏳ در حال آماده‌سازی سیستم...");
       
+      // 1. پاکسازی بی‌رحمانه‌ی کش محلی
       for (let i = localStorage.length - 1; i >= 0; i--) {
         const key = localStorage.key(i);
         if (key && (key.startsWith('synced_') || key === SETTINGS_KEY || key === 'fx-theme')) localStorage.removeItem(key);
@@ -242,9 +244,11 @@ export default function SettingsDrawer() {
         }
       }
 
+      // 2. خواندن فایل
       const data = JSON.parse(await file.text());
       if (!data.version) throw new Error("فرمت نامعتبر");
 
+      // 3. تشخیص هوشمند فرمت (اگر firebase وجود داشت از آن استفاده کن، در غیر این صورت از خود data (فرمت 1.0))
       const collectionsToRestore = data.firebase || data; 
       const collectionKeys = Object.keys(collectionsToRestore).filter(
         key => !['version', 'exportDate', 'settings', 'localStorage', 'sessionStorage', 'firebase'].includes(key)
@@ -252,10 +256,12 @@ export default function SettingsDrawer() {
 
       showToast("⏳ در حال بازنویسی داده‌های سرور...");
 
+      // 4. پردازش هر کالکشن
       for (const colName of collectionKeys) {
         const docs = collectionsToRestore[colName];
         if (!Array.isArray(docs)) continue;
 
+        // الف) حذف بی‌قیدوشرط تمام داده‌های فعلی این کالکشن در فایربیس (برای تضمین Rollback)
         const oldSnap = await getDocs(collection(db, colName));
         if (oldSnap.size > 0) {
           for (let i = 0; i < oldSnap.size; i += 400) {
@@ -265,6 +271,7 @@ export default function SettingsDrawer() {
           }
         }
 
+        // ب) اگر در بک‌آپ داده‌ای وجود دارد، آن را بنویس. (اگر آرایه خالی باشد، همین که بالا پاک شد کافی است)
         if (docs.length > 0) {
           for (let i = 0; i < docs.length; i += 400) {
             const batch = writeBatch(db);
@@ -279,13 +286,15 @@ export default function SettingsDrawer() {
         }
       }
 
+      // 5. بازیابی تنظیمات
       if (data.settings) {
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(data.settings));
         await setDoc(doc(db, "app_settings", "global_settings"), { value: data.settings, updatedAt: new Date().toISOString() }, { merge: true });
       }
 
-      showToast("✅ بازیابی موفق. در حال بازنشانی...");
+      showToast("✅ بازیابی موفق. در حال بازنشانی سیستم...");
       
+      // 6. رفرش سخت برای اطمینان از لود شدن داده‌های جدید
       setTimeout(() => {
         window.location.replace(window.location.href);
       }, 1000);
@@ -374,7 +383,7 @@ export default function SettingsDrawer() {
           <AccordionItem id="backup" icon="backup" title="پشتیبان‌گیری جامع">
             <div className="space-y-3">
               <div className={`rounded-xl p-3 text-xs ${dk ? "bg-amber-500/10 border border-amber-500/30 text-amber-200" : "bg-amber-50 border border-amber-200 text-amber-800"}`}>
-                💡 نسخه ۵.۰: ساختار جدید با firebase object
+                💡 نسخه ۵.۰: ساختار جدید با firebase object و پشتیبانی از Rollback کامل
               </div>
               <button onClick={handleBackup} disabled={isBackingUp} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white transition-all hover:bg-emerald-600 active:scale-95 disabled:opacity-50">
                 <Ic n="download" className="h-4 w-4" /> {isBackingUp ? "در حال جمع‌آوری..." : "دانلود پشتیبان (نسخه 5.0)"}
