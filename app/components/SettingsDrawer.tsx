@@ -10,7 +10,7 @@ const SETTINGS_KEY = "fx-settings";
 
 const FIREBASE_COLLECTIONS = [
   'appData', 'app_settings', 'customers', 'transactions', 'hawalas', 'cash',
-  'exchanges', 'rates', 'settings', 'users', 'logs', 'markets', 'trades', 
+  'exchanges', 'rates', 'settings', 'users', 'logs', 'markets', 'trades',
   'wallets', 'withdrawals', 'journal', 'kyc', 'reports', 'cashEntries'
 ];
 
@@ -182,61 +182,59 @@ export default function SettingsDrawer() {
     return result;
   };
 
-  // ✅ بخش بک‌آپ با نسخه 5.0 و ساختار صحیح
   const handleBackup = useCallback(async () => {
-    console.warn("✅✅✅ کد نسخه 5.0 در حال اجرا است! ✅✅✅");
+    alert("✅ کد نسخه ۵.۰ اجرا شد!");
+    console.warn("🚨🚨🚨 کد نسخه ۵.۰ در حال اجرا است! 🚨🚨🚨");
     setIsBackingUp(true);
     try {
       showToast("⏳ در حال جمع‌آوری داده‌ها...");
       const firebaseData = await scanFirebase();
       const localStorageData = scanLocalStorage();
-      
-      const data = { 
-        version: "5.0", // این خط تضمین می‌کند نسخه 5 است
-        exportDate: new Date().toISOString(), 
-        settings, 
-        localStorage: localStorageData, 
-        firebase: firebaseData // داده‌ها داخل این آبجکت قرار می‌گیرند
+
+      const data = {
+        version: "5.0",
+        exportDate: new Date().toISOString(),
+        settings,
+        localStorage: localStorageData,
+        firebase: firebaseData
       };
-      
+
       console.log("📦 ساختار بک‌آپ:", {
         version: data.version,
         hasFirebase: !!data.firebase,
         collections: Object.keys(data.firebase || {})
       });
-      
+
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a"); 
-      a.href = url; 
+      const a = document.createElement("a");
+      a.href = url;
       a.download = `backup-v5-${new Date().toISOString().slice(0, 10)}.json`;
-      document.body.appendChild(a); 
-      a.click(); 
-      document.body.removeChild(a); 
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      
+
       showToast("✅ پشتیبان نسخه 5.0 دانلود شد");
-    } catch (err) { 
+    } catch (err) {
       console.error("❌ خطای بک‌آپ:", err);
-      showToast("❌ خطا در ایجاد پشتیبان", "error"); 
-    } finally { 
-      setIsBackingUp(false); 
+      showToast("❌ خطا در ایجاد پشتیبان", "error");
+    } finally {
+      setIsBackingUp(false);
     }
   }, [settings, showToast]);
 
-  // ✅ بخش بازیابی هوشمند (پشتیبانی از فرمت 1.0 و 5.0)
   const handleRestore = useCallback(async (file: File) => {
     setIsRestoring(true);
     try {
       showToast("⏳ در حال آماده‌سازی سیستم...");
-      
-      // 1. پاکسازی بی‌رحمانه‌ی کش محلی
+
       for (let i = localStorage.length - 1; i >= 0; i--) {
         const key = localStorage.key(i);
         if (key && (key.startsWith('synced_') || key === SETTINGS_KEY || key === 'fx-theme')) localStorage.removeItem(key);
       }
       await new Promise<void>(resolve => { const req = indexedDB.deleteDatabase("AppSyncDB"); req.onsuccess = req.onerror = req.onblocked = () => resolve(); });
-      
+
       const dbs = await (indexedDB as any).databases();
       for (const dbInfo of (dbs || [])) {
         if (dbInfo.name && (dbInfo.name.includes('firebase') || dbInfo.name.includes('firestore'))) {
@@ -244,24 +242,20 @@ export default function SettingsDrawer() {
         }
       }
 
-      // 2. خواندن فایل
       const data = JSON.parse(await file.text());
       if (!data.version) throw new Error("فرمت نامعتبر");
 
-      // 3. تشخیص هوشمند فرمت (اگر firebase وجود داشت از آن استفاده کن، در غیر این صورت از خود data (فرمت 1.0))
-      const collectionsToRestore = data.firebase || data; 
+      const collectionsToRestore = data.firebase || data;
       const collectionKeys = Object.keys(collectionsToRestore).filter(
         key => !['version', 'exportDate', 'settings', 'localStorage', 'sessionStorage', 'firebase'].includes(key)
       );
 
       showToast("⏳ در حال بازنویسی داده‌های سرور...");
 
-      // 4. پردازش هر کالکشن
       for (const colName of collectionKeys) {
         const docs = collectionsToRestore[colName];
         if (!Array.isArray(docs)) continue;
 
-        // الف) حذف بی‌قیدوشرط تمام داده‌های فعلی این کالکشن در فایربیس (برای تضمین Rollback)
         const oldSnap = await getDocs(collection(db, colName));
         if (oldSnap.size > 0) {
           for (let i = 0; i < oldSnap.size; i += 400) {
@@ -271,7 +265,6 @@ export default function SettingsDrawer() {
           }
         }
 
-        // ب) اگر در بک‌آپ داده‌ای وجود دارد، آن را بنویس. (اگر آرایه خالی باشد، همین که بالا پاک شد کافی است)
         if (docs.length > 0) {
           for (let i = 0; i < docs.length; i += 400) {
             const batch = writeBatch(db);
@@ -286,15 +279,13 @@ export default function SettingsDrawer() {
         }
       }
 
-      // 5. بازیابی تنظیمات
       if (data.settings) {
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(data.settings));
         await setDoc(doc(db, "app_settings", "global_settings"), { value: data.settings, updatedAt: new Date().toISOString() }, { merge: true });
       }
 
-      showToast("✅ بازیابی موفق. در حال بازنشانی سیستم...");
-      
-      // 6. رفرش سخت برای اطمینان از لود شدن داده‌های جدید
+      showToast("✅ بازیابی موفق. در حال بازنشانی...");
+
       setTimeout(() => {
         window.location.replace(window.location.href);
       }, 1000);
