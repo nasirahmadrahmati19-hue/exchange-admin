@@ -182,16 +182,17 @@ export default function SettingsDrawer() {
     return result;
   };
 
+  // ✅ تغییر حیاتی برای تست: لاگ اجباری و تغییر متن دکمه
   const handleBackup = useCallback(async () => {
+    console.log("🚨🚨🚨 کد نسخه 5.0 در حال اجرا است! 🚨🚨🚨");
     setIsBackingUp(true);
     try {
       showToast("⏳ در حال جمع‌آوری داده‌ها...");
       const firebaseData = await scanFirebase();
       const localStorageData = scanLocalStorage();
       
-      // ✅ ساختار جدید با نسخه 5.0
       const data = { 
-        version: "5.0",
+        version: "5.0", // این باید 5.0 باشد
         exportDate: new Date().toISOString(), 
         settings, 
         localStorage: localStorageData, 
@@ -228,7 +229,6 @@ export default function SettingsDrawer() {
     try {
       showToast("⏳ در حال آماده‌سازی سیستم...");
       
-      // پاکسازی کش
       for (let i = localStorage.length - 1; i >= 0; i--) {
         const key = localStorage.key(i);
         if (key && (key.startsWith('synced_') || key === SETTINGS_KEY || key === 'fx-theme')) localStorage.removeItem(key);
@@ -245,7 +245,6 @@ export default function SettingsDrawer() {
       const data = JSON.parse(await file.text());
       if (!data.version) throw new Error("فرمت نامعتبر");
 
-      // تشخیص هوشمند فرمت
       const collectionsToRestore = data.firebase || data; 
       const collectionKeys = Object.keys(collectionsToRestore).filter(
         key => !['version', 'exportDate', 'settings', 'localStorage', 'sessionStorage', 'firebase'].includes(key)
@@ -378,7 +377,7 @@ export default function SettingsDrawer() {
                 💡 نسخه ۵.۰: ساختار جدید با firebase object
               </div>
               <button onClick={handleBackup} disabled={isBackingUp} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white transition-all hover:bg-emerald-600 active:scale-95 disabled:opacity-50">
-                <Ic n="download" className="h-4 w-4" /> {isBackingUp ? "در حال جمع‌آوری..." : "دانلود پشتیبان کامل"}
+                <Ic n="download" className="h-4 w-4" /> {isBackingUp ? "در حال جمع‌آوری..." : "دانلود پشتیبان (نسخه 5.0)"}
               </button>
               <button onClick={() => fileInputRef.current?.click()} disabled={isRestoring} className={`flex h-11 w-full items-center justify-center gap-2 rounded-xl border text-sm font-black transition-all active:scale-95 disabled:opacity-50 ${dk ? "border-slate-600 text-slate-200 hover:bg-slate-700" : "border-slate-300 text-slate-700 hover:bg-slate-50"}`}>
                 <Ic n="upload" className="h-4 w-4" /> {isRestoring ? "در حال بازیابی..." : "بازیابی از فایل"}
