@@ -7,10 +7,7 @@ import {
   doc, 
   setDoc, 
   deleteDoc, 
-  writeBatch,
-  getDoc,
-  query,
-  orderBy
+  writeBatch 
 } from "firebase/firestore";
 import { db } from "./firebase";
 
@@ -65,9 +62,9 @@ function openIDB(): Promise<IDBDatabase> {
 async function saveToIDB(key: string, value: any): Promise<void> {
   if (typeof window === "undefined") return;
   try {
-    const db = await openIDB();
+    const dbInstance = await openIDB();
     return new Promise((resolve, reject) => {
-      const transaction = db.transaction(IDB_STORE, "readwrite");
+      const transaction = dbInstance.transaction(IDB_STORE, "readwrite");
       const request = transaction.objectStore(IDB_STORE).put(value, key);
       request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
@@ -80,9 +77,9 @@ async function saveToIDB(key: string, value: any): Promise<void> {
 async function readFromIDB(key: string): Promise<any> {
   if (typeof window === "undefined") return undefined;
   try {
-    const db = await openIDB();
+    const dbInstance = await openIDB();
     return new Promise((resolve) => {
-      const request = db.transaction(IDB_STORE, "readonly").objectStore(IDB_STORE).get(key);
+      const request = dbInstance.transaction(IDB_STORE, "readonly").objectStore(IDB_STORE).get(key);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => resolve(undefined);
     });
@@ -142,15 +139,13 @@ export function useSafeSyncedState<T extends { id: string }>(
   const lastUpdatedRef = useRef<number>(cached?.lastUpdated ?? 0);
   const pendingWritesRef = useRef<number>(0);
   const isMountedRef = useRef<boolean>(true);
-  const batchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const pendingChangesRef = useRef<Map<string, T | null>>(new Map());
 
   useEffect(() => { 
     dataRef.current = data; 
   }, [data]);
 
   // ============================================================
-  // بارگذاری اولیه (Initial Load)
+  // بارگذاری اولیه و گوش‌دادن به تغییرات (Initial Load & Listener)
   // ============================================================
 
   useEffect(() => {
@@ -161,7 +156,7 @@ export function useSafeSyncedState<T extends { id: string }>(
       const colRef = collection(db, collectionName);
 
       try {
-        // ۱. تلاش برای خواندن از کش محلی (برای سرعت)
+        // ۱. تلاش برای خواندن از کش محلی (برای سرعت اولیه)
         const localData = readFromLS(collectionName) ?? (await readFromIDB(collectionName));
         
         if (localData && hasData(localData) && !cached?.loaded) {
@@ -181,11 +176,11 @@ export function useSafeSyncedState<T extends { id: string }>(
             ...doc.data()
           })) as T[];
 
-          // مرتب‌سازی بر اساس createdAt یا updatedAt (اگر وجود داشته باشد)
+          // مرتب‌سازی بر اساس updatedAt یا createdAt (جدیدترین اول)
           newData.sort((a, b) => {
             const aTime = (a as any).updatedAt || (a as any).createdAt || 0;
             const bTime = (b as any).updatedAt || (b as any).createdAt || 0;
-            return bTime - aTime; // جدیدترین اول
+            return bTime - aTime; 
           });
 
           if (!ignore && isMountedRef.current) {
@@ -205,14 +200,14 @@ export function useSafeSyncedState<T extends { id: string }>(
               itemCount: newData.length 
             });
 
-            // ذخیره در کش محلی (برای دفعات بعد)
+            // ذخیره در کش محلی
             saveToLS(collectionName, newData);
             saveToIDB(collectionName, newData).catch(() => {});
           }
-        }, (error) => {
-          console.error(`🔴 [${collectionName}] Snapshot Error:`, error);
+        }, (err) => {
+          console.error(`🔴 [${collectionName}] Snapshot Error:`, err);
           if (!ignore && isMountedRef.current) {
-            setError(error.message);
+            setError(err.message);
             setIsLoading(false);
           }
         });
@@ -222,7 +217,7 @@ export function useSafeSyncedState<T extends { id: string }>(
           isMountedRef.current = false;
           unsubscribe();
           
-          // ذخیره نهایی در کش
+          // ذخیره نهایی در کش هنگامUnmount
           if (hasData(dataRef.current)) {
             globalCache.set(collectionName, { 
               value: dataRef.current, 
@@ -232,10 +227,10 @@ export function useSafeSyncedState<T extends { id: string }>(
             });
           }
         };
-      } catch (error: any) {
-        console.error(`🔴 [${collectionName}] Init Error:`, error);
+      } catch (err: any) {
+        console.error(`🔴 [${collectionName}] Init Error:`, err);
         if (!ignore && isMountedRef.current) {
-          setError(error.message);
+          setError(err.message);
           setIsLoading(false);
         }
       }
@@ -273,14 +268,10 @@ export function useSafeSyncedState<T extends { id: string }>(
       itemCount: resolvedValue.length 
     });
 
-    // ذخیره در کش محلی
     saveToLS(collectionName, resolvedValue);
     saveToIDB(collectionName, resolvedValue).catch(() => {});
 
-    // ============================================================
     // محاسبه تغییرات (Delta Calculation)
-    // ============================================================
-
     const currentMap = new Map(data.map(item => [item.id, item]));
     const newMap = new Map(resolvedValue.map(item => [item.id, item]));
 
@@ -288,77 +279,63 @@ export function useSafeSyncedState<T extends { id: string }>(
     const toUpdate: T[] = [];
     const toDelete: string[] = [];
 
-    // پیدا کردن آیتم‌های جدید و تغییر کرده
     for (const [id, newItem] of newMap) {
       const currentItem = currentMap.get(id);
-      
       if (!currentItem) {
-        // آیتم جدید
-        toAdd.push({ ...newItem, id: id || crypto.randomUUID(), updatedAt: now });
+        toAdd.push({ ...newItem, id: id || crypto.randomUUID(), updatedAt: now } as T);
       } else if (JSON.stringify(currentItem) !== JSON.stringify(newItem)) {
-        // آیتم تغییر کرده
-        toUpdate.push({ ...newItem, updatedAt: now });
+        toUpdate.push({ ...newItem, updatedAt: now } as T);
       }
     }
 
-    // پیدا کردن آیتم‌های حذف شده
     for (const id of currentMap.keys()) {
       if (!newMap.has(id)) {
         toDelete.push(id);
       }
     }
 
-    // ============================================================
     // ارسال تغییرات به فایربیس (Batch Operations)
-    // ============================================================
-
     pendingWritesRef.current += 1;
 
     try {
       const batch = writeBatch(db);
       let hasChanges = false;
 
-      // افزودن آیتم‌های جدید
       for (const item of toAdd) {
         const cleanItem = removeUndefinedFields(item);
         batch.set(doc(db, collectionName, item.id), cleanItem);
         hasChanges = true;
       }
 
-      // به‌روزرسانی آیتم‌های تغییر کرده
       for (const item of toUpdate) {
         const cleanItem = removeUndefinedFields(item);
         batch.set(doc(db, collectionName, item.id), cleanItem, { merge: true });
         hasChanges = true;
       }
 
-      // حذف آیتم‌های حذف شده
       for (const id of toDelete) {
         batch.delete(doc(db, collectionName, id));
         hasChanges = true;
       }
 
-      // ارسال دسته‌ای (بسیار سریع‌تر از ارسال تکی)
       if (hasChanges) {
         await batch.commit();
         console.log(`✅ [${collectionName}] تغییرات ارسال شد: ${toAdd.length} جدید، ${toUpdate.length} به‌روزرسانی، ${toDelete.length} حذف`);
       }
 
       return resolvedValue;
-    } catch (error: any) {
-      console.error(`🔴 [${collectionName}] Firebase Save Failed:`, error);
-      setError(error.message);
-      
-      // بازگشت به حالت قبل در صورت خطا
-      setData(dataRef.current);
+    } catch (err: any) {
+      console.error(`🔴 [${collectionName}] Firebase Save Failed:`, err);
+      setError(err.message);
+      setData(dataRef.current); // بازگشت به حالت قبل در صورت خطا
       return dataRef.current;
     } finally {
       pendingWritesRef.current = Math.max(0, pendingWritesRef.current - 1);
     }
-  }, [collectionName]);
+  }, [collectionName, data]);
 
   // ============================================================
-  // توابع کمکی (Helper Functions)
+  // توابع کمکی (Helper Functions) - ✅ بدون خطای تایپ‌اسکریپت
   // ============================================================
 
   const addItem = useCallback(async (item: Omit<T, "id">) => {
@@ -367,7 +344,7 @@ export function useSafeSyncedState<T extends { id: string }>(
       id: crypto.randomUUID(),
       createdAt: Date.now(),
       updatedAt: Date.now()
-    } as T;
+    } as unknown as T; // ✅ رفع خطای تایپ‌اسکریپت
     
     return setSafeValue(prev => [...prev, newItem]);
   }, [setSafeValue]);
@@ -376,7 +353,7 @@ export function useSafeSyncedState<T extends { id: string }>(
     return setSafeValue(prev => 
       prev.map(item => 
         item.id === id 
-          ? { ...item, ...updates, updatedAt: Date.now() }
+          ? ({ ...item, ...updates, updatedAt: Date.now() } as unknown as T) // ✅ رفع خطای تایپ‌اسکریپت
           : item
       )
     );
@@ -390,16 +367,14 @@ export function useSafeSyncedState<T extends { id: string }>(
     setIsLoading(true);
     setError(null);
     
-    // پاک کردن کش محلی برای بارگذاری مجدد
     globalCache.delete(collectionName);
     localStorage.removeItem(LS_PREFIX + collectionName);
     
     try {
-      const db = await openIDB();
-      db.transaction(IDB_STORE, "readwrite").objectStore(IDB_STORE).delete(collectionName);
+      const dbInstance = await openIDB();
+      dbInstance.transaction(IDB_STORE, "readwrite").objectStore(IDB_STORE).delete(collectionName);
     } catch {}
 
-    // راه‌اندازی مجدد listener
     setIsLoading(false);
   }, [collectionName]);
 
