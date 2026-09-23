@@ -1,96 +1,56 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, type User } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "./dashboard/lib/firebase"; 
 
-// 🚨 ایمیل مالک اصلی
 const OWNER_EMAIL = "nasirahmadrahmati19@gmail.com";
 
 export default function AuthGate() {
   const router = useRouter();
-  const pathname = usePathname(); // ✅ مسیر فعلی را می‌گیریم
+  const pathname = usePathname(); // مسیر فعلی را می‌خوانیم
   
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [isAuthorized, setIsAuthorized] = useState(false);
-  const [checkingAuth, setCheckingAuth] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
-  
-  // ✅ لایه محافظتی ۱: جلوگیری از اجرای چندباره
-  const hasRedirected = useRef(false);
-  const isChecking = useRef(false);
 
   useEffect(() => {
-    // ✅ لایه محافظتی ۲: اگر الان در dashboard هستیم، هیچ کاری نکن
-    if (pathname === '/dashboard') {
-      setCheckingAuth(false);
-      return;
-    }
-
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      // ✅ لایه محافظتی ۳: جلوگیری از اجرای همزمان
-      if (isChecking.current) return;
-      
       setUser(currentUser);
       
       if (currentUser) {
-        // ✅ فقط اگر هنوز redirect نکردیم و در صفحه اصلی هستیم
-        if (!hasRedirected.current && pathname === '/') {
-          isChecking.current = true;
-          await checkAuthorization(currentUser.email);
-          isChecking.current = false;
+        // 🚨 شرط حیاتی: فقط اگر در صفحه اصلی هستیم عملیات هدایت را انجام بده
+        if (pathname === '/') {
+          if (currentUser.email?.toLowerCase() === OWNER_EMAIL.toLowerCase()) {
+            setIsAuthorized(true);
+            router.replace('/dashboard'); // استفاده از replace برای جلوگیری از ایجاد تاریخچه اضافی
+            return;
+          }
+
+          try {
+            const userDoc = await getDoc(doc(db, "authorized_users", currentUser.email));
+            if (userDoc.exists()) {
+              setIsAuthorized(true);
+              router.replace('/dashboard');
+            } else {
+              setIsAuthorized(false);
+            }
+          } catch (error) {
+            console.error("خطا در بررسی دسترسی:", error);
+            setIsAuthorized(false);
+          }
         }
       } else {
         setIsAuthorized(false);
-        setCheckingAuth(false);
-        hasRedirected.current = false;
       }
+      setLoading(false);
     });
     
     return () => unsubscribe();
-  }, [pathname]); // ✅ فقط وقتی pathname تغییر کرد اجرا شود
-
-  const checkAuthorization = async (email: string | null) => {
-    if (!email || hasRedirected.current) return;
-    
-    // ✅ چک نهایی قبل از redirect
-    if (typeof window !== 'undefined' && window.location.pathname !== '/') {
-      return;
-    }
-    
-    setErrorMsg("");
-    
-    // ۱. اگر مالک اصلی است
-    if (email.toLowerCase() === OWNER_EMAIL.toLowerCase()) {
-      setIsAuthorized(true);
-      setCheckingAuth(false);
-      hasRedirected.current = true;
-      
-      // ✅ استفاده از window.location به جای router برای اطمینان بیشتر
-      window.location.href = '/dashboard';
-      return;
-    }
-
-    // ۲. بررسی لیست کاربران مجاز
-    try {
-      const userDoc = await getDoc(doc(db, "authorized_users", email));
-      if (userDoc.exists()) {
-        setIsAuthorized(true);
-        hasRedirected.current = true;
-        window.location.href = '/dashboard'; // ✅ redirect کامل مرورگر
-      } else {
-        setIsAuthorized(false);
-        setCheckingAuth(false);
-      }
-    } catch (error) {
-      console.error("خطا در بررسی دسترسی:", error);
-      setIsAuthorized(false);
-      setCheckingAuth(false);
-    }
-  };
+  }, [pathname]); // فقط وقتی مسیر تغییر کرد این افکت اجرا شود
 
   const handleLogin = async () => {
     setLoading(true);
@@ -121,15 +81,13 @@ export default function AuthGate() {
     }
     setUser(null);
     setIsAuthorized(false);
-    setCheckingAuth(false);
     setErrorMsg("");
     setLoading(false);
-    hasRedirected.current = false;
   };
 
   // --- حالت‌های نمایش ---
 
-  if (checkingAuth) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-[#0b1f2e] flex items-center justify-center">
         <div className="text-white text-xl animate-pulse">در حال بررسی سیستم...</div>
@@ -190,6 +148,7 @@ export default function AuthGate() {
     );
   }
 
+  // اگر به اینجا رسید، یعنی در حال هدایت به داشبورد است
   return (
     <div className="min-h-screen bg-[#0b1f2e] flex items-center justify-center">
       <div className="text-white text-xl animate-pulse">در حال انتقال به پنل مدیریت...</div>
