@@ -2,12 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, type User } from "firebase/auth";
-import { getFirestore, doc, getDoc } from "firebase/firestore";
-import { app } from "./dashboard/lib/firebase"; // ✅ مسیر اصلاح شد (یک نقطه)
+import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, type User } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+// ✅ وارد کردن مستقیم auth و db که در فایل firebase شما export شده‌اند
+import { auth, db } from "./dashboard/lib/firebase"; 
 
-const auth = getAuth(app);
-const db = getFirestore(app);
 const provider = new GoogleAuthProvider();
 
 // 🚨 ایمیل مالک اصلی (خودتان)
