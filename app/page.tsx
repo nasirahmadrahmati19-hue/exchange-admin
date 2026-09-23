@@ -10,7 +10,7 @@ const OWNER_EMAIL = "nasirahmadrahmati19@gmail.com";
 
 export default function AuthGate() {
   const router = useRouter();
-  const pathname = usePathname(); // مسیر فعلی را می‌خوانیم
+  const pathname = usePathname(); 
   
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -22,15 +22,22 @@ export default function AuthGate() {
       setUser(currentUser);
       
       if (currentUser) {
-        // 🚨 شرط حیاتی: فقط اگر در صفحه اصلی هستیم عملیات هدایت را انجام بده
+        // ✅ خط حیاتی که خطای تایپ‌اسکریپت را حل می‌کند:
+        if (!currentUser.email) {
+          setIsAuthorized(false);
+          setLoading(false);
+          return;
+        }
+
         if (pathname === '/') {
-          if (currentUser.email?.toLowerCase() === OWNER_EMAIL.toLowerCase()) {
+          if (currentUser.email.toLowerCase() === OWNER_EMAIL.toLowerCase()) {
             setIsAuthorized(true);
-            router.replace('/dashboard'); // استفاده از replace برای جلوگیری از ایجاد تاریخچه اضافی
+            router.replace('/dashboard'); 
             return;
           }
 
           try {
+            // حالا تایپ‌اسکریپت مطمئن است که email یک رشته (string) است
             const userDoc = await getDoc(doc(db, "authorized_users", currentUser.email));
             if (userDoc.exists()) {
               setIsAuthorized(true);
@@ -50,7 +57,7 @@ export default function AuthGate() {
     });
     
     return () => unsubscribe();
-  }, [pathname]); // فقط وقتی مسیر تغییر کرد این افکت اجرا شود
+  }, [pathname]); 
 
   const handleLogin = async () => {
     setLoading(true);
@@ -84,8 +91,6 @@ export default function AuthGate() {
     setErrorMsg("");
     setLoading(false);
   };
-
-  // --- حالت‌های نمایش ---
 
   if (loading) {
     return (
@@ -148,7 +153,6 @@ export default function AuthGate() {
     );
   }
 
-  // اگر به اینجا رسید، یعنی در حال هدایت به داشبورد است
   return (
     <div className="min-h-screen bg-[#0b1f2e] flex items-center justify-center">
       <div className="text-white text-xl animate-pulse">در حال انتقال به پنل مدیریت...</div>
