@@ -1,17 +1,13 @@
 "use client";
 import { useEffect, useState, useRef, useCallback, type ReactNode } from "react";
-import { doc, setDoc, getDoc, onSnapshot } from "firebase/firestore";
+import { doc, setDoc, getDoc, onSnapshot, collection, getDocs, deleteDoc } from "firebase/firestore";
 import { db } from "../dashboard/lib/firebase";
+import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, type User } from "firebase/auth";
 
 const SETTINGS_KEY = "fx-settings";
 
-// ✅ مسیرهای واقعی ذخیره‌سازی داده‌ها
-const APP_DATA_KEYS = [
-  "fx-customers",
-  "fx-transactions",
-  "fx-hawalas",
-  "fx-cash",
-];
+// 🚨 ایمیل مالک اصلی (شما)
+const OWNER_EMAIL = "nasirahmadrahmati19@gmail.com";
 
 type Settings = {
   email: string;
@@ -30,6 +26,12 @@ type Settings = {
     notifyVoid: boolean;
     notifyExchange: boolean;
   };
+};
+
+type AuthorizedUser = {
+  email: string;
+  role: "admin" | "user";
+  addedAt: number;
 };
 
 const defaultSettings: Settings = {
@@ -54,41 +56,20 @@ function loadSettings(): Settings {
   } catch { return defaultSettings; }
 }
 
-function restoreFirestoreTypes(data: any): any {
-  if (data === null || data === undefined) return null;
-  if (typeof data === "object") {
-    if (data._seconds !== undefined && data._nanoseconds !== undefined) {
-      // نیاز به ایمپورت Timestamp دارد، اما برای بک‌آپ ساده‌سازی شده
-      return { _seconds: data._seconds, _nanoseconds: data._nanoseconds };
-    }
-    if (Array.isArray(data)) return data.map(restoreFirestoreTypes).filter(item => item !== undefined);
-    const restored: any = {};
-    for (const key in data) {
-      if (Object.prototype.hasOwnProperty.call(data, key)) {
-        const val = restoreFirestoreTypes(data[key]);
-        if (val !== undefined) restored[key] = val;
-      }
-    }
-    return restored;
-  }
-  return data;
-}
-
 const Ic = ({ n, className = "h-5 w-5" }: { n: string; className?: string }) => {
   const paths: Record<string, string> = {
     gear: "M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
     mail: "M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75",
     globe: "M12 21a9.004 9.004 0 0 0 8.716-6.747M12 21a9.004 9.004 0 0 1-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 0 1 7.843 4.582M12 3a8.997 8.997 0 0 0-7.843 4.582m15.686 0A11.953 11.953 0 0 1 12 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0 1 21 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0 1 12 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 0 1 3 12c0-1.605.42-3.113 1.157-4.418",
     users: "M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z",
-    backup: "M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 3.75c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125",
-    telegram: "M6 12 3.269 3.126A59.768 59.768 0 0 1 21.485 12 59.77 59.77 0 0 1 3.27 20.876L5.999 12Zm0 0h7.5",
+    google: "M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.748L12.545,10.239z",
     x: "M6 18 18 6M6 6l12 12",
     check: "M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
     download: "M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 16.5V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5",
-    upload: "M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 16.5V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3",
     chevron: "m19.5 8.25-7.5 7.5-7.5-7.5",
+    lock: "M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z",
     plus: "M12 4.5v15m7.5-7.5h-15",
-    info: "M11.25 11.25l.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z",
+    trash: "M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0",
   };
   return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true"><path d={paths[n] || ""} /></svg>);
 };
@@ -99,29 +80,50 @@ export default function SettingsDrawer() {
   const [settings, setSettings] = useState<Settings>(defaultSettings);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [toast, setToast] = useState("");
-  const [toastType, setToastType] = useState<"success" | "error">("success");
   const [activeAccordion, setActiveAccordion] = useState<string | null>("email");
+  
+  const [user, setUser] = useState<User | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isBackingUp, setIsBackingUp] = useState(false);
-  const [isRestoring, setIsRestoring] = useState(false);
-  const [showDiagnosis, setShowDiagnosis] = useState(false);
-  const [diagnosisData, setDiagnosisData] = useState<any>(null);
+  const [authorizedUsers, setAuthorizedUsers] = useState<AuthorizedUser[]>([]);
+  const [newUserEmail, setNewUserEmail] = useState("");
+  const [newUserRole, setNewUserRole] = useState<"admin" | "user">("user");
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const latestSettingsRef = useRef(settings);
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   latestSettingsRef.current = settings;
 
-  // 🚨 تست غیرقابل انکار برای اطمینان از اجرای کد جدید
-  useEffect(() => {
-    if (mounted) {
-      console.warn("🚨🚨🚨 کد نسخه ۶.۰ با موفقیت بارگذاری شد! 🚨🚨🚨");
-    }
-  }, [mounted]);
+  const auth = getAuth();
+  const provider = new GoogleAuthProvider();
 
   useEffect(() => { try { const s = window.localStorage.getItem("fx-theme"); if (s === "dark" || s === "light") setTheme(s); } catch {} }, []);
   useEffect(() => { try { window.localStorage.setItem("fx-theme", theme); } catch {} }, [theme]);
   const dk = theme === "dark";
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setIsAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, [auth]);
+
+  useEffect(() => {
+    const loadAuthorizedUsers = async () => {
+      try {
+        const querySnapshot = await getDocs(collection(db, "authorized_users"));
+        const users: AuthorizedUser[] = [];
+        querySnapshot.forEach((doc) => {
+          users.push(doc.data() as AuthorizedUser);
+        });
+        setAuthorizedUsers(users);
+      } catch (error) {
+        console.error("خطا در بارگذاری کاربران مجاز:", error);
+      }
+    };
+    loadAuthorizedUsers();
+  }, []);
 
   useEffect(() => {
     const loadInitialSettings = async () => {
@@ -140,219 +142,147 @@ export default function SettingsDrawer() {
     loadInitialSettings();
   }, [db]);
 
-  useEffect(() => {
-    const unsubscribe = onSnapshot(doc(db, "app_settings", "global_settings"), (snapshot) => {
-      if (snapshot.exists()) {
-        const fbSettings = snapshot.data().value as Settings;
-        if (JSON.stringify(fbSettings) !== JSON.stringify(latestSettingsRef.current)) {
-          let migratedChatIds: string[] = fbSettings?.telegram?.chatIds && Array.isArray(fbSettings.telegram.chatIds) ? fbSettings.telegram.chatIds : [];
-          const finalSettings: Settings = { ...defaultSettings, ...fbSettings, telegram: { ...defaultSettings.telegram, ...fbSettings?.telegram, chatIds: migratedChatIds } };
-          localStorage.setItem(SETTINGS_KEY, JSON.stringify(finalSettings));
-          setSettings(finalSettings);
-        }
-      }
-    });
-    return () => unsubscribe();
-  }, [db]);
-
-  useEffect(() => {
-    if (!mounted) return;
-    const timer = setTimeout(async () => {
-      try { await setDoc(doc(db, "app_settings", "global_settings"), { value: settings, updatedAt: new Date().toISOString() }, { merge: true }); } catch (error) { console.error("❌ خطا در ذخیره فایربیس:", error); }
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [settings, mounted, db]);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => { if (panelRef.current && !panelRef.current.contains(e.target as Node)) { const target = e.target as HTMLElement; if (!target.closest("[data-settings-toggle]")) setOpen(false); } };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
-  const showToast = useCallback((message: string, type: "success" | "error" = "success") => {
+  const showToast = useCallback((message: string) => {
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-    setToast(message); setToastType(type);
+    setToast(message);
     toastTimeoutRef.current = setTimeout(() => setToast(""), 4000);
   }, []);
 
   const updateSettings = useCallback((updates: Partial<Settings>) => { setSettings(prev => ({ ...prev, ...updates })); }, []);
-  const updateTelegram = useCallback((updates: Partial<Settings["telegram"]>) => { setSettings(prev => ({ ...prev, telegram: { ...prev.telegram, ...updates } })); }, []);
 
-  const scanLocalStorage = () => {
-    const result: Record<string, any> = {};
-    for (let i = 0; i < localStorage.length; i++) { const key = localStorage.key(i); if (key) { try { result[key] = JSON.parse(localStorage.getItem(key) || 'null'); } catch { result[key] = localStorage.getItem(key); } } }
-    return result;
+  const handleGoogleLogin = async () => {
+    try {
+      await signInWithPopup(auth, provider);
+      showToast("✅ ورود با موفقیت انجام شد");
+    } catch (error: any) {
+      console.error(error);
+      showToast("❌ خطا در ورود: " + error.message);
+    }
   };
 
-  const scanFirebase = async () => {
-    const result: Record<string, any> = {};
-    for (const key of APP_DATA_KEYS) {
-      try {
-        const docSnap = await getDoc(doc(db, "appData", key));
-        if (docSnap.exists()) {
-          result[key] = docSnap.data();
-        } else {
-          result[key] = { value: [], lastUpdated: 0 };
-        }
-      } catch (err) {
-        console.warn(`⚠️ خطا در خواندن ${key}:`, err);
-        result[key] = { value: [], lastUpdated: 0, error: String(err) };
-      }
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      showToast("خروج از حساب کاربری");
+    } catch (error) {
+      showToast("❌ خطا در خروج");
+    }
+  };
+
+  const isOwner = user && user.email?.toLowerCase() === OWNER_EMAIL.toLowerCase();
+  const isAuthorized = user && authorizedUsers.some(u => u.email.toLowerCase() === user.email?.toLowerCase());
+  const canAccess = isOwner || isAuthorized;
+
+  const handleAddUser = async () => {
+    if (!isOwner) return;
+    if (!newUserEmail) {
+      showToast("❌ لطفاً ایمیل را وارد کنید");
+      return;
     }
     try {
-      const settingsSnap = await getDoc(doc(db, "app_settings", "global_settings"));
-      if (settingsSnap.exists()) result["app_settings_global"] = settingsSnap.data();
-    } catch (err) {
-      console.warn("⚠️ خطا در خواندن تنظیمات:", err);
+      const userDoc = doc(db, "authorized_users", newUserEmail);
+      await setDoc(userDoc, {
+        email: newUserEmail,
+        role: newUserRole,
+        addedAt: Date.now()
+      });
+      setAuthorizedUsers([...authorizedUsers, { email: newUserEmail, role: newUserRole, addedAt: Date.now() }]);
+      setNewUserEmail("");
+      showToast("✅ کاربر اضافه شد");
+    } catch (error) {
+      console.error(error);
+      showToast("❌ خطا در افزودن کاربر");
     }
-    return result;
+  };
+
+  const handleRemoveUser = async (email: string) => {
+    if (!isOwner) return;
+    try {
+      await deleteDoc(doc(db, "authorized_users", email));
+      setAuthorizedUsers(authorizedUsers.filter(u => u.email !== email));
+      showToast("✅ کاربر حذف شد");
+    } catch (error) {
+      console.error(error);
+      showToast("❌ خطا در حذف کاربر");
+    }
   };
 
   const handleBackup = useCallback(async () => {
-    alert("✅ کد نسخه ۶.۰ در حال اجراست!");
+    if (!canAccess) return;
     setIsBackingUp(true);
     try {
       showToast("⏳ در حال جمع‌آوری داده‌ها...");
-      const firebaseData = await scanFirebase();
-      const localStorageData = scanLocalStorage();
-
-      const data = {
-        version: "6.0", // 🚨 این باید در فایل خروجی دیده شود
-        exportDate: new Date().toISOString(),
-        settings,
-        localStorage: localStorageData,
-        firebase: firebaseData
+      const backupData: Record<string, any> = { 
+        version: "7.0", 
+        exportDate: new Date().toISOString(), 
+        userEmail: user?.email,
+        data: {} 
       };
 
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      if (isOwner) {
+        const allKeys = ["fx-customers", "fx-transactions", "fx-hawalas", "fx-cash"];
+        for (const key of allKeys) {
+          const docSnap = await getDoc(doc(db, "appData", key));
+          backupData.data[key] = docSnap.exists() ? docSnap.data() : { value: [], lastUpdated: 0 };
+        }
+      } else {
+        const userKeys = [
+          `fx-customers-${user?.email}`,
+          `fx-transactions-${user?.email}`,
+          `fx-hawalas-${user?.email}`,
+          `fx-cash-${user?.email}`
+        ];
+        for (const key of userKeys) {
+          const docSnap = await getDoc(doc(db, "appData", key));
+          backupData.data[key] = docSnap.exists() ? docSnap.data() : { value: [], lastUpdated: 0 };
+        }
+      }
+
+      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `backup-v6-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `backup-${user?.email}-${new Date().toISOString().slice(0, 10)}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-
-      showToast("✅ پشتیبان نسخه 6.0 دانلود شد");
+      showToast("✅ پشتیبان دانلود شد");
     } catch (err) {
-      console.error("❌ خطای بک‌آپ:", err);
-      showToast("❌ خطا در ایجاد پشتیبان", "error");
+      console.error(err);
+      showToast("❌ خطا در ایجاد پشتیبان");
     } finally {
       setIsBackingUp(false);
     }
-  }, [settings, showToast]);
-
-  const handleRestore = useCallback(async (file: File) => {
-    setIsRestoring(true);
-    try {
-      showToast("⏳ در حال آماده‌سازی سیستم...");
-      for (let i = localStorage.length - 1; i >= 0; i--) {
-        const key = localStorage.key(i);
-        if (key && (key.startsWith('synced_') || key === SETTINGS_KEY || key === 'fx-theme')) localStorage.removeItem(key);
-      }
-      await new Promise<void>(resolve => { const req = indexedDB.deleteDatabase("AppSyncDB"); req.onsuccess = req.onerror = req.onblocked = () => resolve(); });
-
-      const data = JSON.parse(await file.text());
-      if (!data.version) throw new Error("فرمت نامعتبر");
-
-      showToast("⏳ در حال بازنویسی داده‌های سرور...");
-
-      if (data.firebase) {
-        for (const key of APP_DATA_KEYS) {
-          const docData = data.firebase[key];
-          if (!docData) continue;
-          try {
-            const docRef = doc(db, "appData", key);
-            const cleanData = restoreFirestoreTypes(docData);
-            const sanitizedData = Object.fromEntries(Object.entries(cleanData).filter(([_, v]) => v !== undefined));
-            await setDoc(docRef, sanitizedData, { merge: false });
-          } catch (err: any) {
-            console.error(`❌ خطا در بازیابی ${key}:`, err);
-          }
-        }
-        if (data.firebase.app_settings_global) {
-          try {
-            const cleanData = restoreFirestoreTypes(data.firebase.app_settings_global);
-            await setDoc(doc(db, "app_settings", "global_settings"), cleanData, { merge: false });
-          } catch (err: any) { console.error("❌ خطا در بازیابی تنظیمات:", err); }
-        }
-      } else if (data.version === "1.0") {
-        const keyMap: Record<string, string> = { customers: "fx-customers", transactions: "fx-transactions", hawalas: "fx-hawalas", cashEntries: "fx-cash" };
-        for (const [oldKey, newKey] of Object.entries(keyMap)) {
-          if (data[oldKey] !== undefined) {
-            try {
-              await setDoc(doc(db, "appData", newKey), { value: data[oldKey], lastUpdated: Date.now() }, { merge: false });
-            } catch (err: any) { console.error(`❌ خطا در بازیابی ${newKey}:`, err); }
-          }
-        }
-      }
-
-      if (data.settings) {
-        localStorage.setItem(SETTINGS_KEY, JSON.stringify(data.settings));
-        await setDoc(doc(db, "app_settings", "global_settings"), { value: data.settings, updatedAt: new Date().toISOString() }, { merge: true });
-      }
-
-      showToast("✅ بازیابی موفق. در حال بازنشانی...");
-      setTimeout(() => { window.location.replace(window.location.href); }, 1000);
-    } catch (err: any) {
-      console.error("💥 خطای بازیابی:", err);
-      showToast(`❌ خطا: ${err.message}`, "error");
-      setIsRestoring(false);
-    }
-  }, [showToast, db]);
-
-  const runDiagnosis = useCallback(async () => {
-    const summary: any = { localStorage: scanLocalStorage(), firebase: {} };
-    for (const key of APP_DATA_KEYS) {
-      try {
-        const docSnap = await getDoc(doc(db, "appData", key));
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          summary.firebase[key] = { count: Array.isArray(data.value) ? data.value.length : 0, lastUpdated: data.lastUpdated || 0 };
-        } else { summary.firebase[key] = { count: 0, lastUpdated: 0 }; }
-      } catch (err) { summary.firebase[key] = { error: String(err) }; }
-    }
-    setDiagnosisData(summary);
-    setShowDiagnosis(true);
-  }, []);
+  }, [canAccess, isOwner, user, showToast]);
 
   if (!mounted) return null;
   const heading = dk ? "text-white" : "text-slate-900";
   const subText = dk ? "text-slate-500" : "text-slate-400";
   const panelBg = dk ? "bg-slate-900 border-slate-700" : "bg-white border-slate-200";
-  const inputShell = `rounded-xl border text-sm font-medium shadow-sm outline-none transition-all duration-200 focus:ring-4 ${dk ? "border-slate-600 bg-slate-800 text-slate-100" : "border-slate-200 bg-white text-slate-800"}`;
-  const uiInput = `h-11 w-full px-3.5 ${inputShell}`;
+  const uiInput = `h-11 w-full px-3.5 rounded-xl border text-sm font-medium shadow-sm outline-none transition-all duration-200 focus:ring-4 ${dk ? "border-slate-600 bg-slate-800 text-slate-100" : "border-slate-200 bg-white text-slate-800"}`;
   const uiLabel = `mb-1.5 block text-[11px] font-black tracking-wide ${dk ? "text-slate-400" : "text-slate-500"}`;
   const fld = (label: string, node: ReactNode) => (<div><label className={uiLabel}>{label}</label>{node}</div>);
 
-  const AccordionItem = ({ id, icon, title, children }: { id: string; icon: string; title: string; children: ReactNode }) => {
+  const AccordionItem = ({ id, icon, title, children, locked = false }: { id: string; icon: string; title: string; children: ReactNode; locked?: boolean }) => {
     const isOpen = activeAccordion === id;
     return (
       <div className={`rounded-xl border overflow-hidden transition-all duration-300 ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-white"}`}>
-        <button onClick={() => setActiveAccordion(isOpen ? null : id)} className={`flex w-full items-center justify-between gap-3 px-4 py-3.5 ${dk ? "hover:bg-slate-700/50" : "hover:bg-slate-50"}`}>
+        <button onClick={() => !locked && setActiveAccordion(isOpen ? null : id)} className={`flex w-full items-center justify-between gap-3 px-4 py-3.5 ${locked ? "opacity-60 cursor-not-allowed" : dk ? "hover:bg-slate-700/50" : "hover:bg-slate-50"}`}>
           <div className="flex items-center gap-3">
-            <span className={`grid h-8 w-8 place-items-center rounded-lg ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}><Ic n={icon} className="h-4 w-4" /></span>
+            <span className={`grid h-8 w-8 place-items-center rounded-lg ${locked ? (dk ? "bg-slate-700 text-slate-500" : "bg-slate-200 text-slate-400") : (dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600")}`}>
+              <Ic n={locked ? "lock" : icon} className="h-4 w-4" />
+            </span>
             <span className={`text-sm font-black ${heading}`}>{title}</span>
           </div>
-          <Ic n="chevron" className={`h-4 w-4 transition-transform duration-300 ${subText} ${isOpen ? "rotate-180" : ""}`} />
+          {!locked && <Ic n="chevron" className={`h-4 w-4 transition-transform duration-300 ${subText} ${isOpen ? "rotate-180" : ""}`} />}
         </button>
-        <div className={`transition-all duration-300 overflow-hidden ${isOpen ? "max-h-[800px] opacity-100" : "max-h-0 opacity-0"}`}>
+        <div className={`transition-all duration-300 overflow-hidden ${isOpen && !locked ? "max-h-[800px] opacity-100" : "max-h-0 opacity-0"}`}>
           <div className={`px-4 pb-4 pt-2 ${dk ? "border-t border-slate-700" : "border-t border-slate-100"}`}>{children}</div>
         </div>
       </div>
     );
   };
-
-  const Toggle = ({ enabled, onChange, label }: { enabled: boolean; onChange: (v: boolean) => void; label?: string }) => (
-    <button type="button" onClick={() => onChange(!enabled)} className="flex items-center gap-3 cursor-pointer group">
-      <span className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-300 ${enabled ? "bg-emerald-500" : dk ? "bg-slate-600" : "bg-slate-300"}`}>
-        <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-md transition-transform duration-300 ${enabled ? "-translate-x-1" : "-translate-x-6"}`} />
-      </span>
-      {label && <span className={`text-sm font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>{label}</span>}
-    </button>
-  );
 
   return (
     <>
@@ -368,6 +298,7 @@ export default function SettingsDrawer() {
           </div>
           <button onClick={() => setOpen(false)} className={`grid h-9 w-9 place-items-center rounded-lg ${dk ? "hover:bg-slate-700 text-slate-400" : "hover:bg-slate-100 text-slate-500"}`}><Ic n="x" className="h-5 w-5" /></button>
         </div>
+        
         <div className="space-y-3 p-4">
           <AccordionItem id="email" icon="mail" title="ایمیل">
             <div className="space-y-3">
@@ -375,6 +306,7 @@ export default function SettingsDrawer() {
               {fld("ایمیل پشتیبانی", <input type="email" dir="ltr" value={settings.supportEmail} onChange={e => updateSettings({ supportEmail: e.target.value })} className={`${uiInput} text-left`} />)}
             </div>
           </AccordionItem>
+
           <AccordionItem id="language" icon="globe" title="زبان سیستم">
             <div className="space-y-2">
               {([ { value: "dari", label: "دری", flag: "🇦🇫" }, { value: "pashto", label: "پشتو", flag: "🇦🇫" }, { value: "english", label: "English", flag: "🇬🇧" } ] as const).map(lang => (
@@ -385,97 +317,110 @@ export default function SettingsDrawer() {
               ))}
             </div>
           </AccordionItem>
-          <AccordionItem id="team" icon="users" title="اطلاعات تیم">
-            <div className="space-y-3">
-              {fld("نام تیم", <input value={settings.teamName} onChange={e => updateSettings({ teamName: e.target.value })} className={uiInput} />)}
-              {fld("آدرس", <input value={settings.teamAddress} onChange={e => updateSettings({ teamAddress: e.target.value })} className={uiInput} />)}
-              {fld("شماره تماس", <input dir="ltr" value={settings.teamPhone} onChange={e => updateSettings({ teamPhone: e.target.value })} className={`${uiInput} text-left`} />)}
-            </div>
-          </AccordionItem>
-          
-          <AccordionItem id="backup" icon="backup" title="پشتیبان‌گیری جامع">
-            <div className="space-y-3">
-              {/* 🚨 نشانگر بصری غیرقابل انکار برای تست دپلوی */}
-              <div className="rounded-xl p-3 text-xs font-black bg-purple-600 text-white text-center animate-pulse">
-                🚨 نسخه ۶.۰ فعال است 🚨
-              </div>
-              
-              <button onClick={handleBackup} disabled={isBackingUp} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-purple-600 text-sm font-black text-white transition-all hover:bg-purple-700 active:scale-95 disabled:opacity-50">
-                <Ic n="download" className="h-4 w-4" /> {isBackingUp ? "در حال جمع‌آوری..." : "دانلود پشتیبان (نسخه 6.0)"}
-              </button>
-              
-              <button onClick={() => fileInputRef.current?.click()} disabled={isRestoring} className={`flex h-11 w-full items-center justify-center gap-2 rounded-xl border text-sm font-black transition-all active:scale-95 disabled:opacity-50 ${dk ? "border-slate-600 text-slate-200 hover:bg-slate-700" : "border-slate-300 text-slate-700 hover:bg-slate-50"}`}>
-                <Ic n="upload" className="h-4 w-4" /> {isRestoring ? "در حال بازیابی..." : "بازیابی از فایل"}
-              </button>
-              <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={e => { const file = e.target.files?.[0]; if (file) handleRestore(file); e.target.value = ""; }} />
-              
-              <button onClick={runDiagnosis} className={`flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed text-sm font-black transition-all active:scale-95 ${dk ? "border-amber-500/50 text-amber-300 hover:bg-amber-500/10" : "border-amber-500 text-amber-600 hover:bg-amber-50"}`}>
-                <Ic n="info" className="h-4 w-4" /> تشخیص ذخیره‌سازی
-              </button>
-            </div>
-          </AccordionItem>
 
-          <AccordionItem id="telegram" icon="telegram" title="تنظیمات تلگرام">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className={`text-sm font-bold ${heading}`}>فعال‌سازی تلگرام</span>
-                <Toggle enabled={settings.telegram.enabled} onChange={v => updateTelegram({ enabled: v })} />
-              </div>
-              {settings.telegram.enabled && (
-                <>
-                  {fld("توکن بات", <input dir="ltr" value={settings.telegram.botToken} onChange={e => updateTelegram({ botToken: e.target.value })} className={`${uiInput} text-left font-mono text-xs`} />)}
-                  <div className="space-y-2">
-                    <label className={uiLabel}>لیست چت آی‌دی‌ها</label>
-                    {(settings.telegram.chatIds || []).map((id, idx) => (
-                      <div key={idx} className="flex items-center gap-2">
-                        <input dir="ltr" value={id} onChange={e => { const newIds = [...(settings.telegram.chatIds || [])]; newIds[idx] = e.target.value; updateTelegram({ chatIds: newIds }); }} className={`${uiInput} text-left font-mono text-xs flex-1`} />
-                        <button onClick={() => updateTelegram({ chatIds: (settings.telegram.chatIds || []).filter((_, i) => i !== idx) })} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-rose-200 bg-rose-50 text-rose-600"><Ic n="x" className="h-4 w-4" /></button>
-                      </div>
-                    ))}
-                    <button onClick={() => updateTelegram({ chatIds: [...(settings.telegram.chatIds || []), ""] })} className={`flex w-full items-center justify-center gap-2 rounded-xl border border-dashed py-2.5 text-xs font-bold ${dk ? "border-slate-600 text-slate-400" : "border-slate-300 text-slate-500"}`}>
-                      <Ic n="plus" className="h-4 w-4" /> افزودن چت آی‌دی
+          {isOwner && (
+            <AccordionItem id="users" icon="users" title="مدیریت کاربران">
+              <div className="space-y-3">
+                <div className="rounded-xl bg-blue-50 p-3 text-xs font-bold text-blue-700 border border-blue-200">
+                  👑 شما مالک سیستم هستید و می‌توانید کاربران را مدیریت کنید
+                </div>
+
+                <div className="space-y-2">
+                  {fld("ایمیل کاربر جدید", 
+                    <input 
+                      type="email" 
+                      dir="ltr" 
+                      value={newUserEmail} 
+                      onChange={e => setNewUserEmail(e.target.value)} 
+                      placeholder="user@example.com"
+                      className={`${uiInput} text-left`} 
+                    />
+                  )}
+                  <div className="flex gap-2">
+                    <select 
+                      value={newUserRole} 
+                      onChange={e => setNewUserRole(e.target.value as "admin" | "user")}
+                      className={uiInput}
+                    >
+                      <option value="user">کاربر عادی</option>
+                      <option value="admin">مدیر</option>
+                    </select>
+                    <button 
+                      onClick={handleAddUser}
+                      className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700"
+                    >
+                      <Ic n="plus" className="h-4 w-4" /> افزودن
                     </button>
                   </div>
-                </>
-              )}
-            </div>
+                </div>
+
+                <div className="space-y-2">
+                  <p className={`text-xs font-bold ${heading}`}>کاربران مجاز:</p>
+                  {authorizedUsers.length === 0 ? (
+                    <p className={`text-xs ${subText} text-center py-2`}>هنوز کاربری اضافه نشده</p>
+                  ) : (
+                    authorizedUsers.map(u => (
+                      <div key={u.email} className={`flex items-center justify-between rounded-lg p-2 ${dk ? "bg-slate-700" : "bg-slate-100"}`}>
+                        <div>
+                          <div className={`text-xs font-bold ${heading}`}>{u.email}</div>
+                          <div className={`text-[10px] ${subText}`}>{u.role === "admin" ? "مدیر" : "کاربر عادی"}</div>
+                        </div>
+                        <button 
+                          onClick={() => handleRemoveUser(u.email)}
+                          className="grid h-8 w-8 place-items-center rounded-lg bg-rose-100 text-rose-600 hover:bg-rose-200"
+                        >
+                          <Ic n="trash" className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </AccordionItem>
+          )}
+
+          <AccordionItem id="access" icon="users" title="دسترسی به اطلاعات" locked={!canAccess}>
+            {isAuthLoading ? (
+              <div className="py-4 text-center text-sm text-slate-500">در حال بررسی...</div>
+            ) : !user ? (
+              <div className="space-y-3 text-center py-2">
+                <p className={`text-xs ${subText}`}>برای مشاهده اطلاعات، وارد شوید</p>
+                <button onClick={handleGoogleLogin} className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50">
+                  <Ic n="google" className="h-5 w-5" /> ورود با گوگل
+                </button>
+              </div>
+            ) : !canAccess ? (
+              <div className="space-y-3 text-center py-2">
+                <div className="rounded-xl bg-rose-50 p-3 text-xs font-bold text-rose-600 border border-rose-200">
+                  ⛔ شما اجازه دسترسی ندارید. لطفاً با مالک تماس بگیرید.
+                </div>
+                <button onClick={handleLogout} className="w-full rounded-xl bg-slate-200 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-300">خروج</button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="rounded-xl bg-emerald-50 p-3 text-xs font-bold text-emerald-700 border border-emerald-200">
+                  ✅ خوش آمدید ({user.email})
+                  {isOwner && <span className="block mt-1">👑 مالک سیستم</span>}
+                </div>
+                
+                <button onClick={handleBackup} disabled={isBackingUp} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-50">
+                  <Ic n="download" className="h-4 w-4" /> {isBackingUp ? "در حال آماده‌سازی..." : "دانلود پشتیبان"}
+                </button>
+
+                <button onClick={handleLogout} className="flex w-full items-center justify-center gap-2 rounded-xl border border-rose-300 bg-rose-50 px-4 py-2.5 text-sm font-bold text-rose-600 hover:bg-rose-100">
+                  خروج
+                </button>
+              </div>
+            )}
           </AccordionItem>
+
           <div className={`mt-4 rounded-xl p-4 text-center ${dk ? "bg-slate-800/50" : "bg-slate-50"}`}>
-            <p className={`text-[10px] font-bold ${subText}`}>نسخه ۶.۰.۰ — صرافی برادران نورزاد</p>
+            <p className={`text-[10px] font-bold ${subText}`}>نسخه ۷.۰.۰ — صرافی برادران نورزاد</p>
           </div>
         </div>
       </div>
-      
-      {showDiagnosis && diagnosisData && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowDiagnosis(false)}>
-          <div className={`w-full max-w-2xl max-h-[80vh] overflow-y-auto rounded-2xl shadow-2xl ${dk ? "bg-slate-900 border border-slate-700" : "bg-white"}`} onClick={e => e.stopPropagation()}>
-            <div className={`sticky top-0 flex items-center justify-between border-b px-5 py-4 ${dk ? "bg-slate-900 border-slate-700" : "bg-white border-slate-200"}`}>
-              <h3 className={`text-lg font-black ${heading}`}>🔍 گزارش تشخیص جامع</h3>
-              <button onClick={() => setShowDiagnosis(false)} className={`grid h-9 w-9 place-items-center rounded-lg ${dk ? "hover:bg-slate-700" : "hover:bg-slate-100"}`}><Ic n="x" className="h-5 w-5" /></button>
-            </div>
-            <div className="p-5 space-y-4">
-              <div className={`rounded-xl p-4 ${dk ? "bg-slate-800" : "bg-slate-50"}`}>
-                <h4 className={`text-sm font-black mb-3 ${heading}`}>🔥 Firebase - appData (مسیرهای واقعی):</h4>
-                <div className="space-y-2">
-                  {Object.entries(diagnosisData.firebase).map(([key, info]: [string, any]) => (
-                    <div key={key} className={`flex items-center justify-between p-3 rounded-lg ${dk ? "bg-slate-700/50" : "bg-white"}`}>
-                      <div className="flex-1">
-                        <div className={`text-xs font-mono font-bold ${heading}`}>{key}</div>
-                        {info.lastUpdated && <div className={`text-[10px] ${subText}`}>آخرین بروزرسانی: {new Date(info.lastUpdated).toLocaleString('fa-IR')}</div>}
-                      </div>
-                      <div className={`text-sm font-black ${info.error ? "text-rose-500" : (info.count > 0 ? "text-emerald-500" : "text-amber-500")}`}>
-                        {info.error ? "خطا" : `${info.count} آیتم`}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
       {toast && (
-        <div className={`fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-xl px-5 py-3 text-sm font-black shadow-lg transition-all duration-300 ${toastType === "success" ? dk ? "bg-emerald-400 text-slate-900" : "bg-emerald-500 text-white" : dk ? "bg-rose-400 text-slate-900" : "bg-rose-500 text-white"}`}>
+        <div className={`fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-xl px-5 py-3 text-sm font-black shadow-lg transition-all duration-300 ${toast.includes("❌") ? (dk ? "bg-rose-400 text-slate-900" : "bg-rose-500 text-white") : (dk ? "bg-emerald-400 text-slate-900" : "bg-emerald-500 text-white")}`}>
           {toast}
         </div>
       )}
