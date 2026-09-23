@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, type User } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "./dashboard/lib/firebase"; 
@@ -11,36 +11,55 @@ const OWNER_EMAIL = "nasirahmadrahmati19@gmail.com";
 
 export default function AuthGate() {
   const router = useRouter();
+  const pathname = usePathname(); // ✅ مسیر فعلی را می‌گیریم
+  
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(false);
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
   
-  // ✅ این ref جلوگیری می‌کند که router.push چند بار اجرا شود
+  // ✅ لایه محافظتی ۱: جلوگیری از اجرای چندباره
   const hasRedirected = useRef(false);
+  const isChecking = useRef(false);
 
   useEffect(() => {
+    // ✅ لایه محافظتی ۲: اگر الان در dashboard هستیم، هیچ کاری نکن
+    if (pathname === '/dashboard') {
+      setCheckingAuth(false);
+      return;
+    }
+
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      // ✅ لایه محافظتی ۳: جلوگیری از اجرای همزمان
+      if (isChecking.current) return;
+      
       setUser(currentUser);
       
       if (currentUser) {
-        // فقط یک بار چک کن
-        if (!hasRedirected.current) {
+        // ✅ فقط اگر هنوز redirect نکردیم و در صفحه اصلی هستیم
+        if (!hasRedirected.current && pathname === '/') {
+          isChecking.current = true;
           await checkAuthorization(currentUser.email);
+          isChecking.current = false;
         }
       } else {
         setIsAuthorized(false);
         setCheckingAuth(false);
-        hasRedirected.current = false; // ریست برای ورود بعدی
+        hasRedirected.current = false;
       }
     });
     
     return () => unsubscribe();
-  }, []);
+  }, [pathname]); // ✅ فقط وقتی pathname تغییر کرد اجرا شود
 
   const checkAuthorization = async (email: string | null) => {
     if (!email || hasRedirected.current) return;
+    
+    // ✅ چک نهایی قبل از redirect
+    if (typeof window !== 'undefined' && window.location.pathname !== '/') {
+      return;
+    }
     
     setErrorMsg("");
     
@@ -48,8 +67,10 @@ export default function AuthGate() {
     if (email.toLowerCase() === OWNER_EMAIL.toLowerCase()) {
       setIsAuthorized(true);
       setCheckingAuth(false);
-      hasRedirected.current = true; // ✅ جلوگیری از اجرای مجدد
-      router.replace("/dashboard"); // ✅ استفاده از replace به جای push
+      hasRedirected.current = true;
+      
+      // ✅ استفاده از window.location به جای router برای اطمینان بیشتر
+      window.location.href = '/dashboard';
       return;
     }
 
@@ -58,16 +79,17 @@ export default function AuthGate() {
       const userDoc = await getDoc(doc(db, "authorized_users", email));
       if (userDoc.exists()) {
         setIsAuthorized(true);
-        hasRedirected.current = true; // ✅ جلوگیری از اجرای مجدد
-        router.replace("/dashboard"); // ✅ استفاده از replace به جای push
+        hasRedirected.current = true;
+        window.location.href = '/dashboard'; // ✅ redirect کامل مرورگر
       } else {
         setIsAuthorized(false);
+        setCheckingAuth(false);
       }
     } catch (error) {
       console.error("خطا در بررسی دسترسی:", error);
       setIsAuthorized(false);
+      setCheckingAuth(false);
     }
-    setCheckingAuth(false);
   };
 
   const handleLogin = async () => {
@@ -102,7 +124,7 @@ export default function AuthGate() {
     setCheckingAuth(false);
     setErrorMsg("");
     setLoading(false);
-    hasRedirected.current = false; // ✅ ریست flag
+    hasRedirected.current = false;
   };
 
   // --- حالت‌های نمایش ---
