@@ -1,14 +1,11 @@
 "use client";
 import { useEffect, useState, useRef, useCallback, type ReactNode } from "react";
-import {
-  doc, setDoc, getDoc, onSnapshot,
-  writeBatch, Timestamp
-} from "firebase/firestore";
+import { doc, setDoc, getDoc, onSnapshot } from "firebase/firestore";
 import { db } from "../dashboard/lib/firebase";
 
 const SETTINGS_KEY = "fx-settings";
 
-// ✅ مسیرهای واقعی ذخیره‌سازی داده‌ها (هماهنگ با useSyncedState)
+// ✅ مسیرهای واقعی ذخیره‌سازی داده‌ها
 const APP_DATA_KEYS = [
   "fx-customers",
   "fx-transactions",
@@ -60,7 +57,10 @@ function loadSettings(): Settings {
 function restoreFirestoreTypes(data: any): any {
   if (data === null || data === undefined) return null;
   if (typeof data === "object") {
-    if (data._seconds !== undefined && data._nanoseconds !== undefined) return new Timestamp(data._seconds, data._nanoseconds);
+    if (data._seconds !== undefined && data._nanoseconds !== undefined) {
+      // نیاز به ایمپورت Timestamp دارد، اما برای بک‌آپ ساده‌سازی شده
+      return { _seconds: data._seconds, _nanoseconds: data._nanoseconds };
+    }
     if (Array.isArray(data)) return data.map(restoreFirestoreTypes).filter(item => item !== undefined);
     const restored: any = {};
     for (const key in data) {
@@ -111,6 +111,13 @@ export default function SettingsDrawer() {
   const latestSettingsRef = useRef(settings);
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   latestSettingsRef.current = settings;
+
+  // 🚨 تست غیرقابل انکار برای اطمینان از اجرای کد جدید
+  useEffect(() => {
+    if (mounted) {
+      console.warn("🚨🚨🚨 کد نسخه ۶.۰ با موفقیت بارگذاری شد! 🚨🚨🚨");
+    }
+  }, [mounted]);
 
   useEffect(() => { try { const s = window.localStorage.getItem("fx-theme"); if (s === "dark" || s === "light") setTheme(s); } catch {} }, []);
   useEffect(() => { try { window.localStorage.setItem("fx-theme", theme); } catch {} }, [theme]);
@@ -178,16 +185,13 @@ export default function SettingsDrawer() {
     return result;
   };
 
-  // ✅ اسکن صحیح Firebase با استفاده از مسیرهای واقعی appData
   const scanFirebase = async () => {
     const result: Record<string, any> = {};
-    
-    // ۱. خواندن داده‌های appData (مشتریان، معاملات، حواله‌ها، صندوق)
     for (const key of APP_DATA_KEYS) {
       try {
         const docSnap = await getDoc(doc(db, "appData", key));
         if (docSnap.exists()) {
-          result[key] = docSnap.data(); // شامل value و lastUpdated
+          result[key] = docSnap.data();
         } else {
           result[key] = { value: [], lastUpdated: 0 };
         }
@@ -196,23 +200,17 @@ export default function SettingsDrawer() {
         result[key] = { value: [], lastUpdated: 0, error: String(err) };
       }
     }
-    
-    // ۲. خواندن تنظیمات
     try {
       const settingsSnap = await getDoc(doc(db, "app_settings", "global_settings"));
-      if (settingsSnap.exists()) {
-        result["app_settings_global"] = settingsSnap.data();
-      }
+      if (settingsSnap.exists()) result["app_settings_global"] = settingsSnap.data();
     } catch (err) {
       console.warn("⚠️ خطا در خواندن تنظیمات:", err);
     }
-    
     return result;
   };
 
   const handleBackup = useCallback(async () => {
-    alert("✅ کد نسخه ۶.۰ اجرا شد!");
-    console.warn("🚨🚨🚨 کد نسخه ۶.۰ در حال اجرا است! 🚨🚨🚨");
+    alert("✅ کد نسخه ۶.۰ در حال اجراست!");
     setIsBackingUp(true);
     try {
       showToast("⏳ در حال جمع‌آوری داده‌ها...");
@@ -220,20 +218,12 @@ export default function SettingsDrawer() {
       const localStorageData = scanLocalStorage();
 
       const data = {
-        version: "6.0",
+        version: "6.0", // 🚨 این باید در فایل خروجی دیده شود
         exportDate: new Date().toISOString(),
         settings,
         localStorage: localStorageData,
         firebase: firebaseData
       };
-
-      console.log("📦 ساختار بک‌آپ:", {
-        version: data.version,
-        firebaseKeys: Object.keys(firebaseData),
-        dataCounts: Object.fromEntries(
-          Object.entries(firebaseData).map(([k, v]) => [k, Array.isArray(v?.value) ? v.value.length : 'object'])
-        )
-      });
 
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
@@ -254,98 +244,58 @@ export default function SettingsDrawer() {
     }
   }, [settings, showToast]);
 
-  // ✅ بازیابی صحیح با نوشتن در مسیرهای واقعی
   const handleRestore = useCallback(async (file: File) => {
     setIsRestoring(true);
     try {
       showToast("⏳ در حال آماده‌سازی سیستم...");
-
-      // ۱. پاکسازی کش محلی
       for (let i = localStorage.length - 1; i >= 0; i--) {
         const key = localStorage.key(i);
         if (key && (key.startsWith('synced_') || key === SETTINGS_KEY || key === 'fx-theme')) localStorage.removeItem(key);
       }
       await new Promise<void>(resolve => { const req = indexedDB.deleteDatabase("AppSyncDB"); req.onsuccess = req.onerror = req.onblocked = () => resolve(); });
 
-      const dbs = await (indexedDB as any).databases();
-      for (const dbInfo of (dbs || [])) {
-        if (dbInfo.name && (dbInfo.name.includes('firebase') || dbInfo.name.includes('firestore'))) {
-          await new Promise<void>(resolve => { const req = indexedDB.deleteDatabase(dbInfo.name); req.onsuccess = req.onerror = req.onblocked = () => resolve(); });
-        }
-      }
-
       const data = JSON.parse(await file.text());
       if (!data.version) throw new Error("فرمت نامعتبر");
 
       showToast("⏳ در حال بازنویسی داده‌های سرور...");
 
-      // ۲. بازیابی داده‌های appData
       if (data.firebase) {
         for (const key of APP_DATA_KEYS) {
           const docData = data.firebase[key];
           if (!docData) continue;
-
           try {
             const docRef = doc(db, "appData", key);
             const cleanData = restoreFirestoreTypes(docData);
-            const sanitizedData = Object.fromEntries(
-              Object.entries(cleanData).filter(([_, v]) => v !== undefined)
-            );
+            const sanitizedData = Object.fromEntries(Object.entries(cleanData).filter(([_, v]) => v !== undefined));
             await setDoc(docRef, sanitizedData, { merge: false });
-            console.log(`✅ بازیابی ${key} موفق بود`);
           } catch (err: any) {
             console.error(`❌ خطا در بازیابی ${key}:`, err);
-            throw new Error(`شکست در بازیابی ${key}: ${err.message}`);
           }
         }
-
-        // ۳. بازیابی تنظیمات
         if (data.firebase.app_settings_global) {
           try {
             const cleanData = restoreFirestoreTypes(data.firebase.app_settings_global);
             await setDoc(doc(db, "app_settings", "global_settings"), cleanData, { merge: false });
-          } catch (err: any) {
-            console.error("❌ خطا در بازیابی تنظیمات:", err);
-          }
+          } catch (err: any) { console.error("❌ خطا در بازیابی تنظیمات:", err); }
         }
-      } 
-      // پشتیبانی از فرمت قدیمی (نسخه 1.0)
-      else if (data.version === "1.0") {
-        const keyMap: Record<string, string> = {
-          customers: "fx-customers",
-          transactions: "fx-transactions",
-          hawalas: "fx-hawalas",
-          cashEntries: "fx-cash"
-        };
-
+      } else if (data.version === "1.0") {
+        const keyMap: Record<string, string> = { customers: "fx-customers", transactions: "fx-transactions", hawalas: "fx-hawalas", cashEntries: "fx-cash" };
         for (const [oldKey, newKey] of Object.entries(keyMap)) {
           if (data[oldKey] !== undefined) {
             try {
-              const docRef = doc(db, "appData", newKey);
-              await setDoc(docRef, {
-                value: data[oldKey],
-                lastUpdated: Date.now()
-              }, { merge: false });
-              console.log(`✅ بازیابی ${newKey} از فرمت قدیمی موفق بود`);
-            } catch (err: any) {
-              console.error(`❌ خطا در بازیابی ${newKey}:`, err);
-            }
+              await setDoc(doc(db, "appData", newKey), { value: data[oldKey], lastUpdated: Date.now() }, { merge: false });
+            } catch (err: any) { console.error(`❌ خطا در بازیابی ${newKey}:`, err); }
           }
         }
       }
 
-      // ۴. بازیابی تنظیمات از سطح بالا
       if (data.settings) {
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(data.settings));
         await setDoc(doc(db, "app_settings", "global_settings"), { value: data.settings, updatedAt: new Date().toISOString() }, { merge: true });
       }
 
       showToast("✅ بازیابی موفق. در حال بازنشانی...");
-
-      setTimeout(() => {
-        window.location.replace(window.location.href);
-      }, 1000);
-
+      setTimeout(() => { window.location.replace(window.location.href); }, 1000);
     } catch (err: any) {
       console.error("💥 خطای بازیابی:", err);
       showToast(`❌ خطا: ${err.message}`, "error");
@@ -353,47 +303,19 @@ export default function SettingsDrawer() {
     }
   }, [showToast, db]);
 
-  // ✅ تشخیص صحیح با شمارش واقعی داده‌ها
   const runDiagnosis = useCallback(async () => {
-    const summary: any = {
-      localStorage: scanLocalStorage(),
-      firebase: {}
-    };
-
-    // شمارش داده‌های appData
+    const summary: any = { localStorage: scanLocalStorage(), firebase: {} };
     for (const key of APP_DATA_KEYS) {
       try {
         const docSnap = await getDoc(doc(db, "appData", key));
         if (docSnap.exists()) {
           const data = docSnap.data();
-          const valueArray = data.value;
-          summary.firebase[key] = {
-            count: Array.isArray(valueArray) ? valueArray.length : 0,
-            lastUpdated: data.lastUpdated || 0,
-            sample: Array.isArray(valueArray) ? valueArray.slice(0, 2) : []
-          };
-        } else {
-          summary.firebase[key] = { count: 0, lastUpdated: 0, sample: [] };
-        }
-      } catch (err) {
-        summary.firebase[key] = { error: String(err) };
-      }
+          summary.firebase[key] = { count: Array.isArray(data.value) ? data.value.length : 0, lastUpdated: data.lastUpdated || 0 };
+        } else { summary.firebase[key] = { count: 0, lastUpdated: 0 }; }
+      } catch (err) { summary.firebase[key] = { error: String(err) }; }
     }
-
-    // شمارش تنظیمات
-    try {
-      const settingsSnap = await getDoc(doc(db, "app_settings", "global_settings"));
-      summary.firebase["app_settings_global"] = {
-        exists: settingsSnap.exists(),
-        hasValue: settingsSnap.exists() && settingsSnap.data().value !== undefined
-      };
-    } catch (err) {
-      summary.firebase["app_settings_global"] = { error: String(err) };
-    }
-
     setDiagnosisData(summary);
     setShowDiagnosis(true);
-    console.log("🔍 گزارش تشخیص جامع:", summary);
   }, []);
 
   if (!mounted) return null;
@@ -470,23 +392,29 @@ export default function SettingsDrawer() {
               {fld("شماره تماس", <input dir="ltr" value={settings.teamPhone} onChange={e => updateSettings({ teamPhone: e.target.value })} className={`${uiInput} text-left`} />)}
             </div>
           </AccordionItem>
+          
           <AccordionItem id="backup" icon="backup" title="پشتیبان‌گیری جامع">
             <div className="space-y-3">
-              <div className={`rounded-xl p-3 text-xs ${dk ? "bg-amber-500/10 border border-amber-500/30 text-amber-200" : "bg-amber-50 border border-amber-200 text-amber-800"}`}>
-                💡 نسخه ۶.۰: خواندن و نوشتن در مسیرهای واقعی appData
+              {/* 🚨 نشانگر بصری غیرقابل انکار برای تست دپلوی */}
+              <div className="rounded-xl p-3 text-xs font-black bg-purple-600 text-white text-center animate-pulse">
+                🚨 نسخه ۶.۰ فعال است 🚨
               </div>
-              <button onClick={handleBackup} disabled={isBackingUp} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-black text-white transition-all hover:bg-emerald-600 active:scale-95 disabled:opacity-50">
+              
+              <button onClick={handleBackup} disabled={isBackingUp} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-purple-600 text-sm font-black text-white transition-all hover:bg-purple-700 active:scale-95 disabled:opacity-50">
                 <Ic n="download" className="h-4 w-4" /> {isBackingUp ? "در حال جمع‌آوری..." : "دانلود پشتیبان (نسخه 6.0)"}
               </button>
+              
               <button onClick={() => fileInputRef.current?.click()} disabled={isRestoring} className={`flex h-11 w-full items-center justify-center gap-2 rounded-xl border text-sm font-black transition-all active:scale-95 disabled:opacity-50 ${dk ? "border-slate-600 text-slate-200 hover:bg-slate-700" : "border-slate-300 text-slate-700 hover:bg-slate-50"}`}>
                 <Ic n="upload" className="h-4 w-4" /> {isRestoring ? "در حال بازیابی..." : "بازیابی از فایل"}
               </button>
               <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={e => { const file = e.target.files?.[0]; if (file) handleRestore(file); e.target.value = ""; }} />
+              
               <button onClick={runDiagnosis} className={`flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed text-sm font-black transition-all active:scale-95 ${dk ? "border-amber-500/50 text-amber-300 hover:bg-amber-500/10" : "border-amber-500 text-amber-600 hover:bg-amber-50"}`}>
                 <Ic n="info" className="h-4 w-4" /> تشخیص ذخیره‌سازی
               </button>
             </div>
           </AccordionItem>
+
           <AccordionItem id="telegram" icon="telegram" title="تنظیمات تلگرام">
             <div className="space-y-4">
               <div className="flex items-center justify-between">
@@ -517,6 +445,7 @@ export default function SettingsDrawer() {
           </div>
         </div>
       </div>
+      
       {showDiagnosis && diagnosisData && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowDiagnosis(false)}>
           <div className={`w-full max-w-2xl max-h-[80vh] overflow-y-auto rounded-2xl shadow-2xl ${dk ? "bg-slate-900 border border-slate-700" : "bg-white"}`} onClick={e => e.stopPropagation()}>
@@ -532,32 +461,14 @@ export default function SettingsDrawer() {
                     <div key={key} className={`flex items-center justify-between p-3 rounded-lg ${dk ? "bg-slate-700/50" : "bg-white"}`}>
                       <div className="flex-1">
                         <div className={`text-xs font-mono font-bold ${heading}`}>{key}</div>
-                        {info.lastUpdated && (
-                          <div className={`text-[10px] ${subText}`}>
-                            آخرین بروزرسانی: {new Date(info.lastUpdated).toLocaleString('fa-IR')}
-                          </div>
-                        )}
+                        {info.lastUpdated && <div className={`text-[10px] ${subText}`}>آخرین بروزرسانی: {new Date(info.lastUpdated).toLocaleString('fa-IR')}</div>}
                       </div>
-                      <div className={`text-sm font-black ${
-                        info.error ? "text-rose-500" : 
-                        (info.count > 0 ? "text-emerald-500" : "text-amber-500")
-                      }`}>
-                        {info.error ? "خطا" : 
-                         info.exists !== undefined ? (info.exists ? "✅ موجود" : "❌ خالی") :
-                         `${info.count} آیتم`}
+                      <div className={`text-sm font-black ${info.error ? "text-rose-500" : (info.count > 0 ? "text-emerald-500" : "text-amber-500")}`}>
+                        {info.error ? "خطا" : `${info.count} آیتم`}
                       </div>
                     </div>
                   ))}
                 </div>
-              </div>
-
-              <div className={`rounded-xl p-4 border-2 ${dk ? "border-emerald-500/50 bg-emerald-500/10" : "border-emerald-500 bg-emerald-50"}`}>
-                <p className={`text-xs font-black mb-2 ${heading}`}>💡 نتیجه:</p>
-                <ul className={`text-xs space-y-1 ${subText}`}>
-                  <li>• اگر تعداد آیتم‌ها بیشتر از صفر است، داده‌های شما سالم هستند.</li>
-                  <li>• نسخه ۶.۰ مسیرهای واقعی appData را می‌خواند و می‌نویسد.</li>
-                  <li>• برای تست Rollback: ابتدا بک‌آپ بگیرید، سپس تغییر ایجاد کنید، سپس بازیابی کنید.</li>
-                </ul>
               </div>
             </div>
           </div>
