@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, type User } from "firebase/auth";
-import { getFirestore, doc, getDoc, collection, getDocs } from "firebase/firestore";
-import { app } from "../dashboard/lib/firebase"; // مسیر فایل firebase شما
+import { getFirestore, doc, getDoc } from "firebase/firestore";
+import { app } from "./dashboard/lib/firebase"; // ✅ مسیر اصلاح شد (یک نقطه)
 
 const auth = getAuth(app);
 const db = getFirestore(app);
