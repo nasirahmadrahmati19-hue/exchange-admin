@@ -1,16 +1,11 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
-import { useSyncedState } from "./lib/useSyncedState";
-import {
-  CUSTOMERS_KEY,
-  TRANSACTIONS_KEY,
-  HAWALAS_KEY,
-  CASH_KEY,
-} from "./lib/defaultData";
+import { useEffect, useState, useMemo, useCallback } from "react";
+// ✅ فقط از هوک جدید و امن استفاده می‌کنیم
+import { useSafeSyncedState } from "./lib/useSafeSyncedState";
 
 // ============================================================
-// تایپ‌ها و ثابت‌ها
+// تایپ‌ها و ثابت‌ها (ثابت‌ها را اینجا تعریف می‌کنیم تا رفرنس آن‌ها هرگز تغییر نکند)
 // ============================================================
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 
@@ -21,6 +16,12 @@ const labels: Record<Currency, string> = {
 
 const CASH_BOX_ID = "CASH_BOX";
 const EXCHANGE_ACCOUNT_ID = "EXCHANGE_ACCOUNT";
+
+// ✅ مقادیر اولیه پایدار (Stable Initial Values) برای جلوگیری از حلقه بی‌پایان
+const INITIAL_CUSTOMERS: any[] = [];
+const INITIAL_TRANSACTIONS: any[] = [];
+const INITIAL_HAWALAS: any[] = [];
+const INITIAL_CASH: any[] = [];
 
 interface Customer {
   id: string;
@@ -113,7 +114,7 @@ interface CashEntry {
   direction: "in" | "out";
   status: "active" | "voided";
   customerId?: string;
-  linkedHawalaId?: string; // ✅ اضافه شد برای هماهنگی با بخش حواله
+  linkedHawalaId?: string;
 }
 
 // ============================================================
@@ -151,50 +152,37 @@ function formatShamsiDate(d: Date) {
   return `${s.year}/${s.month}/${s.day}`;
 }
 
-// ✅ اصلاح شده و بسیار هوشمند: تشخیص امروز برای هر فرمت تاریخی (شمسی، میلادی، Timestamp)
 function isToday(dateStr: string | number | undefined | null): boolean {
   if (!dateStr) return false;
   try {
     const normalizedStr = normalizeDigits(String(dateStr));
     const now = new Date();
-    
-    // 1. بررسی فرمت Timestamp (عدد بزرگ)
     const num = Number(normalizedStr);
     if (!isNaN(num) && num > 1000000000000) {
       const d = new Date(num);
-      return d.getFullYear() === now.getFullYear() && 
-             d.getMonth() === now.getMonth() && 
-             d.getDate() === now.getDate();
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
     }
-
-    // 2. بررسی فرمت ISO میلادی (مثلاً: 2024-10-22)
     const todayISO = now.toISOString().split("T")[0];
     if (normalizedStr.startsWith(todayISO)) return true;
-
-    // 3. بررسی فرمت شمسی (با جداکننده / یا -)
     const parts = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", {
       year: "numeric", month: "2-digit", day: "2-digit",
     }).formatToParts(now);
     const y = parts.find(p => p.type === "year")?.value || "0";
     const m = parts.find(p => p.type === "month")?.value || "0";
     const d = parts.find(p => p.type === "day")?.value || "0";
-    
     const todayFa = `${y}/${m}/${d}`;
     const todayFaDash = `${y}-${m}-${d}`;
-    
     if (normalizedStr.includes(todayFa) || normalizedStr.includes(todayFaDash)) return true;
-
   } catch (e) {
     console.warn("isToday error:", e);
   }
   return false;
 }
 
-// ✅ اصلاح شده: اضافه شدن accountedHawalaIds برای جلوگیری از محاسبه دوگانه
 function getLedgerBalance(customerId: string, currency: Currency, entries: any[], transactions: any[], hawalas: any[]): number {
   let balance = 0;
   const strCustomerId = String(customerId);
-  const accountedHawalaIds = new Set<string>(); // ✅ کلید حل مشکل دو برابر محاسبه
+  const accountedHawalaIds = new Set<string>();
 
   for (const entry of entries) {
     if (entry.status === "voided" || entry.currency !== currency) continue;
@@ -216,11 +204,7 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: any[]
         else if (entry.type === "customer_withdraw") balance -= Number(entry.amount);
         else if (entry.type === "loan_given") balance -= Number(entry.amount);
         else if (entry.type === "loan_received") balance += Number(entry.amount);
-        
-        // ✅ اگر این سند به یک حواله لینک شده، آی‌دی آن را ذخیره کن تا دوباره محاسبه نشود
-        if (entry.linkedHawalaId) {
-          accountedHawalaIds.add(String(entry.linkedHawalaId));
-        }
+        if (entry.linkedHawalaId) accountedHawalaIds.add(String(entry.linkedHawalaId));
       }
     }
   }
@@ -252,10 +236,7 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: any[]
 
     for (const h of hawalas) {
       if (h.status === "cancelled") continue;
-      
-      // ✅ جلوگیری از محاسبه دوگانه: اگر این حواله قبلاً در entries محاسبه شده، از آن رد شو
       if (accountedHawalaIds.has(String(h.id))) continue;
-
       if (String(h.senderId) === strCustomerId) {
         if (h.currencyFrom === currency) balance -= Number(h.amountFrom || 0);
         if (h.feePayer === "sender" && h.feeCurrency === currency) balance -= Number(h.fee || 0);
@@ -266,7 +247,6 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: any[]
       }
     }
   }
-  
   return balance;
 }
 
@@ -277,10 +257,11 @@ export default function DashboardPage() {
   const [mounted, setMounted] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   
-  const [customers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
-  const [entries] = useSyncedState<CashEntry[]>(CASH_KEY, []);
-  const [transactions] = useSyncedState<Transaction[]>(TRANSACTIONS_KEY, []);
-  const [hawalas] = useSyncedState<Hawala[]>(HAWALAS_KEY, []);
+  // ✅ استفاده از هوک امن و مقادیر اولیه پایدار (جلوگیری قطعی از حلقه بی‌پایان)
+  const [customers] = useSafeSyncedState<Customer>("customers", INITIAL_CUSTOMERS);
+  const [entries] = useSafeSyncedState<CashEntry>("cash_entries", INITIAL_CASH);
+  const [transactions] = useSafeSyncedState<Transaction>("transactions", INITIAL_TRANSACTIONS);
+  const [hawalas] = useSafeSyncedState<Hawala>("hawalas", INITIAL_HAWALAS);
   
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
@@ -459,30 +440,21 @@ export default function DashboardPage() {
       <style>{`@import url("https://fonts.googleapis.com/css2?family=Lalezar&family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap");.cs-font{font-family:"Vazirmatn","Segoe UI",Tahoma,sans-serif}.cs-display{font-family:"Lalezar","Vazirmatn",Tahoma,sans-serif;letter-spacing:.01em}.dark{color-scheme:dark}@keyframes csUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}.cs-up{animation:csUp .5s cubic-bezier(.22,.8,.35,1) both}::selection{background:rgba(16,185,129,.25)}`}</style>
 
       <div className={`cs-font relative min-h-screen overflow-x-hidden antialiased transition-colors duration-500 ${dk ? "bg-[#0f172a] text-slate-100" : "bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 text-slate-800"}`}>
-
         <div className={`fixed inset-x-0 top-0 z-30 h-1 bg-gradient-to-l ${dk ? "from-emerald-400 via-teal-400 to-cyan-400" : "from-emerald-500 via-teal-500 to-cyan-500"}`} />
 
         <div className="relative z-10 mx-auto w-full max-w-7xl space-y-4 md:space-y-6 px-3 pb-16 pt-5 md:px-8 md:pt-9">
-
-          {/* ═══════════ هدر ═══════════ */}
+          {/* هدر */}
           <header className="cs-up flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 md:gap-3.5 min-w-0">
               <div className="relative grid h-11 w-11 md:h-14 md:w-14 shrink-0 place-items-center rounded-xl md:rounded-2xl bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-400 text-white shadow-lg shadow-emerald-500/30 ring-1 ring-white/30">
                 <span className="text-2xl md:text-3xl">📊</span>
-                <span className={`absolute -bottom-1 -left-1 md:-bottom-1.5 md:-left-1.5 grid h-4 min-w-4 md:h-5 md:min-w-5 place-items-center rounded-full bg-gradient-to-br from-amber-400 to-orange-400 px-1 text-[7px] md:text-[8px] font-black text-white ring-2 ${dk ? "ring-[#0f172a]" : "ring-[#ecfdf5]"}`}>
-                  DB
-                </span>
+                <span className={`absolute -bottom-1 -left-1 md:-bottom-1.5 md:-left-1.5 grid h-4 min-w-4 md:h-5 md:min-w-5 place-items-center rounded-full bg-gradient-to-br from-amber-400 to-orange-400 px-1 text-[7px] md:text-[8px] font-black text-white ring-2 ${dk ? "ring-[#0f172a]" : "ring-[#ecfdf5]"}`}>DB</span>
               </div>
               <div className="min-w-0">
-                <h1 className={`cs-display text-2xl md:text-4xl leading-none ${heading}`}>
-                  داشبورد حساب‌ها
-                </h1>
-                <p className={`mt-1 text-[10px] md:text-xs font-bold ${subText}`}>
-                  صرافی برادران نورزاد — هرات
-                </p>
+                <h1 className={`cs-display text-2xl md:text-4xl leading-none ${heading}`}>داشبورد حساب‌ها</h1>
+                <p className={`mt-1 text-[10px] md:text-xs font-bold ${subText}`}>صرافی برادران نورزاد — هرات</p>
               </div>
             </div>
-
             <div className="flex items-center gap-1.5 md:gap-2.5">
               <div className={`hidden sm:flex items-center gap-2 rounded-xl border px-3 py-2 shadow-sm backdrop-blur ${dk ? "border-slate-600/70 bg-slate-800/80" : "border-emerald-100 bg-white/85"}`}>
                 <span className="relative flex h-2.5 w-2.5">
@@ -504,7 +476,7 @@ export default function DashboardPage() {
             </div>
           </header>
 
-          {/* ═══════════ آمار امروز ═══════════ */}
+          {/* آمار امروز */}
           <section className="cs-up space-y-4 md:space-y-6" style={{ animationDelay: "70ms" }}>
             <div className="flex items-center gap-3 mb-1">
               <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl shadow-md ${dk ? "bg-gradient-to-br from-blue-500 to-sky-500 text-white" : "bg-gradient-to-br from-blue-500 to-cyan-500 text-white"}`}>
@@ -515,13 +487,10 @@ export default function DashboardPage() {
                 <p className={`mt-1 text-[10px] md:text-xs font-bold ${subText}`}>خلاصه فعالیت‌های روزانه به تفکیک ارز</p>
               </div>
             </div>
-
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
               <div className={`group relative overflow-hidden rounded-2xl border p-5 md:p-6 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-blue-400/25 bg-gradient-to-br from-blue-900/30 to-slate-900/50" : "border-blue-200 bg-gradient-to-br from-blue-50 to-white"}`}>
                 <div className="relative flex items-center gap-3 mb-4">
-                  <span className={`grid h-12 w-12 place-items-center rounded-xl shadow-sm ${dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-600"}`}>
-                    <span className="text-2xl">💱</span>
-                  </span>
+                  <span className={`grid h-12 w-12 place-items-center rounded-xl shadow-sm ${dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-600"}`}><span className="text-2xl">💱</span></span>
                   <div>
                     <span className={`block text-sm md:text-base font-black ${dk ? "text-blue-300" : "text-blue-700"}`}>مجموع تبادل ارز</span>
                     <div className={`text-[10px] md:text-xs font-bold ${dk ? "text-blue-400/70" : "text-blue-600/70"}`}>{fa(todayStats.tradeCount)} معامله امروز</div>
@@ -534,20 +503,15 @@ export default function DashboardPage() {
                     return (
                       <div key={cur} className={`rounded-xl px-1.5 md:px-2 py-3 text-center transition-all duration-300 min-h-[70px] flex flex-col justify-center ${hasValue ? (dk ? "bg-blue-500/10 ring-1 ring-blue-400/20" : "bg-blue-100/80 ring-1 ring-blue-200") : (dk ? "bg-slate-800/40" : "bg-slate-50")}`}>
                         <div className={`text-[10px] md:text-xs font-black mb-1 ${hasValue ? (dk ? "text-blue-300" : "text-blue-700") : subText}`}>{labels[cur]}</div>
-                        <div className={`text-xs md:text-sm lg:text-base font-black tabular-nums leading-tight break-all whitespace-nowrap ${hasValue ? (dk ? "text-blue-200" : "text-blue-800") : subText}`}>
-                          {hasValue ? fmt(data.amount) : "—"}
-                        </div>
+                        <div className={`text-xs md:text-sm lg:text-base font-black tabular-nums leading-tight break-all whitespace-nowrap ${hasValue ? (dk ? "text-blue-200" : "text-blue-800") : subText}`}>{hasValue ? fmt(data.amount) : "—"}</div>
                       </div>
                     );
                   })}
                 </div>
               </div>
-
               <div className={`group relative overflow-hidden rounded-2xl border p-5 md:p-6 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-purple-400/25 bg-gradient-to-br from-purple-900/30 to-slate-900/50" : "border-purple-200 bg-gradient-to-br from-purple-50 to-white"}`}>
                 <div className="relative flex items-center gap-3 mb-4">
-                  <span className={`grid h-12 w-12 place-items-center rounded-xl shadow-sm ${dk ? "bg-purple-400/15 text-purple-300" : "bg-purple-100 text-purple-600"}`}>
-                    <span className="text-2xl">💸</span>
-                  </span>
+                  <span className={`grid h-12 w-12 place-items-center rounded-xl shadow-sm ${dk ? "bg-purple-400/15 text-purple-300" : "bg-purple-100 text-purple-600"}`}><span className="text-2xl">💸</span></span>
                   <div>
                     <span className={`block text-sm md:text-base font-black ${dk ? "text-purple-300" : "text-purple-700"}`}>مجموع حواله‌ها</span>
                     <div className={`text-[10px] md:text-xs font-bold ${dk ? "text-purple-400/70" : "text-purple-600/70"}`}>{fa(todayStats.hawalaCount)} حواله امروز</div>
@@ -560,20 +524,15 @@ export default function DashboardPage() {
                     return (
                       <div key={cur} className={`rounded-xl px-1.5 md:px-2 py-3 text-center transition-all duration-300 min-h-[70px] flex flex-col justify-center ${hasValue ? (dk ? "bg-purple-500/10 ring-1 ring-purple-400/20" : "bg-purple-100/80 ring-1 ring-purple-200") : (dk ? "bg-slate-800/40" : "bg-slate-50")}`}>
                         <div className={`text-[10px] md:text-xs font-black mb-1 ${hasValue ? (dk ? "text-purple-300" : "text-purple-700") : subText}`}>{labels[cur]}</div>
-                        <div className={`text-xs md:text-sm lg:text-base font-black tabular-nums leading-tight break-all whitespace-nowrap ${hasValue ? (dk ? "text-purple-200" : "text-purple-800") : subText}`}>
-                          {hasValue ? fmt(data.amount) : "—"}
-                        </div>
+                        <div className={`text-xs md:text-sm lg:text-base font-black tabular-nums leading-tight break-all whitespace-nowrap ${hasValue ? (dk ? "text-purple-200" : "text-purple-800") : subText}`}>{hasValue ? fmt(data.amount) : "—"}</div>
                       </div>
                     );
                   })}
                 </div>
               </div>
-
               <div className={`group relative overflow-hidden rounded-2xl border p-5 md:p-6 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-amber-400/25 bg-gradient-to-br from-amber-900/30 to-slate-900/50" : "border-amber-200 bg-gradient-to-br from-amber-50 to-white"}`}>
                 <div className="relative flex items-center gap-3 mb-4">
-                  <span className={`grid h-12 w-12 place-items-center rounded-xl shadow-sm ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}>
-                    <span className="text-2xl">💰</span>
-                  </span>
+                  <span className={`grid h-12 w-12 place-items-center rounded-xl shadow-sm ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><span className="text-2xl">💰</span></span>
                   <span className={`text-sm md:text-base font-black ${dk ? "text-amber-300" : "text-amber-700"}`}>کارمزد تبادل ارز</span>
                 </div>
                 <div className="relative flex items-center justify-between gap-4 mt-2">
@@ -583,19 +542,14 @@ export default function DashboardPage() {
                   </div>
                   <div className={`w-px h-16 ${dk ? "bg-amber-400/20" : "bg-amber-200"}`} />
                   <div className={`text-center flex-1 p-3 rounded-xl ${dk ? "bg-white/5" : "bg-black/5"}`}>
-                    <div className={`text-2xl md:text-3xl font-black tabular-nums leading-none ${dk ? "text-amber-300" : "text-amber-700"}`}>
-                      {fmt(Object.values(todayTradeByCurrency).reduce((sum, item) => sum + item.commission, 0))}
-                    </div>
+                    <div className={`text-2xl md:text-3xl font-black tabular-nums leading-none ${dk ? "text-amber-300" : "text-amber-700"}`}>{fmt(Object.values(todayTradeByCurrency).reduce((sum, item) => sum + item.commission, 0))}</div>
                     <div className={`mt-1.5 text-xs font-bold ${dk ? "text-amber-400/70" : "text-amber-600/70"}`}>مجموع کارمزد</div>
                   </div>
                 </div>
               </div>
-
               <div className={`group relative overflow-hidden rounded-2xl border p-5 md:p-6 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-rose-400/25 bg-gradient-to-br from-rose-900/30 to-slate-900/50" : "border-rose-200 bg-gradient-to-br from-rose-50 to-white"}`}>
                 <div className="relative flex items-center gap-3 mb-4">
-                  <span className={`grid h-12 w-12 place-items-center rounded-xl shadow-sm ${dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600"}`}>
-                    <span className="text-2xl">🎯</span>
-                  </span>
+                  <span className={`grid h-12 w-12 place-items-center rounded-xl shadow-sm ${dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600"}`}><span className="text-2xl">🎯</span></span>
                   <span className={`text-sm md:text-base font-black ${dk ? "text-rose-300" : "text-rose-700"}`}>کارمزد حواله‌جات</span>
                 </div>
                 <div className="relative flex items-center justify-between gap-4 mt-2">
@@ -605,9 +559,7 @@ export default function DashboardPage() {
                   </div>
                   <div className={`w-px h-16 ${dk ? "bg-rose-400/20" : "bg-rose-200"}`} />
                   <div className={`text-center flex-1 p-3 rounded-xl ${dk ? "bg-white/5" : "bg-black/5"}`}>
-                    <div className={`text-2xl md:text-3xl font-black tabular-nums leading-none ${dk ? "text-rose-300" : "text-rose-700"}`}>
-                      {fmt(Object.values(todayHawalaByCurrency).reduce((sum, item) => sum + item.fee, 0))}
-                    </div>
+                    <div className={`text-2xl md:text-3xl font-black tabular-nums leading-none ${dk ? "text-rose-300" : "text-rose-700"}`}>{fmt(Object.values(todayHawalaByCurrency).reduce((sum, item) => sum + item.fee, 0))}</div>
                     <div className={`mt-1.5 text-xs font-bold ${dk ? "text-rose-400/70" : "text-rose-600/70"}`}>مجموع کارمزد</div>
                   </div>
                 </div>
@@ -615,12 +567,11 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          {/* ═══════════ موجودی فیزیکی صندوق ═══════════ */}
+          {/* موجودی فیزیکی صندوق */}
           <section className="cs-up space-y-4 md:space-y-5" style={{ animationDelay: "140ms" }}>
             <div className={`relative overflow-hidden rounded-2xl md:rounded-3xl border-2 p-5 md:p-7 transition-all duration-300 hover:shadow-2xl ${dk ? "border-emerald-400/40 bg-gradient-to-br from-emerald-900/40 via-slate-900/60 to-teal-900/40 shadow-[0_20px_60px_-15px_rgba(16,185,129,0.3)]" : "border-emerald-300 bg-gradient-to-br from-emerald-50 via-white to-teal-50 shadow-[0_20px_60px_-15px_rgba(16,185,129,0.25)]"}`}>
               <div className={`absolute -top-24 -left-24 h-48 w-48 rounded-full blur-3xl opacity-20 ${dk ? "bg-emerald-400" : "bg-emerald-300"}`} />
               <div className={`absolute -bottom-24 -right-24 h-48 w-48 rounded-full blur-3xl opacity-20 ${dk ? "bg-teal-400" : "bg-teal-300"}`} />
-              
               <div className="relative flex items-center gap-4 mb-5 md:mb-6">
                 <div className={`relative grid h-14 w-14 md:h-16 md:w-16 shrink-0 place-items-center rounded-2xl shadow-lg ${dk ? "bg-gradient-to-br from-emerald-400 to-teal-400 text-slate-950" : "bg-gradient-to-br from-emerald-500 to-teal-500 text-white"}`}>
                   <span className="text-3xl md:text-4xl">🏦</span>
@@ -631,7 +582,6 @@ export default function DashboardPage() {
                   <span className={`block text-[11px] md:text-xs font-bold mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>حساب صرافی + طلب مشتریان</span>
                 </div>
               </div>
-              
               <div className="relative grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 md:gap-4">
                 {currencies.map(cur => {
                   const bal = physicalCashBalances[cur];
@@ -648,15 +598,12 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          {/* ═══════════ چهار کارت حساب‌ها ═══════════ */}
+          {/* چهار کارت حساب‌ها */}
           <section className="cs-up grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4" style={{ animationDelay: "210ms" }}>
-
             <div className={`group relative overflow-hidden rounded-2xl border p-4 md:p-5 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-sky-400/25 bg-gradient-to-br from-sky-900/30 to-slate-900/50" : "border-sky-200 bg-gradient-to-br from-sky-50 to-white"}`}>
               <div className={`absolute top-0 right-0 h-24 w-24 rounded-full blur-2xl opacity-10 ${dk ? "bg-sky-400" : "bg-sky-300"}`} />
               <div className="relative flex items-center gap-3 mb-4">
-                <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-600"}`}>
-                  <span className="text-xl">💳</span>
-                </span>
+                <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${dk ? "bg-sky-400/15 text-sky-300" : "bg-sky-100 text-sky-600"}`}><span className="text-xl">💳</span></span>
                 <div className="min-w-0">
                   <b className={`block text-[13px] md:text-[14px] font-black leading-tight ${dk ? "text-sky-300" : "text-sky-700"}`}>💳 طلب مشتریان</b>
                   <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${subText}`}>پول مشتری نزد صرافی</span>
@@ -667,12 +614,8 @@ export default function DashboardPage() {
                   const bal = customerDeposits[cur];
                   return (
                     <div key={cur} className={`flex items-center justify-between rounded-xl px-3 py-2 transition-colors ${dk ? "bg-slate-900/50" : "bg-white/80"}`}>
-                      <span className={`text-[12px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>
-                        {labels[cur]}
-                      </span>
-                      <span className={`text-[15px] md:text-base font-black tabular-nums ${bal > 0 ? (dk ? "text-sky-300" : "text-sky-700") : subText}`}>
-                        {fmt(bal)}
-                      </span>
+                      <span className={`text-[12px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>{labels[cur]}</span>
+                      <span className={`text-[15px] md:text-base font-black tabular-nums ${bal > 0 ? (dk ? "text-sky-300" : "text-sky-700") : subText}`}>{fmt(bal)}</span>
                     </div>
                   );
                 })}
@@ -682,9 +625,7 @@ export default function DashboardPage() {
             <div className={`group relative overflow-hidden rounded-2xl border p-4 md:p-5 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-rose-400/25 bg-gradient-to-br from-rose-900/30 to-slate-900/50" : "border-rose-200 bg-gradient-to-br from-rose-50 to-white"}`}>
               <div className={`absolute top-0 right-0 h-24 w-24 rounded-full blur-2xl opacity-10 ${dk ? "bg-rose-400" : "bg-rose-300"}`} />
               <div className="relative flex items-center gap-3 mb-4">
-                <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600"}`}>
-                  <span className="text-xl">📉</span>
-                </span>
+                <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${dk ? "bg-rose-400/15 text-rose-300" : "bg-rose-100 text-rose-600"}`}><span className="text-xl">📉</span></span>
                 <div className="min-w-0">
                   <b className={`block text-[13px] md:text-[14px] font-black leading-tight ${dk ? "text-rose-300" : "text-rose-700"}`}>🔻 بدهی مشتریان</b>
                   <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${subText}`}>از حساب صرافی کسر شده</span>
@@ -695,12 +636,8 @@ export default function DashboardPage() {
                   const bal = customerDebts[cur];
                   return (
                     <div key={cur} className={`flex items-center justify-between rounded-xl px-3 py-2 transition-colors ${dk ? "bg-slate-900/50" : "bg-white/80"}`}>
-                      <span className={`text-[12px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>
-                        {labels[cur]}
-                      </span>
-                      <span className={`text-[15px] md:text-base font-black tabular-nums ${bal > 0 ? "text-rose-500" : subText}`}>
-                        {fmt(bal)}
-                      </span>
+                      <span className={`text-[12px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>{labels[cur]}</span>
+                      <span className={`text-[15px] md:text-base font-black tabular-nums ${bal > 0 ? "text-rose-500" : subText}`}>{fmt(bal)}</span>
                     </div>
                   );
                 })}
@@ -710,9 +647,7 @@ export default function DashboardPage() {
             <div className={`group relative overflow-hidden rounded-2xl border p-4 md:p-5 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-violet-400/25 bg-gradient-to-br from-violet-900/30 to-slate-900/50" : "border-violet-200 bg-gradient-to-br from-violet-50 to-white"}`}>
               <div className={`absolute top-0 right-0 h-24 w-24 rounded-full blur-2xl opacity-10 ${dk ? "bg-violet-400" : "bg-violet-300"}`} />
               <div className="relative flex items-center gap-3 mb-4">
-                <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${dk ? "bg-violet-400/15 text-violet-300" : "bg-violet-100 text-violet-600"}`}>
-                  <span className="text-xl">💼</span>
-                </span>
+                <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${dk ? "bg-violet-400/15 text-violet-300" : "bg-violet-100 text-violet-600"}`}><span className="text-xl">💼</span></span>
                 <div className="min-w-0">
                   <b className={`block text-[13px] md:text-[14px] font-black leading-tight ${dk ? "text-violet-300" : "text-violet-700"}`}>💼 موجودی حساب صرافی</b>
                   <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${subText}`}>سرمایه مالک (پس از کسر بدهی)</span>
@@ -723,12 +658,8 @@ export default function DashboardPage() {
                   const bal = exchangeBalance[cur];
                   return (
                     <div key={cur} className={`flex items-center justify-between rounded-xl px-3 py-2 transition-colors ${dk ? "bg-slate-900/50" : "bg-white/80"}`}>
-                      <span className={`text-[12px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>
-                        {labels[cur]}
-                      </span>
-                      <span className={`text-[15px] md:text-base font-black tabular-nums ${bal < 0 ? "text-rose-500" : dk ? "text-violet-300" : "text-violet-700"}`}>
-                        {fmt(bal)}
-                      </span>
+                      <span className={`text-[12px] font-black ${dk ? "text-slate-400" : "text-slate-500"}`}>{labels[cur]}</span>
+                      <span className={`text-[15px] md:text-base font-black tabular-nums ${bal < 0 ? "text-rose-500" : dk ? "text-violet-300" : "text-violet-700"}`}>{fmt(bal)}</span>
                     </div>
                   );
                 })}
@@ -738,15 +669,12 @@ export default function DashboardPage() {
             <div className={`group relative overflow-hidden rounded-2xl border p-4 md:p-5 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-cyan-400/25 bg-gradient-to-br from-cyan-900/30 to-slate-900/50" : "border-cyan-200 bg-gradient-to-br from-cyan-50 to-white"}`}>
               <div className={`absolute top-0 right-0 h-24 w-24 rounded-full blur-2xl opacity-10 ${dk ? "bg-cyan-400" : "bg-cyan-300"}`} />
               <div className="relative flex items-center gap-3 mb-3">
-                <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${dk ? "bg-cyan-400/15 text-cyan-300" : "bg-cyan-100 text-cyan-600"}`}>
-                  <span className="text-xl">👥</span>
-                </span>
+                <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${dk ? "bg-cyan-400/15 text-cyan-300" : "bg-cyan-100 text-cyan-600"}`}><span className="text-xl">👥</span></span>
                 <div className="min-w-0">
                   <b className={`block text-[13px] md:text-[14px] font-black leading-tight ${dk ? "text-cyan-300" : "text-cyan-700"}`}>👥 وضعیت مشتریان</b>
                   <span className={`block text-[10px] md:text-[11px] font-bold mt-0.5 ${subText}`}>کل و بدهکاران</span>
                 </div>
               </div>
-              
               <div className={`relative flex items-center justify-center py-3 mb-2 rounded-xl ${dk ? "bg-slate-900/50" : "bg-white/80"}`}>
                 <div className="text-center">
                   <div className={`text-[10px] font-black mb-1 ${dk ? "text-cyan-300/70" : "text-cyan-600/70"}`}>کل مشتریان</div>
@@ -754,55 +682,39 @@ export default function DashboardPage() {
                   <div className={`mt-1 text-[9px] font-black ${subText}`}>نفر</div>
                 </div>
               </div>
-
               <div className={`h-px my-2 ${dk ? "bg-cyan-400/20" : "bg-cyan-200"}`} />
-
               <div className={`relative flex items-center justify-center py-3 rounded-xl ${dk ? "bg-rose-400/10" : "bg-rose-50"}`}>
                 <div className="text-center">
                   <div className={`text-[10px] font-black mb-1 ${dk ? "text-rose-300/80" : "text-rose-600/80"}`}>مشتریان بدهکار</div>
                   <div className={`text-3xl md:text-4xl font-black tabular-nums leading-none ${debtorsCount > 0 ? "text-rose-500" : subText}`}>{fa(debtorsCount)}</div>
-                  <div className={`mt-1 text-[9px] font-black ${debtorsCount > 0 ? (dk ? "text-rose-300/70" : "text-rose-600/70") : subText}`}>
-                    {debtorsCount > 0 ? "⚠️ دارای بدهی" : "✅ بدون بدهی"}
-                  </div>
+                  <div className={`mt-1 text-[9px] font-black ${debtorsCount > 0 ? (dk ? "text-rose-300/70" : "text-rose-600/70") : subText}`}>{debtorsCount > 0 ? "⚠️ دارای بدهی" : "✅ بدون بدهی"}</div>
                 </div>
               </div>
             </div>
-
           </section>
 
-          {/* ═══════════ فرمول حسابداری ═══════════ */}
+          {/* فرمول حسابداری */}
           <div className={`cs-up rounded-2xl border-2 px-5 py-4 md:py-5 ${dk ? "border-slate-700/70 bg-gradient-to-r from-slate-800/60 to-slate-900/60" : "border-slate-200 bg-gradient-to-r from-white to-slate-50"}`} style={{ animationDelay: "280ms" }}>
             <div className={`flex flex-wrap items-center justify-center gap-3 md:gap-4 text-[12px] md:text-[13px] font-black ${dk ? "text-slate-300" : "text-slate-600"}`}>
-              <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${dk ? "bg-emerald-400/10 text-emerald-300 ring-1 ring-emerald-400/30" : "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"}`}>
-                💰 صندوق
-              </span>
+              <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${dk ? "bg-emerald-400/10 text-emerald-300 ring-1 ring-emerald-400/30" : "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"}`}>💰 صندوق</span>
               <span className="text-slate-400">=</span>
-              <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${dk ? "bg-violet-400/10 text-violet-300 ring-1 ring-violet-400/30" : "bg-violet-50 text-violet-700 ring-1 ring-violet-200"}`}>
-                💼 حساب صرافی
-              </span>
+              <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${dk ? "bg-violet-400/10 text-violet-300 ring-1 ring-violet-400/30" : "bg-violet-50 text-violet-700 ring-1 ring-violet-200"}`}>💼 حساب صرافی</span>
               <span className="text-slate-400">+</span>
-              <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${dk ? "bg-sky-400/10 text-sky-300 ring-1 ring-sky-400/30" : "bg-sky-50 text-sky-700 ring-1 ring-sky-200"}`}>
-                💳 طلب مشتریان
-              </span>
+              <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${dk ? "bg-sky-400/10 text-sky-300 ring-1 ring-sky-400/30" : "bg-sky-50 text-sky-700 ring-1 ring-sky-200"}`}>💳 طلب مشتریان</span>
             </div>
           </div>
 
-          {/* ═══════════ جدول وضعیت کلی سیستم ═══════════ */}
+          {/* جدول وضعیت کلی سیستم */}
           <section className={`cs-up rounded-2xl md:rounded-3xl border-2 overflow-hidden ${uiCard}`} style={{ animationDelay: "350ms" }}>
             <div className="flex items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
               <div className={`grid h-11 w-11 md:h-12 md:w-12 place-items-center rounded-xl shadow-md ${dk ? "bg-gradient-to-br from-cyan-400 to-sky-500 text-slate-950" : "bg-gradient-to-br from-cyan-500 to-sky-500 text-white"}`}>
                 <span className="text-xl">📋</span>
               </div>
               <div className="flex-1 min-w-0">
-                <h2 className={`cs-display text-xl md:text-2xl leading-none ${heading}`}>
-                  وضعیت کلی سیستم
-                </h2>
-                <p className={`mt-1 text-[11px] font-bold ${subText}`}>
-                  خلاصه تمام بخش‌های حساب‌ها به تفکیک ارز
-                </p>
+                <h2 className={`cs-display text-xl md:text-2xl leading-none ${heading}`}>وضعیت کلی سیستم</h2>
+                <p className={`mt-1 text-[11px] font-bold ${subText}`}>خلاصه تمام بخش‌های حساب‌ها به تفکیک ارز</p>
               </div>
             </div>
-
             <div className="overflow-x-auto px-4 md:px-7 pb-4">
               <table className="w-full min-w-[800px] text-sm">
                 <thead>
@@ -822,29 +734,14 @@ export default function DashboardPage() {
                     const debts = customerDebts[cur];
                     const equity = exchangeBalance[cur];
                     const comm = availableCommission[cur];
-
                     return (
                       <tr key={cur} className={`transition-colors ${dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/70"}`}>
-                        <td className="px-3 py-3 text-right">
-                          <span className={`font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>
-                            {labels[cur]}
-                          </span>
-                        </td>
-                        <td className={`px-3 py-3 text-center text-[13px] font-black tabular-nums ${cash < 0 ? "text-rose-500" : dk ? "text-emerald-300" : "text-emerald-700"}`}>
-                          {fmt(cash)}
-                        </td>
-                        <td className={`px-3 py-3 text-center text-[13px] font-black tabular-nums ${deps > 0 ? (dk ? "text-sky-300" : "text-sky-700") : subText}`}>
-                          {fmt(deps)}
-                        </td>
-                        <td className={`px-3 py-3 text-center text-[13px] font-black tabular-nums ${debts > 0 ? "text-rose-500" : subText}`}>
-                          {fmt(debts)}
-                        </td>
-                        <td className={`px-3 py-3 text-center text-[13px] font-black tabular-nums ${equity < 0 ? "text-rose-500" : dk ? "text-violet-300" : "text-violet-700"}`}>
-                          {fmt(equity)}
-                        </td>
-                        <td className={`px-3 py-3 text-center text-[13px] font-black tabular-nums ${comm > 0 ? (dk ? "text-amber-300" : "text-amber-700") : subText}`}>
-                          {fmt(comm)}
-                        </td>
+                        <td className="px-3 py-3 text-right"><span className={`font-bold ${dk ? "text-slate-200" : "text-slate-700"}`}>{labels[cur]}</span></td>
+                        <td className={`px-3 py-3 text-center text-[13px] font-black tabular-nums ${cash < 0 ? "text-rose-500" : dk ? "text-emerald-300" : "text-emerald-700"}`}>{fmt(cash)}</td>
+                        <td className={`px-3 py-3 text-center text-[13px] font-black tabular-nums ${deps > 0 ? (dk ? "text-sky-300" : "text-sky-700") : subText}`}>{fmt(deps)}</td>
+                        <td className={`px-3 py-3 text-center text-[13px] font-black tabular-nums ${debts > 0 ? "text-rose-500" : subText}`}>{fmt(debts)}</td>
+                        <td className={`px-3 py-3 text-center text-[13px] font-black tabular-nums ${equity < 0 ? "text-rose-500" : dk ? "text-violet-300" : "text-violet-700"}`}>{fmt(equity)}</td>
+                        <td className={`px-3 py-3 text-center text-[13px] font-black tabular-nums ${comm > 0 ? (dk ? "text-amber-300" : "text-amber-700") : subText}`}>{fmt(comm)}</td>
                       </tr>
                     );
                   })}
@@ -853,7 +750,7 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          {/* ═══════════ فوتر ═══════════ */}
+          {/* فوتر */}
           <div className={`cs-up text-center py-4 text-[11px] font-bold ${subText}`} style={{ animationDelay: "420ms" }}>
             🏦 صرافی برادران نورزاد — هرات | سیستم هماهنگ‌سازی هوشمند فعال است
           </div>
