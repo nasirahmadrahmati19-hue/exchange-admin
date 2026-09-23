@@ -1,22 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, type User } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "./dashboard/lib/firebase"; 
 
-// ✅ ایجاد provider جدید برای هر ورود با تنظیمات اجباری
-const createProvider = () => {
-  const provider = new GoogleAuthProvider();
-  // 🚨 این خط طلایی است: گوگل را مجبور می‌کند هر بار پنجره انتخاب حساب را باز کند
-  provider.setCustomParameters({ 
-    prompt: 'select_account' 
-  });
-  return provider;
-};
-
-// 🚨 ایمیل مالک اصلی (خودتان)
+// 🚨 ایمیل مالک اصلی
 const OWNER_EMAIL = "nasirahmadrahmati19@gmail.com";
 
 export default function AuthGate() {
@@ -26,38 +16,50 @@ export default function AuthGate() {
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
+  
+  // ✅ این ref جلوگیری می‌کند که router.push چند بار اجرا شود
+  const hasRedirected = useRef(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
+      
       if (currentUser) {
-        await checkAuthorization(currentUser.email);
+        // فقط یک بار چک کن
+        if (!hasRedirected.current) {
+          await checkAuthorization(currentUser.email);
+        }
       } else {
         setIsAuthorized(false);
         setCheckingAuth(false);
+        hasRedirected.current = false; // ریست برای ورود بعدی
       }
     });
+    
     return () => unsubscribe();
   }, []);
 
   const checkAuthorization = async (email: string | null) => {
-    if (!email) return;
+    if (!email || hasRedirected.current) return;
+    
     setErrorMsg("");
     
-    // ۱. اگر مالک اصلی است، همیشه دسترسی دارد
+    // ۱. اگر مالک اصلی است
     if (email.toLowerCase() === OWNER_EMAIL.toLowerCase()) {
       setIsAuthorized(true);
       setCheckingAuth(false);
-      router.push("/dashboard");
+      hasRedirected.current = true; // ✅ جلوگیری از اجرای مجدد
+      router.replace("/dashboard"); // ✅ استفاده از replace به جای push
       return;
     }
 
-    // ۲. بررسی لیست کاربران مجاز در فایربیس
+    // ۲. بررسی لیست کاربران مجاز
     try {
       const userDoc = await getDoc(doc(db, "authorized_users", email));
       if (userDoc.exists()) {
         setIsAuthorized(true);
-        router.push("/dashboard");
+        hasRedirected.current = true; // ✅ جلوگیری از اجرای مجدد
+        router.replace("/dashboard"); // ✅ استفاده از replace به جای push
       } else {
         setIsAuthorized(false);
       }
@@ -72,15 +74,15 @@ export default function AuthGate() {
     setLoading(true);
     setErrorMsg("");
     try {
-      // ✅ هر بار یک provider جدید با تنظیمات اجباری ساخته می‌شود
-      const provider = createProvider();
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
       await signInWithPopup(auth, provider);
     } catch (error: any) {
       console.error("خطا در ورود:", error);
       if (error.code === 'auth/popup-closed-by-user') {
-        setErrorMsg("پنجره ورود بسته شد. لطفاً دوباره تلاش کنید.");
+        setErrorMsg("پنجره ورود بسته شد.");
       } else if (error.code === 'auth/popup-blocked') {
-        setErrorMsg("مرورگر پنجره ورود را مسدود کرد. لطفاً pop-up را برای این سایت مجاز کنید.");
+        setErrorMsg("مرورگر پنجره ورود را مسدود کرد.");
       } else {
         setErrorMsg("خطا در ورود: " + error.message);
       }
@@ -88,7 +90,6 @@ export default function AuthGate() {
     }
   };
 
-  // ✅ تابع خروج قوی که تمام stateها را کاملاً ریست می‌کند
   const handleLogout = async () => {
     setLoading(true);
     try {
@@ -96,12 +97,12 @@ export default function AuthGate() {
     } catch (e) {
       console.error("خطا در خروج:", e);
     }
-    // ریست کامل تمام stateها
     setUser(null);
     setIsAuthorized(false);
     setCheckingAuth(false);
     setErrorMsg("");
     setLoading(false);
+    hasRedirected.current = false; // ✅ ریست flag
   };
 
   // --- حالت‌های نمایش ---
@@ -158,9 +159,6 @@ export default function AuthGate() {
           <h2 className="text-xl font-bold text-rose-400 mb-2">دسترسی غیرمجاز</h2>
           <p className="text-slate-300 text-sm mb-6">
             ایمیل <span className="text-white font-mono bg-rose-500/20 px-1 rounded">{user.email}</span> توسط سازنده برنامه تأیید نشده است.
-          </p>
-          <p className="text-slate-400 text-xs mb-4">
-            برای ورود با حساب دیگر، روی دکمه زیر کلیک کنید.
           </p>
           <button onClick={handleLogout} disabled={loading} className="bg-rose-600 text-white font-bold py-3 px-6 rounded-xl hover:bg-rose-700 transition-all disabled:opacity-50">
             {loading ? "در حال خروج..." : "خروج و انتخاب حساب دیگر"}
