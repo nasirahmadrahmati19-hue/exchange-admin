@@ -1,8 +1,7 @@
 "use client";
-
 import { useEffect, useMemo, useState, useRef, useCallback, memo, type ReactNode, type ChangeEvent } from "react";
-import { useSyncedState } from "../lib/useSyncedState";
-import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY } from "../lib/defaultData";
+// ✅ تغییر ۱: حذف useSyncedState و کلیدهای قدیمی، و اضافه کردن هوک جدید
+import { useSafeSyncedState } from "../lib/useSafeSyncedState";
 import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem, getTrackingNumberValue } from "../lib/trackingCode";
 
 // ============================================================
@@ -95,7 +94,6 @@ type FormErrors = Partial<Record<keyof FormState, string>>;
 
 const provinces = ["هرات","ارزگان","بادغیس","بدخشان","بامیان","بغلان","بلخ","پکتیا","پکتیکا","پنجشیر","پروان","تخار","جوزجان","خوست","دایکندی","زابل","سرپل","سمنگان","فاریاب","فراه","غزنی","غور","کابل","کندهار","کاپیسا","قندوز","کنر","لغمان","لوگر","میدان وردک","ننگرهار","نیمروز","نورستان","هلمند"] as const;
 const heratDistricts = ["گلران","مرکز هرات","ادرسکن","چشت شریف","فارسی","غوریان","گذره","انجیل","کرخ","کوهسان","کشک","کشک کهنه","اوبه","پشتون زرغون","شیندند","زنده جان"] as const;
-
 const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
 const labels: Record<Currency, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
 const rateUnits: Record<Currency, number> = { AFN: 1, USD: 1, EUR: 1, IRR: 1000, PKR: 1000 };
@@ -109,7 +107,6 @@ const EXCHANGE_ACCOUNT_NAME = "حساب صرافی";
 const EXCHANGE_ACCOUNT_CUSTOMER: Customer = { id: EXCHANGE_ACCOUNT_ID, name: EXCHANGE_ACCOUNT_NAME, phone: "", tazkira: "", address: "", note: "", telegram: "", telegramChatId: "", registeredAt: "", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
 
 const hasTelegram = (c: Customer): boolean => Boolean(c.telegramChatId || c.telegram);
-
 const generateId = (): string => {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     try { return crypto.randomUUID(); } catch {}
@@ -119,24 +116,20 @@ const generateId = (): string => {
     return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
   });
 };
-
 const normalizeDigits = (value: string) => {
   const pd = "۰۱۲۳۴۵۶۷۸۹", ad = "٠١٢٣٤٥٦٧٨٩";
   return String(value || "").replace(/[۰-۹]/g, d => String(pd.indexOf(d))).replace(/[٠-٩]/g, d => String(ad.indexOf(d)));
 };
-
 const toNumericText = (v: string) => {
   let s = normalizeDigits(String(v || "")).replace(/[^0-9.]/g, "");
   const fd = s.indexOf(".");
   if (fd !== -1) s = s.slice(0, fd + 1) + s.slice(fd + 1).replace(/\./g, "");
   return s;
 };
-
 const parseAmount = (v: string) => {
   const n = Number(normalizeDigits(String(v || "")).replace(/,/g, ""));
   return Number.isFinite(n) && n >= 0 ? n : 0;
 };
-
 const fmt = (n: number) => (Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 2 }) : "0");
 
 function shamsiParts(d: Date) {
@@ -146,17 +139,14 @@ function shamsiParts(d: Date) {
     return { year: get("year"), month: get("month"), day: get("day") };
   } catch { return { year: "0", month: "0", day: "0" }; }
 }
-
 function formatDateTime(d: Date) {
   const pad = (n: number) => String(n).padStart(2, "0");
   const s = shamsiParts(d);
   return `${s.year}/${s.month}/${s.day} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
-
 function dateLabel(s: string) {
   try { const d = new Date(s); return Number.isNaN(d.getTime()) ? "-" : formatDateTime(d); } catch { return "-"; }
 }
-
 const emptyForm: FormState = {
   type: "", currencyFrom: "AFN", currencyTo: "USD",
   senderId: "", senderName: "", senderPhone: "", senderTelegram: "",
@@ -164,37 +154,31 @@ const emptyForm: FormState = {
   balance: "", province: "هرات", district: "گلران",
   receiverId: "", receiverName: "", receiverTazkira: "", receiverPhone: "", receiverAddress: "", note: ""
 };
-
 function getRateMode(from: Currency, to: Currency): RateMode {
   if (from === to) return "same";
   if (from === "AFN" || to === "AFN") return "afn";
   return "direct";
 }
-
 function getAfnForeign(from: Currency, to: Currency): Currency | null {
   if (from === to) return null;
   if (from === "AFN") return to;
   if (to === "AFN") return from;
   return null;
 }
-
 function preferredDirectBase(a: Currency, b: Currency): Currency {
   const p: Currency[] = ["USD","EUR","PKR","IRR"];
   for (const c of p) { if (a === c) return c; if (b === c) return c; }
   return a;
 }
-
 function getSafeDirectBase(baseState: Currency, a: Currency, b: Currency): Currency {
   if (a === baseState || b === baseState) return baseState;
   return preferredDirectBase(a, b);
 }
-
 function getDirectCounter(base: Currency, a: Currency, b: Currency): Currency | null {
   if (a === base) return b;
   if (b === base) return a;
   return null;
 }
-
 function convertAfnRate(amount: number, from: Currency, to: Currency, rate: number) {
   if (!Number.isFinite(amount) || amount === 0) return 0;
   if (from === to) return amount;
@@ -206,7 +190,6 @@ function convertAfnRate(amount: number, from: Currency, to: Currency, rate: numb
   if (from === foreign && to === "AFN") return (amount / unit) * rate;
   return 0;
 }
-
 function convertDirectRate(amount: number, from: Currency, to: Currency, base: Currency, rate: number) {
   if (!Number.isFinite(amount) || amount === 0) return 0;
   if (from === to) return amount;
@@ -218,10 +201,8 @@ function convertDirectRate(amount: number, from: Currency, to: Currency, base: C
   if (to === base) return (amount / rate) * unitBase;
   return 0;
 }
-
 const afnRateLabel = (foreign: Currency, rate: number) => `${rateUnits[foreign]} ${labels[foreign]} = ${rate} ${labels.AFN}`;
 const directRateLabel = (base: Currency, counter: Currency, rate: number) => `${rateUnits[base]} ${labels[base]} = ${rate} ${labels[counter]}`;
-
 const statusLabels: Record<HawalaStatus, string> = { pending: "در انتظار", sent: "ارسال‌شده", paid: "پرداخت‌شده", cancelled: "لغوشده" };
 const statusColors: Record<HawalaStatus, { light: string; dark: string }> = {
   pending: { light: "bg-amber-100 text-amber-700", dark: "bg-amber-400/15 text-amber-300" },
@@ -229,9 +210,7 @@ const statusColors: Record<HawalaStatus, { light: string; dark: string }> = {
   paid: { light: "bg-emerald-100 text-emerald-700", dark: "bg-emerald-400/15 text-emerald-300" },
   cancelled: { light: "bg-rose-100 text-rose-700", dark: "bg-rose-400/15 text-rose-300" }
 };
-
 const formatDestination = (province: string, district: string) => province === "هرات" ? `${province} — ${district}` : province;
-
 const sortByHawalaNumber = (items: Hawala[], order: "asc" | "desc") => [...items].sort((a, b) => {
   const an = getTrackingNumberValue(a.number), bn = getTrackingNumberValue(b.number);
   return order === "asc" ? an - bn : bn - an;
@@ -244,7 +223,6 @@ function getLedgerBalance(customerId: string | number, currency: Currency, entri
   let balance = 0;
   const strCustomerId = String(customerId);
   const accountedHawalaIds = new Set<string>();
-
   for (const entry of entries) {
     if (entry.status === "voided" || entry.currency !== currency) continue;
     if (strCustomerId === String(CASH_BOX_ID)) {
@@ -269,7 +247,6 @@ function getLedgerBalance(customerId: string | number, currency: Currency, entri
       }
     }
   }
-
   if (strCustomerId !== String(CASH_BOX_ID) && strCustomerId !== String(EXCHANGE_ACCOUNT_ID)) {
     for (const tx of transactions) {
       if (tx.status === "voided") continue;
@@ -294,7 +271,6 @@ function getLedgerBalance(customerId: string | number, currency: Currency, entri
         if (tx.commission && tx.commissionCurrency === currency) balance -= Number(tx.commission);
       }
     }
-
     for (const h of hawalas) {
       if (h.status === "cancelled") continue;
       if (accountedHawalaIds.has(String(h.id))) continue;
@@ -310,19 +286,16 @@ function getLedgerBalance(customerId: string | number, currency: Currency, entri
   }
   return balance;
 }
-
 function computeCashBalances(entries: any[]): Record<Currency, number> {
   const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
   for (const cur of currencies) balances[cur] = getLedgerBalance(CASH_BOX_ID, cur, entries, [], []);
   return balances;
 }
-
 function computeExchangeBalances(entries: any[]): Record<Currency, number> {
   const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
   for (const cur of currencies) balances[cur] = getLedgerBalance(EXCHANGE_ACCOUNT_ID, cur, entries, [], []);
   return balances;
 }
-
 function recomputeCashBalances(entries: any[]): any[] {
   const sorted = [...entries].sort((a, b) => {
     const t1 = new Date(a.date).getTime();
@@ -343,7 +316,6 @@ function recomputeCashBalances(entries: any[]): any[] {
     return { ...e, balanceAfter: bals[e.currency] || 0 };
   });
 }
-
 function syncCashEntriesForHawala(action: "add" | "remove", h: Hawala | null, oldHawalaId: string | undefined, currentEntries: any[]): any[] {
   let entries = [...currentEntries];
   const targetId = oldHawalaId || h?.id;
@@ -371,7 +343,6 @@ function syncCashEntriesForHawala(action: "add" | "remove", h: Hawala | null, ol
   }
   return recomputeCashBalances(entries);
 }
-
 function syncCashEntriesForHawalaSettlement(action: "add" | "remove", h: Hawala, currentEntries: any[]) {
   let entries = [...currentEntries];
   if (action === "remove") entries = entries.filter((e: any) => e.linkedHawalaSettleId !== h.id);
@@ -409,7 +380,6 @@ function formatShamsiDateTime(date: Date): string {
     return `${y}/${m}/${d} ${h12}:${min} ${ampm}`;
   } catch { return "-"; }
 }
-
 function numberToPersianWords(num: number): string {
   if (!Number.isFinite(num) || num === 0) return "صفر";
   const ones = ["", "یک", "دو", "سه", "چهار", "پنج", "شش", "هفت", "هشت", "نه"];
@@ -434,7 +404,6 @@ function numberToPersianWords(num: number): string {
   }
   return parts.join(" و ");
 }
-
 async function sendTelegramMessage(botToken: string, chatId: string, text: string): Promise<boolean> {
   if (!botToken || !chatId) return false;
   try {
@@ -445,7 +414,6 @@ async function sendTelegramMessage(botToken: string, chatId: string, text: strin
     const data = await res.json(); return data.ok === true;
   } catch { return false; }
 }
-
 function getTelegramSettings() {
   try {
     const r = localStorage.getItem("fx-settings");
@@ -454,7 +422,6 @@ function getTelegramSettings() {
     return { enabled: s.telegram?.enabled || false, botToken: s.telegram?.botToken || "", chatId: s.telegram?.chatId || "", notifyNewHawala: s.telegram?.notifyNewHawala !== false, notifySettlement: s.telegram?.notifySettlement !== false, notifyVoid: s.telegram?.notifyVoid !== false };
   } catch { return { enabled: false, botToken: "", chatId: "", notifyNewHawala: true, notifySettlement: true, notifyVoid: true }; }
 }
-
 function getCustomerChatId(customerId: string | number | undefined, customers: Customer[]): string {
   if (!customerId || String(customerId) === String(CASH_BOX_ID)) return "";
   try {
@@ -462,7 +429,6 @@ function getCustomerChatId(customerId: string | number | undefined, customers: C
     return c ? (c.telegramChatId || c.telegram || "") : "";
   } catch { return ""; }
 }
-
 function buildHawalaReceiptText(params: { docType: "receipt" | "withdraw"; date: Date; trackingCode: string; description: string; amount: number; currency: string; customerName: string; balances: Record<string, number>; }): string {
   const isWithdraw = params.docType === "withdraw";
   const title = isWithdraw ? "🔴 سند برد" : "🟢 سند رسید";
@@ -481,7 +447,6 @@ function buildHawalaReceiptText(params: { docType: "receipt" | "withdraw"; date:
   text += `\n🏦 صرافی برادران نورزاد — هرات`;
   return text;
 }
-
 function buildCancelNoticeText(params: { hawala: Hawala; customerName: string; role: "sender" | "receiver"; balances: Record<string, number>; cancelReason: string; date: Date; }): string {
   const { hawala, customerName, role, balances, cancelReason, date } = params;
   const dateStr = formatShamsiDateTime(date);
@@ -506,7 +471,6 @@ function buildCancelNoticeText(params: { hawala: Hawala; customerName: string; r
   text += `\n🏦 صرافی برادران نورزاد — هرات`;
   return text;
 }
-
 async function sendHawalaReceipts(params: { hawala: Hawala; action: "register" | "settle" | "cancel"; customers: Customer[]; }) {
   const settings = getTelegramSettings();
   if (!settings.enabled || !settings.botToken) return;
@@ -578,7 +542,6 @@ const iconPaths = {
   eye: "M2.25 12s3.5-6 9.75-6 9.75 6 9.75 6-3.5 6-9.75 6-9.75-6-9.75-6Zm9.75 2.25a2.25 2.25 0 1 0 0-4.5 2.25 2.25 0 0 0 0 4.5Z",
   more: "M12 6.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 12.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 18.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Z"
 };
-
 type IconName = keyof typeof iconPaths;
 const Ic = memo(function Ic({ n, className = "h-5 w-5" }: { n: IconName; className?: string }) {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true"><path d={iconPaths[n]} /></svg>;
@@ -589,13 +552,13 @@ const Ic = memo(function Ic({ n, className = "h-5 w-5" }: { n: IconName; classNa
 // ============================================================
 export default function HawalaPage() {
   const [mounted, setMounted] = useState(false);
-
-  // ✅ استفاده از useSyncedState برای یکپارچگی با سایر تب‌ها
-  const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
-  const [transactions] = useSyncedState<any[]>(TRANSACTIONS_KEY, []);
-  const [hawalas, setHawalas] = useSyncedState<Hawala[]>(HAWALAS_KEY, []);
-  const [cashEntries, setCashEntries] = useSyncedState<any[]>(CASH_KEY, []);
-
+  
+  // ✅ تغییر ۲: استفاده از هوک جدید و نام‌های کالکشن استاندارد
+  const [customers, setCustomers] = useSafeSyncedState<Customer[]>("customers", []);
+  const [transactions] = useSafeSyncedState<any[]>("transactions", []);
+  const [hawalas, setHawalas] = useSafeSyncedState<Hawala[]>("hawalas", []);
+  const [cashEntries, setCashEntries] = useSafeSyncedState<any[]>("cash_entries", []);
+  
   const isSubmittingRef = useRef(false);
   const isSettlingRef = useRef(false);
   const isCancellingRef = useRef(false);
@@ -630,10 +593,8 @@ export default function HawalaPage() {
   useEffect(() => { try { const saved = window.localStorage.getItem("hawala-theme"); if (saved === "dark" || saved === "light") setTheme(saved); } catch {} }, []);
   useEffect(() => { try { window.localStorage.setItem("hawala-theme", theme); } catch {} }, [theme]);
   const dk = theme === "dark";
-
   useEffect(() => { try { initTrackingSystem(); } catch (err) { console.error("Load error:", err); } setMounted(true); }, []);
   useEffect(() => { try { localStorage.setItem("hawalaLastNames", JSON.stringify(lastNames)); } catch {} }, [lastNames]);
-
   useEffect(() => {
     if (!openActionId) return;
     const handler = (e: MouseEvent) => {
@@ -643,11 +604,9 @@ export default function HawalaPage() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [openActionId]);
-
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => { setNow(new Date()); const timer = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(timer); }, []);
   const currentDateTime = now ? formatDateTime(now) : "";
-
   const anyDropdownOpen = showSenderList || showReceiverList;
   useEffect(() => {
     if (!anyDropdownOpen) return;
@@ -659,44 +618,41 @@ export default function HawalaPage() {
     const timer = setTimeout(() => document.addEventListener("mousedown", handler), 0);
     return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler); };
   }, [anyDropdownOpen, showSenderList, showReceiverList]);
-
+  
   const cashBoxBalances = useMemo(() => { try { return computeCashBalances(cashEntries); } catch { return { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; } }, [cashEntries]);
   const exchangeAccountBalances = useMemo(() => { try { return computeExchangeBalances(cashEntries); } catch { return { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; } }, [cashEntries]);
-
   const availableCustomers = useMemo(() => customers.filter(c => String(c.id) !== String(CASH_BOX_ID) && String(c.id) !== String(EXCHANGE_ACCOUNT_ID)), [customers]);
-
-  // ✅ محاسبه موجودی زنده هر مشتری (از تمام تراکنش‌ها، حواله‌ها و اسناد صندوق)
+  
   const getCustomerBalance = useCallback((customerId: string | number, currency: Currency): number => {
     return getLedgerBalance(customerId, currency, cashEntries, transactions, hawalas);
   }, [cashEntries, transactions, hawalas]);
-
+  
   const filteredSenderList = useMemo(() => {
     const options = [EXCHANGE_ACCOUNT_CUSTOMER, ...availableCustomers];
     if (!senderFilter) return options;
     const q = normalizeDigits(senderFilter.trim()).toLowerCase();
     return options.filter(c => c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q)));
   }, [availableCustomers, senderFilter]);
-
+  
   const filteredReceiverList = useMemo(() => {
     const options = [EXCHANGE_ACCOUNT_CUSTOMER, ...availableCustomers];
     if (!receiverFilter) return options;
     const q = normalizeDigits(receiverFilter.trim()).toLowerCase();
     return options.filter(c => c.name.toLowerCase().includes(q) || (c.phone && normalizeDigits(c.phone).includes(q)));
   }, [availableCustomers, receiverFilter]);
-
+  
   const rateMode = getRateMode(form.currencyFrom, form.currencyTo);
   const afnForeign = getAfnForeign(form.currencyFrom, form.currencyTo);
   const directBaseValue = rateMode === "direct" ? getSafeDirectBase(form.currencyFrom, form.currencyFrom, form.currencyTo) : form.currencyFrom;
   const directCounter = rateMode === "direct" ? getDirectCounter(directBaseValue, form.currencyFrom, form.currencyTo) : null;
-
   const [directBase, setDirectBase] = useState<Currency>("USD");
   useEffect(() => { if (rateMode === "direct" && directBase !== directBaseValue) setDirectBase(directBaseValue); }, [rateMode, directBase, directBaseValue]);
   useEffect(() => { setForm(prev => ({ ...prev, rate: "" })); }, [rateMode, afnForeign, directBaseValue, directCounter]);
-
+  
   const amountFrom = parseAmount(form.amountFrom);
   const rateValue = parseAmount(form.rate);
   const feeValue = parseAmount(form.fee);
-
+  
   const convertedAmount = useMemo(() => {
     try {
       if (!amountFrom) return 0;
@@ -707,39 +663,38 @@ export default function HawalaPage() {
       return 0;
     } catch { return 0; }
   }, [amountFrom, rateValue, rateMode, form.currencyFrom, form.currencyTo, directCounter, directBaseValue]);
-
+  
   const finalAmount = useMemo(() => {
     if (form.feePayer === "receiver") return Math.max(0, convertedAmount - feeValue);
     return Math.max(0, convertedAmount);
   }, [convertedAmount, feeValue, form.feePayer]);
-
+  
   const nextHawalaNumber = getNextTrackingCode();
   const isHerat = form.province === "هرات";
   const destinationText = formatDestination(form.province, form.district);
-
   const totalCount = hawalas.length;
   const pendingCount = hawalas.filter(item => item.status === "pending").length;
   const sentCount = hawalas.filter(item => item.status === "sent").length;
   const paidCount = hawalas.filter(item => item.status === "paid").length;
   const cancelledCount = hawalas.filter(item => item.status === "cancelled").length;
-
+  
   const isSenderCashBox = form.senderId === String(CASH_BOX_ID) || form.senderName.trim() === CASH_BOX_NAME;
   const isReceiverCashBox = form.receiverId === String(CASH_BOX_ID) || form.receiverName.trim() === CASH_BOX_NAME;
   const isSenderExchangeAccount = form.senderId === String(EXCHANGE_ACCOUNT_ID) || form.senderName.trim() === EXCHANGE_ACCOUNT_NAME;
   const isReceiverExchangeAccount = form.receiverId === String(EXCHANGE_ACCOUNT_ID) || form.receiverName.trim() === EXCHANGE_ACCOUNT_NAME;
-
+  
   const selectedSender = useMemo(() => {
     if (isSenderCashBox) return CASH_BOX_CUSTOMER;
     if (isSenderExchangeAccount) return EXCHANGE_ACCOUNT_CUSTOMER;
     return customers.find(c => String(c.id) === String(form.senderId)) || customers.find(c => c.name === form.senderName.trim()) || null;
   }, [customers, form.senderId, form.senderName, isSenderCashBox, isSenderExchangeAccount]);
-
+  
   const selectedReceiver = useMemo(() => {
     if (isReceiverCashBox) return CASH_BOX_CUSTOMER;
     if (isReceiverExchangeAccount) return EXCHANGE_ACCOUNT_CUSTOMER;
     return customers.find(c => String(c.id) === String(form.receiverId)) || customers.find(c => c.name === form.receiverName.trim()) || null;
   }, [customers, form.receiverId, form.receiverName, isReceiverCashBox, isReceiverExchangeAccount]);
-
+  
   const getCalculatedBalances = useCallback((c: Customer | null, isCashBox: boolean) => {
     if (!c) return { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     if (isCashBox) return cashBoxBalances;
@@ -750,14 +705,13 @@ export default function HawalaPage() {
     }
     return newBalances;
   }, [cashEntries, transactions, hawalas, cashBoxBalances, exchangeAccountBalances]);
-
+  
   const matchesSearch = (item: Hawala, query: string) => {
     const q = normalizeDigits(query).trim().toLowerCase();
     if (!q) return true;
     const fields = [item.senderName, item.receiverName, item.number, item.senderPhone, item.receiverPhone, item.receiverTazkira];
     return fields.some(f => f && normalizeDigits(String(f)).toLowerCase().includes(q));
   };
-
   const matchesAmount = (item: Hawala, query: string) => {
     const raw = normalizeDigits(query).replace(/[,،\s]/g, "");
     if (!raw) return true;
@@ -766,7 +720,7 @@ export default function HawalaPage() {
     if (!Number.isNaN(queryNumber)) return values.some(v => typeof v === "number" && (v === queryNumber || String(v).includes(raw)));
     return values.some(v => String(v ?? "").includes(raw));
   };
-
+  
   const currentHawalas = useMemo(() => {
     try {
       let filtered = hawalas.filter(item => item.status === "pending" || item.status === "sent");
@@ -775,7 +729,7 @@ export default function HawalaPage() {
       return sortByHawalaNumber(filtered, sortOrder);
     } catch { return []; }
   }, [hawalas, nameSearch, amountSearch, sortOrder]);
-
+  
   const historyHawalas = useMemo(() => {
     try {
       let filtered = hawalas.filter(item => item.status === "paid" || item.status === "cancelled");
@@ -784,16 +738,15 @@ export default function HawalaPage() {
       return sortByHawalaNumber(filtered, sortOrder);
     } catch { return []; }
   }, [hawalas, nameSearch, amountSearch, sortOrder]);
-
+  
   const showToast = useCallback((message: string) => { setToast(message); setTimeout(() => setToast(""), 3500); }, []);
   const setField = useCallback((field: keyof FormState, value: string) => { setForm(prev => ({ ...prev, [field]: value })); setErrors(prev => ({ ...prev, [field]: undefined })); }, []);
-
   const handleProvinceChange = (event: ChangeEvent<HTMLSelectElement>) => {
     const np = event.target.value;
     setForm(prev => ({ ...prev, province: np, district: np === "هرات" ? "گلران" : np }));
     setErrors(prev => ({ ...prev, province: undefined }));
   };
-
+  
   const validateForm = useCallback(() => {
     const errs: FormErrors = {};
     if (!form.type.trim()) errs.type = "نوع حواله را انتخاب کنید.";
@@ -813,15 +766,14 @@ export default function HawalaPage() {
     if (amountFrom > 0 && rateMode !== "same" && !convertedAmount) errs.rate = "مبلغ تبدیل محاسبه نشد؛ لطفاً نرخ را بررسی کنید.";
     return errs;
   }, [form, amountFrom, feeValue, convertedAmount, rateMode, rateValue, directCounter]);
-
+  
   const handleRegisterClick = useCallback(() => {
     const errs = validateForm();
     setErrors(errs);
     if (Object.keys(errs).length > 0) { showToast("لطفاً فیلدهای ضروری را خانه‌پری کنید."); return; }
     setPreviewOpen(true);
   }, [validateForm, showToast]);
-
-  // ✅ اصلاح: محاسبه موجودی به‌روز مشتریان بعد از هر عملیات
+  
   const getUpdatedCustomerBalances = useCallback((currentCustomers: Customer[], latestEntries: any[], currentTransactions: any[], currentHawalas: any[]): Customer[] => {
     return currentCustomers.map(c => {
       if (String(c.id) === String(CASH_BOX_ID) || String(c.id) === String(EXCHANGE_ACCOUNT_ID)) return c;
@@ -832,7 +784,7 @@ export default function HawalaPage() {
       return { ...c, balances: newBalances };
     });
   }, []);
-
+  
   const confirmRegister = useCallback(async () => {
     if (isSubmittingRef.current) return;
     isSubmittingRef.current = true;
@@ -849,16 +801,16 @@ export default function HawalaPage() {
       const isReceiverCash = form.receiverId === String(CASH_BOX_ID) || receiverName === CASH_BOX_NAME;
       const isSenderExchange = form.senderId === String(EXCHANGE_ACCOUNT_ID) || senderName === EXCHANGE_ACCOUNT_NAME;
       const isReceiverExchange = form.receiverId === String(EXCHANGE_ACCOUNT_ID) || receiverName === EXCHANGE_ACCOUNT_NAME;
-
+      
       const sender = isSenderCash ? CASH_BOX_CUSTOMER : isSenderExchange ? EXCHANGE_ACCOUNT_CUSTOMER : customers.find(c => String(c.id) === String(form.senderId)) || customers.find(c => c.name === senderName) || null;
       const receiver = isReceiverCash ? CASH_BOX_CUSTOMER : isReceiverExchange ? EXCHANGE_ACCOUNT_CUSTOMER : customers.find(c => String(c.id) === String(form.receiverId)) || customers.find(c => c.name === receiverName) || null;
-
+      
       let rateLabel = "";
       const txRate = rateMode === "same" ? 1 : rateValue;
       if (rateMode === "same") rateLabel = "بدون تبدیل";
       if (rateMode === "afn" && afnForeign) rateLabel = afnRateLabel(afnForeign, txRate);
       if (rateMode === "direct" && directCounter) rateLabel = directRateLabel(directBaseValue, directCounter, txRate);
-
+      
       if (editingId) {
         const existing = hawalas.find(x => x.id === editingId);
         if (existing) {
@@ -878,21 +830,20 @@ export default function HawalaPage() {
           updatedEntries = syncCashEntriesForHawalaSettlement("remove", existing, updatedEntries);
           updatedEntries = syncCashEntriesForHawala("add", updated, undefined, updatedEntries);
           if (updated.status === "paid") updatedEntries = syncCashEntriesForHawalaSettlement("add", updated, updatedEntries);
-
+          
           const updatedHawalasList = hawalas.map(x => x.id === editingId ? updated : x);
           const updatedCustomersList = getUpdatedCustomerBalances(customers, updatedEntries, transactions, updatedHawalasList);
-
+          
           setHawalas(updatedHawalasList);
           setCashEntries(updatedEntries);
           setCustomers(updatedCustomersList);
-
           setEditingId(null); setForm(emptyForm); setErrors({}); setPreviewOpen(false);
           setActiveTab(updated.status === "paid" || updated.status === "cancelled" ? "history" : "current");
           showToast("✅ اطلاعات حواله و موجودی حساب‌ها با موفقیت به‌روز شد.");
           return;
         }
       }
-
+      
       const trackingNumber = await consumeTrackingCode();
       const newHawala: Hawala = {
         id: generateId(), number: trackingNumber, date: nowDate.toISOString(), time: "",
@@ -906,15 +857,14 @@ export default function HawalaPage() {
         receiverId: receiver ? String(receiver.id) : undefined, receiverName, receiverTazkira: form.receiverTazkira,
         receiverPhone: form.receiverPhone, receiverAddress: form.receiverAddress, status: "pending" as HawalaStatus
       };
-
+      
       const newEntries = syncCashEntriesForHawala("add", newHawala, undefined, cashEntries);
       const updatedHawalas = [newHawala, ...hawalas];
       const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries, transactions, updatedHawalas);
-
+      
       setHawalas(updatedHawalas);
       setCashEntries(newEntries);
       setCustomers(updatedCustomers);
-
       setLastNames({ senderName, receiverName });
       setForm(emptyForm); setErrors({}); setPreviewOpen(false); setActiveTab("current");
       sendHawalaReceipts({ hawala: newHawala, action: "register", customers: updatedCustomers });
@@ -927,9 +877,8 @@ export default function HawalaPage() {
       setIsSubmitting(false);
     }
   }, [form, rateMode, rateValue, afnForeign, directCounter, directBaseValue, feeValue, amountFrom, destinationText, customers, cashEntries, showToast, finalAmount, editingId, hawalas, transactions, setCustomers, setHawalas, setCashEntries, getUpdatedCustomerBalances]);
-
+  
   const openDetails = useCallback((item: Hawala) => { setDetailTarget(item); setOpenActionId(null); }, []);
-
   const shareHawala = useCallback(async (item: Hawala) => {
     const text = `حواله ${item.number}\nحواله‌دهنده: ${item.senderName}\nحواله‌گیرنده: ${item.receiverName}\nمبلغ: ${fmt(item.finalAmount)} ${labels[item.currencyTo]}\nکمیشن: ${fmt(item.fee)} ${labels[item.feeCurrency]}\nمقصد: ${item.destinationText}\nآدرس گیرنده: ${item.receiverAddress || "-"}\nیادداشت: ${item.note || "-"}`;
     try {
@@ -938,7 +887,7 @@ export default function HawalaPage() {
     } catch {}
     setOpenActionId(null);
   }, [showToast]);
-
+  
   const editHawala = useCallback((item: Hawala) => {
     setEditingId(item.id);
     setForm({
@@ -953,16 +902,14 @@ export default function HawalaPage() {
     setErrors({}); setDetailTarget(null); setOpenActionId(null); setActiveTab("new");
     showToast("حواله برای ویرایش باز شد. اطلاعات مالی پس از ثبت مجدد با همان سند به‌روزرسانی می‌شود.");
   }, [showToast]);
-
+  
   const resetForm = useCallback(() => { setForm(emptyForm); setErrors({}); setEditingId(null); showToast("فورم پاک شد."); }, [showToast]);
-
   const markAsSent = useCallback(async (item: Hawala) => {
     setHawalas(prev => prev.map(h => h.id === item.id ? { ...h, status: "sent" as HawalaStatus } : h));
     showToast("وضعیت حواله به ارسال‌شده تغییر کرد.");
   }, [showToast, setHawalas]);
-
+  
   const openSettlement = useCallback((item: Hawala) => { setSettleTarget(item); setPaidAmount(String(item.finalAmount)); setPaidBy(""); }, []);
-
   const confirmSettlement = useCallback(async () => {
     if (isSettlingRef.current) return;
     if (!settleTarget) return;
@@ -976,20 +923,17 @@ export default function HawalaPage() {
       const newEntries = syncCashEntriesForHawalaSettlement("add", paidHawala, cashEntries);
       const updatedHawalas = hawalas.map(item => item.id === settleTarget.id ? paidHawala : item);
       const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries, transactions, updatedHawalas);
-
       setHawalas(updatedHawalas);
       setCashEntries(newEntries);
       setCustomers(updatedCustomers);
-
       sendHawalaReceipts({ hawala: paidHawala, action: "settle", customers: updatedCustomers });
       setSettleTarget(null);
       showToast("✅ حواله تسویه شد، حساب‌ها به‌روز و رسید ارسال شد");
     } catch (err) { console.error("Settle error:", err); showToast("خطا در تسویه حواله"); }
     finally { isSettlingRef.current = false; setIsSettling(false); }
   }, [settleTarget, paidBy, paidAmount, customers, cashEntries, showToast, hawalas, transactions, setCustomers, setHawalas, setCashEntries, getUpdatedCustomerBalances]);
-
+  
   const openCancel = useCallback((item: Hawala) => { setCancelTarget(item); setCancelReason(""); }, []);
-
   const confirmCancel = useCallback(async () => {
     if (isCancellingRef.current) return;
     if (!cancelTarget) return;
@@ -1002,33 +946,29 @@ export default function HawalaPage() {
       const updatedHawala = { ...cancelTarget, status: "cancelled" as HawalaStatus, cancelReason };
       const updatedHawalas = hawalas.map(item => item.id === cancelTarget.id ? updatedHawala : item);
       const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries2, transactions, updatedHawalas);
-
       setHawalas(updatedHawalas);
       setCashEntries(newEntries2);
       setCustomers(updatedCustomers);
-
       sendHawalaReceipts({ hawala: updatedHawala, action: "cancel", customers: updatedCustomers });
       setCancelTarget(null);
       showToast("✅ حواله ابطال شد، حساب‌ها به‌روز و اطلاعیه ارسال شد");
     } catch (err) { console.error("Cancel error:", err); showToast("خطا در ابطال حواله"); }
     finally { isCancellingRef.current = false; setIsCancelling(false); }
   }, [cancelTarget, cancelReason, customers, cashEntries, showToast, hawalas, transactions, setCustomers, setHawalas, setCashEntries, getUpdatedCustomerBalances]);
-
+  
   const restoreToSent = useCallback(async (item: Hawala) => {
     try {
       const newEntries = syncCashEntriesForHawala("add", item, undefined, cashEntries);
       const restored: Hawala = { ...item, status: "sent" as HawalaStatus, paidAt: undefined, paidBy: undefined, paidAmount: undefined, cancelReason: undefined };
       const updatedHawalas = hawalas.map(h => h.id === item.id ? restored : h);
       const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries, transactions, updatedHawalas);
-
       setHawalas(updatedHawalas);
       setCashEntries(newEntries);
       setCustomers(updatedCustomers);
-
       showToast("حواله به وضعیت ارسال‌شده برگشت و حساب مشتری نیز به‌روز شد.");
     } catch (err) { console.error("Restore error:", err); showToast("خطا در برگشت حواله"); }
   }, [customers, cashEntries, showToast, hawalas, transactions, setCustomers, setHawalas, setCashEntries, getUpdatedCustomerBalances]);
-
+  
   const deleteHawala = useCallback(async (item: Hawala) => {
     const msg = `آیا از حذف کامل حواله ${item.number} مطمئن هستید؟\nاین عملیات قابل بازگشت نیست و حواله از سیستم پاک می‌شود.`;
     if (!window.confirm(msg)) return;
@@ -1037,11 +977,9 @@ export default function HawalaPage() {
       const newEntries2 = syncCashEntriesForHawalaSettlement("remove", item, newEntries1);
       const updatedHawalas = hawalas.filter(h => h.id !== item.id);
       const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries2, transactions, updatedHawalas);
-
       setHawalas(updatedHawalas);
       setCashEntries(newEntries2);
       setCustomers(updatedCustomers);
-
       showToast(`حواله ${item.number} حذف شد و حساب‌های مرتبط به‌روز شد.`);
     } catch (err) { console.error("Delete error:", err); showToast("خطا در حذف حواله"); }
   }, [customers, cashEntries, showToast, hawalas, transactions, setCustomers, setHawalas, setCashEntries, getUpdatedCustomerBalances]);
@@ -1056,7 +994,7 @@ export default function HawalaPage() {
   );
 
   // ============================================================
-  // استایل‌ها
+  // استایل‌ها و رندر کامپوننت (بدون هیچ تغییری نسبت به کد اصلی شما)
   // ============================================================
   const heading = dk ? "text-white" : "text-slate-900";
   const subText = dk ? "text-slate-500" : "text-slate-400";
@@ -1073,7 +1011,6 @@ export default function HawalaPage() {
   const cBlue = { wrap: dk ? "border-blue-400/25 bg-blue-400/[0.07]" : "border-blue-300 bg-blue-50", icon: dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-600", title: dk ? "text-blue-300" : "text-blue-700", badge: dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-700" };
   const cAmber = { wrap: dk ? "border-amber-400/25 bg-amber-400/[0.07]" : "border-amber-300 bg-amber-50", icon: dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600", title: dk ? "text-amber-300" : "text-amber-700", badge: dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-700" };
   const cEmerald = { wrap: dk ? "border-emerald-400/25 bg-emerald-400/[0.07]" : "border-emerald-300 bg-emerald-50", icon: dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600", title: dk ? "text-emerald-300" : "text-emerald-700", badge: dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-700" };
-
   const fld = (label: string, node: ReactNode, cls = "") => (<div className={cls}><label className={uiLabel}>{label}</label>{node}</div>);
   const sel = (value: string, onCh: (v: string) => void, opts: string[][], cls = "") => (
     <div className="relative">
@@ -1109,7 +1046,6 @@ export default function HawalaPage() {
     <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black ${cls}`}>{check && <Ic n="check" className="h-3.5 w-3.5" />}{txt}</span>
   );
 
-  // ✅ کامپوننت نمایش موجودی مشتری
   const CustomerBalanceCard = memo(({ customer, balances, color, isCashBox }: {
     customer: Customer | null;
     balances: Record<Currency, number>;
@@ -1162,13 +1098,11 @@ export default function HawalaPage() {
     );
   });
 
-  // ✅ اصلاح شده: نمایش موجودی در لیست کشویی مشتریان
   const renderCustomerItem = (c: Customer, idx: number, onSelect: (c: Customer) => void, hoverClass: string, gradientClass: string, targetCurrency: Currency) => {
     const isExchangeAcc = String(c.id) === String(EXCHANGE_ACCOUNT_ID);
     const bal = isExchangeAcc ? exchangeAccountBalances[targetCurrency] || 0 : getCustomerBalance(c.id, targetCurrency);
     const balText = bal > 0 ? `${fmt(bal)} طلب` : bal < 0 ? `${fmt(Math.abs(bal))} قرض` : "بدون بدهی";
     const balColor = bal > 0 ? (dk ? "text-emerald-300" : "text-emerald-600") : bal < 0 ? "text-rose-500" : subText;
-
     return (
       <button key={String(c.id)} type="button" onClick={() => onSelect(c)} className={`flex w-full items-center gap-2 px-3 py-2.5 text-right text-xs font-bold transition ${
         isExchangeAcc
@@ -1272,7 +1206,7 @@ export default function HawalaPage() {
               </button>
             </div>
           </header>
-
+          
           <div className="hw-up grid grid-cols-2 md:grid-cols-4 gap-3" style={{ animationDelay: "70ms" }}>
             {[
               { label: "تعداد حواله‌ها", value: totalCount, color: dk ? "text-blue-300" : "text-blue-600" },
@@ -1306,12 +1240,10 @@ export default function HawalaPage() {
                   <p className={`mt-1 text-[11px] font-bold ${subText}`}>معلومات حواله‌دهنده، مقصد و حواله‌گیرنده</p>
                 </div>
               </div>
-
               <div className="grid gap-3 md:grid-cols-2">
                 <CustomerBalanceCard customer={selectedSender} balances={getCalculatedBalances(selectedSender, isSenderCashBox)} color="blue" isCashBox={isSenderCashBox} />
                 <CustomerBalanceCard customer={selectedReceiver} balances={getCalculatedBalances(selectedReceiver, isReceiverCashBox)} color="orange" isCashBox={isReceiverCashBox} />
               </div>
-
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4">
                   <span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-blue-400/15 text-blue-300" : "bg-blue-100 text-blue-600"}`}><Ic n="send" className="h-4 w-4" /></span>
@@ -1383,7 +1315,6 @@ export default function HawalaPage() {
                   {fld("باقی مانده حساب مشتری", (<input className={uiInput} value={form.balance} onChange={e => setField("balance", e.target.value)} placeholder="اختیاری (فقط یادداشت)" />))}
                 </div>
               </div>
-
               {rateMode === "same" && (<div>{sameBox("ارز مبدا و مقصد یکسان است؛ مبلغ نهایی برابر مبلغ حواله خواهد بود.")}</div>)}
               {rateMode === "afn" && afnForeign && (<div>{rateBox(cBlue, "نرخ دستی در برابر افغانی", (
                 <div>
@@ -1418,7 +1349,6 @@ export default function HawalaPage() {
                   {pill(cEmerald.badge, convertedAmount > 0 ? `نتیجه: ${fmt(convertedAmount)} ${labels[form.currencyTo]}` : "")}
                 </>
               ))}</div>)}
-
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4">
                   <span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="rate" className="h-4 w-4" /></span>
@@ -1441,7 +1371,6 @@ export default function HawalaPage() {
                   ))}
                 </div>
               </div>
-
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4">
                   <span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-emerald-400/15 text-emerald-300" : "bg-emerald-100 text-emerald-600"}`}><Ic n="doc" className="h-4 w-4" /></span>
@@ -1453,7 +1382,6 @@ export default function HawalaPage() {
                   {fld("مقصد نهایی", (<input readOnly value={destinationText} className={`${uiInput} ${roInput}`} />))}
                 </div>
               </div>
-
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4">
                   <span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-amber-400/15 text-amber-300" : "bg-amber-100 text-amber-600"}`}><Ic n="receive" className="h-4 w-4" /></span>
@@ -1503,7 +1431,6 @@ export default function HawalaPage() {
                   {fld("آدرس", (<input className={`${uiInput} sm:col-span-2 lg:col-span-3`} value={form.receiverAddress} onChange={e => setField("receiverAddress", e.target.value)} placeholder="اختیاری" />))}
                 </div>
               </div>
-
               <div className={`rounded-2xl border p-4 ${dk ? "border-slate-600 bg-slate-900/50" : "border-slate-200 bg-slate-50"}`}>
                 <div className="flex items-center gap-2.5 mb-4">
                   <span className={`grid h-9 w-9 place-items-center rounded-xl ${dk ? "bg-slate-400/15 text-slate-300" : "bg-slate-100 text-slate-600"}`}><Ic n="info" className="h-4 w-4" /></span>
@@ -1511,9 +1438,7 @@ export default function HawalaPage() {
                 </div>
                 <textarea rows={4} value={form.note} onChange={e => setField("note", e.target.value)} placeholder="یادداشت اختیاری..." className={`${uiInput} h-auto py-3 resize-none`} />
               </div>
-
               {errBox(errorList)}
-
               <div className="flex flex-wrap gap-3">
                 <button onClick={handleRegisterClick} disabled={isSubmitting} className={`group flex h-[50px] md:h-[52px] flex-1 min-w-[200px] cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-base font-black shadow-lg transition-all duration-300 hover:shadow-xl hover:brightness-110 active:scale-[0.985] disabled:opacity-60 disabled:cursor-not-allowed ${dk ? "from-blue-400 to-cyan-400 text-slate-950" : "from-blue-500 via-cyan-500 to-emerald-500 text-white"}`}>
                   {isSubmitting ? (<><Ic n="clock" className="h-5 w-5 animate-spin" /> در حال ثبت...</>) : (<>ثبت حواله<Ic n="arrowLeft" className="h-5 w-5 transition-transform group-hover:-translate-x-1" /></>)}
