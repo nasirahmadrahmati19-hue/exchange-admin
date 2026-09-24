@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useMemo, useState, useRef, useCallback, type ReactNode } from "react";
 import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem } from "../lib/trackingCode";
-import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY } from "../lib/defaultData";
-import { useSyncedState } from "../lib/useSyncedState";
+// ✅ تغییر ۱: حذف کلیدهای قدیمی و هوک قبلی، اضافه کردن هوک جدید
+import { useSafeSyncedState } from "../lib/useSafeSyncedState";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type Customer = { id: string; name: string; phone?: string; tazkira?: string; address?: string; note?: string; telegram?: string; telegramChatId?: string; registeredAt: string; balances: Record<Currency, number>; };
@@ -304,10 +304,11 @@ const Ic = ({ n, className = "h-5 w-5" }: { n: string; className?: string }) => 
 export default function CashPage() {
   const [mounted, setMounted] = useState(false);
   
-  const [entries, setEntries] = useSyncedState<CashEntry[]>(CASH_KEY, []);
-  const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
-  const [transactions, setTransactions] = useSyncedState<Transaction[]>(TRANSACTIONS_KEY, []);
-  const [hawalas, setHawalas] = useSyncedState<Hawala[]>(HAWALAS_KEY, []);
+  // ✅ تغییر ۲: استفاده از هوک جدید و نام‌های کالکشن استاندارد
+  const [entries, setEntries] = useSafeSyncedState<CashEntry>("cash_entries", []);
+  const [customers, setCustomers] = useSafeSyncedState<Customer>("customers", []);
+  const [transactions] = useSafeSyncedState<Transaction>("transactions", []);
+  const [hawalas] = useSafeSyncedState<Hawala>("hawalas", []);
   
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [activeTab, setActiveTab] = useState<"register" | "ledger">("register");
@@ -353,9 +354,6 @@ export default function CashPage() {
     return () => document.removeEventListener("mousedown", handler);
   }, [openActionId]);
 
-  // ✅ اصلاح شده: ترتیب محاسبات دقیقاً مطابق داشبورد برای تضمین یکسانی اعداد
-  
-  // ۱. مجموع طلب مشتریان (فقط مقادیر مثبت)
   const customerDeposits = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
@@ -368,7 +366,6 @@ export default function CashPage() {
     return totals;
   }, [customers, entries, transactions]);
 
-  // ۲. مجموع بدهی مشتریان (فقط مقادیر منفی)
   const customerDebts = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const c of customers) {
@@ -381,7 +378,6 @@ export default function CashPage() {
     return totals;
   }, [customers, entries, transactions]);
 
-  // ۳. موجودی حساب صرافی (واریز/برداشت مالک - بدهی مشتریان)
   const exchangeBalance = useMemo(() => {
     const bal: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const cur of currencies) {
@@ -396,7 +392,6 @@ export default function CashPage() {
     return bal;
   }, [entries, customerDebts]);
 
-  // ✅ ۴. موجودی فیزیکی صندوق = حساب صرافی + طلب مشتریان (دقیقاً مطابق فرمول داشبورد)
   const physicalCashBalances = useMemo(() => {
     const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const cur of currencies) {
@@ -534,18 +529,17 @@ export default function CashPage() {
       const updatedEntriesForEdit = recomputeCashBalances(entries.map(e => e.id === editingEntryId ? updated : e));
       setEntries(updatedEntriesForEdit);
       finalEntry = updated;
-} else {
-  // ✅ اضافه شدن await برای دریافت کد پیگیری از سرور فایربیس
-  const newTrackingCode = await consumeTrackingCode();
-  
-  const entry = { ...previewData, trackingCode: newTrackingCode, status: "active" as const };
-  if (entry.customerId && entry.customerId !== CASH_BOX_ID) { const cust = customers.find(c => c.id === entry.customerId); if (cust) { entry.customerPhone = cust.phone || ""; entry.customerTazkira = cust.tazkira || ""; } }
-  updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForCashEntry(entry, "register"));
-  
-  const updatedEntriesForNew = recomputeCashBalances([...entries, entry]);
-  setEntries(updatedEntriesForNew);
-  finalEntry = entry;
-}
+    } else {
+      const newTrackingCode = await consumeTrackingCode();
+      
+      const entry = { ...previewData, trackingCode: newTrackingCode, status: "active" as const };
+      if (entry.customerId && entry.customerId !== CASH_BOX_ID) { const cust = customers.find(c => c.id === entry.customerId); if (cust) { entry.customerPhone = cust.phone || ""; entry.customerTazkira = cust.tazkira || ""; } }
+      updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForCashEntry(entry, "register"));
+      
+      const updatedEntriesForNew = recomputeCashBalances([...entries, entry]);
+      setEntries(updatedEntriesForNew);
+      finalEntry = entry;
+    }
     setCustomers(updatedCustomers);
     setForm(emptyForm); setErrors({}); setEditingEntryId(null); setPreviewOpen(false); setPreviewData(null);
     await sendCashReceipts({ entry: finalEntry, action: "register", customers: updatedCustomers });
