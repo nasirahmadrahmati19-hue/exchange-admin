@@ -1,14 +1,15 @@
 "use client";
 import { useEffect, useMemo, useState, useRef, useCallback, type ReactNode } from "react";
-import { useSyncedState } from "../lib/useSyncedState";
+// ✅ تغییر ۱: حذف useSyncedState و کلیدهای قدیمی، اضافه کردن هوک جدید
+import { useSafeSyncedState } from "../lib/useSafeSyncedState";
 import { initTrackingSystem } from "../lib/trackingCode";
-import { CUSTOMERS_KEY, TRANSACTIONS_KEY, HAWALAS_KEY, CASH_KEY } from "../lib/defaultData";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
-type Customer = { id: string; name: string; phone?: string; tazkira?: string; address?: string; note?: string; telegram?: string; registeredAt: string; balances: Record<Currency, number>; };
+// ✅ تغییر ۲: id به صورت string | number برای یکپارچگی با سایر تب‌ها
+type Customer = { id: string | number; name: string; phone?: string; tazkira?: string; address?: string; note?: string; telegram?: string; registeredAt: string; balances: Record<Currency, number>; };
 type TxType = "exchange" | "transfer" | "convert" | "hawala" | "deposit" | "withdraw" | "fee" | "correction";
 type CashEntryType = "customer_deposit" | "customer_withdraw" | "owner_deposit" | "owner_withdraw" | "adjustment" | "fee" | "commission_withdraw" | "loan_given" | "loan_received";
-type LedgerEntry = { id: string; date: string; customerId: string; type: TxType; description: string; currency: Currency; amount: number; direction: "in" | "out"; balanceAfter: number; referenceId?: string; referenceNumber?: string; counterPartyId?: string; };
+type LedgerEntry = { id: string; date: string; customerId: string | number; type: TxType; description: string; currency: Currency; amount: number; direction: "in" | "out"; balanceAfter: number; referenceId?: string; referenceNumber?: string; counterPartyId?: string | number; };
 type FormState = { name: string; tazkira: string; phone: string; address: string; note: string; telegram: string; };
 type FormErrors = Partial<Record<keyof FormState, string>>;
 
@@ -183,23 +184,24 @@ function timeLabel(s: string) { try { const d = new Date(s); if (Number.isNaN(d.
 
 const emptyForm: FormState = { name: "", tazkira: "", phone: "", address: "", note: "", telegram: "" };
 
-function getLedgerBalance(customerId: string, currency: Currency, cashEntries: any[], ledger: LedgerEntry[]): number {
+function getLedgerBalance(customerId: string | number, currency: Currency, cashEntries: any[], ledger: LedgerEntry[]): number {
   let balance = 0;
-  if (customerId === CASH_BOX_ID) {
+  const strCustomerId = String(customerId);
+  if (strCustomerId === CASH_BOX_ID) {
     for (const e of cashEntries) {
       if (e.status === "voided" || e.currency !== currency) continue;
       balance += e.direction === "in" ? e.amount : -e.amount;
     }
-  } else if (customerId === EXCHANGE_ACCOUNT_ID) {
+  } else if (strCustomerId === EXCHANGE_ACCOUNT_ID) {
     for (const e of cashEntries) {
       if (e.status === "voided" || e.currency !== currency) continue;
-      if (e.customerId === EXCHANGE_ACCOUNT_ID) {
+      if (String(e.customerId) === EXCHANGE_ACCOUNT_ID) {
         balance += e.direction === "in" ? e.amount : -e.amount;
       }
     }
   } else {
     for (const e of ledger) {
-      if (e.customerId === customerId && e.currency === currency) {
+      if (String(e.customerId) === strCustomerId && e.currency === currency) {
         balance += e.direction === "in" ? e.amount : -e.amount;
       }
     }
@@ -232,11 +234,11 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
       const sId = tx.senderId || customers.find(c => c.name === (tx.senderName || tx.senderId))?.id;
       const rId = tx.receiverId || customers.find(c => c.name === (tx.receiverName || tx.receiverId))?.id;
       if (sId && isCurrency(fromCur)) {
-        entries.push({ id: `${tx.id}-s-out`, date, customerId: sId, type: "transfer", description: `انتقال ${labels[fromCur]} به ${customers.find(c => c.id === rId)?.name || tx.receiverName || "—"}`, currency: fromCur, amount: fromAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum, counterPartyId: rId });
+        entries.push({ id: `${tx.id}-s-out`, date, customerId: sId, type: "transfer", description: `انتقال ${labels[fromCur]} به ${customers.find(c => String(c.id) === String(rId))?.name || tx.receiverName || "—"}`, currency: fromCur, amount: fromAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum, counterPartyId: rId });
         if (tx.commissionPayer === "sender" && commAmt > 0 && isCurrency(commCur)) entries.push({ id: `${tx.id}-s-fee`, date, customerId: sId, type: "fee", description: "کارمزد انتقال", currency: commCur, amount: commAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
       }
       if (rId && isCurrency(toCur)) {
-        entries.push({ id: `${tx.id}-r-in`, date, customerId: rId, type: "transfer", description: `دریافت ${labels[toCur]} از ${customers.find(c => c.id === sId)?.name || tx.senderName || "—"}`, currency: toCur, amount: toAmt, direction: "in", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum, counterPartyId: sId });
+        entries.push({ id: `${tx.id}-r-in`, date, customerId: rId, type: "transfer", description: `دریافت ${labels[toCur]} از ${customers.find(c => String(c.id) === String(sId))?.name || tx.senderName || "—"}`, currency: toCur, amount: toAmt, direction: "in", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum, counterPartyId: sId });
         if (tx.commissionPayer === "receiver" && commAmt > 0 && isCurrency(commCur)) entries.push({ id: `${tx.id}-r-fee`, date, customerId: rId, type: "fee", description: "کارمزد انتقال", currency: commCur, amount: commAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
       }
     }
@@ -254,8 +256,8 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
     if (!h || typeof h !== "object") continue;
     if (h.status === "cancelled") continue;
     const date = h.date || new Date().toISOString(), refNum = h.number || "";
-    const sender = customers.find(c => c.id === h.senderId) || customers.find(c => c.name === h.senderName);
-    const receiver = customers.find(c => c.id === h.receiverId) || customers.find(c => c.name === h.receiverName);
+    const sender = customers.find(c => String(c.id) === String(h.senderId)) || customers.find(c => c.name === h.senderName);
+    const receiver = customers.find(c => String(c.id) === String(h.receiverId)) || customers.find(c => c.name === h.receiverName);
     const hFromCur = h.currencyFrom as Currency, hToCur = h.currencyTo as Currency, hFeeCur = h.feeCurrency as Currency;
     const hAmt = Number(h.amountFrom || 0) || 0, hFinal = Number(h.finalAmount || 0) || 0, hFee = Number(h.fee || 0) || 0;
 
@@ -274,7 +276,7 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
     if (ce.linkedHawalaId || ce.linkedHawalaSettleId || ce.linkedExchangeId || ce.linkedTransferId || ce.linkedConvertId) continue;
     if (ce.type !== "customer_deposit" && ce.type !== "customer_withdraw" && ce.type !== "loan_given" && ce.type !== "loan_received") continue;
     if (!ce.customerId) continue;
-    if (!customers.find(c => c.id === ce.customerId) && ce.customerId !== EXCHANGE_ACCOUNT_ID) continue;
+    if (!customers.find(c => String(c.id) === String(ce.customerId)) && String(ce.customerId) !== EXCHANGE_ACCOUNT_ID) continue;
 
     const cur = ce.currency as Currency; if (!isCurrency(cur)) continue;
     const amt = Number(ce.amount || 0) || 0; if (amt <= 0) continue;
@@ -293,13 +295,13 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
   entries.sort((a, b) => { try { return new Date(a.date).getTime() - new Date(b.date).getTime(); } catch { return 0; } });
 
   const rb: Record<string, Record<Currency, number>> = {};
-  for (const c of customers) rb[c.id] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+  for (const c of customers) rb[String(c.id)] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
   rb[EXCHANGE_ACCOUNT_ID] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
   for (const e of entries) {
-    if (!rb[e.customerId]) rb[e.customerId] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+    if (!rb[String(e.customerId)]) rb[String(e.customerId)] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     if (!isCurrency(e.currency)) continue;
-    rb[e.customerId][e.currency] += e.direction === "in" ? e.amount : -e.amount;
-    e.balanceAfter = rb[e.customerId][e.currency];
+    rb[String(e.customerId)][e.currency] += e.direction === "in" ? e.amount : -e.amount;
+    e.balanceAfter = rb[String(e.customerId)][e.currency];
   }
   return entries;
 }
@@ -330,10 +332,12 @@ function buildCashBoxLedger(cashEntries: any[]): LedgerEntry[] {
 
 export default function CustomersPage() {
   const [mounted, setMounted] = useState(false);
-  const [customers, setCustomers, isLoadingCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
-  const [transactions, setTransactions] = useSyncedState<any[]>(TRANSACTIONS_KEY, []);
-  const [hawalas, setHawalas] = useSyncedState<any[]>(HAWALAS_KEY, []);
-  const [cashEntries, setCashEntries] = useSyncedState<any[]>(CASH_KEY, []);
+  
+  // ✅ تغییر ۳: استفاده از هوک جدید و نام‌های کالکشن استاندارد
+  const [customers, setCustomers, isLoadingCustomers] = useSafeSyncedState<Customer>("customers", []);
+  const [transactions, setTransactions] = useSafeSyncedState<any>("transactions", []);
+  const [hawalas, setHawalas] = useSafeSyncedState<any>("hawalas", []);
+  const [cashEntries, setCashEntries] = useSafeSyncedState<any>("cash_entries", []);
 
   const [activeTab, setActiveTab] = useState<"list" | "new" | "profile">("list");
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
@@ -387,13 +391,13 @@ export default function CustomersPage() {
 
   const allBalances = useMemo(() => {
     const map: Record<string, Record<Currency, number>> = {};
-    customers.forEach(c => { if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) { map[c.id] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; } });
+    customers.forEach(c => { if (String(c.id) !== CASH_BOX_ID && String(c.id) !== EXCHANGE_ACCOUNT_ID) { map[String(c.id)] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 }; } });
     map[CASH_BOX_ID] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     map[EXCHANGE_ACCOUNT_ID] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
 
     for (const c of customers) {
-      if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) {
-        for (const cur of currencies) { map[c.id][cur] = getLedgerBalance(c.id, cur, cashEntries, ledger); }
+      if (String(c.id) !== CASH_BOX_ID && String(c.id) !== EXCHANGE_ACCOUNT_ID) {
+        for (const cur of currencies) { map[String(c.id)][cur] = getLedgerBalance(c.id, cur, cashEntries, ledger); }
       }
     }
     map[EXCHANGE_ACCOUNT_ID] = {
@@ -405,7 +409,7 @@ export default function CustomersPage() {
     };
     for (const cur of currencies) {
       let cashBoxTotal = 0;
-      for (const c of customers) { if (c.id !== CASH_BOX_ID && c.id !== EXCHANGE_ACCOUNT_ID) { cashBoxTotal += map[c.id][cur]; } }
+      for (const c of customers) { if (String(c.id) !== CASH_BOX_ID && String(c.id) !== EXCHANGE_ACCOUNT_ID) { cashBoxTotal += map[String(c.id)][cur]; } }
       cashBoxTotal += map[EXCHANGE_ACCOUNT_ID][cur];
       map[CASH_BOX_ID][cur] = cashBoxTotal;
     }
@@ -418,9 +422,9 @@ export default function CustomersPage() {
     const q = normalizeDigits(search.trim()).toLowerCase();
 
     const filtered = customers.filter(c => {
-      if (c.id === EXCHANGE_ACCOUNT_ID) return false;
+      if (String(c.id) === EXCHANGE_ACCOUNT_ID) return false;
       if (!q) return true;
-      return [c.name, c.phone || "", c.tazkira || "", c.telegram || "", c.id].some(f => normalizeDigits(String(f)).toLowerCase().includes(q));
+      return [c.name, c.phone || "", c.tazkira || "", c.telegram || "", String(c.id)].some(f => normalizeDigits(String(f)).toLowerCase().includes(q));
     });
 
     const result: Customer[] = [];
@@ -436,17 +440,17 @@ export default function CustomersPage() {
     return customers.find(c => String(c.id) === String(selectedCustomerId)) || null;
   }, [customers, selectedCustomerId]);
 
-  const isCashBox = selectedCustomer?.id === CASH_BOX_ID;
-  const isExchangeAccount = selectedCustomer?.id === EXCHANGE_ACCOUNT_ID;
+  const isCashBox = String(selectedCustomer?.id) === CASH_BOX_ID;
+  const isExchangeAccount = String(selectedCustomer?.id) === EXCHANGE_ACCOUNT_ID;
 
   const customerBalances = useMemo(() => {
     if (!selectedCustomer) return null;
-    return allBalances[selectedCustomer.id];
+    return allBalances[String(selectedCustomer.id)];
   }, [selectedCustomer, allBalances]);
 
   const customerLedger = useMemo(() => {
     if (selectedCustomerId === CASH_BOX_ID || selectedCustomerId === CASH_BOX_NAME) return cashBoxLedger;
-    if (selectedCustomerId === EXCHANGE_ACCOUNT_ID) return ledger.filter(e => e.customerId === EXCHANGE_ACCOUNT_ID);
+    if (selectedCustomerId === EXCHANGE_ACCOUNT_ID) return ledger.filter(e => String(e.customerId) === EXCHANGE_ACCOUNT_ID);
     return ledger.filter(e => String(e.customerId) === String(selectedCustomerId));
   }, [ledger, cashBoxLedger, selectedCustomerId]);
 
@@ -464,15 +468,15 @@ export default function CustomersPage() {
     }).reverse();
   }, [customerLedger, ledgerSearch, ledgerTypeFilter, ledgerCurrencyFilter, ledgerDirFilter]);
 
-  const withBalanceCount = customers.filter(c => c.id !== EXCHANGE_ACCOUNT_ID && currencies.some(cur => allBalances[c.id][cur] !== 0)).length;
-  const withoutBalanceCount = customers.filter(c => c.id !== EXCHANGE_ACCOUNT_ID && currencies.every(cur => allBalances[c.id][cur] === 0)).length;
+  const withBalanceCount = customers.filter(c => String(c.id) !== EXCHANGE_ACCOUNT_ID && currencies.some(cur => allBalances[String(c.id)][cur] !== 0)).length;
+  const withoutBalanceCount = customers.filter(c => String(c.id) !== EXCHANGE_ACCOUNT_ID && currencies.every(cur => allBalances[String(c.id)][cur] === 0)).length;
 
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(""), 3500); };
   const openProfile = (id: string) => { setSelectedCustomerId(id); setProfileTab("info"); setActiveTab("profile"); setOpenMenuId(null); };
   const backToList = () => { setActiveTab("list"); setSelectedCustomerId(null); };
 
   const processCashOperation = () => {
-    if (!selectedCustomer || selectedCustomer.id === CASH_BOX_ID || selectedCustomer.id === EXCHANGE_ACCOUNT_ID) {
+    if (!selectedCustomer || String(selectedCustomer.id) === CASH_BOX_ID || String(selectedCustomer.id) === EXCHANGE_ACCOUNT_ID) {
       showToast("این عملیات فقط برای مشتریان عادی امکان‌پذیر است.");
       return;
     }
@@ -499,7 +503,7 @@ export default function CustomersPage() {
   };
 
   const processLoan = () => {
-    if (!selectedCustomer || selectedCustomer.id === CASH_BOX_ID || selectedCustomer.id === EXCHANGE_ACCOUNT_ID) {
+    if (!selectedCustomer || String(selectedCustomer.id) === CASH_BOX_ID || String(selectedCustomer.id) === EXCHANGE_ACCOUNT_ID) {
       showToast("فقط برای مشتریان واقعی قابل انجام است."); return;
     }
     const amt = Number(normalizeDigits(loanAmount).replace(/,/g, ""));
@@ -523,9 +527,8 @@ export default function CustomersPage() {
     showToast(loanModalType === "give" ? `✅ ${fmt(amt)} ${labels[loanCurrency]} به "${selectedCustomer.name}" قرض داده شد.` : `✅ ${fmt(amt)} ${labels[loanCurrency]} از "${selectedCustomer.name}" دریافت شد.`);
   };
 
-  // ✅✅✅ تابع حذف کامل (Hard Delete) اصلاح‌شده و ضدباگ ✅✅✅
-  const deleteCustomer = (id: string) => {
-    if (id === CASH_BOX_ID || id === EXCHANGE_ACCOUNT_ID) return;
+  const deleteCustomer = (id: string | number) => {
+    if (String(id) === CASH_BOX_ID || String(id) === EXCHANGE_ACCOUNT_ID) return;
     setOpenMenuId(null);
     const c = customers.find(x => String(x.id) === String(id));
     if (!c) return;
@@ -540,7 +543,6 @@ export default function CustomersPage() {
     const normalizedName = c.name.trim();
 
     try {
-      // ۱. حذف تمام تراکنش‌های مرتبط (با مقایسه ایمن رشته‌ای)
       setTransactions(prev => prev.filter((t: any) => {
         const tCustId = String(t.customerId || "");
         const tSenderId = String(t.senderId || "");
@@ -553,7 +555,6 @@ export default function CustomersPage() {
                tCustName !== normalizedName && tSenderName !== normalizedName && tReceiverName !== normalizedName;
       }));
 
-      // ۲. حذف تمام حواله‌های مرتبط
       setHawalas(prev => prev.filter((h: any) => {
         const hSenderId = String(h.senderId || "");
         const hReceiverId = String(h.receiverId || "");
@@ -564,7 +565,6 @@ export default function CustomersPage() {
                hSenderName !== normalizedName && hReceiverName !== normalizedName;
       }));
 
-      // ۳. حذف تمام اسناد صندوق (روزنامه) مرتبط
       setCashEntries(prev => prev.filter((ce: any) => {
         const ceCustId = String(ce.customerId || "");
         const ceCustName = String(ce.customerName || "").trim();
@@ -572,7 +572,6 @@ export default function CustomersPage() {
         return ceCustId !== strId && ceCustName !== normalizedName;
       }));
 
-      // ۴. حذف خود مشتری از لیست اصلی
       setCustomers(prev => prev.filter(x => String(x.id) !== strId));
 
       if (selectedCustomerId === id) {
@@ -592,8 +591,8 @@ export default function CustomersPage() {
     if (!form.name.trim()) errs.name = "نام ضروری است.";
     if (!form.phone.trim()) errs.phone = "تماس ضروری است.";
     const currentId = selectedCustomer?.id;
-    if (customers.find(c => c.phone === form.phone.trim() && c.id !== EXCHANGE_ACCOUNT_ID && c.id !== currentId)) errs.phone = "تکراری است.";
-    if (form.tazkira.trim() && customers.find(c => c.tazkira === form.tazkira.trim() && c.id !== EXCHANGE_ACCOUNT_ID && c.id !== currentId)) errs.tazkira = "تکراری است.";
+    if (customers.find(c => c.phone === form.phone.trim() && String(c.id) !== EXCHANGE_ACCOUNT_ID && String(c.id) !== String(currentId))) errs.phone = "تکراری است.";
+    if (form.tazkira.trim() && customers.find(c => c.tazkira === form.tazkira.trim() && String(c.id) !== EXCHANGE_ACCOUNT_ID && String(c.id) !== String(currentId))) errs.tazkira = "تکراری است.";
     return errs;
   };
 
@@ -611,7 +610,7 @@ export default function CustomersPage() {
     if (!selectedCustomer || isCashBox || isExchangeAccount) return;
     const oldName = selectedCustomer.name;
     const newName = form.name.trim();
-    setCustomers(p => p.map(c => c.id === selectedCustomer.id ? { ...c, name: newName, phone: form.phone.trim(), tazkira: form.tazkira.trim(), address: form.address.trim(), note: form.note.trim(), telegram: form.telegram.trim() } : c));
+    setCustomers(p => p.map(c => String(c.id) === String(selectedCustomer.id) ? { ...c, name: newName, phone: form.phone.trim(), tazkira: form.tazkira.trim(), address: form.address.trim(), note: form.note.trim(), telegram: form.telegram.trim() } : c));
     if (oldName !== newName) {
       setTransactions(prev => prev.map((t: any) => { const u = { ...t }; if (t.customerName === oldName) u.customerName = newName; if (t.senderName === oldName) u.senderName = newName; if (t.receiverName === oldName) u.receiverName = newName; return u; }));
       setHawalas(prev => prev.map((h: any) => { const u = { ...h }; if (h.senderName === oldName) u.senderName = newName; if (h.receiverName === oldName) u.receiverName = newName; return u; }));
@@ -620,7 +619,7 @@ export default function CustomersPage() {
     showToast("به‌روز شد.");
   };
 
-  useEffect(() => { if (profileTab === "info" && selectedCustomer && selectedCustomer.id !== CASH_BOX_ID && selectedCustomer.id !== EXCHANGE_ACCOUNT_ID) { setForm({ name: selectedCustomer.name, phone: selectedCustomer.phone || "", tazkira: selectedCustomer.tazkira || "", address: selectedCustomer.address || "", note: selectedCustomer.note || "", telegram: selectedCustomer.telegram || "" }); } }, [profileTab, selectedCustomer]);
+  useEffect(() => { if (profileTab === "info" && selectedCustomer && String(selectedCustomer.id) !== CASH_BOX_ID && String(selectedCustomer.id) !== EXCHANGE_ACCOUNT_ID) { setForm({ name: selectedCustomer.name, phone: selectedCustomer.phone || "", tazkira: selectedCustomer.tazkira || "", address: selectedCustomer.address || "", note: selectedCustomer.note || "", telegram: selectedCustomer.telegram || "" }); } }, [profileTab, selectedCustomer]);
 
   const printStatement = () => {
     if (!selectedCustomer || !customerBalances) return;
@@ -683,7 +682,7 @@ export default function CustomersPage() {
 
           <div className="cu-up grid grid-cols-2 md:grid-cols-5 gap-3">
             {[
-              { label: "کل مشتریان", value: customers.filter(c => c.id !== EXCHANGE_ACCOUNT_ID).length, color: "from-emerald-500 to-teal-500", text: dk ? "text-emerald-300" : "text-emerald-600" },
+              { label: "کل مشتریان", value: customers.filter(c => String(c.id) !== EXCHANGE_ACCOUNT_ID).length, color: "from-emerald-500 to-teal-500", text: dk ? "text-emerald-300" : "text-emerald-600" },
               { label: "رویدادهای مالی", value: ledger.length + cashBoxLedger.length, color: "from-amber-500 to-orange-500", text: dk ? "text-amber-300" : "text-amber-600" },
               { label: "با موجودی", value: withBalanceCount, color: "from-sky-500 to-cyan-500", text: dk ? "text-sky-300" : "text-sky-600" },
               { label: "بدون موجودی", value: withoutBalanceCount, color: "from-rose-500 to-pink-500", text: dk ? "text-rose-300" : "text-rose-600" },
@@ -722,11 +721,11 @@ export default function CustomersPage() {
 
               <div className="md:hidden space-y-3">
                 {filteredCustomers.map(c => {
-                  const isCashBoxRow = c.id === CASH_BOX_ID;
-                  const isExchRow = c.id === EXCHANGE_ACCOUNT_ID;
+                  const isCashBoxRow = String(c.id) === CASH_BOX_ID;
+                  const isExchRow = String(c.id) === EXCHANGE_ACCOUNT_ID;
 
                   return (
-                    <div key={c.id} className={`rounded-2xl border p-4 ${glassCard} ${isCashBoxRow ? (dk ? "border-emerald-400/30" : "border-emerald-200") : ""} ${isExchRow ? (dk ? "border-violet-400/30" : "border-violet-200") : ""}`}>
+                    <div key={String(c.id)} className={`rounded-2xl border p-4 ${glassCard} ${isCashBoxRow ? (dk ? "border-emerald-400/30" : "border-emerald-200") : ""} ${isExchRow ? (dk ? "border-violet-400/30" : "border-violet-200") : ""}`}>
                       <div className="flex items-start gap-3">
                         <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-gradient-to-br ${isCashBoxRow ? "from-emerald-500 to-teal-500" : isExchRow ? "from-violet-500 to-purple-500" : "from-emerald-500 to-teal-500"} text-white font-black text-lg shadow-lg`}>
                           {isCashBoxRow ? "💰" : isExchRow ? "🏦" : c.name.charAt(0)}
@@ -748,7 +747,7 @@ export default function CustomersPage() {
                         <div className="text-[10px] font-black text-slate-400 mb-2 text-center">موجودی حساب:</div>
                         <div className="flex flex-wrap gap-2 justify-center">
                           {currencies.map(cur => {
-                            const balance = allBalances[c.id][cur];
+                            const balance = allBalances[String(c.id)][cur];
                             const isPositive = balance >= 0;
                             const colorClass = isPositive ? currencyColors[cur][dk ? "dark" : "light"] : "text-rose-500 bg-rose-50 dark:bg-rose-900/20";
                             return (
@@ -762,7 +761,7 @@ export default function CustomersPage() {
                       </div>
 
                       <div className="flex flex-col gap-1.5 mt-3">
-                        <button onClick={() => openProfile(c.id)} className={`flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-bold cursor-pointer ${dk ? "border-emerald-400/30 text-emerald-300" : "border-emerald-300 text-emerald-600"}`}>
+                        <button onClick={() => openProfile(String(c.id))} className={`flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-bold cursor-pointer ${dk ? "border-emerald-400/30 text-emerald-300" : "border-emerald-300 text-emerald-600"}`}>
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
                           مشاهده پرونده
                         </button>
@@ -784,11 +783,11 @@ export default function CustomersPage() {
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                     {filteredCustomers.map(c => (
-                      <tr key={c.id} className={`transition-colors hover:${dk ? "bg-slate-800/50" : "bg-slate-50"}`}>
+                      <tr key={String(c.id)} className={`transition-colors hover:${dk ? "bg-slate-800/50" : "bg-slate-50"}`}>
                         <td className="px-4 py-3">
                           <div className="font-bold text-slate-800 dark:text-slate-100">{c.name}</div>
-                          {c.id === CASH_BOX_ID && <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">صندوق</span>}
-                          {c.id === EXCHANGE_ACCOUNT_ID && <span className="text-[10px] text-violet-600 dark:text-violet-400 font-bold">حساب صرافی</span>}
+                          {String(c.id) === CASH_BOX_ID && <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">صندوق</span>}
+                          {String(c.id) === EXCHANGE_ACCOUNT_ID && <span className="text-[10px] text-violet-600 dark:text-violet-400 font-bold">حساب صرافی</span>}
                         </td>
                         <td className="px-4 py-3 text-slate-500">
                           <div dir="ltr" className="text-xs font-mono">{c.phone || "-"}</div>
@@ -797,7 +796,7 @@ export default function CustomersPage() {
                         <td className="px-4 py-3 text-center">
                           <div className="flex flex-wrap gap-2 justify-center items-center">
                             {currencies.map(cur => {
-                              const balance = allBalances[c.id][cur];
+                              const balance = allBalances[String(c.id)][cur];
                               const isPositive = balance >= 0;
                               const colorClass = isPositive ? currencyColors[cur][dk ? "dark" : "light"] : "text-rose-500 bg-rose-50 dark:bg-rose-900/20";
                               return (
@@ -810,7 +809,7 @@ export default function CustomersPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3 text-center">
-                          <button onClick={() => openProfile(c.id)} className="inline-flex items-center gap-1.5 rounded-lg bg-sky-50 dark:bg-sky-900/20 px-3 py-1.5 text-xs font-bold text-sky-600 dark:text-sky-400 transition-colors hover:bg-sky-100 dark:hover:bg-sky-900/40">
+                          <button onClick={() => openProfile(String(c.id))} className="inline-flex items-center gap-1.5 rounded-lg bg-sky-50 dark:bg-sky-900/20 px-3 py-1.5 text-xs font-bold text-sky-600 dark:text-sky-400 transition-colors hover:bg-sky-100 dark:hover:bg-sky-900/40">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
                             پرونده
                           </button>
@@ -843,7 +842,7 @@ export default function CustomersPage() {
                 </div>
                 <div>
                   <label className="block text-xs font-bold mb-1">تلگرام</label>
-                  <input className={uiInput} value={form.telegram} onChange={e => setForm({ ...form, telegram: e.target.value })} placeholder="@username" />
+                  <TelegramChatIdSelector value={form.telegram} onChange={(v) => setForm({ ...form, telegram: v })} uiInput={uiInput} dk={dk} />
                 </div>
                 <div className="md:col-span-2">
                   <label className="block text-xs font-bold mb-1">آدرس</label>
@@ -931,7 +930,7 @@ export default function CustomersPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                        {customerLedger.slice().reverse().map((e) => (
+                        {filteredLedger.map((e) => (
                           <tr key={e.id} className={`transition-colors ${dk ? "hover:bg-slate-800/50" : "hover:bg-slate-50"}`}>
                             <td className="px-3 py-3 text-xs font-mono whitespace-nowrap">
                               <div>{shortDateLabel(e.date)}</div>
