@@ -124,7 +124,8 @@ const globalCache = new Map<string, CacheEntry>();
 // هوک اصلی (Main Hook)
 // ============================================================
 
-export function useSafeSyncedState<T extends { id: string }>(
+// ✅ تغییر حیاتی: اجازه دادن به id از نوع string یا number
+export function useSafeSyncedState<T extends { id: string | number }>(
   collectionName: string, 
   initialValue: T[]
 ) {
@@ -144,10 +145,6 @@ export function useSafeSyncedState<T extends { id: string }>(
     dataRef.current = data; 
   }, [data]);
 
-  // ============================================================
-  // بارگذاری اولیه و گوش‌دادن به تغییرات (Initial Load & Listener)
-  // ============================================================
-
   useEffect(() => {
     isMountedRef.current = true;
     let ignore = false;
@@ -156,7 +153,6 @@ export function useSafeSyncedState<T extends { id: string }>(
       const colRef = collection(db, collectionName);
 
       try {
-        // ۱. تلاش برای خواندن از کش محلی (برای سرعت اولیه)
         const localData = readFromLS(collectionName) ?? (await readFromIDB(collectionName));
         
         if (localData && hasData(localData) && !cached?.loaded) {
@@ -167,7 +163,6 @@ export function useSafeSyncedState<T extends { id: string }>(
           }
         }
 
-        // ۲. گوش دادن به تغییرات بلادرنگ از فایربیس
         const unsubscribe = onSnapshot(colRef, (snapshot) => {
           if (!isMountedRef.current || ignore) return;
 
@@ -176,7 +171,6 @@ export function useSafeSyncedState<T extends { id: string }>(
             ...doc.data()
           })) as T[];
 
-          // مرتب‌سازی بر اساس updatedAt یا createdAt (جدیدترین اول)
           newData.sort((a, b) => {
             const aTime = (a as any).updatedAt || (a as any).createdAt || 0;
             const bTime = (b as any).updatedAt || (b as any).createdAt || 0;
@@ -192,7 +186,6 @@ export function useSafeSyncedState<T extends { id: string }>(
             setError(null);
             setIsLoading(false);
 
-            // ذخیره در کش سراسری
             globalCache.set(collectionName, { 
               value: newData, 
               lastUpdated: now, 
@@ -200,7 +193,6 @@ export function useSafeSyncedState<T extends { id: string }>(
               itemCount: newData.length 
             });
 
-            // ذخیره در کش محلی
             saveToLS(collectionName, newData);
             saveToIDB(collectionName, newData).catch(() => {});
           }
@@ -217,7 +209,6 @@ export function useSafeSyncedState<T extends { id: string }>(
           isMountedRef.current = false;
           unsubscribe();
           
-          // ذخیره نهایی در کش هنگامUnmount
           if (hasData(dataRef.current)) {
             globalCache.set(collectionName, { 
               value: dataRef.current, 
@@ -239,10 +230,6 @@ export function useSafeSyncedState<T extends { id: string }>(
     init();
   }, [collectionName]);
 
-  // ============================================================
-  // به‌روزرسانی هوشمند (Smart Update with Batching)
-  // ============================================================
-
   const setSafeValue = useCallback(async (
     newValue: T[] | ((prev: T[]) => T[])
   ) => {
@@ -255,7 +242,6 @@ export function useSafeSyncedState<T extends { id: string }>(
       return dataRef.current;
     }
 
-    // به‌روزرسانی فوری UI (Optimistic Update)
     dataRef.current = resolvedValue;
     setData(resolvedValue);
     
@@ -271,30 +257,29 @@ export function useSafeSyncedState<T extends { id: string }>(
     saveToLS(collectionName, resolvedValue);
     saveToIDB(collectionName, resolvedValue).catch(() => {});
 
-    // محاسبه تغییرات (Delta Calculation)
-    const currentMap = new Map(data.map(item => [item.id, item]));
-    const newMap = new Map(resolvedValue.map(item => [item.id, item]));
+    // ✅ استفاده از String() برای اطمینان از سازگاری کلیدها
+    const currentMap = new Map(data.map(item => [String(item.id), item]));
+    const newMap = new Map(resolvedValue.map(item => [String(item.id), item]));
 
     const toAdd: T[] = [];
     const toUpdate: T[] = [];
     const toDelete: string[] = [];
 
-    for (const [id, newItem] of newMap) {
-      const currentItem = currentMap.get(id);
+    for (const [idStr, newItem] of newMap) {
+      const currentItem = currentMap.get(idStr);
       if (!currentItem) {
-        toAdd.push({ ...newItem, id: id || crypto.randomUUID(), updatedAt: now } as T);
+        toAdd.push({ ...newItem, id: newItem.id || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString()), updatedAt: now } as T);
       } else if (JSON.stringify(currentItem) !== JSON.stringify(newItem)) {
         toUpdate.push({ ...newItem, updatedAt: now } as T);
       }
     }
 
-    for (const id of currentMap.keys()) {
-      if (!newMap.has(id)) {
-        toDelete.push(id);
+    for (const idStr of currentMap.keys()) {
+      if (!newMap.has(idStr)) {
+        toDelete.push(idStr);
       }
     }
 
-    // ارسال تغییرات به فایربیس (Batch Operations)
     pendingWritesRef.current += 1;
 
     try {
@@ -303,84 +288,73 @@ export function useSafeSyncedState<T extends { id: string }>(
 
       for (const item of toAdd) {
         const cleanItem = removeUndefinedFields(item);
-        batch.set(doc(db, collectionName, item.id), cleanItem);
+        batch.set(doc(db, collectionName, String(item.id)), cleanItem);
         hasChanges = true;
       }
 
       for (const item of toUpdate) {
         const cleanItem = removeUndefinedFields(item);
-        batch.set(doc(db, collectionName, item.id), cleanItem, { merge: true });
+        batch.set(doc(db, collectionName, String(item.id)), cleanItem, { merge: true });
         hasChanges = true;
       }
 
-      for (const id of toDelete) {
-        batch.delete(doc(db, collectionName, id));
+      for (const idStr of toDelete) {
+        batch.delete(doc(db, collectionName, idStr));
         hasChanges = true;
       }
 
       if (hasChanges) {
         await batch.commit();
-        console.log(`✅ [${collectionName}] تغییرات ارسال شد: ${toAdd.length} جدید، ${toUpdate.length} به‌روزرسانی، ${toDelete.length} حذف`);
+        console.log(`✅ [${collectionName}] تغییرات ارسال شد`);
       }
 
       return resolvedValue;
     } catch (err: any) {
       console.error(`🔴 [${collectionName}] Firebase Save Failed:`, err);
       setError(err.message);
-      setData(dataRef.current); // بازگشت به حالت قبل در صورت خطا
+      setData(dataRef.current);
       return dataRef.current;
     } finally {
       pendingWritesRef.current = Math.max(0, pendingWritesRef.current - 1);
     }
   }, [collectionName, data]);
 
-  // ============================================================
-  // توابع کمکی (Helper Functions) - ✅ بدون خطای تایپ‌اسکریپت
-  // ============================================================
-
   const addItem = useCallback(async (item: Omit<T, "id">) => {
     const newItem = { 
       ...item, 
-      id: crypto.randomUUID(),
+      id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
       createdAt: Date.now(),
       updatedAt: Date.now()
-    } as unknown as T; // ✅ رفع خطای تایپ‌اسکریپت
+    } as unknown as T;
     
     return setSafeValue(prev => [...prev, newItem]);
   }, [setSafeValue]);
 
-  const updateItem = useCallback(async (id: string, updates: Partial<T>) => {
+  const updateItem = useCallback(async (id: string | number, updates: Partial<T>) => {
     return setSafeValue(prev => 
       prev.map(item => 
-        item.id === id 
-          ? ({ ...item, ...updates, updatedAt: Date.now() } as unknown as T) // ✅ رفع خطای تایپ‌اسکریپت
+        String(item.id) === String(id)
+          ? ({ ...item, ...updates, updatedAt: Date.now() } as unknown as T)
           : item
       )
     );
   }, [setSafeValue]);
 
-  const deleteItem = useCallback(async (id: string) => {
-    return setSafeValue(prev => prev.filter(item => item.id !== id));
+  const deleteItem = useCallback(async (id: string | number) => {
+    return setSafeValue(prev => prev.filter(item => String(item.id) !== String(id)));
   }, [setSafeValue]);
 
   const refreshData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
-    
     globalCache.delete(collectionName);
     localStorage.removeItem(LS_PREFIX + collectionName);
-    
     try {
       const dbInstance = await openIDB();
       dbInstance.transaction(IDB_STORE, "readwrite").objectStore(IDB_STORE).delete(collectionName);
     } catch {}
-
     setIsLoading(false);
   }, [collectionName]);
-
-  // ============================================================
-  // خروجی (Return)
-  // ============================================================
 
   return [
     data, 
