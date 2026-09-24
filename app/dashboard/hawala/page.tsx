@@ -553,11 +553,11 @@ const Ic = memo(function Ic({ n, className = "h-5 w-5" }: { n: IconName; classNa
 export default function HawalaPage() {
   const [mounted, setMounted] = useState(false);
   
-  // ✅ تغییر ۲: استفاده از هوک جدید و نام‌های کالکشن استاندارد
-  const [customers, setCustomers] = useSafeSyncedState<Customer[]>("customers", []);
-  const [transactions] = useSafeSyncedState<any[]>("transactions", []);
-  const [hawalas, setHawalas] = useSafeSyncedState<Hawala[]>("hawalas", []);
-  const [cashEntries, setCashEntries] = useSafeSyncedState<any[]>("cash_entries", []);
+  // ✅ تغییر ۲: استفاده از هوک جدید و نام‌های کالکشن استاندارد (بدون [] داخل <>)
+  const [customers, setCustomers] = useSafeSyncedState<Customer>("customers", []);
+  const [transactions] = useSafeSyncedState<any>("transactions", []);
+  const [hawalas, setHawalas] = useSafeSyncedState<Hawala>("hawalas", []);
+  const [cashEntries, setCashEntries] = useSafeSyncedState<any>("cash_entries", []);
   
   const isSubmittingRef = useRef(false);
   const isSettlingRef = useRef(false);
