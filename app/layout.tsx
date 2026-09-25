@@ -9,6 +9,8 @@ export const metadata: Metadata = {
     template: "%s | صرافی من",
   },
   description: "اپلیکیشن صرافی",
+  // ❌ خط manifest حذف شد (چون فایل وجود ندارد)
+  
   formatDetection: {
     telephone: false,
   },
@@ -19,10 +21,11 @@ export const metadata: Metadata = {
     siteName: "صرافی من",
   },
   icons: {
+    // ✅ تغییر به آیکونی که واقعاً در ریشه پروژه وجود دارد
     icon: "/icon.png",
     apple: "/icon.png",
   },
-  // تنظیمات استاندارد برای نمایش به عنوان وب‌اپلیکیشن در موبایل (بدون نیاز به manifest)
+  // ✅ تنظیمات موبایل به شکل استاندارد Next.js (جایگزین تگ head دستی)
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
@@ -49,7 +52,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="fa" dir="rtl">
+      {/* ✅ تگ head دستی حذف شد تا از تداخل با metadata جلوگیری شود */}
       <body className="antialiased">
+        {/* ✅ ساختار امنیتی شما کاملاً دست‌نخورده باقی مانده است */}
         <AuthProvider>
           {children}
         </AuthProvider>
