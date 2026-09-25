@@ -9,12 +9,6 @@ export const metadata: Metadata = {
     template: "%s | صرافی من",
   },
   description: "اپلیکیشن صرافی",
-  manifest: "/manifest.json",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "black-translucent",
-    title: "صرافی من",
-  },
   formatDetection: {
     telephone: false,
   },
@@ -25,14 +19,17 @@ export const metadata: Metadata = {
     siteName: "صرافی من",
   },
   icons: {
-    icon: [
-      { url: "/icons/icon-192x192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icons/icon-512x512.png", sizes: "512x512", type: "image/png" },
-    ],
-    apple: [
-      { url: "/icons/icon-192x192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icons/icon-512x512.png", sizes: "512x512", type: "image/png" },
-    ],
+    icon: "/icon.png",
+    apple: "/icon.png",
+  },
+  // تنظیمات استاندارد برای نمایش به عنوان وب‌اپلیکیشن در موبایل (بدون نیاز به manifest)
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "صرافی من",
+  },
+  other: {
+    "mobile-web-app-capable": "yes",
   },
 };
 
@@ -52,11 +49,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="fa" dir="rtl">
-      <head>
-        <meta name="mobile-web-app-capable" content="yes" />
-        <meta name="apple-touch-fullscreen" content="yes" />
-      </head>
-      <body>
+      <body className="antialiased">
         <AuthProvider>
           {children}
         </AuthProvider>
