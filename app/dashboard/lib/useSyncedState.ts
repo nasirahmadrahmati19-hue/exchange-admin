@@ -96,9 +96,25 @@ export function useSyncedState<T>(key: string, initialValue: T) {
   const lastLocalWriteRef = useRef<string>("");
   const isMountedRef = useRef<boolean>(true);
 
-  useEffect(() => { valueRef.current = value; }, [value]);
+  // ✅ FIX 1: حذف useEffect خطرناک که به [value] وابسته بود و باعث ناپایداری می‌شد.
+  // ما valueRef.current را به صورت دستی و همزمان با setValue آپدیت می‌کنیم که ایمن‌تر است.
+
+  // ✅ FIX 2: استفاده از Ref برای جلوگیری از اجرای مجدد init به خاطر تغییر رفرنس initialValue
+  const isInitializedRef = useRef(false);
+  const currentKeyRef = useRef(key);
 
   useEffect(() => {
+    // اگر کلید تغییر کرد، فلگ اولیه‌سازی را ریست کن
+    if (key !== currentKeyRef.current) {
+      isInitializedRef.current = false;
+      currentKeyRef.current = key;
+    }
+
+    // اگر قبلاً برای این کلید مقداردهی اولیه انجام شده، از اجرای مجدد جلوگیری کن
+    // این خط طلایی، چرخه‌ی بی‌پایان رندر را متوقف می‌کند
+    if (isInitializedRef.current) return;
+    isInitializedRef.current = true;
+
     isMountedRef.current = true;
     let ignore = false;
 
@@ -109,7 +125,7 @@ export function useSyncedState<T>(key: string, initialValue: T) {
       openIDB().then(idb => {
         try { idb.transaction(IDB_STORE, "readwrite").objectStore(IDB_STORE).delete(key); } catch (e) {}
       }).catch(() => {});
-      lastUpdatedRef.current = 0; // صفر کردن زمان برای پذیرش بی‌قیدوشرط داده‌ی سرور
+      lastUpdatedRef.current = 0;
       setIsLoaded(false);
       setIsLoading(true);
     };
@@ -146,8 +162,8 @@ export function useSyncedState<T>(key: string, initialValue: T) {
             setIsLoaded(true); setIsLoading(false); return;
           }
 
+          valueRef.current = finalPayload.value; // ✅ همگام‌سازی دستی
           setValue(finalPayload.value);
-          valueRef.current = finalPayload.value;
           lastUpdatedRef.current = serverTs || Date.now();
           globalCache.set(key, { value: finalPayload.value, lastUpdated: lastUpdatedRef.current, loaded: true });
           setIsLoaded(true);
@@ -158,7 +174,8 @@ export function useSyncedState<T>(key: string, initialValue: T) {
         if (!ignore && isMountedRef.current) {
           const localData = readFromLS(key) ?? (await readFromIDB(key));
           if (localData !== undefined && hasData(localData)) {
-            setValue(localData); valueRef.current = localData;
+            valueRef.current = localData; // ✅ همگام‌سازی دستی
+            setValue(localData);
           }
           setIsLoaded(true); setIsLoading(false);
         }
@@ -175,7 +192,7 @@ export function useSyncedState<T>(key: string, initialValue: T) {
         globalCache.set(key, { value: valueRef.current, lastUpdated: lastUpdatedRef.current, loaded: true });
       }
     };
-  }, [key, initialValue]);
+  }, [key]); // ✅ حذف initialValue از این آرایه حیاتی است
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -183,7 +200,7 @@ export function useSyncedState<T>(key: string, initialValue: T) {
     const docRef = doc(db, "appData", key);
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (!isMountedRef.current) return;
-      if (docSnap.metadata.fromCache) return; // نادیده گرفتن کش برای اطمینان از تازگی داده
+      if (docSnap.metadata.fromCache) return;
 
       if (pendingWritesRef.current > 0 && docSnap.exists()) {
         const incomingStr = JSON.stringify(docSnap.data().value);
@@ -210,7 +227,7 @@ export function useSyncedState<T>(key: string, initialValue: T) {
           }
 
           lastUpdatedRef.current = incomingTimestamp;
-          valueRef.current = payload.value;
+          valueRef.current = payload.value; // ✅ همگام‌سازی دستی
           setValue(payload.value);
           globalCache.set(key, { value: payload.value, lastUpdated: incomingTimestamp, loaded: true });
           saveToLS(key, payload.value);
@@ -229,7 +246,7 @@ export function useSyncedState<T>(key: string, initialValue: T) {
         try {
           const parsed = JSON.parse(e.newValue);
           if (JSON.stringify(valueRef.current) !== JSON.stringify(parsed)) {
-            valueRef.current = parsed;
+            valueRef.current = parsed; // ✅ همگام‌سازی دستی
             setValue(parsed);
             lastUpdatedRef.current = Date.now();
             globalCache.set(key, { value: parsed, lastUpdated: lastUpdatedRef.current, loaded: true });
@@ -253,7 +270,7 @@ export function useSyncedState<T>(key: string, initialValue: T) {
       const newTimestamp = Date.now();
       const payload = { value: resolvedValue, lastUpdated: newTimestamp };
 
-      valueRef.current = resolvedValue;
+      valueRef.current = resolvedValue; // ✅ همگام‌سازی دستی
       setValue(resolvedValue);
       lastUpdatedRef.current = newTimestamp;
       lastLocalWriteRef.current = JSON.stringify(resolvedValue);
