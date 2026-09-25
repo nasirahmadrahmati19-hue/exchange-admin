@@ -124,7 +124,6 @@ const globalCache = new Map<string, CacheEntry>();
 // هوک اصلی (Main Hook)
 // ============================================================
 
-// ✅ تغییر حیاتی: اجازه دادن به id از نوع string یا number
 export function useSafeSyncedState<T extends { id: string | number }>(
   collectionName: string, 
   initialValue: T[]
@@ -230,6 +229,7 @@ export function useSafeSyncedState<T extends { id: string | number }>(
     init();
   }, [collectionName]);
 
+  // ✅ اصلاح حیاتی: حذف `data` از آرایه وابستگی‌ها برای جلوگیری از رندر بی‌پایان
   const setSafeValue = useCallback(async (
     newValue: T[] | ((prev: T[]) => T[])
   ) => {
@@ -242,6 +242,8 @@ export function useSafeSyncedState<T extends { id: string | number }>(
       return dataRef.current;
     }
 
+    // ✅ استفاده از dataRef.current به جای state برای جلوگیری از باگ همگام‌سازی
+    const previousData = dataRef.current;
     dataRef.current = resolvedValue;
     setData(resolvedValue);
     
@@ -257,8 +259,8 @@ export function useSafeSyncedState<T extends { id: string | number }>(
     saveToLS(collectionName, resolvedValue);
     saveToIDB(collectionName, resolvedValue).catch(() => {});
 
-    // ✅ استفاده از String() برای اطمینان از سازگاری کلیدها
-    const currentMap = new Map(data.map(item => [String(item.id), item]));
+    // ✅ مقایسه بر اساس previousData (نه state که باعث تغییر مرجع می‌شود)
+    const currentMap = new Map(previousData.map(item => [String(item.id), item]));
     const newMap = new Map(resolvedValue.map(item => [String(item.id), item]));
 
     const toAdd: T[] = [];
@@ -312,12 +314,13 @@ export function useSafeSyncedState<T extends { id: string | number }>(
     } catch (err: any) {
       console.error(`🔴 [${collectionName}] Firebase Save Failed:`, err);
       setError(err.message);
-      setData(dataRef.current);
-      return dataRef.current;
+      setData(previousData);
+      dataRef.current = previousData;
+      return previousData;
     } finally {
       pendingWritesRef.current = Math.max(0, pendingWritesRef.current - 1);
     }
-  }, [collectionName, data]);
+  }, [collectionName]); // ⚠️ فقط collectionName اینجا باشد، data حذف شد!
 
   const addItem = useCallback(async (item: Omit<T, "id">) => {
     const newItem = { 
