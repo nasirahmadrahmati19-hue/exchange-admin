@@ -5,8 +5,6 @@ import {
   collection, 
   onSnapshot, 
   doc, 
-  setDoc, 
-  deleteDoc, 
   writeBatch 
 } from "firebase/firestore";
 import { db } from "./firebase";
@@ -128,6 +126,17 @@ export function useSafeSyncedState<T extends { id: string | number }>(
   collectionName: string, 
   initialValue: T[]
 ) {
+  // ✅ محافظت حیاتی: جلوگیری از ارسال درخواست نامعتبر به فایربیس (علت خطای 400)
+  if (!collectionName) {
+    console.error("🔴 useSafeSyncedState: collectionName is required!");
+    return [
+      initialValue,
+      () => {},
+      false,
+      { error: "Missing collection name", addItem: async () => {}, updateItem: async () => {}, deleteItem: async () => {}, refreshData: async () => {}, itemCount: 0 }
+    ] as const;
+  }
+
   const cached = globalCache.get(collectionName);
   const initial = cached?.loaded ? (cached.value as T[]) : initialValue;
 
@@ -229,7 +238,6 @@ export function useSafeSyncedState<T extends { id: string | number }>(
     init();
   }, [collectionName]);
 
-  // ✅ اصلاح حیاتی: حذف `data` از آرایه وابستگی‌ها برای جلوگیری از رندر بی‌پایان
   const setSafeValue = useCallback(async (
     newValue: T[] | ((prev: T[]) => T[])
   ) => {
@@ -242,8 +250,13 @@ export function useSafeSyncedState<T extends { id: string | number }>(
       return dataRef.current;
     }
 
-    // ✅ استفاده از dataRef.current به جای state برای جلوگیری از باگ همگام‌سازی
     const previousData = dataRef.current;
+    
+    // ✅ محافظت حیاتی: اگر داده‌ها واقعاً تغییر نکرده‌اند، State را آپدیت نکن (جلوگیری از رندر بی‌پایان)
+    if (JSON.stringify(previousData) === JSON.stringify(resolvedValue)) {
+      return resolvedValue;
+    }
+
     dataRef.current = resolvedValue;
     setData(resolvedValue);
     
@@ -259,7 +272,6 @@ export function useSafeSyncedState<T extends { id: string | number }>(
     saveToLS(collectionName, resolvedValue);
     saveToIDB(collectionName, resolvedValue).catch(() => {});
 
-    // ✅ مقایسه بر اساس previousData (نه state که باعث تغییر مرجع می‌شود)
     const currentMap = new Map(previousData.map(item => [String(item.id), item]));
     const newMap = new Map(resolvedValue.map(item => [String(item.id), item]));
 
@@ -320,7 +332,7 @@ export function useSafeSyncedState<T extends { id: string | number }>(
     } finally {
       pendingWritesRef.current = Math.max(0, pendingWritesRef.current - 1);
     }
-  }, [collectionName]); // ⚠️ فقط collectionName اینجا باشد، data حذف شد!
+  }, [collectionName]); // ⚠️ فقط collectionName. حذف data از اینجا حیاتی است.
 
   const addItem = useCallback(async (item: Omit<T, "id">) => {
     const newItem = { 
@@ -356,6 +368,7 @@ export function useSafeSyncedState<T extends { id: string | number }>(
       const dbInstance = await openIDB();
       dbInstance.transaction(IDB_STORE, "readwrite").objectStore(IDB_STORE).delete(collectionName);
     } catch {}
+    // نکته: Listener فایربیس (onSnapshot) به صورت خودکار داده‌های جدید را دریافت می‌کند.
     setIsLoading(false);
   }, [collectionName]);
 
