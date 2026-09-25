@@ -68,7 +68,7 @@ async function saveToIDB(key: string, value: any): Promise<void> {
       request.onerror = () => reject(request.error);
     });
   } catch (error) {
-    console.warn(`⚠️ [IDB Save] خطا در ذخیره ${key}:`, error);
+    // در موبایل خطاهای ذخیره‌سازی را نادیده می‌گیریم تا برنامه کرش نکند
   }
 }
 
@@ -119,7 +119,7 @@ type CacheEntry = {
 const globalCache = new Map<string, CacheEntry>();
 
 // ============================================================
-// هوک اصلی (Main Hook)
+// هوک اصلی (Main Hook) - بهینه‌شده برای موبایل
 // ============================================================
 
 export function useSafeSyncedState<T extends { id: string | number }>(
@@ -147,9 +147,9 @@ export function useSafeSyncedState<T extends { id: string | number }>(
   const lastUpdatedRef = useRef<number>(cached?.lastUpdated ?? 0);
   const pendingWritesRef = useRef<number>(0);
   const isMountedRef = useRef<boolean>(true);
-
-  // ✅ FIX 1: حذف useEffect اضافی که dataRef را به data وابسته می‌کرد.
-  // ما dataRef را به صورت دستی و همزمان با setData آپدیت می‌کنیم که ایمن‌تر است.
+  
+  // 📱 بهینه‌سازی موبایل ۱: جلوگیری از پردازش همزمان اسنپ‌شات‌های پشت‌سرهم
+  const isProcessingSnapshotRef = useRef<boolean>(false);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -159,11 +159,12 @@ export function useSafeSyncedState<T extends { id: string | number }>(
       const colRef = collection(db, collectionName);
 
       try {
+        // 📱 بهینه‌سازی موبایل ۲: خواندن کش با اولویت LocalStorage (سریع‌تر از IDB در موبایل)
         const localData = readFromLS(collectionName) ?? (await readFromIDB(collectionName));
         
         if (localData && hasData(localData) && !cached?.loaded) {
           if (!ignore && isMountedRef.current) {
-            dataRef.current = localData; // ✅ همگام‌سازی دستی
+            dataRef.current = localData;
             setData(localData);
             setIsLoading(false);
           }
@@ -172,45 +173,58 @@ export function useSafeSyncedState<T extends { id: string | number }>(
         const unsubscribe = onSnapshot(colRef, (snapshot) => {
           if (!isMountedRef.current || ignore) return;
 
-          const newData = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          })) as T[];
+          // 📱 بهینه‌سازی موبایل ۳: اگر در حال پردازش هستیم، این اسنپ‌شات را نادیده بگیر
+          // این کار از فریز شدن UI موبایل در شبکه‌های ناپایدار جلوگیری می‌کند
+          if (isProcessingSnapshotRef.current) return;
+          isProcessingSnapshotRef.current = true;
 
-          newData.sort((a, b) => {
-            const aTime = (a as any).updatedAt || (a as any).createdAt || 0;
-            const bTime = (b as any).updatedAt || (b as any).createdAt || 0;
-            return bTime - aTime; 
-          });
+          try {
+            const newData = snapshot.docs.map(doc => ({
+              id: doc.id,
+              ...doc.data()
+            })) as T[];
 
-          // ✅ FIX 2 (حیاتی): جلوگیری از رندر بی‌پایان یا دوبار رندر شدن
-          // اگر داده‌های جدید از نظر محتوایی با داده‌های فعلی یکی هستند، هیچ کاری نکن.
-          // این کار از چرخه‌ی "رندر -> onSnapshot -> رندر" جلوگیری می‌کند.
-          if (JSON.stringify(dataRef.current) === JSON.stringify(newData)) {
-            return; 
-          }
-
-          if (!ignore && isMountedRef.current) {
-            const now = Date.now();
-            lastUpdatedRef.current = now;
-            
-            dataRef.current = newData; // ✅ همگام‌سازی دستی
-            setData(newData);
-            setError(null);
-            setIsLoading(false);
-
-            globalCache.set(collectionName, { 
-              value: newData, 
-              lastUpdated: now, 
-              loaded: true,
-              itemCount: newData.length 
+            newData.sort((a, b) => {
+              const aTime = (a as any).updatedAt || (a as any).createdAt || 0;
+              const bTime = (b as any).updatedAt || (b as any).createdAt || 0;
+              return bTime - aTime; 
             });
 
-            saveToLS(collectionName, newData);
-            saveToIDB(collectionName, newData).catch(() => {});
+            // 📱 بهینه‌سازی موبایل ۴: بررسی سریع طول آرایه قبل از JSON.stringify سنگین
+            const isLengthSame = dataRef.current.length === newData.length;
+            const isDataSame = isLengthSame && JSON.stringify(dataRef.current) === JSON.stringify(newData);
+
+            if (isDataSame) {
+              isProcessingSnapshotRef.current = false;
+              return; // داده تغییر نکرده، رندر اضافی انجام نده
+            }
+
+            if (!ignore && isMountedRef.current) {
+              const now = Date.now();
+              lastUpdatedRef.current = now;
+              
+              dataRef.current = newData;
+              setData(newData);
+              setError(null);
+              setIsLoading(false);
+
+              globalCache.set(collectionName, { 
+                value: newData, 
+                lastUpdated: now, 
+                loaded: true,
+                itemCount: newData.length 
+              });
+
+              // ذخیره‌سازی در پس‌زمینه (بدون await تا UI بلاک نشود)
+              saveToLS(collectionName, newData);
+              saveToIDB(collectionName, newData).catch(() => {});
+            }
+          } finally {
+            isProcessingSnapshotRef.current = false;
           }
         }, (err) => {
           console.error(`🔴 [${collectionName}] Snapshot Error:`, err);
+          isProcessingSnapshotRef.current = false;
           if (!ignore && isMountedRef.current) {
             setError(err.message);
             setIsLoading(false);
@@ -220,6 +234,7 @@ export function useSafeSyncedState<T extends { id: string | number }>(
         return () => {
           ignore = true;
           isMountedRef.current = false;
+          isProcessingSnapshotRef.current = false;
           unsubscribe();
           
           if (hasData(dataRef.current)) {
@@ -233,6 +248,7 @@ export function useSafeSyncedState<T extends { id: string | number }>(
         };
       } catch (err: any) {
         console.error(`🔴 [${collectionName}] Init Error:`, err);
+        isProcessingSnapshotRef.current = false;
         if (!ignore && isMountedRef.current) {
           setError(err.message);
           setIsLoading(false);
@@ -261,7 +277,7 @@ export function useSafeSyncedState<T extends { id: string | number }>(
       return resolvedValue;
     }
 
-    dataRef.current = resolvedValue; // ✅ همگام‌سازی دستی
+    dataRef.current = resolvedValue;
     setData(resolvedValue);
     
     const now = Date.now();
@@ -330,7 +346,7 @@ export function useSafeSyncedState<T extends { id: string | number }>(
     } catch (err: any) {
       console.error(`🔴 [${collectionName}] Firebase Save Failed:`, err);
       setError(err.message);
-      dataRef.current = previousData; // ✅ بازگشت به حالت قبل در صورت خطا
+      dataRef.current = previousData;
       setData(previousData);
       return previousData;
     } finally {
