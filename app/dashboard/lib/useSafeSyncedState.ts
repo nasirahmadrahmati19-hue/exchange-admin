@@ -126,7 +126,6 @@ export function useSafeSyncedState<T extends { id: string | number }>(
   collectionName: string, 
   initialValue: T[]
 ) {
-  // ✅ محافظت حیاتی: جلوگیری از ارسال درخواست نامعتبر به فایربیس (علت خطای 400)
   if (!collectionName) {
     console.error("🔴 useSafeSyncedState: collectionName is required!");
     return [
@@ -149,9 +148,8 @@ export function useSafeSyncedState<T extends { id: string | number }>(
   const pendingWritesRef = useRef<number>(0);
   const isMountedRef = useRef<boolean>(true);
 
-  useEffect(() => { 
-    dataRef.current = data; 
-  }, [data]);
+  // ✅ FIX 1: حذف useEffect اضافی که dataRef را به data وابسته می‌کرد.
+  // ما dataRef را به صورت دستی و همزمان با setData آپدیت می‌کنیم که ایمن‌تر است.
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -165,8 +163,8 @@ export function useSafeSyncedState<T extends { id: string | number }>(
         
         if (localData && hasData(localData) && !cached?.loaded) {
           if (!ignore && isMountedRef.current) {
+            dataRef.current = localData; // ✅ همگام‌سازی دستی
             setData(localData);
-            dataRef.current = localData;
             setIsLoading(false);
           }
         }
@@ -185,12 +183,19 @@ export function useSafeSyncedState<T extends { id: string | number }>(
             return bTime - aTime; 
           });
 
+          // ✅ FIX 2 (حیاتی): جلوگیری از رندر بی‌پایان یا دوبار رندر شدن
+          // اگر داده‌های جدید از نظر محتوایی با داده‌های فعلی یکی هستند، هیچ کاری نکن.
+          // این کار از چرخه‌ی "رندر -> onSnapshot -> رندر" جلوگیری می‌کند.
+          if (JSON.stringify(dataRef.current) === JSON.stringify(newData)) {
+            return; 
+          }
+
           if (!ignore && isMountedRef.current) {
             const now = Date.now();
             lastUpdatedRef.current = now;
             
+            dataRef.current = newData; // ✅ همگام‌سازی دستی
             setData(newData);
-            dataRef.current = newData;
             setError(null);
             setIsLoading(false);
 
@@ -252,12 +257,11 @@ export function useSafeSyncedState<T extends { id: string | number }>(
 
     const previousData = dataRef.current;
     
-    // ✅ محافظت حیاتی: اگر داده‌ها واقعاً تغییر نکرده‌اند، State را آپدیت نکن (جلوگیری از رندر بی‌پایان)
     if (JSON.stringify(previousData) === JSON.stringify(resolvedValue)) {
       return resolvedValue;
     }
 
-    dataRef.current = resolvedValue;
+    dataRef.current = resolvedValue; // ✅ همگام‌سازی دستی
     setData(resolvedValue);
     
     const now = Date.now();
@@ -326,13 +330,13 @@ export function useSafeSyncedState<T extends { id: string | number }>(
     } catch (err: any) {
       console.error(`🔴 [${collectionName}] Firebase Save Failed:`, err);
       setError(err.message);
+      dataRef.current = previousData; // ✅ بازگشت به حالت قبل در صورت خطا
       setData(previousData);
-      dataRef.current = previousData;
       return previousData;
     } finally {
       pendingWritesRef.current = Math.max(0, pendingWritesRef.current - 1);
     }
-  }, [collectionName]); // ⚠️ فقط collectionName. حذف data از اینجا حیاتی است.
+  }, [collectionName]);
 
   const addItem = useCallback(async (item: Omit<T, "id">) => {
     const newItem = { 
@@ -368,7 +372,6 @@ export function useSafeSyncedState<T extends { id: string | number }>(
       const dbInstance = await openIDB();
       dbInstance.transaction(IDB_STORE, "readwrite").objectStore(IDB_STORE).delete(collectionName);
     } catch {}
-    // نکته: Listener فایربیس (onSnapshot) به صورت خودکار داده‌های جدید را دریافت می‌کند.
     setIsLoading(false);
   }, [collectionName]);
 
