@@ -13,35 +13,29 @@ import { db } from "./firebase";
 // توابع کمکی (Helpers)
 // ============================================================
 
+// ✅ اصلاح ۱: تولید ID امن برای جلوگیری از تداخل (Collision)
+function generateId(): string {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  // فال‌بک امن: ترکیب زمان + عدد تصادفی (بسیار بهتر از Date.now().toString() خالی)
+  return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
+}
+
 function removeUndefinedFields(obj: any): any {
   if (obj === null || obj === undefined) return obj;
-
   if (typeof obj !== "object") return obj;
-
-  if (Array.isArray(obj)) {
-    return obj.map(removeUndefinedFields);
-  }
-
+  if (Array.isArray(obj)) return obj.map(removeUndefinedFields);
   const cleaned: any = {};
-
   for (const key in obj) {
-    if (obj[key] !== undefined) {
-      cleaned[key] = removeUndefinedFields(obj[key]);
-    }
+    if (obj[key] !== undefined) cleaned[key] = removeUndefinedFields(obj[key]);
   }
-
   return cleaned;
 }
 
 function isEmptyData(data: any): boolean {
-  if (Array.isArray(data)) {
-    return data.length === 0;
-  }
-
-  if (typeof data === "object" && data !== null) {
-    return Object.keys(data).length === 0;
-  }
-
+  if (Array.isArray(data)) return data.length === 0;
+  if (typeof data === "object" && data !== null) return Object.keys(data).length === 0;
   return data === null || data === undefined || data === "";
 }
 
@@ -63,20 +57,11 @@ function openIDB(): Promise<IDBDatabase> {
       reject("Window is undefined");
       return;
     }
-
     const request = indexedDB.open(IDB_NAME, 1);
-
-    request.onerror = () => {
-      reject(request.error);
-    };
-
-    request.onsuccess = () => {
-      resolve(request.result);
-    };
-
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result;
-
       if (!db.objectStoreNames.contains(IDB_STORE)) {
         db.createObjectStore(IDB_STORE);
       }
@@ -84,59 +69,29 @@ function openIDB(): Promise<IDBDatabase> {
   });
 }
 
-async function saveToIDB(
-  key: string,
-  value: any
-): Promise<void> {
+async function saveToIDB(key: string, value: any): Promise<void> {
   if (typeof window === "undefined") return;
-
   try {
     const dbInstance = await openIDB();
-
     return new Promise((resolve, reject) => {
-      const transaction = dbInstance.transaction(
-        IDB_STORE,
-        "readwrite"
-      );
-
-      const request = transaction
-        .objectStore(IDB_STORE)
-        .put(value, key);
-
+      const transaction = dbInstance.transaction(IDB_STORE, "readwrite");
+      const request = transaction.objectStore(IDB_STORE).put(value, key);
       request.onsuccess = () => resolve();
-
-      request.onerror = () => {
-        reject(request.error);
-      };
+      request.onerror = () => reject(request.error);
     });
   } catch {
     // خطای ذخیره‌سازی نباید باعث توقف برنامه شود
   }
 }
 
-async function readFromIDB(
-  key: string
-): Promise<any> {
-  if (typeof window === "undefined") {
-    return undefined;
-  }
-
+async function readFromIDB(key: string): Promise<any> {
+  if (typeof window === "undefined") return undefined;
   try {
     const dbInstance = await openIDB();
-
     return new Promise((resolve) => {
-      const request = dbInstance
-        .transaction(IDB_STORE, "readonly")
-        .objectStore(IDB_STORE)
-        .get(key);
-
-      request.onsuccess = () => {
-        resolve(request.result);
-      };
-
-      request.onerror = () => {
-        resolve(undefined);
-      };
+      const request = dbInstance.transaction(IDB_STORE, "readonly").objectStore(IDB_STORE).get(key);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => resolve(undefined);
     });
   } catch {
     return undefined;
@@ -144,40 +99,18 @@ async function readFromIDB(
 }
 
 function readFromLS(key: string): any {
-  if (typeof window === "undefined") {
-    return undefined;
-  }
-
+  if (typeof window === "undefined") return undefined;
   try {
-    const cached = localStorage.getItem(
-      LS_PREFIX + key
-    );
-
-    if (
-      cached !== null &&
-      cached !== "undefined"
-    ) {
-      return JSON.parse(cached);
-    }
+    const cached = localStorage.getItem(LS_PREFIX + key);
+    if (cached !== null && cached !== "undefined") return JSON.parse(cached);
   } catch {}
-
   return undefined;
 }
 
-function saveToLS(
-  key: string,
-  value: any
-): boolean {
-  if (typeof window === "undefined") {
-    return false;
-  }
-
+function saveToLS(key: string, value: any): boolean {
+  if (typeof window === "undefined") return false;
   try {
-    localStorage.setItem(
-      LS_PREFIX + key,
-      JSON.stringify(value)
-    );
-
+    localStorage.setItem(LS_PREFIX + key, JSON.stringify(value));
     return true;
   } catch {
     return false;
@@ -195,30 +128,18 @@ type CacheEntry = {
   itemCount: number;
 };
 
-const globalCache = new Map<
-  string,
-  CacheEntry
->();
+const globalCache = new Map<string, CacheEntry>();
 
 // ============================================================
 // هوک اصلی
 // ============================================================
 
-export function useSafeSyncedState<
-  T extends { id: string | number }
->(
+export function useSafeSyncedState<T extends { id: string | number }>(
   collectionName: string,
   initialValue: T[]
 ) {
-  // ----------------------------------------------------------
-  // بررسی نام Collection
-  // ----------------------------------------------------------
-
   if (!collectionName) {
-    console.error(
-      "🔴 useSafeSyncedState: collectionName is required!"
-    );
-
+    console.error("🔴 useSafeSyncedState: collectionName is required!");
     return [
       initialValue,
       () => {},
@@ -234,60 +155,21 @@ export function useSafeSyncedState<
     ] as const;
   }
 
-  // ----------------------------------------------------------
-  // کش اولیه
-  // ----------------------------------------------------------
+  const cached = globalCache.get(collectionName);
+  const initial = cached?.loaded ? (cached.value as T[]) : initialValue;
 
-  const cached = globalCache.get(
-    collectionName
-  );
+  const [data, setData] = useState<T[]>(initial);
+  const [isLoading, setIsLoading] = useState<boolean>(!(cached?.loaded ?? false));
+  const [error, setError] = useState<string | null>(null);
 
-  const initial = cached?.loaded
-    ? (cached.value as T[])
-    : initialValue;
-
-  const [data, setData] =
-    useState<T[]>(initial);
-
-  const [isLoading, setIsLoading] =
-    useState<boolean>(
-      !(cached?.loaded ?? false)
-    );
-
-  const [error, setError] =
-    useState<string | null>(null);
-
-  // ----------------------------------------------------------
-  // Refs
-  // ----------------------------------------------------------
-
-  const dataRef =
-    useRef<T[]>(initial);
-
-  const lastUpdatedRef =
-    useRef<number>(
-      cached?.lastUpdated ?? 0
-    );
-
-  const pendingWritesRef =
-    useRef<number>(0);
-
-  const isMountedRef =
-    useRef<boolean>(false);
-
-  const isProcessingSnapshotRef =
-    useRef<boolean>(false);
-
-  // ==========================================================
-  // Firebase + Cache Initialization
-  // ==========================================================
+  const dataRef = useRef<T[]>(initial);
+  const lastUpdatedRef = useRef<number>(cached?.lastUpdated ?? 0);
+  const pendingWritesRef = useRef<number>(0);
+  const isMountedRef = useRef<boolean>(false);
+  const isProcessingSnapshotRef = useRef<boolean>(false);
 
   useEffect(() => {
     let cancelled = false;
-
-    // این متغیر بسیار مهم است.
-    // Listener قبل از خروج از effect در آن نگهداری می‌شود
-    // تا React بتواند آن را هنگام unmount پاک کند.
     let unsubscribe: (() => void) | null = null;
 
     isMountedRef.current = true;
@@ -295,244 +177,100 @@ export function useSafeSyncedState<
 
     const init = async () => {
       try {
-        // اگر کامپوننت قبل از تکمیل async unmount شده باشد
-        // دیگر نباید هیچ کاری انجام شود.
         if (cancelled) return;
 
-        const colRef = collection(
-          db,
-          collectionName
-        );
+        const colRef = collection(db, collectionName);
+        const localData = readFromLS(collectionName) ?? (await readFromIDB(collectionName));
 
-        // ------------------------------------------------------
-        // خواندن Cache
-        // ------------------------------------------------------
-
-        const localData =
-          readFromLS(collectionName) ??
-          (await readFromIDB(collectionName));
-
-        // ممکن است در زمان await کامپوننت unmount شده باشد.
         if (cancelled) return;
 
-        if (
-          localData &&
-          hasData(localData) &&
-          !cached?.loaded
-        ) {
-          if (
-            !cancelled &&
-            isMountedRef.current
-          ) {
+        if (localData && hasData(localData) && !cached?.loaded) {
+          if (!cancelled && isMountedRef.current) {
             dataRef.current = localData;
-
             setData(localData);
-
             setIsLoading(false);
           }
         }
-
-        // ------------------------------------------------------
-        // Firebase Listener
-        // ------------------------------------------------------
 
         if (cancelled) return;
 
         unsubscribe = onSnapshot(
           colRef,
           (snapshot) => {
-            // --------------------------------------------------
-            // محافظ اصلی در برابر Listener قدیمی
-            // --------------------------------------------------
-
-            if (
-              cancelled ||
-              !isMountedRef.current
-            ) {
-              return;
-            }
-
-            // جلوگیری از پردازش همزمان
-            if (
-              isProcessingSnapshotRef.current
-            ) {
-              return;
-            }
-
-            isProcessingSnapshotRef.current =
-              true;
+            if (cancelled || !isMountedRef.current) return;
+            if (isProcessingSnapshotRef.current) return;
+            
+            isProcessingSnapshotRef.current = true;
 
             try {
-              // ------------------------------------------------
-              // ساخت Data جدید
-              // ------------------------------------------------
-
-              const newData =
-                snapshot.docs.map((document) => ({
-                  id: document.id,
-                  ...document.data(),
-                })) as T[];
-
-              // ------------------------------------------------
-              // مرتب‌سازی
-              // ------------------------------------------------
+              const newData = snapshot.docs.map((document) => ({
+                id: document.id,
+                ...document.data(),
+              })) as T[];
 
               newData.sort((a, b) => {
-                const aTime =
-                  (a as any).updatedAt ||
-                  (a as any).createdAt ||
-                  0;
-
-                const bTime =
-                  (b as any).updatedAt ||
-                  (b as any).createdAt ||
-                  0;
-
+                const aTime = (a as any).updatedAt || (a as any).createdAt || 0;
+                const bTime = (b as any).updatedAt || (b as any).createdAt || 0;
                 return bTime - aTime;
               });
 
-              // ------------------------------------------------
-              // بررسی اینکه آیا واقعاً داده تغییر کرده است
-              // ------------------------------------------------
-
-              const isLengthSame =
-                dataRef.current.length ===
-                newData.length;
-
-              const isDataSame =
-                isLengthSame &&
-                JSON.stringify(
-                  dataRef.current
-                ) ===
-                  JSON.stringify(newData);
+              const isLengthSame = dataRef.current.length === newData.length;
+              const isDataSame = isLengthSame && JSON.stringify(dataRef.current) === JSON.stringify(newData);
 
               if (isDataSame) {
+                isProcessingSnapshotRef.current = false;
                 return;
               }
 
-              // ------------------------------------------------
-              // اطمینان نهایی قبل از تغییر State
-              // ------------------------------------------------
-
-              if (
-                cancelled ||
-                !isMountedRef.current
-              ) {
+              if (cancelled || !isMountedRef.current) {
+                isProcessingSnapshotRef.current = false;
                 return;
               }
 
               const now = Date.now();
-
-              lastUpdatedRef.current =
-                now;
-
-              dataRef.current =
-                newData;
-
+              lastUpdatedRef.current = now;
+              dataRef.current = newData;
               setData(newData);
-
               setError(null);
-
               setIsLoading(false);
 
-              // ------------------------------------------------
-              // Global Cache
-              // ------------------------------------------------
+              globalCache.set(collectionName, {
+                value: newData,
+                lastUpdated: now,
+                loaded: true,
+                itemCount: newData.length,
+              });
 
-              globalCache.set(
-                collectionName,
-                {
-                  value: newData,
-                  lastUpdated: now,
-                  loaded: true,
-                  itemCount:
-                    newData.length,
-                }
-              );
-
-              // ------------------------------------------------
-              // ذخیره Cache در پس‌زمینه
-              // ------------------------------------------------
-
-              saveToLS(
-                collectionName,
-                newData
-              );
-
-              saveToIDB(
-                collectionName,
-                newData
-              ).catch(() => {});
+              saveToLS(collectionName, newData);
+              saveToIDB(collectionName, newData).catch(() => {});
             } finally {
-              isProcessingSnapshotRef.current =
-                false;
+              isProcessingSnapshotRef.current = false;
             }
           },
           (err) => {
-            if (
-              cancelled ||
-              !isMountedRef.current
-            ) {
-              return;
-            }
-
-            console.error(
-              `🔴 [${collectionName}] Snapshot Error:`,
-              err
-            );
-
-            isProcessingSnapshotRef.current =
-              false;
-
-            setError(
-              err?.message ||
-                "Firebase snapshot error"
-            );
-
+            if (cancelled || !isMountedRef.current) return;
+            console.error(`🔴 [${collectionName}] Snapshot Error:`, err);
+            isProcessingSnapshotRef.current = false;
+            setError(err?.message || "Firebase snapshot error");
             setIsLoading(false);
           }
         );
       } catch (err: any) {
-        if (
-          cancelled ||
-          !isMountedRef.current
-        ) {
-          return;
-        }
-
-        console.error(
-          `🔴 [${collectionName}] Init Error:`,
-          err
-        );
-
-        isProcessingSnapshotRef.current =
-          false;
-
-        setError(
-          err?.message ||
-            "Initialization error"
-        );
-
+        if (cancelled || !isMountedRef.current) return;
+        console.error(`🔴 [${collectionName}] Init Error:`, err);
+        isProcessingSnapshotRef.current = false;
+        setError(err?.message || "Initialization error");
         setIsLoading(false);
       }
     };
 
     init();
 
-    // ========================================================
-    // CLEANUP واقعی React
-    // ========================================================
-
     return () => {
       cancelled = true;
-
       isMountedRef.current = false;
+      isProcessingSnapshotRef.current = false;
 
-      isProcessingSnapshotRef.current =
-        false;
-
-      // مهم‌ترین اصلاح:
-      // Listener Firebase حتماً هنگام unmount حذف می‌شود.
       if (unsubscribe) {
         try {
           unsubscribe();
@@ -540,448 +278,187 @@ export function useSafeSyncedState<
         unsubscribe = null;
       }
 
-      // آخرین داده معتبر در Global Cache نگهداری شود
       if (hasData(dataRef.current)) {
-        globalCache.set(
-          collectionName,
-          {
-            value: dataRef.current,
-            lastUpdated:
-              lastUpdatedRef.current,
-            loaded: true,
-            itemCount:
-              dataRef.current.length,
-          }
-        );
+        globalCache.set(collectionName, {
+          value: dataRef.current,
+          lastUpdated: lastUpdatedRef.current,
+          loaded: true,
+          itemCount: dataRef.current.length,
+        });
       }
     };
   }, [collectionName]);
 
-  // ==========================================================
-  // ذخیره داده
-  // ==========================================================
+  const setSafeValue = useCallback(
+    async (newValue: T[] | ((prev: T[]) => T[])) => {
+      const resolvedValue =
+        typeof newValue === "function"
+          ? (newValue as (prev: T[]) => T[])(dataRef.current)
+          : newValue;
 
-  const setSafeValue =
-    useCallback(
-      async (
-        newValue:
-          | T[]
-          | ((prev: T[]) => T[])
-      ) => {
-        const resolvedValue =
-          typeof newValue === "function"
-            ? (
-                newValue as (
-                  prev: T[]
-                ) => T[]
-              )(dataRef.current)
-            : newValue;
+      if (!resolvedValue || !Array.isArray(resolvedValue)) {
+        console.warn(`⚠️ [${collectionName}] مقدار نامعتبر`);
+        return dataRef.current;
+      }
 
-        // ------------------------------------------------------
-        // Validation
-        // ------------------------------------------------------
+      const previousData = dataRef.current;
 
-        if (
-          !resolvedValue ||
-          !Array.isArray(resolvedValue)
-        ) {
-          console.warn(
-            `⚠️ [${collectionName}] مقدار نامعتبر`
-          );
+      if (JSON.stringify(previousData) === JSON.stringify(resolvedValue)) {
+        return resolvedValue;
+      }
 
-          return dataRef.current;
+      dataRef.current = resolvedValue;
+      setData(resolvedValue);
+
+      const now = Date.now();
+      lastUpdatedRef.current = now;
+
+      globalCache.set(collectionName, {
+        value: resolvedValue,
+        lastUpdated: now,
+        loaded: true,
+        itemCount: resolvedValue.length,
+      });
+
+      saveToLS(collectionName, resolvedValue);
+      saveToIDB(collectionName, resolvedValue).catch(() => {});
+
+      const currentMap = new Map(previousData.map((item) => [String(item.id), item]));
+      const newMap = new Map(resolvedValue.map((item) => [String(item.id), item]));
+
+      const toAdd: T[] = [];
+      const toUpdate: T[] = [];
+      const toDelete: string[] = [];
+
+      for (const [idStr, newItem] of newMap) {
+        const currentItem = currentMap.get(idStr);
+        if (!currentItem) {
+          toAdd.push({
+            ...newItem,
+            id: String(newItem.id) || generateId(), // ✅ استفاده از تابع امن
+            updatedAt: now,
+          } as T);
+        } else if (JSON.stringify(currentItem) !== JSON.stringify(newItem)) {
+          toUpdate.push({
+            ...newItem,
+            updatedAt: now,
+          } as T);
+        }
+      }
+
+      for (const idStr of currentMap.keys()) {
+        if (!newMap.has(idStr)) {
+          toDelete.push(idStr);
+        }
+      }
+
+      pendingWritesRef.current += 1;
+
+      try {
+        // ✅ اصلاح ۲: مدیریت محدودیت ۵۰۰ تایی Firestore Batch (Chunking)
+        const allOperations = [
+          ...toAdd.map((item) => ({ type: "set" as const, id: String(item.id), data: removeUndefinedFields(item) })),
+          ...toUpdate.map((item) => ({ type: "update" as const, id: String(item.id), data: removeUndefinedFields(item) })),
+          ...toDelete.map((id) => ({ type: "delete" as const, id })),
+        ];
+
+        const BATCH_LIMIT = 450; // حاشیه امنیت زیر ۵۰۰
+        let hasChanges = false;
+
+        for (let i = 0; i < allOperations.length; i += BATCH_LIMIT) {
+          const chunk = allOperations.slice(i, i + BATCH_LIMIT);
+          const batch = writeBatch(db);
+
+          for (const op of chunk) {
+            const docRef = doc(db, collectionName, op.id);
+            if (op.type === "set") {
+              batch.set(docRef, op.data);
+            } else if (op.type === "update") {
+              batch.set(docRef, op.data, { merge: true });
+            } else if (op.type === "delete") {
+              batch.delete(docRef);
+            }
+          }
+
+          await batch.commit();
+          hasChanges = true;
         }
 
-        const previousData =
-          dataRef.current;
-
-        // ------------------------------------------------------
-        // جلوگیری از ذخیره غیرضروری
-        // ------------------------------------------------------
-
-        if (
-          JSON.stringify(
-            previousData
-          ) ===
-          JSON.stringify(
-            resolvedValue
-          )
-        ) {
-          return resolvedValue;
+        if (hasChanges) {
+          console.log(`✅ [${collectionName}] ${allOperations.length} تغییر با موفقیت ارسال شد`);
         }
 
-        // ------------------------------------------------------
-        // Optimistic Update
-        // ------------------------------------------------------
+        return resolvedValue;
+      } catch (err: any) {
+        console.error(`🔴 [${collectionName}] Firebase Save Failed:`, err);
+        setError(err?.message || "Firebase Save Failed");
+        
+        // Rollback
+        dataRef.current = previousData;
+        setData(previousData);
+        return previousData;
+      } finally {
+        pendingWritesRef.current = Math.max(0, pendingWritesRef.current - 1);
+      }
+    },
+    [collectionName]
+  );
 
-        dataRef.current =
-          resolvedValue;
+  const addItem = useCallback(
+    async (item: Omit<T, "id">) => {
+      const timestamp = Date.now();
+      const newItem = {
+        ...item,
+        id: generateId(), // ✅ استفاده از تابع امن
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      } as unknown as T;
 
-        setData(resolvedValue);
+      return setSafeValue((prev) => [...prev, newItem]);
+    },
+    [setSafeValue]
+  );
 
-        const now = Date.now();
+  const updateItem = useCallback(
+    async (id: string | number, updates: Partial<T>) => {
+      return setSafeValue((prev) =>
+        prev.map((item) =>
+          String(item.id) === String(id)
+            ? ({ ...item, ...updates, updatedAt: Date.now() } as unknown as T)
+            : item
+        )
+      );
+    },
+    [setSafeValue]
+  );
 
-        lastUpdatedRef.current =
-          now;
+  const deleteItem = useCallback(
+    async (id: string | number) => {
+      return setSafeValue((prev) => prev.filter((item) => String(item.id) !== String(id)));
+    },
+    [setSafeValue]
+  );
 
-        globalCache.set(
-          collectionName,
-          {
-            value: resolvedValue,
-            lastUpdated: now,
-            loaded: true,
-            itemCount:
-              resolvedValue.length,
-          }
-        );
+  const refreshData = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    globalCache.delete(collectionName);
+    
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.removeItem(LS_PREFIX + collectionName);
+      } catch {}
+    }
 
-        saveToLS(
-          collectionName,
-          resolvedValue
-        );
-
-        saveToIDB(
-          collectionName,
-          resolvedValue
-        ).catch(() => {});
-
-        // ------------------------------------------------------
-        // تشخیص Add / Update / Delete
-        // ------------------------------------------------------
-
-        const currentMap =
-          new Map(
-            previousData.map(
-              (item) => [
-                String(item.id),
-                item,
-              ]
-            )
-          );
-
-        const newMap =
-          new Map(
-            resolvedValue.map(
-              (item) => [
-                String(item.id),
-                item,
-              ]
-            )
-          );
-
-        const toAdd: T[] = [];
-        const toUpdate: T[] = [];
-        const toDelete: string[] = [];
-
-        // ------------------------------------------------------
-        // Add + Update
-        // ------------------------------------------------------
-
-        for (
-          const [
-            idStr,
-            newItem,
-          ] of newMap
-        ) {
-          const currentItem =
-            currentMap.get(idStr);
-
-          if (!currentItem) {
-            toAdd.push({
-              ...newItem,
-
-              id:
-                newItem.id ||
-                (
-                  typeof crypto !==
-                    "undefined" &&
-                  crypto.randomUUID
-                )
-                  ? crypto.randomUUID()
-                  : Date.now().toString(),
-
-              updatedAt: now,
-            } as T);
-          } else if (
-            JSON.stringify(
-              currentItem
-            ) !==
-            JSON.stringify(
-              newItem
-            )
-          ) {
-            toUpdate.push({
-              ...newItem,
-              updatedAt: now,
-            } as T);
-          }
-        }
-
-        // ------------------------------------------------------
-        // Delete
-        // ------------------------------------------------------
-
-        for (
-          const idStr of currentMap.keys()
-        ) {
-          if (!newMap.has(idStr)) {
-            toDelete.push(idStr);
-          }
-        }
-
-        pendingWritesRef.current += 1;
-
-        try {
-          const batch =
-            writeBatch(db);
-
-          let hasChanges = false;
-
-          // ----------------------------------------------------
-          // Add
-          // ----------------------------------------------------
-
-          for (const item of toAdd) {
-            const cleanItem =
-              removeUndefinedFields(
-                item
-              );
-
-            batch.set(
-              doc(
-                db,
-                collectionName,
-                String(item.id)
-              ),
-              cleanItem
-            );
-
-            hasChanges = true;
-          }
-
-          // ----------------------------------------------------
-          // Update
-          // ----------------------------------------------------
-
-          for (const item of toUpdate) {
-            const cleanItem =
-              removeUndefinedFields(
-                item
-              );
-
-            batch.set(
-              doc(
-                db,
-                collectionName,
-                String(item.id)
-              ),
-              cleanItem,
-              {
-                merge: true,
-              }
-            );
-
-            hasChanges = true;
-          }
-
-          // ----------------------------------------------------
-          // Delete
-          // ----------------------------------------------------
-
-          for (const idStr of toDelete) {
-            batch.delete(
-              doc(
-                db,
-                collectionName,
-                idStr
-              )
-            );
-
-            hasChanges = true;
-          }
-
-          // ----------------------------------------------------
-          // Commit
-          // ----------------------------------------------------
-
-          if (hasChanges) {
-            await batch.commit();
-
-            console.log(
-              `✅ [${collectionName}] تغییرات ارسال شد`
-            );
-          }
-
-          return resolvedValue;
-        } catch (err: any) {
-          console.error(
-            `🔴 [${collectionName}] Firebase Save Failed:`,
-            err
-          );
-
-          setError(
-            err?.message ||
-              "Firebase Save Failed"
-          );
-
-          // برگشت به داده قبلی
-          dataRef.current =
-            previousData;
-
-          setData(previousData);
-
-          return previousData;
-        } finally {
-          pendingWritesRef.current =
-            Math.max(
-              0,
-              pendingWritesRef.current - 1
-            );
-        }
-      },
-      [collectionName]
-    );
-
-  // ==========================================================
-  // افزودن
-  // ==========================================================
-
-  const addItem =
-    useCallback(
-      async (
-        item: Omit<T, "id">
-      ) => {
-        const timestamp =
-          Date.now();
-
-        const newItem = {
-          ...item,
-
-          id:
-            typeof crypto !==
-              "undefined" &&
-            crypto.randomUUID
-              ? crypto.randomUUID()
-              : timestamp.toString(),
-
-          createdAt:
-            timestamp,
-
-          updatedAt:
-            timestamp,
-        } as unknown as T;
-
-        return setSafeValue(
-          (prev) => [
-            ...prev,
-            newItem,
-          ]
-        );
-      },
-      [setSafeValue]
-    );
-
-  // ==========================================================
-  // ویرایش
-  // ==========================================================
-
-  const updateItem =
-    useCallback(
-      async (
-        id: string | number,
-        updates: Partial<T>
-      ) => {
-        return setSafeValue(
-          (prev) =>
-            prev.map(
-              (item) =>
-                String(item.id) ===
-                String(id)
-                  ? ({
-                      ...item,
-                      ...updates,
-                      updatedAt:
-                        Date.now(),
-                    } as unknown as T)
-                  : item
-            )
-        );
-      },
-      [setSafeValue]
-    );
-
-  // ==========================================================
-  // حذف
-  // ==========================================================
-
-  const deleteItem =
-    useCallback(
-      async (
-        id: string | number
-      ) => {
-        return setSafeValue(
-          (prev) =>
-            prev.filter(
-              (item) =>
-                String(item.id) !==
-                String(id)
-            )
-        );
-      },
-      [setSafeValue]
-    );
-
-  // ==========================================================
-  // Refresh دستی
-  // ==========================================================
-
-  const refreshData =
-    useCallback(
-      async () => {
-        setIsLoading(true);
-        setError(null);
-
-        globalCache.delete(
-          collectionName
-        );
-
-        if (
-          typeof window !==
-          "undefined"
-        ) {
-          try {
-            localStorage.removeItem(
-              LS_PREFIX +
-                collectionName
-            );
-          } catch {}
-        }
-
-        try {
-          const dbInstance =
-            await openIDB();
-
-          dbInstance
-            .transaction(
-              IDB_STORE,
-              "readwrite"
-            )
-            .objectStore(
-              IDB_STORE
-            )
-            .delete(
-              collectionName
-            );
-        } catch {}
-
-        setIsLoading(false);
-      },
-      [collectionName]
-    );
-
-  // ==========================================================
-  // خروجی Hook
-  // ==========================================================
+    try {
+      const dbInstance = await openIDB();
+      dbInstance.transaction(IDB_STORE, "readwrite").objectStore(IDB_STORE).delete(collectionName);
+    } catch {}
+    
+    // ✅ اصلاح ۳: حذف setIsLoading(false) از اینجا.
+    // تابع onSnapshot به طور خودکار پس از دریافت داده‌ی جدید از سرور، isLoading را false می‌کند.
+    // قرار دادن آن در اینجا باعث می‌شود UI زودتر از موعد لودینگ را متوقف کند.
+  }, [collectionName]);
 
   return [
     data,
@@ -993,8 +470,7 @@ export function useSafeSyncedState<
       updateItem,
       deleteItem,
       refreshData,
-      itemCount:
-        data.length,
+      itemCount: data.length,
     },
   ] as const;
 }
