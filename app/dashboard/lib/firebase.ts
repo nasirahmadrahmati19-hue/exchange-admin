@@ -1,7 +1,6 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-// ❌ enableIndexedDbPersistence از اینجا حذف شد
-import { getFirestore } from "firebase/firestore";
+import { getFirestore, initializeFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyB_Ih73FJf6gTh6pQJlMemDD-FrDICY0pE",
@@ -15,7 +14,9 @@ const firebaseConfig = {
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
 export const auth = getAuth(app);
-export const db = getFirestore(app);
 
-// ✅ تمام! هیچ کد اضافه‌ای برای کش آفلاین نیاز نیست.
-// هوک useSyncedState شما خودش مدیریت سینک و کش محلی را به صورت ایمن انجام می‌دهد.
+// ✅ راه‌حل قطعی برای خطای 400 و قطع شدن اتصال Firestore
+// این تنظیم فایربیس را مجبور می‌کند از Long-Polling استفاده کند که در برابر مسدودسازی و فشار شبکه مقاوم‌تر است.
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true, 
+});
