@@ -34,7 +34,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    // ✅ این خط suppressHydrationWarning حیاتی است و جلوی پرش صفحه را می‌گیرد
+    // ✅ خط suppressHydrationWarning حیاتی است و جلوی پرش ناشی از تفاوت سرور/کلاینت را می‌گیرد
     <html lang="fa" dir="rtl" suppressHydrationWarning>
       <body className="antialiased">
         <AuthProvider>
