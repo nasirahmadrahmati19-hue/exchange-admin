@@ -1,12 +1,19 @@
 "use client";
 
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { redirect } from "next/navigation"; // ✅ اضافه شده برای ریدایرکت تمیز
-import { useAuth } from "../AuthProvider"; // ✅ اضافه شده برای بررسی وضعیت لاگین
+import { useRouter } from "next/navigation"; // ✅ جایگزین redirect برای کلاینت
+import { signOut } from "firebase/auth"; // ✅ برای خروج اجباری در صورت ایمیل نامعتبر
+import { useAuth } from "../AuthProvider";
+import { auth } from "./lib/firebase"; // ✅ مسیر صحیح بر اساس ساختار پوشه‌های شما
 import { useSafeSyncedState } from "./lib/useSafeSyncedState";
 
 // ============================================================
-// تایپ‌ها و ثابت‌ها
+// ⚠️ قانون سخت‌گیرانه: ایمیل مجاز را دقیقاً اینجا وارد کنید
+// ============================================================
+const ALLOWED_EMAIL = "nasirahmadrahmati19@gmail.com"; // ایمیل خود را جایگزین کنید
+
+// ============================================================
+// تایپ‌ها و ثابت‌ها (بدون تغییر)
 // ============================================================
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 
@@ -59,7 +66,7 @@ interface CashEntry {
 }
 
 // ============================================================
-// توابع کمکی
+// توابع کمکی (بدون تغییر)
 // ============================================================
 function normalizeDigits(value: string) {
   const pd = "۰۱۲۳۴۵۶۷۸۹", ad = "٠١٢٣٤٥٦٧٨٩";
@@ -195,27 +202,40 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: any[]
 // کامپوننت اصلی داشبورد
 // ============================================================
 export default function DashboardPage() {
-  // ✅ ۱. اولین و مهم‌ترین کار: دریافت وضعیت احراز هویت
   const { user, loading } = useAuth();
+  const router = useRouter();
 
-  // ✅ ۲. اگر هنوز در حال بررسی است، یک لودینگ زیبا نشان بده (جلوگیری از پرش)
-  if (loading) {
+  // ✅ مدیریت نرم و بدون پرش ریدایرکت و قوانین سخت‌گیرانه
+  useEffect(() => {
+    if (!loading) {
+      if (!user) {
+        // اگر کاربر لاگین نیست، به لاگین برود
+        router.replace("/login");
+      } else if (user.email !== ALLOWED_EMAIL) {
+        // ✅ قانون سخت‌گیرانه: اگر ایمیل مطابقت نداشت، فوراً خارج شود
+        signOut(auth).then(() => {
+          router.replace("/login");
+        });
+      }
+    }
+  }, [user, loading, router]);
+
+  // ✅ تا زمانی که لودینگ تمام نشده یا کاربر معتبر نیست، هیچ چیزی از داشبورد رندر نشود
+  // این خط جلوی "فلش زدن" محتوا را به طور کامل می‌گیرد
+  if (loading || !user || user.email !== ALLOWED_EMAIL) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-slate-900 transition-colors duration-300">
         <div className="text-center">
-          <p className="text-gray-600 dark:text-gray-300 mb-2 font-bold">در حال بررسی وضعیت ورود...</p>
+          <p className="text-gray-600 dark:text-gray-300 mb-2 font-bold">در حال بررسی دسترسی...</p>
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600 mx-auto"></div>
         </div>
       </div>
     );
   }
 
-  // ✅ ۳. اگر لودینگ تمام شد و کاربر وجود نداشت، فوراً ریدایرکت کن (بدون رندر کردن داشبورد)
-  if (!user) {
-    redirect("/login");
-  }
-
-  // ✅ ۴. فقط و فقط اگر کاربر لاگین بود، کدهای زیر اجرا می‌شوند
+  // ============================================================
+  // از اینجا به بعد، فقط و فقط کاربر مجاز و لاگین‌شده کد را می‌بیند
+  // ============================================================
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   
@@ -231,6 +251,10 @@ export default function DashboardPage() {
     } catch {}
     setLastUpdated(new Date());
   }, []);
+
+  // ... (بقیه کدهای useMemo و JSX شما دقیقاً به همین شکل باقی می‌ماند) ...
+  // برای کوتاه شدن پاسخ، بخش JSX را خلاصه کردم، اما شما باید کل بخش return (JSX) 
+  // که در کد اصلی خودتان بود را دقیقاً بعد از این خط کپی کنید.
 
   const customerDeposits = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
