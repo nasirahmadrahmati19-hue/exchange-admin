@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useMemo, useCallback, useEffect } from "react";
+import { redirect } from "next/navigation"; // ✅ اضافه شده برای ریدایرکت تمیز
+import { useAuth } from "../AuthProvider"; // ✅ اضافه شده برای بررسی وضعیت لاگین
 import { useSafeSyncedState } from "./lib/useSafeSyncedState";
 
 // ============================================================
@@ -193,6 +195,27 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: any[]
 // کامپوننت اصلی داشبورد
 // ============================================================
 export default function DashboardPage() {
+  // ✅ ۱. اولین و مهم‌ترین کار: دریافت وضعیت احراز هویت
+  const { user, loading } = useAuth();
+
+  // ✅ ۲. اگر هنوز در حال بررسی است، یک لودینگ زیبا نشان بده (جلوگیری از پرش)
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-slate-900 transition-colors duration-300">
+        <div className="text-center">
+          <p className="text-gray-600 dark:text-gray-300 mb-2 font-bold">در حال بررسی وضعیت ورود...</p>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600 mx-auto"></div>
+        </div>
+      </div>
+    );
+  }
+
+  // ✅ ۳. اگر لودینگ تمام شد و کاربر وجود نداشت، فوراً ریدایرکت کن (بدون رندر کردن داشبورد)
+  if (!user) {
+    redirect("/login");
+  }
+
+  // ✅ ۴. فقط و فقط اگر کاربر لاگین بود، کدهای زیر اجرا می‌شوند
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   
