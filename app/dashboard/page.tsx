@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { useSafeSyncedState } from "../lib/useSafeSyncedState";
+import { useSafeSyncedState } from "./lib/useSafeSyncedState";
 
 // ============================================================
 // تایپ‌ها و ثابت‌ها
@@ -355,12 +355,8 @@ export default function DashboardPage() {
     ? "border-slate-700 bg-slate-800/90 shadow-[0_16px_40px_-24px_rgba(0,0,0,0.6)]"
     : "border-emerald-100 bg-white/95 shadow-[0_16px_40px_-28px_rgba(16,185,129,0.35)]";
 
-  // ✅ حذف شرط !mounted برای جلوگیری از رندر مجدد کل صفحه
-
   return (
     <div dir="rtl" className={dk ? "dark" : ""}>
-      {/* ✅ حذف تگ style و انتقال فونت به globals.css */}
-
       <div className={`cs-font relative min-h-screen overflow-x-hidden antialiased transition-colors duration-500 safe-fade-in ${dk ? "bg-[#0f172a] text-slate-100" : "bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 text-slate-800"}`}>
         <div className={`fixed inset-x-0 top-0 z-30 h-1 bg-gradient-to-l ${dk ? "from-emerald-400 via-teal-400 to-cyan-400" : "from-emerald-500 via-teal-500 to-cyan-500"}`} />
 
@@ -391,7 +387,7 @@ export default function DashboardPage() {
                 onClick={() => {
                   const newTheme = dk ? "light" : "dark";
                   setTheme(newTheme);
-                  window.localStorage.setItem("fx-theme", newTheme);
+                  try { window.localStorage.setItem("fx-theme", newTheme); } catch {}
                 }}
                 className={`group grid h-10 w-10 md:h-11 md:w-11 cursor-pointer place-items-center rounded-lg md:rounded-xl border shadow-sm backdrop-blur transition-all duration-300 active:scale-90 ${dk ? "border-slate-600 bg-slate-800/85 text-amber-300 hover:border-amber-300" : "border-slate-200 bg-white/85 text-slate-600 hover:border-emerald-400"}`}
               >
