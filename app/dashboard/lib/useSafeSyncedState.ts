@@ -13,12 +13,10 @@ import { db } from "./firebase";
 // توابع کمکی (Helpers)
 // ============================================================
 
-// ✅ اصلاح ۱: تولید ID امن برای جلوگیری از تداخل (Collision)
 function generateId(): string {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
     return crypto.randomUUID();
   }
-  // فال‌بک امن: ترکیب زمان + عدد تصادفی (بسیار بهتر از Date.now().toString() خالی)
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
 }
 
@@ -41,6 +39,24 @@ function isEmptyData(data: any): boolean {
 
 function hasData(data: any): boolean {
   return !isEmptyData(data);
+}
+
+// ✅ اصلاح ۱: نرمال‌سازی داده‌ها برای جلوگیری از تداخل JSON.stringify
+// این تابع تمام Timestampهای فایربیس را به عدد (میلی‌ثانیه) تبدیل می‌کند
+// تا مقایسه با داده‌های ذخیره‌شده در LocalStorage/IndexedDB همیشه دقیق باشد.
+function normalizeItem(item: any): any {
+  if (!item || typeof item !== "object") return item;
+  const normalized: any = { ...item };
+  for (const key in normalized) {
+    if (normalized[key] && typeof normalized[key].toMillis === "function") {
+      normalized[key] = normalized[key].toMillis();
+    } else if (Array.isArray(normalized[key])) {
+      normalized[key] = normalized[key].map(normalizeItem);
+    } else if (typeof normalized[key] === "object" && normalized[key] !== null) {
+      normalized[key] = normalizeItem(normalized[key]);
+    }
+  }
+  return normalized;
 }
 
 // ============================================================
@@ -203,20 +219,44 @@ export function useSafeSyncedState<T extends { id: string | number }>(
             isProcessingSnapshotRef.current = true;
 
             try {
-              const newData = snapshot.docs.map((document) => ({
+              // ۱. دریافت و نرمال‌سازی داده‌ها (تبدیل Timestamp به عدد)
+              const rawData = snapshot.docs.map((document) => ({
                 id: document.id,
                 ...document.data(),
-              })) as T[];
+              }));
+              
+              const newData = rawData.map(normalizeItem) as T[];
 
+              // ۲. مرتب‌سازی پایدار (Stable Sort)
               newData.sort((a, b) => {
                 const aTime = (a as any).updatedAt || (a as any).createdAt || 0;
                 const bTime = (b as any).updatedAt || (b as any).createdAt || 0;
-                return bTime - aTime;
+                
+                // اگر زمان‌ها متفاوت بودند، بر اساس زمان مرتب کن
+                if (bTime !== aTime) {
+                  return (bTime as number) - (aTime as number);
+                }
+                // ✅ اگر زمان‌ها یکسان بودند، بر اساس ID مرتب کن تا ترتیب آرایه هرگز تصادفی تغییر نکند
+                return String(a.id).localeCompare(String(b.id));
               });
 
-              const isLengthSame = dataRef.current.length === newData.length;
-              const isDataSame = isLengthSame && JSON.stringify(dataRef.current) === JSON.stringify(newData);
+              // ۳. مقایسه هوشمند و مستقل از ترتیب (Order-Independent Deep Equality)
+              const oldData = dataRef.current;
+              let isDataSame = oldData.length === newData.length;
+              
+              if (isDataSame) {
+                const oldMap = new Map(oldData.map(item => [String(item.id), item]));
+                for (const newItem of newData) {
+                  const oldItem = oldMap.get(String(newItem.id));
+                  // اگر آیتم وجود نداشت یا محتوای داخلی آن تغییر کرده بود
+                  if (!oldItem || JSON.stringify(oldItem) !== JSON.stringify(newItem)) {
+                    isDataSame = false;
+                    break;
+                  }
+                }
+              }
 
+              // اگر داده واقعاً تغییر نکرده، هیچ کاری نکن (جلوگیری قطعی از رندر اضافی)
               if (isDataSame) {
                 isProcessingSnapshotRef.current = false;
                 return;
@@ -227,6 +267,7 @@ export function useSafeSyncedState<T extends { id: string | number }>(
                 return;
               }
 
+              // ۴. بروزرسانی State و کش‌ها
               const now = Date.now();
               lastUpdatedRef.current = now;
               dataRef.current = newData;
@@ -243,6 +284,8 @@ export function useSafeSyncedState<T extends { id: string | number }>(
 
               saveToLS(collectionName, newData);
               saveToIDB(collectionName, newData).catch(() => {});
+            } catch (err) {
+              console.error(`🔴 [${collectionName}] Snapshot Processing Error:`, err);
             } finally {
               isProcessingSnapshotRef.current = false;
             }
@@ -301,30 +344,46 @@ export function useSafeSyncedState<T extends { id: string | number }>(
         return dataRef.current;
       }
 
+      // نرمال‌سازی قبل از مقایسه و ذخیره
+      const normalizedValue = resolvedValue.map(normalizeItem) as T[];
       const previousData = dataRef.current;
 
-      if (JSON.stringify(previousData) === JSON.stringify(resolvedValue)) {
-        return resolvedValue;
+      // مقایسه هوشمند (مشابه onSnapshot)
+      let isSame = previousData.length === normalizedValue.length;
+      if (isSame) {
+        const prevMap = new Map(previousData.map(item => [String(item.id), item]));
+        for (const newItem of normalizedValue) {
+          const prevItem = prevMap.get(String(newItem.id));
+          if (!prevItem || JSON.stringify(prevItem) !== JSON.stringify(newItem)) {
+            isSame = false;
+            break;
+          }
+        }
       }
 
-      dataRef.current = resolvedValue;
-      setData(resolvedValue);
+      // اگر داده تغییر نکرده، از رندر و نوشتن در دیتابیس جلوگیری کن
+      if (isSame) {
+        return previousData;
+      }
+
+      dataRef.current = normalizedValue;
+      setData(normalizedValue);
 
       const now = Date.now();
       lastUpdatedRef.current = now;
 
       globalCache.set(collectionName, {
-        value: resolvedValue,
+        value: normalizedValue,
         lastUpdated: now,
         loaded: true,
-        itemCount: resolvedValue.length,
+        itemCount: normalizedValue.length,
       });
 
-      saveToLS(collectionName, resolvedValue);
-      saveToIDB(collectionName, resolvedValue).catch(() => {});
+      saveToLS(collectionName, normalizedValue);
+      saveToIDB(collectionName, normalizedValue).catch(() => {});
 
       const currentMap = new Map(previousData.map((item) => [String(item.id), item]));
-      const newMap = new Map(resolvedValue.map((item) => [String(item.id), item]));
+      const newMap = new Map(normalizedValue.map((item) => [String(item.id), item]));
 
       const toAdd: T[] = [];
       const toUpdate: T[] = [];
@@ -335,7 +394,7 @@ export function useSafeSyncedState<T extends { id: string | number }>(
         if (!currentItem) {
           toAdd.push({
             ...newItem,
-            id: String(newItem.id) || generateId(), // ✅ استفاده از تابع امن
+            id: String(newItem.id) || generateId(),
             updatedAt: now,
           } as T);
         } else if (JSON.stringify(currentItem) !== JSON.stringify(newItem)) {
@@ -355,14 +414,13 @@ export function useSafeSyncedState<T extends { id: string | number }>(
       pendingWritesRef.current += 1;
 
       try {
-        // ✅ اصلاح ۲: مدیریت محدودیت ۵۰۰ تایی Firestore Batch (Chunking)
         const allOperations = [
           ...toAdd.map((item) => ({ type: "set" as const, id: String(item.id), data: removeUndefinedFields(item) })),
           ...toUpdate.map((item) => ({ type: "update" as const, id: String(item.id), data: removeUndefinedFields(item) })),
           ...toDelete.map((id) => ({ type: "delete" as const, id })),
         ];
 
-        const BATCH_LIMIT = 450; // حاشیه امنیت زیر ۵۰۰
+        const BATCH_LIMIT = 450;
         let hasChanges = false;
 
         for (let i = 0; i < allOperations.length; i += BATCH_LIMIT) {
@@ -388,7 +446,7 @@ export function useSafeSyncedState<T extends { id: string | number }>(
           console.log(`✅ [${collectionName}] ${allOperations.length} تغییر با موفقیت ارسال شد`);
         }
 
-        return resolvedValue;
+        return normalizedValue;
       } catch (err: any) {
         console.error(`🔴 [${collectionName}] Firebase Save Failed:`, err);
         setError(err?.message || "Firebase Save Failed");
@@ -409,7 +467,7 @@ export function useSafeSyncedState<T extends { id: string | number }>(
       const timestamp = Date.now();
       const newItem = {
         ...item,
-        id: generateId(), // ✅ استفاده از تابع امن
+        id: generateId(),
         createdAt: timestamp,
         updatedAt: timestamp,
       } as unknown as T;
@@ -454,10 +512,6 @@ export function useSafeSyncedState<T extends { id: string | number }>(
       const dbInstance = await openIDB();
       dbInstance.transaction(IDB_STORE, "readwrite").objectStore(IDB_STORE).delete(collectionName);
     } catch {}
-    
-    // ✅ اصلاح ۳: حذف setIsLoading(false) از اینجا.
-    // تابع onSnapshot به طور خودکار پس از دریافت داده‌ی جدید از سرور، isLoading را false می‌کند.
-    // قرار دادن آن در اینجا باعث می‌شود UI زودتر از موعد لودینگ را متوقف کند.
   }, [collectionName]);
 
   return [
