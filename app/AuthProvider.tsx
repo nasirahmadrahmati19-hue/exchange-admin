@@ -1,11 +1,8 @@
-// app/AuthProvider.tsx
 "use client";
 
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { onAuthStateChanged, User } from "firebase/auth";
-
-// ✅ مسیر را بر اساس ساختار پروژه خود اصلاح کنید (احتمالاً ../lib/firebase صحیح است)
-import { auth } from "../lib/firebase"; 
+import { auth } from "../lib/firebase"; // ✅ مسیر اصلاح شده
 
 interface AuthContextType {
   user: User | null;
@@ -19,22 +16,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // این تابع به محض تغییر وضعیت احراز هویت فراخوانی می‌شود
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      setLoading(false); // فقط یک بار loading را false می‌کند
+      setLoading(false);
     });
 
     return () => unsubscribe();
   }, []);
 
-  // ✅ اگر هنوز در حال لودینگ است، یک صفحه ساده و سبک نشان می‌دهد
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+      // ✅ نکته حیاتی: کلاس bg-white (یا bg-gray-50) باید دقیقاً مشابه 
+      // پس‌زمینه اصلی برنامه شما در فایل layout.tsx یا globals.css باشد.
+      // این کار باعث می‌شود تغییر از لودینگ به برنامه اصلی "نامرئی" و نرم باشد.
+      <div className="flex items-center justify-center min-h-screen bg-white dark:bg-gray-900 transition-colors duration-300">
         <div className="text-center">
-          <p className="text-gray-600 mb-2 text-sm">در حال اتصال به صرافی...</p>
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto"></div>
         </div>
       </div>
     );
