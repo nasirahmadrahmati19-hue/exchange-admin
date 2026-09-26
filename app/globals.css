@@ -1,8 +1,10 @@
+/* ۱. ایمپورت فونت‌ها در بالاترین سطح برای جلوگیری از پرش متن */
+@import url('https://fonts.googleapis.com/css2?family=Lalezar&family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ====== متغیرهای رنگ ====== */
 :root {
   --foreground-rgb: 0, 0, 0;
   --background-start-rgb: 214, 219, 220;
@@ -17,10 +19,10 @@
   }
 }
 
-/* ====== جلوگیری از پرپر زدن و بهینه‌سازی Layout ====== */
+/* ۲. قفل کردن اسکرول‌بار و جلوگیری از تغییر عرض صفحه */
 html {
-  overflow-y: scroll !important; /* همیشه اسکرول‌بار را نشان بده */
-  scrollbar-gutter: stable; /* فضای اسکرول‌بار را رزرو کن */
+  overflow-y: scroll !important;
+  scrollbar-gutter: stable;
   scroll-behavior: smooth;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
@@ -28,107 +30,61 @@ html {
 
 body {
   color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
-  
-  /* جلوگیری از reflow و پرپر زدن */
+  background: linear-gradient(to bottom, transparent, rgb(var(--background-end-rgb))) rgb(var(--background-start-rgb));
   overflow-x: hidden;
   min-height: 100vh;
-  min-height: 100dvh; /* Dynamic viewport height برای موبایل */
-  
-  /* بهینه‌سازی رندر */
+  min-height: 100dvh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 
-/* ====== بهینه‌سازی برای موبایل و تبلت ====== */
+/* ۳. تعریف کلاس‌های فونت که قبلاً در تگ style بودند */
+.cs-font {
+  font-family: "Vazirmatn", "Segoe UI", Tahoma, sans-serif;
+}
+.cs-display {
+  font-family: "Lalezar", "Vazirmatn", Tahoma, sans-serif;
+  letter-spacing: 0.01em;
+}
+
+/* ۴. بهینه‌سازی برای موبایل */
 @media (max-width: 768px) {
   html, body {
-    /* جلوگیری از zoom ناخواسته در iOS */
     touch-action: manipulation;
-    
-    /* بهینه‌سازی اسکرول در موبایل */
-    -webkit-overflow-scrolling: touch;
-  }
-  
-  /* جلوگیری از تغییر سایز در موبایل */
-  body {
-    position: fixed;
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-  }
-  
-  /* کانتینر اصلی قابل اسکرول */
-  #__next,
-  main,
-  .dashboard-container {
-    overflow-y: auto;
-    overflow-x: hidden;
-    height: 100%;
     -webkit-overflow-scrolling: touch;
   }
 }
 
-/* ====== جلوگیری از reflow در کانتینرهای اصلی ====== */
-#__next,
-main,
-.dashboard-container {
+/* ۵. جلوگیری از Reflow در کانتینرهای اصلی */
+#__next, main, .dashboard-container {
   contain: layout style;
   min-height: 100vh;
   min-height: 100dvh;
   overflow-x: hidden;
 }
 
-/* ====== بهینه‌سازی انیمیشن‌ها ====== */
+/* ۶. انیمیشن جایگزین و ایمن (بدون تغییر ابعاد) */
+@keyframes safeFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.safe-fade-in {
+  animation: safeFadeIn 0.4s ease-out both;
+}
+
 * {
-  /* جلوگیری از پرپر زدن در انیمیشن‌ها */
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
 }
 
-/* کلاس‌های انیمیشنی بهینه */
-.will-change-transform {
-  will-change: transform;
-}
-
-.will-change-opacity {
-  will-change: opacity;
-}
-
-/* ====== Utilities ====== */
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
-  
-  /* جلوگیری از پرپر زدن در المان‌های خاص */
   .no-flicker {
     contain: layout style paint;
     transform: translateZ(0);
     -webkit-transform: translateZ(0);
-  }
-  
-  /* اسکرول‌بار سفارشی (اختیاری) */
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 8px;
-  }
-  
-  .custom-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: 4px;
-  }
-  
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: rgba(0, 0, 0, 0.3);
   }
 }
