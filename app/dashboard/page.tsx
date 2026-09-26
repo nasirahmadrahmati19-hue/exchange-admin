@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
-// ✅ فقط از هوک جدید و امن استفاده می‌کنیم
-import { useSafeSyncedState } from "./lib/useSafeSyncedState";
+import { useState, useMemo, useCallback, useEffect } from "react";
+import { useSafeSyncedState } from "../lib/useSafeSyncedState";
 
 // ============================================================
-// تایپ‌ها و ثابت‌ها (ثابت‌ها را اینجا تعریف می‌کنیم تا رفرنس آن‌ها هرگز تغییر نکند)
+// تایپ‌ها و ثابت‌ها
 // ============================================================
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 
@@ -17,104 +16,44 @@ const labels: Record<Currency, string> = {
 const CASH_BOX_ID = "CASH_BOX";
 const EXCHANGE_ACCOUNT_ID = "EXCHANGE_ACCOUNT";
 
-// ✅ مقادیر اولیه پایدار (Stable Initial Values) برای جلوگیری از حلقه بی‌پایان
 const INITIAL_CUSTOMERS: any[] = [];
 const INITIAL_TRANSACTIONS: any[] = [];
 const INITIAL_HAWALAS: any[] = [];
 const INITIAL_CASH: any[] = [];
 
 interface Customer {
-  id: string;
-  name: string;
-  phone?: string;
-  tazkira?: string;
-  address?: string;
-  note?: string;
-  telegram?: string;
-  telegramChatId?: string;
-  registeredAt: string;
+  id: string; name: string; phone?: string; tazkira?: string; address?: string;
+  note?: string; telegram?: string; telegramChatId?: string; registeredAt: string;
   balances: Record<Currency, number>;
 }
 
 interface Transaction {
-  id: string;
-  trackingCode: string;
-  type: "exchange" | "transfer" | "convert";
-  dealType?: "buy" | "sell";
-  date: string;
-  customerId?: string;
-  customerName?: string;
-  senderId?: string;
-  senderName?: string;
-  receiverId?: string;
-  receiverName?: string;
-  fromCurrency: Currency;
-  fromAmount: number;
-  toCurrency: Currency;
-  toAmount: number;
-  rate: number;
-  rateLabel: string;
-  rateBase?: Currency;
-  commission?: number;
-  commissionCurrency?: Currency;
-  commissionPayer?: "sender" | "receiver";
-  description?: string;
-  status: "active" | "voided";
-  profit?: number;
-  profitCurrency?: Currency;
+  id: string; trackingCode: string; type: "exchange" | "transfer" | "convert";
+  dealType?: "buy" | "sell"; date: string; customerId?: string; customerName?: string;
+  senderId?: string; senderName?: string; receiverId?: string; receiverName?: string;
+  fromCurrency: Currency; fromAmount: number; toCurrency: Currency; toAmount: number;
+  rate: number; rateLabel: string; rateBase?: Currency; commission?: number;
+  commissionCurrency?: Currency; commissionPayer?: "sender" | "receiver";
+  description?: string; status: "active" | "voided"; profit?: number; profitCurrency?: Currency;
 }
 
 interface Hawala {
-  id: string;
-  number: string;
-  date: string;
-  time: string;
-  type: string;
-  destinationCountry: string;
-  province: string;
-  district: string;
-  destinationText: string;
-  currencyFrom: Currency;
-  currencyTo: Currency;
-  amountFrom: number;
-  rate: number;
-  rateLabel: string;
-  rateBase?: Currency;
-  fee: number;
-  feeCurrency: Currency;
-  feePayer: "sender" | "receiver";
-  finalAmount: number;
-  balance: string;
-  note: string;
-  profit: number;
-  profitCurrency: Currency;
-  senderId?: string;
-  senderName: string;
-  senderPhone: string;
-  senderTelegram: string;
-  receiverId?: string;
-  receiverName: string;
-  receiverTazkira: string;
-  receiverPhone: string;
-  receiverAddress: string;
-  status: "pending" | "sent" | "paid" | "cancelled";
-  paidAt?: string;
-  paidBy?: string;
-  paidAmount?: number;
-  cancelReason?: string;
+  id: string; number: string; date: string; time: string; type: string;
+  destinationCountry: string; province: string; district: string; destinationText: string;
+  currencyFrom: Currency; currencyTo: Currency; amountFrom: number; rate: number;
+  rateLabel: string; rateBase?: Currency; fee: number; feeCurrency: Currency;
+  feePayer: "sender" | "receiver"; finalAmount: number; balance: string; note: string;
+  profit: number; profitCurrency: Currency; senderId?: string; senderName: string;
+  senderPhone: string; senderTelegram: string; receiverId?: string; receiverName: string;
+  receiverTazkira: string; receiverPhone: string; receiverAddress: string;
+  status: "pending" | "sent" | "paid" | "cancelled"; paidAt?: string; paidBy?: string;
+  paidAmount?: number; cancelReason?: string;
 }
 
 interface CashEntry {
-  id: string;
-  trackingCode: string;
-  date: string;
-  type: string;
-  currency: Currency;
-  amount: number;
-  direction: "in" | "out";
-  status: "active" | "voided";
-  customerId?: string;
-  linkedHawalaId?: string;
+  id: string; trackingCode: string; date: string; type: string; currency: Currency;
+  amount: number; direction: "in" | "out"; status: "active" | "voided";
+  customerId?: string; linkedHawalaId?: string;
 }
 
 // ============================================================
@@ -254,23 +193,19 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: any[]
 // کامپوننت اصلی داشبورد
 // ============================================================
 export default function DashboardPage() {
-  const [mounted, setMounted] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   
-  // ✅ استفاده از هوک امن و مقادیر اولیه پایدار (جلوگیری قطعی از حلقه بی‌پایان)
   const [customers] = useSafeSyncedState<Customer>("customers", INITIAL_CUSTOMERS);
   const [entries] = useSafeSyncedState<CashEntry>("cash_entries", INITIAL_CASH);
   const [transactions] = useSafeSyncedState<Transaction>("transactions", INITIAL_TRANSACTIONS);
   const [hawalas] = useSafeSyncedState<Hawala>("hawalas", INITIAL_HAWALAS);
-  
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem("fx-theme");
       if (saved === "dark" || saved === "light") setTheme(saved);
     } catch {}
-    setMounted(true);
     setLastUpdated(new Date());
   }, []);
 
@@ -370,10 +305,8 @@ export default function DashboardPage() {
 
   const todayTradeByCurrency = useMemo(() => {
     const result: Record<Currency, { amount: number; count: number; commission: number }> = {
-      AFN: { amount: 0, count: 0, commission: 0 },
-      USD: { amount: 0, count: 0, commission: 0 },
-      EUR: { amount: 0, count: 0, commission: 0 },
-      IRR: { amount: 0, count: 0, commission: 0 },
+      AFN: { amount: 0, count: 0, commission: 0 }, USD: { amount: 0, count: 0, commission: 0 },
+      EUR: { amount: 0, count: 0, commission: 0 }, IRR: { amount: 0, count: 0, commission: 0 },
       PKR: { amount: 0, count: 0, commission: 0 },
     };
     for (const tx of transactions) {
@@ -391,10 +324,8 @@ export default function DashboardPage() {
 
   const todayHawalaByCurrency = useMemo(() => {
     const result: Record<Currency, { amount: number; count: number; fee: number }> = {
-      AFN: { amount: 0, count: 0, fee: 0 },
-      USD: { amount: 0, count: 0, fee: 0 },
-      EUR: { amount: 0, count: 0, fee: 0 },
-      IRR: { amount: 0, count: 0, fee: 0 },
+      AFN: { amount: 0, count: 0, fee: 0 }, USD: { amount: 0, count: 0, fee: 0 },
+      EUR: { amount: 0, count: 0, fee: 0 }, IRR: { amount: 0, count: 0, fee: 0 },
       PKR: { amount: 0, count: 0, fee: 0 },
     };
     for (const h of hawalas) {
@@ -424,27 +355,18 @@ export default function DashboardPage() {
     ? "border-slate-700 bg-slate-800/90 shadow-[0_16px_40px_-24px_rgba(0,0,0,0.6)]"
     : "border-emerald-100 bg-white/95 shadow-[0_16px_40px_-28px_rgba(16,185,129,0.35)]";
 
-  if (!mounted) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" dir="rtl">
-        <div className="text-center">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-slate-300 border-t-emerald-500" />
-          <p className="mt-4 text-slate-500">در حال بارگذاری...</p>
-        </div>
-      </div>
-    );
-  }
+  // ✅ حذف شرط !mounted برای جلوگیری از رندر مجدد کل صفحه
 
   return (
     <div dir="rtl" className={dk ? "dark" : ""}>
-      <style>{`@import url("https://fonts.googleapis.com/css2?family=Lalezar&family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap");.cs-font{font-family:"Vazirmatn","Segoe UI",Tahoma,sans-serif}.cs-display{font-family:"Lalezar","Vazirmatn",Tahoma,sans-serif;letter-spacing:.01em}.dark{color-scheme:dark}@keyframes csUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}.cs-up{animation:csUp .5s cubic-bezier(.22,.8,.35,1) both}::selection{background:rgba(16,185,129,.25)}`}</style>
+      {/* ✅ حذف تگ style و انتقال فونت به globals.css */}
 
-      <div className={`cs-font relative min-h-screen overflow-x-hidden antialiased transition-colors duration-500 ${dk ? "bg-[#0f172a] text-slate-100" : "bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 text-slate-800"}`}>
+      <div className={`cs-font relative min-h-screen overflow-x-hidden antialiased transition-colors duration-500 safe-fade-in ${dk ? "bg-[#0f172a] text-slate-100" : "bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 text-slate-800"}`}>
         <div className={`fixed inset-x-0 top-0 z-30 h-1 bg-gradient-to-l ${dk ? "from-emerald-400 via-teal-400 to-cyan-400" : "from-emerald-500 via-teal-500 to-cyan-500"}`} />
 
         <div className="relative z-10 mx-auto w-full max-w-7xl space-y-4 md:space-y-6 px-3 pb-16 pt-5 md:px-8 md:pt-9">
           {/* هدر */}
-          <header className="cs-up flex flex-wrap items-center justify-between gap-3">
+          <header className="safe-fade-in flex flex-wrap items-center justify-between gap-3" style={{ animationDelay: "50ms" }}>
             <div className="flex items-center gap-2.5 md:gap-3.5 min-w-0">
               <div className="relative grid h-11 w-11 md:h-14 md:w-14 shrink-0 place-items-center rounded-xl md:rounded-2xl bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-400 text-white shadow-lg shadow-emerald-500/30 ring-1 ring-white/30">
                 <span className="text-2xl md:text-3xl">📊</span>
@@ -466,7 +388,11 @@ export default function DashboardPage() {
                 </span>
               </div>
               <button
-                onClick={() => setTheme(dk ? "light" : "dark")}
+                onClick={() => {
+                  const newTheme = dk ? "light" : "dark";
+                  setTheme(newTheme);
+                  window.localStorage.setItem("fx-theme", newTheme);
+                }}
                 className={`group grid h-10 w-10 md:h-11 md:w-11 cursor-pointer place-items-center rounded-lg md:rounded-xl border shadow-sm backdrop-blur transition-all duration-300 active:scale-90 ${dk ? "border-slate-600 bg-slate-800/85 text-amber-300 hover:border-amber-300" : "border-slate-200 bg-white/85 text-slate-600 hover:border-emerald-400"}`}
               >
                 <span className="text-lg transition-transform duration-500 group-hover:rotate-12">
@@ -477,7 +403,7 @@ export default function DashboardPage() {
           </header>
 
           {/* آمار امروز */}
-          <section className="cs-up space-y-4 md:space-y-6" style={{ animationDelay: "70ms" }}>
+          <section className="safe-fade-in space-y-4 md:space-y-6" style={{ animationDelay: "100ms" }}>
             <div className="flex items-center gap-3 mb-1">
               <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl shadow-md ${dk ? "bg-gradient-to-br from-blue-500 to-sky-500 text-white" : "bg-gradient-to-br from-blue-500 to-cyan-500 text-white"}`}>
                 <span className="text-xl">🗓️</span>
@@ -568,7 +494,7 @@ export default function DashboardPage() {
           </section>
 
           {/* موجودی فیزیکی صندوق */}
-          <section className="cs-up space-y-4 md:space-y-5" style={{ animationDelay: "140ms" }}>
+          <section className="safe-fade-in space-y-4 md:space-y-5" style={{ animationDelay: "150ms" }}>
             <div className={`relative overflow-hidden rounded-2xl md:rounded-3xl border-2 p-5 md:p-7 transition-all duration-300 hover:shadow-2xl ${dk ? "border-emerald-400/40 bg-gradient-to-br from-emerald-900/40 via-slate-900/60 to-teal-900/40 shadow-[0_20px_60px_-15px_rgba(16,185,129,0.3)]" : "border-emerald-300 bg-gradient-to-br from-emerald-50 via-white to-teal-50 shadow-[0_20px_60px_-15px_rgba(16,185,129,0.25)]"}`}>
               <div className={`absolute -top-24 -left-24 h-48 w-48 rounded-full blur-3xl opacity-20 ${dk ? "bg-emerald-400" : "bg-emerald-300"}`} />
               <div className={`absolute -bottom-24 -right-24 h-48 w-48 rounded-full blur-3xl opacity-20 ${dk ? "bg-teal-400" : "bg-teal-300"}`} />
@@ -599,7 +525,7 @@ export default function DashboardPage() {
           </section>
 
           {/* چهار کارت حساب‌ها */}
-          <section className="cs-up grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4" style={{ animationDelay: "210ms" }}>
+          <section className="safe-fade-in grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4" style={{ animationDelay: "200ms" }}>
             <div className={`group relative overflow-hidden rounded-2xl border p-4 md:p-5 transition-all duration-300 hover:shadow-xl hover:scale-[1.01] ${dk ? "border-sky-400/25 bg-gradient-to-br from-sky-900/30 to-slate-900/50" : "border-sky-200 bg-gradient-to-br from-sky-50 to-white"}`}>
               <div className={`absolute top-0 right-0 h-24 w-24 rounded-full blur-2xl opacity-10 ${dk ? "bg-sky-400" : "bg-sky-300"}`} />
               <div className="relative flex items-center gap-3 mb-4">
@@ -694,7 +620,7 @@ export default function DashboardPage() {
           </section>
 
           {/* فرمول حسابداری */}
-          <div className={`cs-up rounded-2xl border-2 px-5 py-4 md:py-5 ${dk ? "border-slate-700/70 bg-gradient-to-r from-slate-800/60 to-slate-900/60" : "border-slate-200 bg-gradient-to-r from-white to-slate-50"}`} style={{ animationDelay: "280ms" }}>
+          <div className={`safe-fade-in rounded-2xl border-2 px-5 py-4 md:py-5 ${dk ? "border-slate-700/70 bg-gradient-to-r from-slate-800/60 to-slate-900/60" : "border-slate-200 bg-gradient-to-r from-white to-slate-50"}`} style={{ animationDelay: "250ms" }}>
             <div className={`flex flex-wrap items-center justify-center gap-3 md:gap-4 text-[12px] md:text-[13px] font-black ${dk ? "text-slate-300" : "text-slate-600"}`}>
               <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${dk ? "bg-emerald-400/10 text-emerald-300 ring-1 ring-emerald-400/30" : "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"}`}>💰 صندوق</span>
               <span className="text-slate-400">=</span>
@@ -705,7 +631,7 @@ export default function DashboardPage() {
           </div>
 
           {/* جدول وضعیت کلی سیستم */}
-          <section className={`cs-up rounded-2xl md:rounded-3xl border-2 overflow-hidden ${uiCard}`} style={{ animationDelay: "350ms" }}>
+          <section className={`safe-fade-in rounded-2xl md:rounded-3xl border-2 overflow-hidden ${uiCard}`} style={{ animationDelay: "300ms" }}>
             <div className="flex items-center gap-3 p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6">
               <div className={`grid h-11 w-11 md:h-12 md:w-12 place-items-center rounded-xl shadow-md ${dk ? "bg-gradient-to-br from-cyan-400 to-sky-500 text-slate-950" : "bg-gradient-to-br from-cyan-500 to-sky-500 text-white"}`}>
                 <span className="text-xl">📋</span>
@@ -751,7 +677,7 @@ export default function DashboardPage() {
           </section>
 
           {/* فوتر */}
-          <div className={`cs-up text-center py-4 text-[11px] font-bold ${subText}`} style={{ animationDelay: "420ms" }}>
+          <div className={`safe-fade-in text-center py-4 text-[11px] font-bold ${subText}`} style={{ animationDelay: "350ms" }}>
             🏦 صرافی برادران نورزاد — هرات | سیستم هماهنگ‌سازی هوشمند فعال است
           </div>
         </div>
