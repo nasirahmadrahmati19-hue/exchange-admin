@@ -17,6 +17,10 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
     title: "صرافی من",
   },
+  // ✅ اضافه کردن تگ استاندارد جدید برای رفع هشدار مرورگرهای مدرن
+  other: {
+    "mobile-web-app-capable": "yes",
+  },
 };
 
 export const viewport: Viewport = {
