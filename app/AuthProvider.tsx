@@ -2,7 +2,9 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { onAuthStateChanged, User } from "firebase/auth";
-import { auth } from "../lib/firebase"; // ✅ مسیر اصلاح شده
+
+// ✅ مسیر صحیح: پوشه lib داخل پوشه dashboard قرار دارد
+import { auth } from "./dashboard/lib/firebase"; 
 
 interface AuthContextType {
   user: User | null;
@@ -24,11 +26,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => unsubscribe();
   }, []);
 
+  // ✅ این صفحه لودینگ را نمایش می‌دهد
   if (loading) {
     return (
-      // ✅ نکته حیاتی: کلاس bg-white (یا bg-gray-50) باید دقیقاً مشابه 
-      // پس‌زمینه اصلی برنامه شما در فایل layout.tsx یا globals.css باشد.
-      // این کار باعث می‌شود تغییر از لودینگ به برنامه اصلی "نامرئی" و نرم باشد.
+      // ✅ نکته کلیدی برای رفع پرش: کلاس bg-white (یا رنگ اصلی برنامه شما) 
+      // باعث می‌شود تغییر از لودینگ به برنامه اصلی نرم و نامحسوس باشد.
       <div className="flex items-center justify-center min-h-screen bg-white dark:bg-gray-900 transition-colors duration-300">
         <div className="text-center">
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto"></div>
