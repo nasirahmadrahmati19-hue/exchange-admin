@@ -1,92 +1,24 @@
 // app/page.tsx
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { signInWithPopup, GoogleAuthProvider, signOut } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
 import { useAuth } from "./AuthProvider";
-import { auth, db } from "./dashboard/lib/firebase";
-
-const OWNER_EMAIL = "nasirahmadrahmati19@gmail.com";
+import { auth } from "./dashboard/lib/firebase";
 
 export default function LoginPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, status } = useAuth();
   const router = useRouter();
-  const routerRef = useRef(router);
-  routerRef.current = router;
-
-  const [isCheckingAccess, setIsCheckingAccess] = useState(false);
-  const [isAuthorized, setIsAuthorized] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
   const [localLoading, setLocalLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
 
-  // جلوگیری از اجرای تکراری بررسی دسترسی (علت رفرش پشت‌سرهم)
-  const checkedUidRef = useRef<string | null>(null);
-
+  // اگر کاربر وارد شده و توسط مدیر تأیید شده است، مستقیم به داشبورد برود
   useEffect(() => {
-    if (authLoading) return;
-
-    // خروج از حساب → ریست وضعیت
-    if (!user) {
-      checkedUidRef.current = null;
-      setIsAuthorized(false);
-      setIsCheckingAccess(false);
-      setLocalLoading(false);
-      return;
+    if (!authLoading && user && status === "approved") {
+      router.replace("/dashboard");
     }
-
-    // برای همین کاربر قبلاً با موفقیت چک شده — دوباره اجرا نکن
-    if (checkedUidRef.current === user.uid) return;
-
-    let cancelled = false;
-    setIsCheckingAccess(true);
-
-    const uid = user.uid;
-    const emailRaw = user.email;
-    const email = emailRaw?.toLowerCase() || "";
-
-    const checkAccess = async () => {
-      try {
-        if (email && email === OWNER_EMAIL.toLowerCase()) {
-          if (!cancelled) {
-            checkedUidRef.current = uid;
-            setIsAuthorized(true);
-            routerRef.current.replace("/dashboard");
-          }
-          return;
-        }
-
-        if (emailRaw) {
-          const userDoc = await getDoc(doc(db, "authorized_users", emailRaw));
-          if (cancelled) return;
-          if (userDoc.exists()) {
-            checkedUidRef.current = uid;
-            setIsAuthorized(true);
-            routerRef.current.replace("/dashboard");
-          } else {
-            checkedUidRef.current = uid;
-            setIsAuthorized(false);
-          }
-        } else if (!cancelled) {
-          checkedUidRef.current = uid;
-          setIsAuthorized(false);
-        }
-      } catch (error) {
-        console.error("خطا در بررسی دسترسی:", error);
-        // خطا را ثبت نکن تا امکان تلاش مجدد باشد
-        if (!cancelled) setIsAuthorized(false);
-      } finally {
-        if (!cancelled) setIsCheckingAccess(false);
-      }
-    };
-
-    checkAccess();
-    return () => {
-      cancelled = true;
-    };
-    // فقط uid؛ تغییر رفرنس آبجکت user (مثلاً refresh توکن) نباید چک را دوباره اجرا کند
-  }, [user?.uid, authLoading]);
+  }, [user, authLoading, status, router]);
 
   const handleLogin = async () => {
     setLocalLoading(true);
@@ -95,7 +27,7 @@ export default function LoginPage() {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: "select_account" });
       await signInWithPopup(auth, provider);
-      // بعد از لاگین موفق، useEffect بالا فعال می‌شود و دسترسی را چک می‌کند
+      // بعد از لاگین موفق، AuthProvider فعال می‌شود، وضعیت را چک می‌کند و اگر جدید باشد ایمیل می‌فرستد
     } catch (error: any) {
       console.error("خطا در ورود:", error);
       if (error.code === "auth/popup-closed-by-user") {
@@ -112,9 +44,7 @@ export default function LoginPage() {
   const handleLogout = async () => {
     setLocalLoading(true);
     try {
-      checkedUidRef.current = null;
       await signOut(auth);
-      setIsAuthorized(false);
       setErrorMsg("");
     } catch (e) {
       console.error("خطا در خروج:", e);
@@ -122,7 +52,8 @@ export default function LoginPage() {
     setLocalLoading(false);
   };
 
-  if (authLoading || isCheckingAccess) {
+  // حالت بارگذاری اولیه
+  if (authLoading) {
     return (
       <div className="min-h-screen bg-white dark:bg-slate-900 flex items-center justify-center transition-colors duration-300">
         <div className="text-center">
@@ -133,6 +64,7 @@ export default function LoginPage() {
     );
   }
 
+  // اگر کاربر وارد نشده است، فرم لاگین زیبا را نشان بده
   if (!user) {
     return (
       <div className="min-h-screen bg-[#0b1f2e] flex items-center justify-center p-4 relative overflow-hidden">
@@ -167,7 +99,8 @@ export default function LoginPage() {
     );
   }
 
-  if (user && !isAuthorized) {
+  // اگر کاربر وارد شده اما دسترسی‌اش رد شده است
+  if (status === "rejected") {
     return (
       <div className="min-h-screen bg-[#0b1f2e] flex items-center justify-center p-4">
         <div className="w-full max-w-md bg-rose-500/10 border border-rose-500/30 rounded-3xl p-8 text-center">
@@ -176,7 +109,7 @@ export default function LoginPage() {
           </div>
           <h2 className="text-xl font-bold text-rose-400 mb-2">دسترسی غیرمجاز</h2>
           <p className="text-slate-300 text-sm mb-6">
-            ایمیل <span className="text-white font-mono bg-rose-500/20 px-1 rounded">{user.email}</span> توسط سازنده برنامه تأیید نشده است.
+            ایمیل <span className="text-white font-mono bg-rose-500/20 px-1 rounded">{user.email}</span> توسط مدیر برنامه رد شده است.
           </p>
           <button onClick={handleLogout} disabled={localLoading} className="bg-rose-600 text-white font-bold py-3 px-6 rounded-xl hover:bg-rose-700 transition-all disabled:opacity-50">
             {localLoading ? "در حال خروج..." : "خروج و انتخاب حساب دیگر"}
@@ -186,6 +119,7 @@ export default function LoginPage() {
     );
   }
 
+  // در غیر این صورت (در حال انتقال به داشبورد)
   return (
     <div className="min-h-screen bg-white dark:bg-slate-900 flex items-center justify-center transition-colors duration-300">
       <div className="text-center">
