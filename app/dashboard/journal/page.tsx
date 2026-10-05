@@ -4,7 +4,6 @@ import { useState, useMemo, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSafeSyncedState } from "../lib/useSafeSyncedState";
 
-// انواع داده‌ها (بدون تغییر)
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
 const currencyLabels: Record<Currency, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
@@ -99,10 +98,9 @@ export default function JournalPage() {
     };
   }, []);
 
-  // ✅ ✅ ✅ بخش حیاتی: استفاده مستقیم از رشته‌ها بدون هیچ متغیر واسطه‌ای ✅ ✅ ✅
   const txState = useSafeSyncedState<Transaction>("transactions", []);
   const hwState = useSafeSyncedState<Hawala>("hawalas", []);
-  const ceState = useSafeSyncedState<CashEntry>("cash_entries", []); // دقت: با زیرخط (_)
+  const ceState = useSafeSyncedState<CashEntry>("cash_entries", []);
   const custState = useSafeSyncedState<Customer>("customers", []);
 
   const transactions = txState[0];
@@ -115,16 +113,6 @@ export default function JournalPage() {
   const isCashLoading = ceState[2];
   const txActions = txState[3];
   const cashActions = ceState[3];
-
-  // ✅ ✅ ✅ دیباگ زنده: این خط در کنسول مرورگر (F12) چاپ می‌شود ✅ ✅ ✅
-  useEffect(() => {
-    console.log("🔍 وضعیت اتصال روزنامه (DEBUG):", {
-      TX_transactions: transactions.length,
-      HW_hawalas: hawalas.length,
-      CS_cash_entries: cashEntries.length,
-      Cust_customers: customers.length
-    });
-  }, [transactions.length, hawalas.length, cashEntries.length, customers.length]);
 
   const isLoading = (isTxLoading && transactions.length === 0) || 
                     (isHawalaLoading && hawalas.length === 0) || 
@@ -323,13 +311,6 @@ export default function JournalPage() {
         <div className={`fixed inset-x-0 top-0 z-30 h-1 bg-gradient-to-l ${dk ? "from-emerald-400 via-teal-400 to-cyan-400" : "from-emerald-500 via-teal-500 to-cyan-500"}`} />
 
         <div className="relative z-10 mx-auto w-full max-w-7xl space-y-4 md:space-y-6 px-3 pb-16 pt-5 md:px-8 md:pt-9">
-          
-          {/* ✅ ✅ ✅ جعبه دیباگ زنده: این بخش به ما می‌گوید دقیقاً چه چیزی خوانده شده است ✅ ✅ ✅ */}
-          <div className="bg-red-600 text-white p-3 rounded-xl text-xs font-mono text-center shadow-lg border-2 border-red-400">
-            🔍 DEBUG MODE: TX={transactions.length} | HW={hawalas.length} | CS={cashEntries.length} | Cust={customers.length}
-            <br/>
-            <span className="text-[10px] opacity-80">(اگر همه ۰ هستند، یعنی هوک داده‌ای پیدا نکرده است. کنسول مرورگر (F12) را چک کنید)</span>
-          </div>
 
           {isOffline && (
             <div className="cs-up flex items-center justify-center gap-2 bg-amber-500/20 border border-amber-500/50 text-amber-300 dark:text-amber-400 px-4 py-2.5 rounded-xl text-sm font-bold mb-4 shadow-lg shadow-amber-500/10 backdrop-blur-sm">
@@ -427,11 +408,6 @@ export default function JournalPage() {
                         <div className="flex flex-col items-center gap-2">
                           <span className="text-4xl">📭</span>
                           <span className="font-bold">هیچ تراکنشی با این فیلترها یافت نشد.</span>
-                          {transactions.length === 0 && hawalas.length === 0 && cashEntries.length === 0 && (
-                            <span className="text-xs text-rose-400 mt-2 font-mono bg-rose-500/10 px-2 py-1 rounded">
-                              ⚠️ هشدار: هیچ داده‌ای خوانده نشد. لطفاً کنسول مرورگر (F12) را بررسی کنید.
-                            </span>
-                          )}
                         </div>
                       </td>
                     </tr>
