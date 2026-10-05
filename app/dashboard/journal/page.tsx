@@ -3,6 +3,13 @@
 import { useState, useMemo, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSafeSyncedState } from "../lib/useSafeSyncedState";
+// ✅ بازگرداندن ایمپورت کلیدهای اصلی از فایل مرکزی برای تضمین هماهنگی با همه تب‌ها
+import { 
+  CUSTOMERS_KEY, 
+  TRANSACTIONS_KEY, 
+  HAWALAS_KEY, 
+  CASH_KEY 
+} from "../lib/defaultData";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
@@ -165,23 +172,24 @@ export default function JournalPage() {
     };
   }, []);
 
-  // ✅ اصلاح نهایی: استفاده از نام دقیق کالکشن‌های فایربیس (مطابق با سایر تب‌ها)
-  const txState = useSafeSyncedState<Transaction>("transactions", []);
+  // ✅ اصلاح نهایی و قطعی: استفاده از کلیدهای مرکزی defaultData.ts
+  // این تضمین می‌کند که روزنامه دقیقاً همان جایی را می‌خواند که تب‌های تبادل ارز، صندوق و مشتریان داده را در آن می‌نویسند.
+  const txState = useSafeSyncedState<Transaction>(TRANSACTIONS_KEY, []);
   const transactions = txState[0];
   const isTxLoading = txState[2];
   const txActions = txState[3];
 
-  const hwState = useSafeSyncedState<Hawala>("hawalas", []);
+  const hwState = useSafeSyncedState<Hawala>(HAWALAS_KEY, []);
   const hawalas = hwState[0];
   const isHawalaLoading = hwState[2];
   const hawalaActions = hwState[3];
 
-  const ceState = useSafeSyncedState<CashEntry>("cash_entries", []);
+  const ceState = useSafeSyncedState<CashEntry>(CASH_KEY, []);
   const cashEntries = ceState[0];
   const isCashLoading = ceState[2];
   const cashActions = ceState[3];
 
-  const custState = useSafeSyncedState<Customer>("customers", []);
+  const custState = useSafeSyncedState<Customer>(CUSTOMERS_KEY, []);
   const customers = custState[0];
 
   const isLoading = (isTxLoading && transactions.length === 0) || 
@@ -216,14 +224,15 @@ export default function JournalPage() {
   const unifiedEntries = useMemo<UnifiedJournalEntry[]>(() => {
     const entries: Omit<UnifiedJournalEntry, "trackingCode">[] = [];
     
-    // 1. پردازش تراکنش‌ها با پشتیبان (Fallback) برای جلوگیری از حذف ناخواسته
+    // 1. پردازش تراکنش‌ها (تبادل ارز، انتقال و ...)
     transactions.forEach((tx) => {
       if (!tx || !tx.id) return;
       
       const txType = (tx.type || "").toLowerCase();
       const status = tx.status || "active";
 
-      if (txType === "exchange" || txType === "convert") {
+      // ✅ بهبود: اضافه کردن "buy" و "sell" برای اطمینان از شناسایی تراکنش‌های تبادل ارز
+      if (txType === "exchange" || txType === "convert" || txType === "buy" || txType === "sell") {
         const partyName = resolveCustomerName(tx.customerName, tx.customerId);
         const desc = `معاوضه: ${tx.fromCurrency} به ${tx.toCurrency}`;
         
@@ -277,7 +286,6 @@ export default function JournalPage() {
           fee: tx.fee || 0
         });
       } else {
-        // ✅ پشتیبان: اگر نوع تراکنش ناشناخته بود، آن را به عنوان "سایر" ثبت کن تا گم نشود
         const partyName = resolveCustomerName(tx.customerName, tx.customerId);
         entries.push({
           id: tx.id,
@@ -322,6 +330,7 @@ export default function JournalPage() {
     // 3. پردازش صندوق
     cashEntries.forEach((ce) => {
       if (!ce || ce.status === "voided") return;
+      // اگر این ورودی صندوق قبلاً در بخش تبادل یا حواله شمرده شده، دوباره آن را نمی‌شماریم تا دوبله کاری نشود
       if (ce.linkedExchangeId || ce.linkedTransferId || ce.linkedConvertId || ce.linkedHawalaId || ce.linkedHawalaSettleId) return;
       
       let type: TxType = "هزینه";
@@ -370,7 +379,6 @@ export default function JournalPage() {
     return entriesWithCode.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [transactions, hawalas, cashEntries, customerMap]);
 
-  // ✅ ایمن‌سازی فیلتر نوع برای جلوگیری از حذف ناخواسته به دلیل مقادیر نامعتبر در URL
   const validTypes: TxType[] = ["واریز", "برداشت", "انتقال", "تبدیل", "هزینه", "حواله", "سایر"];
   const safeTypeFilter = validTypes.includes(typeFilter as TxType) ? typeFilter : "all";
 
@@ -437,47 +445,6 @@ export default function JournalPage() {
     });
     return balances;
   }, [unifiedEntries]);
-
-  const profitLoss = useMemo(() => {
-    let totalFees = 0;
-    let totalExpenses = 0;
-    
-    transactions.forEach(tx => {
-      if (tx.status !== "voided" && tx.fee) totalFees += tx.fee;
-    });
-    hawalas.forEach(h => {
-      if (h.status !== "cancelled" && h.fee) totalFees += h.fee;
-    });
-
-    filteredEntries.forEach((e) => {
-      if (e.status === "voided") return;
-      if (e.type === "هزینه") totalExpenses += e.amount;
-    });
-
-    return { 
-      totalFees, 
-      totalExpenses, 
-      netProfit: totalFees - totalExpenses 
-    };
-  }, [filteredEntries, transactions, hawalas]);
-
-  const summary = useMemo(() => {
-    let count = 0;
-    filteredEntries.forEach((e) => { if (e.status !== "voided") count++; });
-    return { count };
-  }, [filteredEntries]);
-
-  const currencyPeriodSummary = useMemo(() => {
-    const summary: Record<string, { volume: number; net: number }> = {};
-    currencies.forEach(curr => { summary[curr] = { volume: 0, net: 0 }; });
-    filteredEntries.forEach((e) => {
-      if (e.status === "voided" || !summary[e.currency]) return;
-      summary[e.currency].volume += e.amount;
-      if (e.type === "واریز") summary[e.currency].net += e.amount;
-      else if (e.type === "برداشت" || e.type === "هزینه" || e.type === "حواله") summary[e.currency].net -= e.amount;
-    });
-    return summary;
-  }, [filteredEntries]);
 
   const handleVoid = async (entry: UnifiedJournalEntry) => {
     const reason = prompt("دلیل ابطال این تراکنش را وارد کنید:");
@@ -677,7 +644,7 @@ export default function JournalPage() {
                           <span className="font-bold">هیچ تراکنشی با این فیلترها یافت نشد.</span>
                           {transactions.length === 0 && hawalas.length === 0 && cashEntries.length === 0 && (
                             <span className="text-xs text-rose-400 mt-2 font-mono bg-rose-500/10 px-2 py-1 rounded">
-                              ⚠️ هشدار: هیچ داده‌ای از Firebase خوانده نشد. لطفاً نام کالکشن‌ها را در defaultData.ts بررسی کنید.
+                              ⚠️ هشدار: هیچ داده‌ای خوانده نشد. لطفاً در تب‌های دیگر داده ثبت کنید.
                             </span>
                           )}
                         </div>
