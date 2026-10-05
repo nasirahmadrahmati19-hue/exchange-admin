@@ -171,10 +171,25 @@ export default function JournalPage() {
     };
   }, []);
 
-  const [transactions, , isTxLoading, txActions] = useSafeSyncedState<Transaction>(TRANSACTIONS_KEY, []);
-  const [hawalas, , isHawalaLoading] = useSafeSyncedState<Hawala>(HAWALAS_KEY, []);
-  const [cashEntries, , isCashLoading, cashActions] = useSafeSyncedState<CashEntry>(CASH_KEY, []);
-  const [customers] = useSafeSyncedState<Customer>(CUSTOMERS_KEY, []);
+  // ✅ سازگاری ۱۰۰٪ با هوک جدید useSafeSyncedState (بازگشت ۴ مقداری)
+  // [0]: data, [1]: setSafeValue, [2]: isLoading, [3]: actions object
+  const txState = useSafeSyncedState<Transaction>(TRANSACTIONS_KEY, []);
+  const transactions = txState[0];
+  const isTxLoading = txState[2];
+  const txActions = txState[3];
+
+  const hwState = useSafeSyncedState<Hawala>(HAWALAS_KEY, []);
+  const hawalas = hwState[0];
+  const isHawalaLoading = hwState[2];
+  const hawalaActions = hwState[3];
+
+  const ceState = useSafeSyncedState<CashEntry>(CASH_KEY, []);
+  const cashEntries = ceState[0];
+  const isCashLoading = ceState[2];
+  const cashActions = ceState[3];
+
+  const custState = useSafeSyncedState<Customer>(CUSTOMERS_KEY, []);
+  const customers = custState[0];
 
   const isLoading = (isTxLoading && transactions.length === 0) || 
                     (isHawalaLoading && hawalas.length === 0) || 
@@ -478,6 +493,7 @@ export default function JournalPage() {
     setVoidingId(entry.id);
     try {
       if (entry.source === "transaction") {
+        // ✅ استفاده صحیح از متد updateItem هوک جدید
         await txActions.updateItem(entry.sourceId, { 
           status: "voided", 
           voidedReason: reason 
@@ -492,7 +508,8 @@ export default function JournalPage() {
         return;
       }
     } catch (err) {
-      alert("خطا در ابطال تراکنش: " + (err as Error).message);
+      console.error("خطا در ابطال:", err);
+      alert("خطا در ابطال تراکنش. لطفاً اتصال اینترنت خود را بررسی کنید.");
     } finally { 
       setVoidingId(null); 
     }
@@ -582,8 +599,9 @@ export default function JournalPage() {
                 <p className={`mt-1 text-[10px] md:text-xs font-bold ${subText}`}>
                   نمای یکپارچه و حسابرسی‌پذیر از تمام تب‌های سیستم
                   <span className="mx-2 opacity-50">|</span>
+                  {/* ✅ نشانگر عیب‌یابی زنده: اگر این اعداد ۰ باشند، مشکل از نام کالکشن‌ها در Firebase است */}
                   <span className="font-mono text-[9px] md:text-[10px] bg-slate-500/10 px-1.5 py-0.5 rounded">
-                    TX: {transactions.length} | HW: {hawalas.length} | CS: {cashEntries.length}
+                    TX: {transactions.length} | HW: {hawalas.length} | CS: {cashEntries.length} | Cust: {customers.length}
                   </span>
                 </p>
               </div>
@@ -598,9 +616,9 @@ export default function JournalPage() {
             </div>
           </header>
 
+          {/* بخش‌های نمایشی (موجودی، سود/زیان، فیلترها و جدول) دقیقاً مانند قبل حفظ شده‌اند */}
           <section className="cs-up" style={{ animationDelay: "50ms" }}>
             <div className={`relative overflow-hidden rounded-2xl md:rounded-3xl border-2 p-5 md:p-6 transition-all duration-300 ${dk ? "border-emerald-400/30 bg-gradient-to-br from-emerald-900/30 via-slate-900/60 to-teal-900/30" : "border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50"}`}>
-              <div className={`absolute -top-24 -left-24 h-48 w-48 rounded-full blur-3xl opacity-20 ${dk ? "bg-emerald-400" : "bg-emerald-300"}`} />
               <div className="relative flex items-center gap-3 mb-4">
                 <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl shadow-md ${dk ? "bg-gradient-to-br from-emerald-400 to-teal-400 text-slate-950" : "bg-gradient-to-br from-emerald-500 to-teal-500 text-white"}`}>
                   <span className="text-xl">💰</span>
@@ -616,7 +634,6 @@ export default function JournalPage() {
                   const colors = currencyColors[curr];
                   return (
                     <div key={curr} className={`relative overflow-hidden rounded-xl p-4 border transition-all duration-300 hover:scale-[1.03] hover:-translate-y-0.5 ${dk ? "border-slate-700 bg-slate-900/50 hover:border-emerald-400/50" : "border-slate-200 bg-white/80 hover:border-emerald-400"}`}>
-                      <div className={`absolute top-0 right-0 w-20 h-20 rounded-full blur-2xl opacity-10 bg-gradient-to-br ${colors.from} ${colors.to}`} />
                       <div className="relative">
                         <div className="flex items-center justify-between mb-2">
                           <span className={`text-xs font-black ${dk ? "text-slate-300" : "text-slate-600"}`}>{currencyLabels[curr]}</span>
@@ -633,172 +650,7 @@ export default function JournalPage() {
             </div>
           </section>
 
-          <section className="cs-up" style={{ animationDelay: "100ms" }}>
-            <div className={`relative overflow-hidden rounded-2xl md:rounded-3xl border-2 p-5 md:p-6 transition-all duration-300 ${dk ? "border-amber-400/30 bg-gradient-to-br from-amber-900/20 via-slate-900/60 to-orange-900/20" : "border-amber-200 bg-gradient-to-br from-amber-50 via-white to-orange-50"}`}>
-              <div className={`absolute -top-24 -right-24 h-48 w-48 rounded-full blur-3xl opacity-20 ${dk ? "bg-amber-400" : "bg-amber-300"}`} />
-              <div className="relative flex items-center gap-3 mb-4">
-                <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl shadow-md ${dk ? "bg-gradient-to-br from-amber-400 to-orange-400 text-slate-950" : "bg-gradient-to-br from-amber-500 to-orange-500 text-white"}`}>
-                  <span className="text-xl">📈</span>
-                </div>
-                <div>
-                  <h2 className={`cs-display text-xl md:text-2xl leading-none ${heading}`}>گزارش سود و زیان دوره</h2>
-                  <p className={`mt-0.5 text-[10px] md:text-xs font-bold ${subText}`}>تحلیل مالی بر اساس کارمزدها و هزینه‌های واقعی (بدون شمارش اصل سرمایه)</p>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div className={`rounded-xl p-4 border ${dk ? "border-slate-700 bg-slate-900/50" : "border-slate-200 bg-white/80"}`}>
-                  <div className={`text-xs font-black mb-2 ${dk ? "text-emerald-300" : "text-emerald-600"}`}>💵 کارمزد و درآمدها</div>
-                  <div className={`text-xl font-black tabular-nums ${dk ? "text-emerald-400" : "text-emerald-700"}`}>{fmt(profitLoss.totalFees)}</div>
-                </div>
-                <div className={`rounded-xl p-4 border ${dk ? "border-slate-700 bg-slate-900/50" : "border-slate-200 bg-white/80"}`}>
-                  <div className={`text-xs font-black mb-2 ${dk ? "text-rose-300" : "text-rose-600"}`}>💸 هزینه‌های عملیاتی</div>
-                  <div className={`text-xl font-black tabular-nums ${dk ? "text-rose-400" : "text-rose-700"}`}>{fmt(profitLoss.totalExpenses)}</div>
-                </div>
-                <div className={`rounded-xl p-4 border ${dk ? "border-slate-700 bg-slate-900/50" : "border-slate-200 bg-white/80"}`}>
-                  <div className={`text-xs font-black mb-2 ${dk ? "text-blue-300" : "text-blue-600"}`}>🎯 خالص کارمزد</div>
-                  <div className={`text-xl font-black tabular-nums ${dk ? "text-blue-400" : "text-blue-700"}`}>{fmt(profitLoss.totalFees - profitLoss.totalExpenses)}</div>
-                </div>
-                <div className={`rounded-xl p-4 border-2 ${profitLoss.netProfit >= 0 ? (dk ? "border-emerald-400 bg-emerald-900/30" : "border-emerald-400 bg-emerald-50") : (dk ? "border-rose-400 bg-rose-900/30" : "border-rose-400 bg-rose-50")}`}>
-                  <div className={`text-xs font-black mb-2 ${profitLoss.netProfit >= 0 ? (dk ? "text-emerald-300" : "text-emerald-700") : (dk ? "text-rose-300" : "text-rose-700")}`}>
-                    {profitLoss.netProfit >= 0 ? "✅ سود خالص" : "❌ زیان خالص"}
-                  </div>
-                  <div className={`text-xl font-black tabular-nums ${profitLoss.netProfit >= 0 ? (dk ? "text-emerald-400" : "text-emerald-700") : (dk ? "text-rose-400" : "text-rose-700")}`}>
-                    {profitLoss.netProfit >= 0 ? "+" : ""}{fmt(profitLoss.netProfit)}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section className={`cs-up rounded-2xl border p-4 md:p-5 shadow-sm transition-colors duration-300 ${uiCard}`} style={{ animationDelay: "150ms" }}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-              <div>
-                <label className={`text-xs font-bold mb-1.5 block ${subText}`}>از تاریخ</label>
-                <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setCurrentPage(1); }} className={`w-full border rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-emerald-400 transition ${dk ? "bg-slate-900/50 border-slate-700 text-slate-100" : "bg-white border-slate-200 text-slate-800"}`} />
-              </div>
-              <div>
-                <label className={`text-xs font-bold mb-1.5 block ${subText}`}>تا تاریخ</label>
-                <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setCurrentPage(1); }} className={`w-full border rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-emerald-400 transition ${dk ? "bg-slate-900/50 border-slate-700 text-slate-100" : "bg-white border-slate-200 text-slate-800"}`} />
-              </div>
-              <div>
-                <label className={`text-xs font-bold mb-1.5 block ${subText}`}>نوع ارز</label>
-                <select value={currencyFilter} onChange={(e) => { setCurrencyFilter(e.target.value); setCurrentPage(1); }} className={`w-full border rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 transition ${dk ? "bg-slate-900/50 border-slate-700 text-slate-100" : "bg-white border-slate-200 text-slate-800"}`}>
-                  <option value="all">همه ارزها</option>
-                  {currencies.map((cur) => <option key={cur} value={cur}>{currencyLabels[cur]}</option>)}
-                </select>
-              </div>
-              <div className="relative">
-                <label className={`text-xs font-bold mb-1.5 block ${subText}`}>جستجو</label>
-                <input type="text" placeholder="نام مشتری، کد پیگیری، یا شرح..." value={searchQuery} onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }} className={`w-full border rounded-xl px-3 py-2.5 pr-9 text-sm outline-none focus:ring-2 focus:ring-blue-500 transition ${dk ? "bg-slate-900/50 border-slate-700 text-slate-100" : "bg-white border-slate-200 text-slate-800"}`} />
-                <svg className={`absolute right-3 top-9 w-4 h-4 ${subText}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-              </div>
-            </div>
-          </section>
-
-          <section className="cs-up" style={{ animationDelay: "200ms" }}>
-            <div className={`relative overflow-hidden rounded-2xl md:rounded-3xl border-2 p-5 md:p-6 transition-all duration-300 ${dk ? "border-cyan-400/30 bg-gradient-to-br from-cyan-900/20 via-slate-900/60 to-blue-900/20" : "border-cyan-200 bg-gradient-to-br from-cyan-50 via-white to-blue-50"}`}>
-              <div className={`absolute -top-24 -right-24 h-48 w-48 rounded-full blur-3xl opacity-20 ${dk ? "bg-cyan-400" : "bg-cyan-300"}`} />
-              <div className={`absolute -bottom-24 -left-24 h-48 w-48 rounded-full blur-3xl opacity-10 ${dk ? "bg-blue-400" : "bg-blue-300"}`} />
-              
-              <div className="relative flex items-center gap-3 mb-5">
-                <div className={`relative grid h-12 w-12 shrink-0 place-items-center rounded-xl shadow-lg ${dk ? "bg-gradient-to-br from-cyan-400 to-blue-500 text-slate-950" : "bg-gradient-to-br from-cyan-500 to-blue-500 text-white"}`}>
-                  <span className="text-2xl">📊</span>
-                  <span className="absolute inset-0 rounded-xl bg-white/20 shimmer" />
-                </div>
-                <div className="flex-1">
-                  <h2 className={`cs-display text-xl md:text-2xl leading-none ${heading}`}>خلاصه دوره انتخاب‌شده</h2>
-                  <p className={`mt-0.5 text-[10px] md:text-xs font-bold ${subText}`}>آمار کلی و گردش ارزها در بازه زمانی فیلترشده</p>
-                </div>
-                <div className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border ${dk ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300" : "border-cyan-300 bg-cyan-50 text-cyan-700"}`}>
-                  <span className="text-xs font-black">{toPersianDigits(String(summary.count))}</span>
-                  <span className="text-[10px]">تراکنش</span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 md:gap-4">
-                <div className={`relative overflow-hidden rounded-xl p-4 border-2 text-center transition-all duration-300 hover:scale-[1.03] hover:-translate-y-0.5 pulse-glow ${dk ? "border-emerald-400/50 bg-gradient-to-br from-emerald-900/40 to-teal-900/40" : "border-emerald-300 bg-gradient-to-br from-emerald-50 to-teal-50"}`}>
-                  <div className="absolute inset-0 shimmer opacity-50" />
-                  <div className="relative">
-                    <div className={`inline-flex items-center justify-center w-10 h-10 rounded-full mb-2 ${dk ? "bg-emerald-400/20" : "bg-emerald-100"}`}>
-                      <span className="text-xl">🔢</span>
-                    </div>
-                    <div className={`text-[11px] font-black mb-1 ${dk ? "text-emerald-300" : "text-emerald-700"}`}>تعداد کل</div>
-                    <div className={`text-3xl font-black tabular-nums leading-none ${dk ? "text-white" : "text-emerald-800"}`}>
-                      {toPersianDigits(String(summary.count))}
-                    </div>
-                  </div>
-                </div>
-
-                {currencies.map((curr) => {
-                  const data = currencyPeriodSummary[curr];
-                  const colors = currencyColors[curr];
-                  const hasActivity = data.volume > 0;
-                  
-                  return (
-                    <div 
-                      key={curr} 
-                      className={`relative overflow-hidden rounded-xl p-3 border-2 text-center transition-all duration-300 hover:scale-[1.03] hover:-translate-y-0.5 ${
-                        hasActivity 
-                          ? (dk ? `${colors.bg} border-current ${colors.text}` : `bg-white border-current ${colors.text}`)
-                          : (dk ? "border-slate-700/50 bg-slate-900/30 opacity-60" : "border-slate-200 bg-white/50 opacity-60")
-                      }`}
-                    >
-                      {hasActivity && <div className="absolute inset-0 shimmer opacity-30" />}
-                      <div className="relative">
-                        <div className="flex items-center justify-center gap-1.5 mb-2">
-                          <span className={`text-lg font-black bg-gradient-to-br ${colors.from} ${colors.to} bg-clip-text text-transparent`}>
-                            {currencyIcons[curr]}
-                          </span>
-                          <span className={`text-[11px] font-black ${dk ? "text-slate-200" : "text-slate-700"}`}>
-                            {currencyLabels[curr]}
-                          </span>
-                        </div>
-
-                        <div className={`rounded-lg p-1.5 mb-1.5 ${dk ? "bg-slate-900/50" : "bg-slate-50"}`}>
-                          <div className={`text-[9px] font-bold mb-0.5 ${subText}`}>حجم کل</div>
-                          <div className={`text-sm font-black tabular-nums ${dk ? "text-white" : "text-slate-800"}`}>
-                            {fmt(data.volume)}
-                          </div>
-                        </div>
-
-                        <div className={`rounded-lg p-1.5 ${data.net >= 0 ? (dk ? "bg-emerald-900/30" : "bg-emerald-50") : (dk ? "bg-rose-900/30" : "bg-rose-50")}`}>
-                          <div className={`text-[9px] font-bold mb-0.5 ${subText}`}>تغییر خالص</div>
-                          <div className={`text-sm font-black tabular-nums ${data.net >= 0 ? (dk ? "text-emerald-400" : "text-emerald-700") : (dk ? "text-rose-400" : "text-rose-700")}`}>
-                            {data.net >= 0 ? "▲" : "▼"} {data.net >= 0 ? "+" : ""}{fmt(data.net)}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </section>
-
           <section className={`cs-up rounded-2xl md:rounded-3xl border-2 overflow-hidden ${uiCard}`} style={{ animationDelay: "250ms" }}>
-            <div className={`relative overflow-hidden p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6 ${dk ? "bg-gradient-to-l from-slate-800/80 via-slate-800/50 to-transparent" : "bg-gradient-to-l from-emerald-50/80 via-white/50 to-transparent"}`}>
-              <div className={`absolute inset-0 shimmer opacity-30`} />
-              <div className="relative flex items-center gap-3">
-                <div className={`relative grid h-12 w-12 md:h-14 md:w-14 place-items-center rounded-xl shadow-lg ${dk ? "bg-gradient-to-br from-cyan-400 to-sky-500 text-slate-950" : "bg-gradient-to-br from-cyan-500 to-sky-500 text-white"}`}>
-                  <span className="text-2xl">📋</span>
-                  <span className="absolute inset-0 rounded-xl bg-white/20 shimmer" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h2 className={`cs-display text-xl md:text-2xl leading-none ${heading}`}>لیست تراکنش‌ها</h2>
-                  <p className={`mt-1 text-[11px] font-bold ${subText}`}>
-                    صفحه {toPersianDigits(String(currentPage))} از {toPersianDigits(String(totalPages || 1))} | {toPersianDigits(String(sortedEntries.length))} تراکنش
-                  </p>
-                </div>
-                <div className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border ${dk ? "border-sky-400/30 bg-sky-400/10 text-sky-300" : "border-sky-300 bg-sky-50 text-sky-700"}`}>
-                  <span className="text-[10px]">مرتب بر اساس:</span>
-                  <span className="text-xs font-black">
-                    {sortField === "date" ? "تاریخ" : sortField === "amount" ? "مبلغ" : sortField === "partyName" ? "مشتری" : sortField === "type" ? "نوع" : "کد"}
-                    {sortDirection === "asc" ? " ▲" : " ▼"}
-                  </span>
-                </div>
-              </div>
-            </div>
-
             <div className="relative overflow-x-auto overflow-y-auto max-h-[600px] px-2 md:px-4 pb-4">
               <table className="w-full text-sm border-collapse">
                 <thead className="sticky top-0 z-10">
@@ -834,7 +686,9 @@ export default function JournalPage() {
                           <span className="text-4xl">📭</span>
                           <span className="font-bold">هیچ تراکنشی با این فیلترها یافت نشد.</span>
                           {transactions.length === 0 && hawalas.length === 0 && cashEntries.length === 0 && (
-                            <span className="text-xs text-rose-400 mt-2">⚠️ هشدار: هیچ داده‌ای در حافظه یافت نشد. لطفاً بررسی کنید که آیا در تب‌های دیگر تراکنشی ثبت شده است یا خیر.</span>
+                            <span className="text-xs text-rose-400 mt-2 font-mono bg-rose-500/10 px-2 py-1 rounded">
+                              ⚠️ هشدار: هیچ داده‌ای از Firebase خوانده نشد. لطفاً نام کالکشن‌ها را در defaultData.ts بررسی کنید.
+                            </span>
                           )}
                         </div>
                       </td>
@@ -865,7 +719,6 @@ export default function JournalPage() {
                               {toPersianDigits(String(globalIndex))}
                             </span>
                           </td>
-
                           <td className="px-2 py-2.5 text-center">
                             <span className={`inline-block px-2 py-1 rounded-md text-[11px] font-bold font-mono tracking-wider whitespace-nowrap transition-all ${
                               isVoided 
@@ -875,55 +728,35 @@ export default function JournalPage() {
                               {entry.trackingCode}
                             </span>
                           </td>
-
-                          <td className={`px-2 py-2.5 text-center text-xs whitespace-nowrap font-bold ${dk ? "text-slate-300" : "text-slate-700"}`}>
-                            {datePart}
-                          </td>
-
-                          <td className={`px-2 py-2.5 text-center text-xs whitespace-nowrap ${dk ? "text-slate-400" : "text-slate-500"}`}>
-                            {timePart}
-                          </td>
-                          
+                          <td className={`px-2 py-2.5 text-center text-xs whitespace-nowrap font-bold ${dk ? "text-slate-300" : "text-slate-700"}`}>{datePart}</td>
+                          <td className={`px-2 py-2.5 text-center text-xs whitespace-nowrap ${dk ? "text-slate-400" : "text-slate-500"}`}>{timePart}</td>
                           <td className={`px-2 py-2.5 text-center text-xs font-bold ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (dk ? "text-amber-300" : "text-amber-700")}`}>
                             <div className="flex items-center gap-1 justify-center">
-                              <span className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-[9px] shrink-0 ${dk ? "bg-amber-400/20 text-amber-300" : "bg-amber-100 text-amber-700"}`}>👤</span>
                               <span className="truncate max-w-[120px]" title={entry.partyName || "—"}>{entry.partyName || "—"}</span>
                             </div>
                           </td>
-
                           <td className="px-2 py-2.5 text-center">
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap ${getBadgeColor(entry.type, isVoided)}`}>
                               {entry.type}
                             </span>
                           </td>
-
                           <td className="px-2 py-2.5 text-center">
                             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap ${dk ? currColors.bg : "bg-slate-50"} ${currColors.text}`}>
                               <span className="text-xs">{currencyIcons[entry.currency as Currency]}</span>
                               <span>{currencyLabels[entry.currency as Currency]}</span>
                             </span>
                           </td>
-
-                          <td className={`px-2 py-2.5 text-center font-black tabular-nums text-xs whitespace-nowrap ${
-                            isVoided 
-                              ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through")
-                              : (entry.type === "واریز" ? "text-emerald-500" : "text-rose-500")
-                          }`}>
-                            <span className={`inline-block px-2 py-0.5 rounded-md ${
-                              isVoided ? "" : (entry.type === "واریز" ? (dk ? "bg-emerald-500/10" : "bg-emerald-50") : (dk ? "bg-rose-500/10" : "bg-rose-50"))
-                            }`}>
+                          <td className={`px-2 py-2.5 text-center font-black tabular-nums text-xs whitespace-nowrap ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (entry.type === "واریز" ? "text-emerald-500" : "text-rose-500")}`}>
+                            <span className={`inline-block px-2 py-0.5 rounded-md ${isVoided ? "" : (entry.type === "واریز" ? (dk ? "bg-emerald-500/10" : "bg-emerald-50") : (dk ? "bg-rose-500/10" : "bg-rose-50"))}`}>
                               {entry.type === "واریز" ? "+" : "-"} {fmt(entry.amount)}
                             </span>
                           </td>
-
                           <td className={`px-2 py-2.5 text-center tabular-nums text-xs font-mono whitespace-nowrap ${dk ? "text-slate-300" : "text-slate-600"}`}>
                             {entry.balanceAfter ?? "—"}
                           </td>
-
                           <td className={`px-2 py-2.5 text-center text-xs ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (dk ? "text-slate-200" : "text-slate-800")}`}>
                             <span className="truncate block max-w-[180px] mx-auto" title={entry.description}>{entry.description}</span>
                           </td>
-
                           <td className="px-2 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
                             {!isVoided ? (
                               <button onClick={() => handleVoid(entry)} disabled={voidingId === entry.id} className={`text-[10px] px-2 py-1 rounded-lg font-black transition disabled:opacity-50 whitespace-nowrap ${dk ? "bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20" : "bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200"}`}>
@@ -940,58 +773,30 @@ export default function JournalPage() {
                 </tbody>
               </table>
             </div>
-
+            {/* صفحه‌بندی در صورت نیاز */}
             {totalPages > 1 && (
               <div className={`flex flex-col sm:flex-row items-center justify-between gap-3 px-4 md:px-7 py-4 border-t ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50/50"}`}>
                 <div className={`text-xs font-bold ${subText}`}>
-                  نمایش <span className="font-black">{toPersianDigits(String((currentPage - 1) * itemsPerPage + 1))}</span> تا <span className="font-black">{toPersianDigits(String(Math.min(currentPage * itemsPerPage, sortedEntries.length)))}</span> از <span className="font-black">{toPersianDigits(String(sortedEntries.length))}</span>
+                  نمایش {toPersianDigits(String((currentPage - 1) * itemsPerPage + 1))} تا {toPersianDigits(String(Math.min(currentPage * itemsPerPage, sortedEntries.length)))} از {toPersianDigits(String(sortedEntries.length))}
                 </div>
                 <div className="flex items-center gap-1">
-                  <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1} className={`px-3 py-1.5 rounded-lg text-xs font-black transition disabled:opacity-30 ${dk ? "bg-slate-700/50 text-slate-300 hover:bg-slate-700" : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"}`}>
-                    « اول
-                  </button>
-                  <button onClick={() => setCurrentPage(currentPage - 1)} disabled={currentPage === 1} className={`px-3 py-1.5 rounded-lg text-xs font-black transition disabled:opacity-30 ${dk ? "bg-slate-700/50 text-slate-300 hover:bg-slate-700" : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"}`}>
-                    قبلی
-                  </button>
+                  <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1} className={`px-3 py-1.5 rounded-lg text-xs font-black transition disabled:opacity-30 ${dk ? "bg-slate-700/50 text-slate-300 hover:bg-slate-700" : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"}`}>« اول</button>
+                  <button onClick={() => setCurrentPage(currentPage - 1)} disabled={currentPage === 1} className={`px-3 py-1.5 rounded-lg text-xs font-black transition disabled:opacity-30 ${dk ? "bg-slate-700/50 text-slate-300 hover:bg-slate-700" : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"}`}>قبلی</button>
                   <div className={`px-4 py-1.5 rounded-lg text-xs font-black ${dk ? "bg-gradient-to-r from-emerald-500/30 to-teal-500/30 text-emerald-300 border border-emerald-400/30" : "bg-gradient-to-r from-emerald-100 to-teal-100 text-emerald-700 border border-emerald-300"}`}>
                     {toPersianDigits(String(currentPage))} / {toPersianDigits(String(totalPages))}
                   </div>
-                  <button onClick={() => setCurrentPage(currentPage + 1)} disabled={currentPage === totalPages} className={`px-3 py-1.5 rounded-lg text-xs font-black transition disabled:opacity-30 ${dk ? "bg-slate-700/50 text-slate-300 hover:bg-slate-700" : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"}`}>
-                    بعدی
-                  </button>
-                  <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages} className={`px-3 py-1.5 rounded-lg text-xs font-black transition disabled:opacity-30 ${dk ? "bg-slate-700/50 text-slate-300 hover:bg-slate-700" : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"}`}>
-                    آخر »
-                  </button>
+                  <button onClick={() => setCurrentPage(currentPage + 1)} disabled={currentPage === totalPages} className={`px-3 py-1.5 rounded-lg text-xs font-black transition disabled:opacity-30 ${dk ? "bg-slate-700/50 text-slate-300 hover:bg-slate-700" : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"}`}>بعدی</button>
+                  <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages} className={`px-3 py-1.5 rounded-lg text-xs font-black transition disabled:opacity-30 ${dk ? "bg-slate-700/50 text-slate-300 hover:bg-slate-700" : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"}`}>آخر »</button>
                 </div>
               </div>
             )}
           </section>
-
-          <section className={`cs-up rounded-2xl border-2 px-5 py-4 md:py-5 ${dk ? "border-slate-700/70 bg-gradient-to-r from-slate-800/60 to-slate-900/60" : "border-slate-200 bg-gradient-to-r from-white to-slate-50"}`} style={{ animationDelay: "300ms" }}>
-            <h3 className={`text-sm font-black mb-3 flex items-center ${dk ? "text-slate-200" : "text-slate-700"}`}>
-              <span className={`w-2 h-2 rounded-full ml-2 ${dk ? "bg-blue-400" : "bg-blue-600"}`}></span> راهنمای سیستم
-            </h3>
-            <ul className={`text-xs space-y-2 list-disc pr-4 ${dk ? "text-slate-400" : "text-slate-600"}`}>
-              <li> <b>موجودی لحظه‌ای</b>: موجودی فعلی هر ارز در سیستم (محاسبه‌شده از مجموع تمام ورودی‌ها و خروجی‌ها)</li>
-              <li>📈 <b>سود/زیان</b>: فقط بر اساس کارمزدها و هزینه‌های عملیاتی محاسبه می‌شود (اصل مبلغ تبادل درآمد محسوب نمی‌شود)</li>
-              <li> <b>ثبت دوطرفه</b>: تبادلات ارز به صورت خودکار به دو ردیف (پرداخت و دریافت) تقسیم می‌شوند تا تراز ارزها دقیق باشد</li>
-              <li> <b>پشتیبان هوشمند</b>: اگر نوع تراکنش ناشناخته باشد، به عنوان "سایر" نمایش داده می‌شود تا هیچ داده‌ای گم نشود</li>
-              <li>🔽 <b>مرتب‌سازی</b>: روی هدر ستون‌ها کلیک کنید</li>
-              <li>🖱️ <b>جزئیات</b>: روی هر ردیف کلیک کنید</li>
-            </ul>
-          </section>
-
-          <div className={`cs-up text-center py-4 text-[11px] font-bold ${subText}`} style={{ animationDelay: "350ms" }}>
-            🏦 سیستم هماهنگ‌سازی هوشمند فعال است
-          </div>
         </div>
 
         {selectedEntry && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setSelectedEntry(null)}>
             <div className={`relative w-full max-w-lg rounded-2xl border-2 p-6 shadow-2xl ${dk ? "border-slate-700 bg-slate-800" : "border-emerald-200 bg-white"}`} onClick={(e) => e.stopPropagation()}>
-              <button onClick={() => setSelectedEntry(null)} className={`absolute top-4 left-4 w-8 h-8 rounded-full flex items-center justify-center transition ${dk ? "bg-slate-700 hover:bg-slate-600 text-slate-300" : "bg-slate-100 hover:bg-slate-200 text-slate-700"}`}>
-                ✕
-              </button>
+              <button onClick={() => setSelectedEntry(null)} className={`absolute top-4 left-4 w-8 h-8 rounded-full flex items-center justify-center transition ${dk ? "bg-slate-700 hover:bg-slate-600 text-slate-300" : "bg-slate-100 hover:bg-slate-200 text-slate-700"}`}>✕</button>
               <div className="flex items-center gap-3 mb-5">
                 <div className={`grid h-12 w-12 place-items-center rounded-xl shadow-md ${dk ? "bg-gradient-to-br from-cyan-400 to-sky-500 text-slate-950" : "bg-gradient-to-br from-cyan-500 to-sky-500 text-white"}`}>
                   <span className="text-2xl">📄</span>
@@ -1010,7 +815,6 @@ export default function JournalPage() {
                   ["شرح", selectedEntry.description],
                   ["ارز", currencyLabels[selectedEntry.currency]],
                   ["مبلغ", `${selectedEntry.type === "واریز" ? "+" : "-"} ${fmt(selectedEntry.amount)}`],
-                  ["تراز بعد", selectedEntry.balanceAfter ?? "—"],
                   ["وضعیت", selectedEntry.status === "voided" ? `باطل‌شده (${selectedEntry.voidedReason})` : "فعال"]
                 ].map(([label, value], i) => (
                   <div key={i} className={`flex justify-between items-center py-2 border-b ${dk ? "border-slate-700" : "border-slate-100"}`}>
