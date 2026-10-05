@@ -46,21 +46,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!userSnap.exists()) {
           console.log("✅ کاربر جدید شناسایی شد. در حال ثبت در دیتابیس...");
           
+          // ثبت کاربر با هر دو فیلد برای سازگاری کامل
           await setDoc(userRef, {
             email: currentUser.email,
             name: currentUser.displayName || "کاربر جدید",
-            status: "pending",
+            isApproved: false, // فیلد اصلی برای تایید
+            status: "pending", // فیلد کمکی برای نمایش وضعیت
             createdAt: new Date().toISOString(),
           });
           
           console.log("✅ ثبت در دیتابیس با موفقیت انجام شد. در حال فراخوانی API ارسال ایمیل...");
 
+          // ✅ اصلاح مهم: ارسال uid به API برای ساخت لینک تایید
           const response = await fetch("/api/notify-admin", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               userEmail: currentUser.email,
               userName: currentUser.displayName || "کاربر جدید",
+              uid: currentUser.uid, // این خط حیاتی است
             }),
           });
 
@@ -68,17 +72,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             console.log("📧 درخواست ارسال ایمیل با موفقیت به سرور فرستاده شد.");
           } else {
             const errorText = await response.text();
-            console.error("❌ سرور پاسخ خطا داد (Status:", response.status, "):", errorText);
+            console.error("❌ سرور پاسخ خطا داد:", errorText);
           }
 
           setStatus("pending");
         } else {
-          console.log("ℹ️ کاربر قبلاً ثبت‌نام کرده است. وضعیت فعلی:", userSnap.data().status);
-          setStatus(userSnap.data().status || "pending");
+          const userData = userSnap.data();
+          console.log("ℹ️ کاربر قبلاً ثبت‌نام کرده است. وضعیت:", userData);
+          
+          // ✅ اصلاح مهم: بررسی فیلد isApproved که توسط approve-user تغییر می‌کند
+          if (userData.isApproved === true || userData.status === "approved") {
+            setStatus("approved");
+          } else if (userData.status === "rejected") {
+            setStatus("rejected");
+          } else {
+            setStatus("pending");
+          }
         }
       } catch (error) {
-        console.error("❌❌❌ خطای فاجعه‌بار در فایربیس یا ارسال ایمیل:", error);
-        setStatus("pending");
+        console.error("❌❌❌ خطا در فایربیس یا ارسال ایمیل:", error);
+        setStatus("pending"); // در صورت خطای شبکه، محتاطانه در حالت pending می‌مانیم
       }
       
       setLoading(false);
@@ -105,15 +118,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   if (status === "pending") {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-white dark:bg-slate-900 p-6 text-center transition-colors duration-300">
-        <div className="bg-amber-50 dark:bg-amber-900/20 p-6 rounded-2xl border border-amber-200 dark:border-amber-800 max-w-md w-full">
-          <h1 className="text-2xl font-bold text-amber-600 dark:text-amber-400 mb-4">⏳ حساب شما در انتظار تأیید است</h1>
-          <p className="text-gray-600 dark:text-gray-300 mb-6 leading-relaxed">
+        <div className="bg-amber-50 dark:bg-amber-900/20 p-6 rounded-2xl border border-amber-200 dark:border-amber-800 max-w-md w-full shadow-lg">
+          <div className="text-5xl mb-4">⏳</div>
+          <h1 className="text-2xl font-bold text-amber-600 dark:text-amber-400 mb-4">حساب شما در انتظار تأیید است</h1>
+          <p className="text-gray-600 dark:text-gray-300 mb-6 leading-relaxed text-sm">
             درخواست ورود شما با موفقیت ثبت شد و ایمیلی برای مدیر برنامه ارسال گردید.<br />
-            پس از تأیید مدیر، می‌توانید وارد داشبورد شوید.
+            پس از تأیید مدیر از طریق لینک داخل ایمیل، می‌توانید وارد داشبورد شوید.
           </p>
           <button 
             onClick={() => signOut(auth)} 
-            className="w-full px-6 py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl font-bold transition-colors"
+            className="w-full px-6 py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl font-bold transition-colors shadow-md"
           >
             خروج از حساب کاربری
           </button>
@@ -125,14 +139,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   if (status === "rejected") {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-white dark:bg-slate-900 p-6 text-center transition-colors duration-300">
-        <div className="bg-red-50 dark:bg-red-900/20 p-6 rounded-2xl border border-red-200 dark:border-red-800 max-w-md w-full">
-          <h1 className="text-2xl font-bold text-red-600 dark:text-red-400 mb-4">❌ دسترسی شما رد شده است</h1>
+        <div className="bg-red-50 dark:bg-red-900/20 p-6 rounded-2xl border border-red-200 dark:border-red-800 max-w-md w-full shadow-lg">
+          <div className="text-5xl mb-4">❌</div>
+          <h1 className="text-2xl font-bold text-red-600 dark:text-red-400 mb-4">دسترسی شما رد شده است</h1>
           <p className="text-gray-600 dark:text-gray-300 mb-6">
             مدیر برنامه درخواست ورود شما را تأیید نکرده است.
           </p>
           <button 
             onClick={() => signOut(auth)} 
-            className="w-full px-6 py-3 bg-gray-500 hover:bg-gray-600 text-white rounded-xl font-bold transition-colors"
+            className="w-full px-6 py-3 bg-gray-500 hover:bg-gray-600 text-white rounded-xl font-bold transition-colors shadow-md"
           >
             خروج از حساب کاربری
           </button>
@@ -141,6 +156,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
   }
 
+  // اگر وضعیت approved باشد، کودکان (children) یعنی داشبورد رندر می‌شود
   return (
     <AuthContext.Provider value={value}>
       {children}
