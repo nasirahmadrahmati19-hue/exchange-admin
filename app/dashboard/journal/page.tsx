@@ -3,13 +3,12 @@
 import { useState, useMemo, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSafeSyncedState } from "../lib/useSafeSyncedState";
-// ✅ بازگرداندن ایمپورت کلیدهای اصلی از فایل مرکزی برای تضمین هماهنگی با همه تب‌ها
-import { 
-  CUSTOMERS_KEY, 
-  TRANSACTIONS_KEY, 
-  HAWALAS_KEY, 
-  CASH_KEY 
-} from "../lib/defaultData";
+
+// ✅ نام‌های کالکشن‌ها دقیقاً مطابق با تب‌های حواله و صندوق تنظیم شده‌اند
+const CUSTOMERS_KEY = "customers";
+const TRANSACTIONS_KEY = "transactions";
+const HAWALAS_KEY = "hawalas";
+const CASH_KEY = "cash_entries"; // دقت: با زیرخط (_)
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
@@ -172,8 +171,7 @@ export default function JournalPage() {
     };
   }, []);
 
-  // ✅ اصلاح نهایی و قطعی: استفاده از کلیدهای مرکزی defaultData.ts
-  // این تضمین می‌کند که روزنامه دقیقاً همان جایی را می‌خواند که تب‌های تبادل ارز، صندوق و مشتریان داده را در آن می‌نویسند.
+  // ✅ اصلاح نهایی: خواندن دقیقاً از همان کالکشن‌هایی که تب‌های دیگر در آن می‌نویسند
   const txState = useSafeSyncedState<Transaction>(TRANSACTIONS_KEY, []);
   const transactions = txState[0];
   const isTxLoading = txState[2];
@@ -231,7 +229,6 @@ export default function JournalPage() {
       const txType = (tx.type || "").toLowerCase();
       const status = tx.status || "active";
 
-      // ✅ بهبود: اضافه کردن "buy" و "sell" برای اطمینان از شناسایی تراکنش‌های تبادل ارز
       if (txType === "exchange" || txType === "convert" || txType === "buy" || txType === "sell") {
         const partyName = resolveCustomerName(tx.customerName, tx.customerId);
         const desc = `معاوضه: ${tx.fromCurrency} به ${tx.toCurrency}`;
@@ -330,7 +327,6 @@ export default function JournalPage() {
     // 3. پردازش صندوق
     cashEntries.forEach((ce) => {
       if (!ce || ce.status === "voided") return;
-      // اگر این ورودی صندوق قبلاً در بخش تبادل یا حواله شمرده شده، دوباره آن را نمی‌شماریم تا دوبله کاری نشود
       if (ce.linkedExchangeId || ce.linkedTransferId || ce.linkedConvertId || ce.linkedHawalaId || ce.linkedHawalaSettleId) return;
       
       let type: TxType = "هزینه";
