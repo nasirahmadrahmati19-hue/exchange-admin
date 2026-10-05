@@ -22,7 +22,7 @@ const currencyColors: Record<Currency, { from: string; to: string; text: string;
   PKR: { from: "from-rose-400", to: "to-red-500", text: "text-rose-400", bg: "bg-rose-400/20" }
 };
 
-type TxType = "واریز" | "برداشت" | "انتقال" | "تبدیل" | "هزینه" | "حواله";
+type TxType = "واریز" | "برداشت" | "انتقال" | "تبدیل" | "هزینه" | "حواله" | "سایر";
 type SortField = "date" | "amount" | "partyName" | "type" | "trackingCode";
 type SortDirection = "asc" | "desc";
 
@@ -43,7 +43,7 @@ interface Customer {
 }
 
 interface Transaction {
-  id: string; trackingCode: string; type: "exchange" | "transfer" | "convert";
+  id: string; trackingCode: string; type: string;
   dealType?: "buy" | "sell"; date: string; customerId?: string; customerName?: string;
   senderId?: string; senderName?: string; receiverId?: string; receiverName?: string;
   fromCurrency: Currency; fromAmount: number; toCurrency: Currency; toAmount: number;
@@ -208,15 +208,17 @@ export default function JournalPage() {
   const unifiedEntries = useMemo<UnifiedJournalEntry[]>(() => {
     const entries: Omit<UnifiedJournalEntry, "trackingCode">[] = [];
     
-    // ✅ اصلاح اساسی: ثبت دوطرفه تبادلات برای محاسبه دقیق موجودی هر دو ارز
+    // 1. پردازش تراکنش‌ها با پشتیبان (Fallback) برای جلوگیری از حذف ناخواسته
     transactions.forEach((tx) => {
-      if (tx.status === "voided" && !tx.voidedReason) return;
+      if (!tx || !tx.id) return;
+      
+      const txType = (tx.type || "").toLowerCase();
+      const status = tx.status || "active";
 
-      if (tx.type === "exchange" || tx.type === "convert") {
+      if (txType === "exchange" || txType === "convert") {
         const partyName = resolveCustomerName(tx.customerName, tx.customerId);
         const desc = `معاوضه: ${tx.fromCurrency} به ${tx.toCurrency}`;
         
-        // ۱. ثبت خروج ارز مبدا (برداشت)
         entries.push({
           id: `${tx.id}-out`,
           date: tx.date,
@@ -226,14 +228,13 @@ export default function JournalPage() {
           partyId: tx.customerId,
           currency: tx.fromCurrency,
           amount: tx.fromAmount,
-          status: tx.status,
+          status,
           voidedReason: tx.voidedReason,
           source: "transaction",
           sourceId: tx.id,
           fee: tx.fee || 0
         });
 
-        // ۲. ثبت ورود ارز مقصد (واریز)
         entries.push({
           id: `${tx.id}-in`,
           date: tx.date,
@@ -243,23 +244,43 @@ export default function JournalPage() {
           partyId: tx.customerId,
           currency: tx.toCurrency,
           amount: tx.toAmount,
-          status: tx.status,
+          status,
           voidedReason: tx.voidedReason,
           source: "transaction",
           sourceId: tx.id,
           fee: 0
         });
-      } else if (tx.type === "transfer") {
+      } else if (txType === "transfer") {
         const sender = resolveCustomerName(tx.senderName, tx.senderId);
         const receiver = resolveCustomerName(tx.receiverName, tx.receiverId);
         entries.push({
-          id: tx.id, date: tx.date, type: "انتقال",
+          id: tx.id, 
+          date: tx.date, 
+          type: "انتقال",
           description: `انتقال از ${sender} به ${receiver}`,
           partyName: `${sender} ← ${receiver}`,
           partyId: tx.senderId,
           currency: tx.fromCurrency,
           amount: tx.fromAmount,
-          status: tx.status,
+          status,
+          voidedReason: tx.voidedReason,
+          source: "transaction",
+          sourceId: tx.id,
+          fee: tx.fee || 0
+        });
+      } else {
+        // ✅ پشتیبان: اگر نوع تراکنش ناشناخته بود، آن را به عنوان "سایر" ثبت کن تا گم نشود
+        const partyName = resolveCustomerName(tx.customerName, tx.customerId);
+        entries.push({
+          id: tx.id,
+          date: tx.date,
+          type: "سایر",
+          description: tx.description || `عملیات ${tx.type || "نامشخص"}`,
+          partyName,
+          partyId: tx.customerId,
+          currency: tx.fromCurrency,
+          amount: tx.fromAmount,
+          status,
           voidedReason: tx.voidedReason,
           source: "transaction",
           sourceId: tx.id,
@@ -268,6 +289,7 @@ export default function JournalPage() {
       }
     });
     
+    // 2. پردازش حواله‌جات
     hawalas.forEach((h) => {
       if (h.status === "cancelled") return;
       const senderName = resolveCustomerName(h.senderName, h.senderId);
@@ -289,6 +311,7 @@ export default function JournalPage() {
       }
     });
     
+    // 3. پردازش صندوق
     cashEntries.forEach((ce) => {
       if (!ce || ce.status === "voided") return;
       if (ce.linkedExchangeId || ce.linkedTransferId || ce.linkedConvertId || ce.linkedHawalaId || ce.linkedHawalaSettleId) return;
@@ -311,17 +334,23 @@ export default function JournalPage() {
       });
     });
     
-    entries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    entries.sort((a, b) => {
+      const timeA = new Date(a.date).getTime() || 0;
+      const timeB = new Date(b.date).getTime() || 0;
+      return timeA - timeB;
+    });
     
     const entriesWithCode: UnifiedJournalEntry[] = entries.map((entry, index) => {
       let rawCode = "";
       if (entry.source === "transaction") {
-        rawCode = transactions.find(t => t.id === entry.sourceId)?.trackingCode || "";
+        const tx = transactions.find(t => t.id === entry.sourceId);
+        rawCode = tx?.trackingCode || "";
       } else if (entry.source === "hawala") {
         const h = hawalas.find(h => h.id === entry.sourceId);
         rawCode = h?.trackingCode || h?.number || "";
       } else {
-        rawCode = cashEntries.find(c => c.id === entry.sourceId)?.trackingCode || "";
+        const c = cashEntries.find(c => c.id === entry.sourceId);
+        rawCode = c?.trackingCode || "";
       }
 
       return {
@@ -333,20 +362,41 @@ export default function JournalPage() {
     return entriesWithCode.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [transactions, hawalas, cashEntries, customerMap]);
 
+  // ✅ ایمن‌سازی فیلتر نوع برای جلوگیری از حذف ناخواسته به دلیل مقادیر نامعتبر در URL
+  const validTypes: TxType[] = ["واریز", "برداشت", "انتقال", "تبدیل", "هزینه", "حواله", "سایر"];
+  const safeTypeFilter = validTypes.includes(typeFilter as TxType) ? typeFilter : "all";
+
   const filteredEntries = useMemo(() => {
     return unifiedEntries.filter((e) => {
       if (e.status === "voided" && !e.voidedReason) return false;
-      if (typeFilter !== "all" && e.type !== typeFilter) return false;
+      if (safeTypeFilter !== "all" && e.type !== safeTypeFilter) return false;
       if (currencyFilter !== "all" && e.currency !== currencyFilter) return false;
-      if (dateFrom && new Date(e.date) < new Date(dateFrom)) return false;
-      if (dateTo && new Date(e.date) > new Date(dateTo)) return false;
+      
+      if (dateFrom) {
+        const dFrom = new Date(dateFrom);
+        dFrom.setHours(0, 0, 0, 0);
+        const dEntry = new Date(e.date);
+        if (isNaN(dEntry.getTime()) || dEntry < dFrom) return false;
+      }
+      if (dateTo) {
+        const dTo = new Date(dateTo);
+        dTo.setHours(23, 59, 59, 999);
+        const dEntry = new Date(e.date);
+        if (isNaN(dEntry.getTime()) || dEntry > dTo) return false;
+      }
+
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
-        return e.description.toLowerCase().includes(q) || e.partyName.toLowerCase().includes(q) || e.id.toLowerCase().includes(q) || (e.trackingCode && e.trackingCode.toLowerCase().includes(q));
+        return (
+          (e.description && e.description.toLowerCase().includes(q)) || 
+          (e.partyName && e.partyName.toLowerCase().includes(q)) || 
+          e.id.toLowerCase().includes(q) || 
+          (e.trackingCode && e.trackingCode.toLowerCase().includes(q))
+        );
       }
       return true;
     });
-  }, [unifiedEntries, dateFrom, dateTo, typeFilter, currencyFilter, searchQuery]);
+  }, [unifiedEntries, dateFrom, dateTo, safeTypeFilter, currencyFilter, searchQuery]);
 
   const sortedEntries = useMemo(() => {
     const sorted = [...filteredEntries];
@@ -369,7 +419,6 @@ export default function JournalPage() {
 
   const totalPages = Math.ceil(sortedEntries.length / itemsPerPage);
 
-  // ✅ محاسبه دقیق موجودی بر اساس منطق دوطرفه (واریز/برداشت)
   const currentBalances = useMemo(() => {
     const balances: Record<string, number> = {};
     currencies.forEach(curr => { balances[curr] = 0; });
@@ -381,12 +430,10 @@ export default function JournalPage() {
     return balances;
   }, [unifiedEntries]);
 
-  // ✅ اصلاح اساسی سود و زیان: عدم شمارش اصل مبلغ تبادل به عنوان درآمد/هزینه
   const profitLoss = useMemo(() => {
     let totalFees = 0;
     let totalExpenses = 0;
     
-    // محاسبه دقیق کارمزدها از منابع اصلی
     transactions.forEach(tx => {
       if (tx.status !== "voided" && tx.fee) totalFees += tx.fee;
     });
@@ -394,7 +441,6 @@ export default function JournalPage() {
       if (h.status !== "cancelled" && h.fee) totalFees += h.fee;
     });
 
-    // محاسبه هزینه‌های عملیاتی واقعی از روزنامه
     filteredEntries.forEach((e) => {
       if (e.status === "voided") return;
       if (e.type === "هزینه") totalExpenses += e.amount;
@@ -432,7 +478,6 @@ export default function JournalPage() {
     setVoidingId(entry.id);
     try {
       if (entry.source === "transaction") {
-        // ابطال تراکنش اصلی، هر دو ردیف (واریز و برداشت) را به طور خودکار باطل می‌کند
         await txActions.updateItem(entry.sourceId, { 
           status: "voided", 
           voidedReason: reason 
@@ -487,7 +532,8 @@ export default function JournalPage() {
       "انتقال": "bg-gradient-to-r from-blue-500/20 to-indigo-500/20 text-blue-300 border border-blue-500/30",
       "تبدیل": "bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-300 border border-amber-500/30",
       "هزینه": "bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-purple-300 border border-purple-500/30",
-      "حواله": "bg-gradient-to-r from-sky-500/20 to-cyan-500/20 text-sky-300 border border-sky-500/30"
+      "حواله": "bg-gradient-to-r from-sky-500/20 to-cyan-500/20 text-sky-300 border border-sky-500/30",
+      "سایر": "bg-gradient-to-r from-slate-500/20 to-gray-500/20 text-slate-300 border border-slate-500/30"
     };
     return styles[type] || "bg-slate-600 text-slate-200";
   };
@@ -533,7 +579,13 @@ export default function JournalPage() {
               </div>
               <div className="min-w-0">
                 <h1 className={`cs-display text-2xl md:text-4xl leading-none ${heading}`}>روزنامه کل معاملات</h1>
-                <p className={`mt-1 text-[10px] md:text-xs font-bold ${subText}`}>نمای یکپارچه و حسابرسی‌پذیر از تمام تب‌های سیستم</p>
+                <p className={`mt-1 text-[10px] md:text-xs font-bold ${subText}`}>
+                  نمای یکپارچه و حسابرسی‌پذیر از تمام تب‌های سیستم
+                  <span className="mx-2 opacity-50">|</span>
+                  <span className="font-mono text-[9px] md:text-[10px] bg-slate-500/10 px-1.5 py-0.5 rounded">
+                    TX: {transactions.length} | HW: {hawalas.length} | CS: {cashEntries.length}
+                  </span>
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-1.5 md:gap-2.5">
@@ -781,6 +833,9 @@ export default function JournalPage() {
                         <div className="flex flex-col items-center gap-2">
                           <span className="text-4xl">📭</span>
                           <span className="font-bold">هیچ تراکنشی با این فیلترها یافت نشد.</span>
+                          {transactions.length === 0 && hawalas.length === 0 && cashEntries.length === 0 && (
+                            <span className="text-xs text-rose-400 mt-2">⚠️ هشدار: هیچ داده‌ای در حافظه یافت نشد. لطفاً بررسی کنید که آیا در تب‌های دیگر تراکنشی ثبت شده است یا خیر.</span>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -920,6 +975,7 @@ export default function JournalPage() {
               <li> <b>موجودی لحظه‌ای</b>: موجودی فعلی هر ارز در سیستم (محاسبه‌شده از مجموع تمام ورودی‌ها و خروجی‌ها)</li>
               <li>📈 <b>سود/زیان</b>: فقط بر اساس کارمزدها و هزینه‌های عملیاتی محاسبه می‌شود (اصل مبلغ تبادل درآمد محسوب نمی‌شود)</li>
               <li> <b>ثبت دوطرفه</b>: تبادلات ارز به صورت خودکار به دو ردیف (پرداخت و دریافت) تقسیم می‌شوند تا تراز ارزها دقیق باشد</li>
+              <li> <b>پشتیبان هوشمند</b>: اگر نوع تراکنش ناشناخته باشد، به عنوان "سایر" نمایش داده می‌شود تا هیچ داده‌ای گم نشود</li>
               <li>🔽 <b>مرتب‌سازی</b>: روی هدر ستون‌ها کلیک کنید</li>
               <li>🖱️ <b>جزئیات</b>: روی هر ردیف کلیک کنید</li>
             </ul>
