@@ -62,13 +62,19 @@ function timeLabel(s: string) { try { const d = new Date(s); if (Number.isNaN(d.
 
 function getLedgerBalance(customerId: string, currency: Currency, entries: CashEntry[], transactions: Transaction[] = []): number {
   let balance = 0;
+  
+  // 1. Process Cash Entries
   for (const entry of entries) {
     if (entry.status === "voided" || entry.currency !== currency) continue;
+    
     if (customerId === CASH_BOX_ID) {
       if (entry.type === "exchange_account_in" || entry.type === "exchange_account_out") continue;
       if (entry.type === "loan_given") balance -= entry.amount;
       else if (entry.type === "loan_received") balance += entry.amount;
-      else { const physicalMultiplier = entry.direction === "in" ? 1 : -1; balance += entry.amount * physicalMultiplier; }
+      else { 
+        const physicalMultiplier = entry.direction === "in" ? 1 : -1; 
+        balance += entry.amount * physicalMultiplier; 
+      }
     } else if (customerId === EXCHANGE_ACCOUNT_ID) {
       if (entry.type === "owner_deposit") balance += entry.amount;
       else if (entry.type === "owner_withdraw") balance -= entry.amount;
@@ -86,9 +92,12 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: CashE
     }
   }
   
-  if (customerId !== CASH_BOX_ID && customerId !== EXCHANGE_ACCOUNT_ID) {
-    for (const tx of transactions) {
-      if (tx.status === "voided") continue;
+  // 2. Process Transactions (Exchanges, Transfers, Converts)
+  for (const tx of transactions) {
+    if (tx.status === "voided") continue;
+    
+    // Impact on Customer
+    if (customerId !== CASH_BOX_ID && customerId !== EXCHANGE_ACCOUNT_ID) {
       if (tx.type === "exchange" && tx.customerId === customerId) {
         if (tx.fromCurrency === currency) balance -= tx.fromAmount;
         if (tx.toCurrency === currency) balance += tx.toAmount;
@@ -110,28 +119,105 @@ function getLedgerBalance(customerId: string, currency: Currency, entries: CashE
         if (tx.commission && tx.commissionCurrency === currency) balance -= tx.commission;
       }
     }
+
+    // Impact on CASH BOX (Physical Cash)
+    if (customerId === CASH_BOX_ID) {
+      if (tx.type === "exchange" || tx.type === "convert") {
+        // صندوق، ارز مبدا را دریافت می‌کند
+        if (tx.fromCurrency === currency) {
+          balance += tx.fromAmount;
+        }
+        // صندوق، ارز مقصد را پرداخت می‌کند
+        if (tx.toCurrency === currency) {
+          balance -= tx.toAmount;
+        }
+      }
+    }
   }
+  
   return balance;
 }
 
-function recomputeCashBalances(entries: CashEntry[]): CashEntry[] {
-  const sorted = [...entries].sort((a, b) => {
-    const t1 = new Date(a.date).getTime(); const t2 = new Date(b.date).getTime();
+function recomputeCashBalances(entries: CashEntry[], transactions: Transaction[] = []): CashEntry[] {
+  type CashEvent = {
+    date: string;
+    currency: Currency;
+    amount: number;
+    direction: "in" | "out";
+    isEntry: boolean;
+    id: string;
+  };
+
+  const events: CashEvent[] = [];
+
+  for (const entry of entries) {
+    if (entry.status === "voided") continue;
+    if (entry.type === "exchange_account_in" || entry.type === "exchange_account_out") continue;
+    
+    let direction: "in" | "out" = entry.direction;
+    if (entry.type === "loan_given") direction = "out";
+    if (entry.type === "loan_received") direction = "in";
+
+    events.push({
+      date: entry.date,
+      currency: entry.currency,
+      amount: entry.amount,
+      direction,
+      isEntry: true,
+      id: entry.id
+    });
+  }
+
+  for (const tx of transactions) {
+    if (tx.status === "voided") continue;
+    if (tx.type === "exchange" || tx.type === "convert") {
+      events.push({
+        date: tx.date,
+        currency: tx.fromCurrency,
+        amount: tx.fromAmount,
+        direction: "in",
+        isEntry: false,
+        id: tx.id + "_from"
+      });
+      events.push({
+        date: tx.date,
+        currency: tx.toCurrency,
+        amount: tx.toAmount,
+        direction: "out",
+        isEntry: false,
+        id: tx.id + "_to"
+      });
+    }
+  }
+
+  events.sort((a, b) => {
+    const t1 = new Date(a.date).getTime();
+    const t2 = new Date(b.date).getTime();
     if (t1 !== t2) return t1 - t2;
     if (a.direction === "in" && b.direction === "out") return -1;
     if (a.direction === "out" && b.direction === "in") return 1;
     return 0;
   });
+
   const bals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-  return sorted.map(e => {
-    if (e.status === "voided") return { ...e, balanceAfter: bals[e.currency] || 0 };
-    if (e.currency && bals[e.currency] !== undefined) {
-      if (e.type !== "exchange_account_in" && e.type !== "exchange_account_out") {
-        bals[e.currency] += e.direction === "in" ? (e.amount || 0) : -(e.amount || 0);
-      }
+  const entryBalances: Record<string, number> = {};
+
+  for (const event of events) {
+    if (bals[event.currency] === undefined) bals[event.currency] = 0;
+    if (event.direction === "in") {
+      bals[event.currency] += event.amount;
+    } else {
+      bals[event.currency] -= event.amount;
     }
-    return { ...e, balanceAfter: bals[e.currency] || 0 };
-  });
+    if (event.isEntry) {
+      entryBalances[event.id] = bals[event.currency];
+    }
+  }
+
+  return entries.map(e => ({
+    ...e,
+    balanceAfter: e.status === "voided" ? (e.balanceAfter || 0) : (entryBalances[e.id] !== undefined ? entryBalances[e.id] : (e.balanceAfter || 0))
+  }));
 }
 
 function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): Customer[] {
@@ -379,24 +465,18 @@ export default function CashPage() {
   const exchangeBalance = useMemo(() => {
     const bal: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const cur of currencies) {
-      let ownerBalance = 0;
-      for (const entry of entries) {
-        if (entry.status === "voided" || entry.currency !== cur) continue;
-        if (entry.type === "owner_deposit") ownerBalance += entry.amount;
-        else if (entry.type === "owner_withdraw") ownerBalance -= entry.amount;
-      }
-      bal[cur] = ownerBalance - (customerDebts[cur] || 0);
+      bal[cur] = getLedgerBalance(EXCHANGE_ACCOUNT_ID, cur, entries, transactions);
     }
     return bal;
-  }, [entries, customerDebts]);
+  }, [entries, transactions]);
 
   const physicalCashBalances = useMemo(() => {
     const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     for (const cur of currencies) {
-      balances[cur] = customerDeposits[cur] + exchangeBalance[cur];
+      balances[cur] = getLedgerBalance(CASH_BOX_ID, cur, entries, transactions);
     }
     return balances;
-  }, [customerDeposits, exchangeBalance]);
+  }, [entries, transactions]);
 
   const totalCommissionEarned = useMemo(() => {
     const totals: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
@@ -479,10 +559,10 @@ export default function CashPage() {
     if (!window.confirm(`آیا از ابطال سند ${entry.trackingCode} مطمئن هستید؟`)) return;
     const updatedCustomers = applyBalanceChanges(customers, getBalanceChangesForCashEntry(entry, "reverse"));
     setCustomers(updatedCustomers);
-    const newEntries = recomputeCashBalances(entries.map((e) => (e.id === entry.id ? { ...e, status: "voided" as const } : e)));
+    const newEntries = recomputeCashBalances(entries.map((e) => (e.id === entry.id ? { ...e, status: "voided" as const } : e)), transactions);
     setEntries(newEntries);
     showToast(`سند ${entry.trackingCode} ابطال شد.`);
-  }, [showToast, customers, entries]);
+  }, [showToast, customers, entries, transactions]);
 
   const deleteEntry = useCallback((entry: CashEntry) => {
     if (!window.confirm(`آیا از حذف سند ${entry.trackingCode} مطمئن هستید؟`)) return;
@@ -490,10 +570,10 @@ export default function CashPage() {
       const updatedCust = applyBalanceChanges(customers, getBalanceChangesForCashEntry(entry, "reverse"));
       setCustomers(updatedCust);
     }
-    const newEntries = recomputeCashBalances(entries.filter((e) => e.id !== entry.id));
+    const newEntries = recomputeCashBalances(entries.filter((e) => e.id !== entry.id), transactions);
     setEntries(newEntries);
     showToast(`سند ${entry.trackingCode} حذف شد.`);
-  }, [showToast, customers, entries]);
+  }, [showToast, customers, entries, transactions]);
 
   const handleSubmitClick = useCallback(() => {
     try {
@@ -563,7 +643,7 @@ export default function CashPage() {
       if (updated.customerId && updated.customerId !== CASH_BOX_ID) { const cust = customers.find(c => c.id === updated.customerId); if (cust) { updated.customerPhone = cust.phone || ""; updated.customerTazkira = cust.tazkira || ""; } }
       updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForCashEntry(updated, "register"));
       
-      const updatedEntriesForEdit = recomputeCashBalances(entries.map(e => e.id === editingEntryId ? updated : e));
+      const updatedEntriesForEdit = recomputeCashBalances(entries.map(e => e.id === editingEntryId ? updated : e), transactions);
       setEntries(updatedEntriesForEdit);
       finalEntry = updated;
     } else {
@@ -573,7 +653,7 @@ export default function CashPage() {
       if (entry.customerId && entry.customerId !== CASH_BOX_ID) { const cust = customers.find(c => c.id === entry.customerId); if (cust) { entry.customerPhone = cust.phone || ""; entry.customerTazkira = cust.tazkira || ""; } }
       updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForCashEntry(entry, "register"));
       
-      const updatedEntriesForNew = recomputeCashBalances([...entries, entry]);
+      const updatedEntriesForNew = recomputeCashBalances([...entries, entry], transactions);
       setEntries(updatedEntriesForNew);
       finalEntry = entry;
     }
@@ -581,7 +661,7 @@ export default function CashPage() {
     setForm(emptyForm); setErrors({}); setEditingEntryId(null); setPreviewOpen(false); setPreviewData(null);
     await sendCashReceipts({ entry: finalEntry, action: "register", customers: updatedCustomers });
     showToast(wasEditing ? "سند با موفقیت ویرایش شد." : isCommissionType ? "کارمزد با موفقیت برداشت شد." : "عملیات صندوق با موفقیت ثبت شد.");
-  }, [previewData, editingEntryId, entries, customers, showToast, isCommissionType]);
+  }, [previewData, editingEntryId, entries, customers, showToast, isCommissionType, transactions]);
 
   if (!mounted) return (<div className="min-h-screen flex items-center justify-center"><div className="text-center"><div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-slate-300 border-t-emerald-500" /><p className="mt-4 text-slate-500">در حال بارگذاری...</p></div></div>);
 
@@ -867,7 +947,6 @@ export default function CashPage() {
                 </div>
               )}
 
-              {/* کارت تأیید خطی (Inline) - جایگزین مودال */}
               {previewOpen && previewData ? (
                 <div className={`rounded-2xl border p-4 md:p-5 shadow-lg transition-all duration-300 ${dk ? "border-emerald-400/30 bg-slate-800/80" : "border-emerald-200 bg-emerald-50/80"}`}>
                   <div className="flex items-center justify-between mb-4 pb-3 border-b border-dashed border-emerald-500/30">
@@ -910,7 +989,6 @@ export default function CashPage() {
                   </div>
                 </div>
               ) : (
-                /* دکمه اصلی ثبت عملیات */
                 <button 
                   onClick={handleSubmitClick} 
                   className={`group flex h-[50px] md:h-[52px] w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-l text-base font-black shadow-lg transition-all duration-300 hover:shadow-xl hover:brightness-110 active:scale-[0.985] ${dk ? "from-emerald-400 to-teal-400 text-slate-950" : "from-emerald-500 via-teal-500 to-cyan-500 text-white"}`}
@@ -1001,7 +1079,6 @@ export default function CashPage() {
         </div>
       </div>
 
-      {/* مودال مشاهده جزئیات (فقط برای نمایش سند) */}
       {selectedEntry && (
         <div 
           className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-md" 
