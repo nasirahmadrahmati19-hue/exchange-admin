@@ -4,12 +4,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSafeSyncedState } from "../lib/useSafeSyncedState";
 
-// ✅ نام‌های کالکشن‌ها دقیقاً مطابق با تب‌های حواله و صندوق تنظیم شده‌اند
-const CUSTOMERS_KEY = "customers";
-const TRANSACTIONS_KEY = "transactions";
-const HAWALAS_KEY = "hawalas";
-const CASH_KEY = "cash_entries"; // دقت: با زیرخط (_)
-
+// انواع داده‌ها (بدون تغییر)
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
 const currencyLabels: Record<Currency, string> = { AFN: "افغانی", USD: "دالر", EUR: "یورو", IRR: "تومان", PKR: "کلدار" };
@@ -26,76 +21,11 @@ type TxType = "واریز" | "برداشت" | "انتقال" | "تبدیل" | "�
 type SortField = "date" | "amount" | "partyName" | "type" | "trackingCode";
 type SortDirection = "asc" | "desc";
 
-interface Customer {
-  id: string; 
-  name: string; 
-  fullName?: string; 
-  customerName?: string; 
-  title?: string;
-  phone?: string; 
-  tazkira?: string; 
-  address?: string;
-  note?: string; 
-  telegram?: string; 
-  telegramChatId?: string; 
-  registeredAt: string;
-  balances: Record<Currency, number>;
-}
-
-interface Transaction {
-  id: string; trackingCode: string; type: string;
-  dealType?: "buy" | "sell"; date: string; customerId?: string; customerName?: string;
-  senderId?: string; senderName?: string; receiverId?: string; receiverName?: string;
-  fromCurrency: Currency; fromAmount: number; toCurrency: Currency; toAmount: number;
-  rate: number; rateLabel: string; rateBase?: Currency; commission?: number;
-  commissionCurrency?: Currency; commissionPayer?: "sender" | "receiver";
-  description?: string; status: "active" | "voided"; profit?: number; profitCurrency?: Currency;
-  voidedReason?: string;
-  balanceAfter?: number;
-  fee?: number;
-}
-
-interface Hawala {
-  id: string; number: string; date: string; time: string; type: string;
-  destinationCountry: string; province: string; district: string; destinationText: string;
-  currencyFrom: Currency; currencyTo: Currency; amountFrom: number; rate: number;
-  rateLabel: string; rateBase?: Currency; fee: number; feeCurrency: Currency;
-  feePayer: "sender" | "receiver"; finalAmount: number; balance: string; note: string;
-  profit: number; profitCurrency: Currency; senderId?: string; senderName: string;
-  senderPhone: string; senderTelegram: string; receiverId?: string; receiverName: string;
-  receiverTazkira: string; receiverPhone: string; receiverAddress: string;
-  status: "pending" | "sent" | "paid" | "cancelled"; paidAt?: string; paidBy?: string;
-  paidAmount?: number; cancelReason?: string;
-  trackingCode?: string;
-}
-
-interface CashEntry {
-  id: string; trackingCode: string; date: string; type: string; currency: Currency;
-  amount: number; direction: "in" | "out"; status: "active" | "voided";
-  customerId?: string; 
-  customerName?: string; 
-  linkedHawalaId?: string;
-  linkedExchangeId?: string; linkedTransferId?: string; linkedConvertId?: string; linkedHawalaSettleId?: string;
-  reason?: string; balanceAfter?: number; fee?: number; voidedReason?: string;
-}
-
-interface UnifiedJournalEntry {
-  id: string;
-  date: string;
-  type: TxType;
-  description: string;
-  partyName: string;
-  partyId?: string;
-  currency: Currency;
-  amount: number;
-  balanceAfter?: number;
-  status: "active" | "voided";
-  voidedReason?: string;
-  source: "transaction" | "hawala" | "cash";
-  sourceId: string;
-  trackingCode: string;
-  fee?: number;
-}
+interface Customer { id: string; name: string; fullName?: string; customerName?: string; title?: string; phone?: string; tazkira?: string; address?: string; note?: string; telegram?: string; telegramChatId?: string; registeredAt: string; balances: Record<Currency, number>; }
+interface Transaction { id: string; trackingCode: string; type: string; dealType?: "buy" | "sell"; date: string; customerId?: string; customerName?: string; senderId?: string; senderName?: string; receiverId?: string; receiverName?: string; fromCurrency: Currency; fromAmount: number; toCurrency: Currency; toAmount: number; rate: number; rateLabel: string; rateBase?: Currency; commission?: number; commissionCurrency?: Currency; commissionPayer?: "sender" | "receiver"; description?: string; status: "active" | "voided"; profit?: number; profitCurrency?: Currency; voidedReason?: string; balanceAfter?: number; fee?: number; }
+interface Hawala { id: string; number: string; date: string; time: string; type: string; destinationCountry: string; province: string; district: string; destinationText: string; currencyFrom: Currency; currencyTo: Currency; amountFrom: number; rate: number; rateLabel: string; rateBase?: Currency; fee: number; feeCurrency: Currency; feePayer: "sender" | "receiver"; finalAmount: number; balance: string; note: string; profit: number; profitCurrency: Currency; senderId?: string; senderName: string; senderPhone: string; senderTelegram: string; receiverId?: string; receiverName: string; receiverTazkira: string; receiverPhone: string; receiverAddress: string; status: "pending" | "sent" | "paid" | "cancelled"; paidAt?: string; paidBy?: string; paidAmount?: number; cancelReason?: string; trackingCode?: string; }
+interface CashEntry { id: string; trackingCode: string; date: string; type: string; currency: Currency; amount: number; direction: "in" | "out"; status: "active" | "voided"; customerId?: string; customerName?: string; linkedHawalaId?: string; linkedExchangeId?: string; linkedTransferId?: string; linkedConvertId?: string; linkedHawalaSettleId?: string; reason?: string; balanceAfter?: number; fee?: number; voidedReason?: string; }
+interface UnifiedJournalEntry { id: string; date: string; type: TxType; description: string; partyName: string; partyId?: string; currency: Currency; amount: number; balanceAfter?: number; status: "active" | "voided"; voidedReason?: string; source: "transaction" | "hawala" | "cash"; sourceId: string; trackingCode: string; fee?: number; }
 
 const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00";
 const toPersianDigits = (s: string): string => s.replace(/\d/g, d => "۰۱۲۳۴۵۶۷۸۹"[parseInt(d)]);
@@ -158,37 +88,43 @@ export default function JournalPage() {
     const handleOffline = () => setIsOffline(true);
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
-
     try {
       const saved = window.localStorage.getItem("fx-theme");
       if (saved === "dark" || saved === "light") setTheme(saved);
     } catch {}
     setMounted(true);
-
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
   }, []);
 
-  // ✅ اصلاح نهایی: خواندن دقیقاً از همان کالکشن‌هایی که تب‌های دیگر در آن می‌نویسند
-  const txState = useSafeSyncedState<Transaction>(TRANSACTIONS_KEY, []);
+  // ✅ ✅ ✅ بخش حیاتی: استفاده مستقیم از رشته‌ها بدون هیچ متغیر واسطه‌ای ✅ ✅ ✅
+  const txState = useSafeSyncedState<Transaction>("transactions", []);
+  const hwState = useSafeSyncedState<Hawala>("hawalas", []);
+  const ceState = useSafeSyncedState<CashEntry>("cash_entries", []); // دقت: با زیرخط (_)
+  const custState = useSafeSyncedState<Customer>("customers", []);
+
   const transactions = txState[0];
-  const isTxLoading = txState[2];
-  const txActions = txState[3];
-
-  const hwState = useSafeSyncedState<Hawala>(HAWALAS_KEY, []);
   const hawalas = hwState[0];
-  const isHawalaLoading = hwState[2];
-  const hawalaActions = hwState[3];
-
-  const ceState = useSafeSyncedState<CashEntry>(CASH_KEY, []);
   const cashEntries = ceState[0];
+  const customers = custState[0];
+
+  const isTxLoading = txState[2];
+  const isHawalaLoading = hwState[2];
   const isCashLoading = ceState[2];
+  const txActions = txState[3];
   const cashActions = ceState[3];
 
-  const custState = useSafeSyncedState<Customer>(CUSTOMERS_KEY, []);
-  const customers = custState[0];
+  // ✅ ✅ ✅ دیباگ زنده: این خط در کنسول مرورگر (F12) چاپ می‌شود ✅ ✅ ✅
+  useEffect(() => {
+    console.log("🔍 وضعیت اتصال روزنامه (DEBUG):", {
+      TX_transactions: transactions.length,
+      HW_hawalas: hawalas.length,
+      CS_cash_entries: cashEntries.length,
+      Cust_customers: customers.length
+    });
+  }, [transactions.length, hawalas.length, cashEntries.length, customers.length]);
 
   const isLoading = (isTxLoading && transactions.length === 0) || 
                     (isHawalaLoading && hawalas.length === 0) || 
@@ -197,9 +133,7 @@ export default function JournalPage() {
   const dk = theme === "dark";
   const heading = dk ? "text-white" : "text-slate-900";
   const subText = dk ? "text-slate-400" : "text-slate-500";
-  const uiCard = dk
-    ? "border-slate-700 bg-slate-800/90 shadow-[0_16px_40px_-24px_rgba(0,0,0,0.6)]"
-    : "border-emerald-100 bg-white/95 shadow-[0_16px_40px_-28px_rgba(16,185,129,0.35)]";
+  const uiCard = dk ? "border-slate-700 bg-slate-800/90 shadow-[0_16px_40px_-24px_rgba(0,0,0,0.6)]" : "border-emerald-100 bg-white/95 shadow-[0_16px_40px_-28px_rgba(16,185,129,0.35)]";
 
   const customerMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -221,157 +155,56 @@ export default function JournalPage() {
 
   const unifiedEntries = useMemo<UnifiedJournalEntry[]>(() => {
     const entries: Omit<UnifiedJournalEntry, "trackingCode">[] = [];
-    
-    // 1. پردازش تراکنش‌ها (تبادل ارز، انتقال و ...)
     transactions.forEach((tx) => {
       if (!tx || !tx.id) return;
-      
       const txType = (tx.type || "").toLowerCase();
       const status = tx.status || "active";
-
       if (txType === "exchange" || txType === "convert" || txType === "buy" || txType === "sell") {
         const partyName = resolveCustomerName(tx.customerName, tx.customerId);
         const desc = `معاوضه: ${tx.fromCurrency} به ${tx.toCurrency}`;
-        
-        entries.push({
-          id: `${tx.id}-out`,
-          date: tx.date,
-          type: "برداشت",
-          description: `${desc} (پرداخت)`,
-          partyName,
-          partyId: tx.customerId,
-          currency: tx.fromCurrency,
-          amount: tx.fromAmount,
-          status,
-          voidedReason: tx.voidedReason,
-          source: "transaction",
-          sourceId: tx.id,
-          fee: tx.fee || 0
-        });
-
-        entries.push({
-          id: `${tx.id}-in`,
-          date: tx.date,
-          type: "واریز",
-          description: `${desc} (دریافت)`,
-          partyName,
-          partyId: tx.customerId,
-          currency: tx.toCurrency,
-          amount: tx.toAmount,
-          status,
-          voidedReason: tx.voidedReason,
-          source: "transaction",
-          sourceId: tx.id,
-          fee: 0
-        });
+        entries.push({ id: `${tx.id}-out`, date: tx.date, type: "برداشت", description: `${desc} (پرداخت)`, partyName, partyId: tx.customerId, currency: tx.fromCurrency, amount: tx.fromAmount, status, voidedReason: tx.voidedReason, source: "transaction", sourceId: tx.id, fee: tx.fee || 0 });
+        entries.push({ id: `${tx.id}-in`, date: tx.date, type: "واریز", description: `${desc} (دریافت)`, partyName, partyId: tx.customerId, currency: tx.toCurrency, amount: tx.toAmount, status, voidedReason: tx.voidedReason, source: "transaction", sourceId: tx.id, fee: 0 });
       } else if (txType === "transfer") {
         const sender = resolveCustomerName(tx.senderName, tx.senderId);
         const receiver = resolveCustomerName(tx.receiverName, tx.receiverId);
-        entries.push({
-          id: tx.id, 
-          date: tx.date, 
-          type: "انتقال",
-          description: `انتقال از ${sender} به ${receiver}`,
-          partyName: `${sender} ← ${receiver}`,
-          partyId: tx.senderId,
-          currency: tx.fromCurrency,
-          amount: tx.fromAmount,
-          status,
-          voidedReason: tx.voidedReason,
-          source: "transaction",
-          sourceId: tx.id,
-          fee: tx.fee || 0
-        });
+        entries.push({ id: tx.id, date: tx.date, type: "انتقال", description: `انتقال از ${sender} به ${receiver}`, partyName: `${sender} ← ${receiver}`, partyId: tx.senderId, currency: tx.fromCurrency, amount: tx.fromAmount, status, voidedReason: tx.voidedReason, source: "transaction", sourceId: tx.id, fee: tx.fee || 0 });
       } else {
         const partyName = resolveCustomerName(tx.customerName, tx.customerId);
-        entries.push({
-          id: tx.id,
-          date: tx.date,
-          type: "سایر",
-          description: tx.description || `عملیات ${tx.type || "نامشخص"}`,
-          partyName,
-          partyId: tx.customerId,
-          currency: tx.fromCurrency,
-          amount: tx.fromAmount,
-          status,
-          voidedReason: tx.voidedReason,
-          source: "transaction",
-          sourceId: tx.id,
-          fee: tx.fee || 0
-        });
+        entries.push({ id: tx.id, date: tx.date, type: "سایر", description: tx.description || `عملیات ${tx.type || "نامشخص"}`, partyName, partyId: tx.customerId, currency: tx.fromCurrency, amount: tx.fromAmount, status, voidedReason: tx.voidedReason, source: "transaction", sourceId: tx.id, fee: tx.fee || 0 });
       }
     });
     
-    // 2. پردازش حواله‌جات
     hawalas.forEach((h) => {
       if (h.status === "cancelled") return;
       const senderName = resolveCustomerName(h.senderName, h.senderId);
-      entries.push({
-        id: h.id, date: h.date, type: "حواله",
-        description: `حواله به ${h.receiverName || "—"} (${h.destinationText || ""})`,
-        partyName: senderName, partyId: h.senderId, currency: h.currencyFrom,
-        amount: h.amountFrom, status: "active", source: "hawala", sourceId: h.id,
-        fee: h.fee || 0
-      });
+      entries.push({ id: h.id, date: h.date, type: "حواله", description: `حواله به ${h.receiverName || "—"} (${h.destinationText || ""})`, partyName: senderName, partyId: h.senderId, currency: h.currencyFrom, amount: h.amountFrom, status: "active", source: "hawala", sourceId: h.id, fee: h.fee || 0 });
       if (h.status === "paid") {
         const receiverName = resolveCustomerName(h.receiverName, h.receiverId);
-        entries.push({
-          id: `${h.id}-paid`, date: h.paidAt || h.date, type: "واریز",
-          description: `تسویه حواله از ${senderName}`, partyName: receiverName,
-          partyId: h.receiverId, currency: h.currencyTo, amount: h.finalAmount,
-          status: "active", source: "hawala", sourceId: h.id, fee: 0
-        });
+        entries.push({ id: `${h.id}-paid`, date: h.paidAt || h.date, type: "واریز", description: `تسویه حواله از ${senderName}`, partyName: receiverName, partyId: h.receiverId, currency: h.currencyTo, amount: h.finalAmount, status: "active", source: "hawala", sourceId: h.id, fee: 0 });
       }
     });
     
-    // 3. پردازش صندوق
     cashEntries.forEach((ce) => {
       if (!ce || ce.status === "voided") return;
       if (ce.linkedExchangeId || ce.linkedTransferId || ce.linkedConvertId || ce.linkedHawalaId || ce.linkedHawalaSettleId) return;
-      
       let type: TxType = "هزینه";
       if (ce.type === "customer_deposit" || ce.type === "owner_deposit") type = "واریز";
       else if (ce.type === "customer_withdraw" || ce.type === "owner_withdraw") type = "برداشت";
       else if (ce.type === "loan_given" || ce.type === "loan_received") type = "انتقال";
       else if (ce.type === "fee" || ce.type === "commission_withdraw") type = "هزینه";
       else if (ce.type === "adjustment") type = "برداشت";
-      
       const partyName = ce.customerId ? resolveCustomerName(ce.customerName, ce.customerId) : (ce.customerName && ce.customerName.trim() ? ce.customerName : "صندوق");
-      entries.push({
-        id: ce.id, date: ce.date || new Date().toISOString(), type,
-        description: ce.reason || ce.type || "عملیات صندوق",
-        partyName, partyId: ce.customerId, currency: ce.currency,
-        amount: Number(ce.amount) || 0, balanceAfter: ce.balanceAfter,
-        status: ce.status || "active", source: "cash", sourceId: ce.id,
-        fee: ce.fee || 0
-      });
+      entries.push({ id: ce.id, date: ce.date || new Date().toISOString(), type, description: ce.reason || ce.type || "عملیات صندوق", partyName, partyId: ce.customerId, currency: ce.currency, amount: Number(ce.amount) || 0, balanceAfter: ce.balanceAfter, status: ce.status || "active", source: "cash", sourceId: ce.id, fee: ce.fee || 0 });
     });
     
-    entries.sort((a, b) => {
-      const timeA = new Date(a.date).getTime() || 0;
-      const timeB = new Date(b.date).getTime() || 0;
-      return timeA - timeB;
-    });
-    
+    entries.sort((a, b) => (new Date(a.date).getTime() || 0) - (new Date(b.date).getTime() || 0));
     const entriesWithCode: UnifiedJournalEntry[] = entries.map((entry, index) => {
       let rawCode = "";
-      if (entry.source === "transaction") {
-        const tx = transactions.find(t => t.id === entry.sourceId);
-        rawCode = tx?.trackingCode || "";
-      } else if (entry.source === "hawala") {
-        const h = hawalas.find(h => h.id === entry.sourceId);
-        rawCode = h?.trackingCode || h?.number || "";
-      } else {
-        const c = cashEntries.find(c => c.id === entry.sourceId);
-        rawCode = c?.trackingCode || "";
-      }
-
-      return {
-        ...entry,
-        trackingCode: normalizeTrackingCode(rawCode, entry.source, entry.date, index)
-      };
+      if (entry.source === "transaction") { const tx = transactions.find(t => t.id === entry.sourceId); rawCode = tx?.trackingCode || ""; } 
+      else if (entry.source === "hawala") { const h = hawalas.find(h => h.id === entry.sourceId); rawCode = h?.trackingCode || h?.number || ""; } 
+      else { const c = cashEntries.find(c => c.id === entry.sourceId); rawCode = c?.trackingCode || ""; }
+      return { ...entry, trackingCode: normalizeTrackingCode(rawCode, entry.source, entry.date, index) };
     });
-    
     return entriesWithCode.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [transactions, hawalas, cashEntries, customerMap]);
 
@@ -383,28 +216,11 @@ export default function JournalPage() {
       if (e.status === "voided" && !e.voidedReason) return false;
       if (safeTypeFilter !== "all" && e.type !== safeTypeFilter) return false;
       if (currencyFilter !== "all" && e.currency !== currencyFilter) return false;
-      
-      if (dateFrom) {
-        const dFrom = new Date(dateFrom);
-        dFrom.setHours(0, 0, 0, 0);
-        const dEntry = new Date(e.date);
-        if (isNaN(dEntry.getTime()) || dEntry < dFrom) return false;
-      }
-      if (dateTo) {
-        const dTo = new Date(dateTo);
-        dTo.setHours(23, 59, 59, 999);
-        const dEntry = new Date(e.date);
-        if (isNaN(dEntry.getTime()) || dEntry > dTo) return false;
-      }
-
+      if (dateFrom) { const dFrom = new Date(dateFrom); dFrom.setHours(0, 0, 0, 0); const dEntry = new Date(e.date); if (isNaN(dEntry.getTime()) || dEntry < dFrom) return false; }
+      if (dateTo) { const dTo = new Date(dateTo); dTo.setHours(23, 59, 59, 999); const dEntry = new Date(e.date); if (isNaN(dEntry.getTime()) || dEntry > dTo) return false; }
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
-        return (
-          (e.description && e.description.toLowerCase().includes(q)) || 
-          (e.partyName && e.partyName.toLowerCase().includes(q)) || 
-          e.id.toLowerCase().includes(q) || 
-          (e.trackingCode && e.trackingCode.toLowerCase().includes(q))
-        );
+        return (e.description && e.description.toLowerCase().includes(q)) || (e.partyName && e.partyName.toLowerCase().includes(q)) || e.id.toLowerCase().includes(q) || (e.trackingCode && e.trackingCode.toLowerCase().includes(q));
       }
       return true;
     });
@@ -424,11 +240,7 @@ export default function JournalPage() {
     return sorted;
   }, [filteredEntries, sortField, sortDirection]);
 
-  const paginatedEntries = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage;
-    return sortedEntries.slice(start, start + itemsPerPage);
-  }, [sortedEntries, currentPage, itemsPerPage]);
-
+  const paginatedEntries = useMemo(() => sortedEntries.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage), [sortedEntries, currentPage, itemsPerPage]);
   const totalPages = Math.ceil(sortedEntries.length / itemsPerPage);
 
   const currentBalances = useMemo(() => {
@@ -445,45 +257,25 @@ export default function JournalPage() {
   const handleVoid = async (entry: UnifiedJournalEntry) => {
     const reason = prompt("دلیل ابطال این تراکنش را وارد کنید:");
     if (!reason || !reason.trim()) return;
-    
     setVoidingId(entry.id);
     try {
-      if (entry.source === "transaction") {
-        await txActions.updateItem(entry.sourceId, { 
-          status: "voided", 
-          voidedReason: reason 
-        });
-      } else if (entry.source === "cash") {
-        await cashActions.updateItem(entry.sourceId, { 
-          status: "voided", 
-          voidedReason: reason 
-        });
-      } else {
-        alert("برای ابطال حواله، لطفاً به تب حواله‌جات مراجعه کنید و از آنجا اقدام به لغو نمایید.");
-        return;
-      }
+      if (entry.source === "transaction") await txActions.updateItem(entry.sourceId, { status: "voided", voidedReason: reason });
+      else if (entry.source === "cash") await cashActions.updateItem(entry.sourceId, { status: "voided", voidedReason: reason });
+      else alert("برای ابطال حواله، لطفاً به تب حواله‌جات مراجعه کنید.");
     } catch (err) {
       console.error("خطا در ابطال:", err);
-      alert("خطا در ابطال تراکنش. لطفاً اتصال اینترنت خود را بررسی کنید.");
-    } finally { 
-      setVoidingId(null); 
-    }
+      alert("خطا در ابطال تراکنش.");
+    } finally { setVoidingId(null); }
   };
 
   const handleExport = () => {
-    const headers = ["ردیف", "کد پیگیری", "تاریخ", "ساعت", "مشتری/طرف حساب", "شرح", "نوع", "ارز", "مبلغ", "تراز بعد"];
+    const headers = ["ردیف", "کد پیگیری", "تاریخ", "ساعت", "مشتری", "شرح", "نوع", "ارز", "مبلغ", "تراز بعد"];
     const escapeCsv = (val: any) => `"${String(val ?? "").replace(/"/g, '""')}"`;
     const rows = sortedEntries.map((e, index) => {
       const d = new Date(e.date);
-      return [
-        toPersianDigits(String(index + 1)), escapeCsv(e.trackingCode),
-        escapeCsv(d.toLocaleDateString("fa-IR")), escapeCsv(d.toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" })),
-        escapeCsv(e.partyName || "—"), escapeCsv(e.description), escapeCsv(e.type), escapeCsv(currencyLabels[e.currency as Currency]),
-        e.amount, e.balanceAfter ?? ""
-      ].join(",");
+      return [toPersianDigits(String(index + 1)), escapeCsv(e.trackingCode), escapeCsv(d.toLocaleDateString("fa-IR")), escapeCsv(d.toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" })), escapeCsv(e.partyName || "—"), escapeCsv(e.description), escapeCsv(e.type), escapeCsv(currencyLabels[e.currency as Currency]), e.amount, e.balanceAfter ?? ""].join(",");
     });
-    const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob(["\uFEFF" + [headers.join(","), ...rows].join("\n")], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url; link.setAttribute("download", `journal-report-${new Date().toISOString().slice(0, 10)}.csv`);
@@ -510,11 +302,7 @@ export default function JournalPage() {
     return styles[type] || "bg-slate-600 text-slate-200";
   };
 
-  const SortIcon = ({ field }: { field: SortField }) => (
-    <span className="inline-block mr-1 text-[9px] opacity-60">
-      {sortField === field ? (sortDirection === "asc" ? "▲" : "▼") : "⇅"}
-    </span>
-  );
+  const SortIcon = ({ field }: { field: SortField }) => (<span className="inline-block mr-1 text-[9px] opacity-60">{sortField === field ? (sortDirection === "asc" ? "▲" : "▼") : "⇅"}</span>);
 
   if (!mounted || isLoading) {
     return (
@@ -529,17 +317,24 @@ export default function JournalPage() {
 
   return (
     <div dir="rtl" className={dk ? "dark" : ""}>
-      <style>{`@import url("https://fonts.googleapis.com/css2?family=Lalezar&family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap");.cs-font{font-family:"Vazirmatn","Segoe UI",Tahoma,sans-serif}.cs-display{font-family:"Lalezar","Vazirmatn",Tahoma,sans-serif;letter-spacing:.01em}.dark{color-scheme:dark}@keyframes csUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}.cs-up{animation:csUp .5s cubic-bezier(.22,.8,.35,1) both}::selection{background:rgba(16,185,129,.25)}@keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}.shimmer{background:linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent);background-size:200% 100%;animation:shimmer 3s infinite}@keyframes pulse-glow{0%,100%{box-shadow:0 0 20px rgba(16,185,129,.3)}50%{box-shadow:0 0 30px rgba(16,185,129,.5)}}.pulse-glow{animation:pulse-glow 2s infinite}`}</style>
+      <style>{`@import url("https://fonts.googleapis.com/css2?family=Lalezar&family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap");.cs-font{font-family:"Vazirmatn","Segoe UI",Tahoma,sans-serif}.cs-display{font-family:"Lalezar","Vazirmatn",Tahoma,sans-serif;letter-spacing:.01em}.dark{color-scheme:dark}@keyframes csUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}.cs-up{animation:csUp .5s cubic-bezier(.22,.8,.35,1) both}::selection{background:rgba(16,185,129,.25)}`}</style>
 
       <div className={`cs-font relative min-h-screen overflow-x-hidden antialiased transition-colors duration-500 ${dk ? "bg-[#0f172a] text-slate-100" : "bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 text-slate-800"}`}>
         <div className={`fixed inset-x-0 top-0 z-30 h-1 bg-gradient-to-l ${dk ? "from-emerald-400 via-teal-400 to-cyan-400" : "from-emerald-500 via-teal-500 to-cyan-500"}`} />
 
         <div className="relative z-10 mx-auto w-full max-w-7xl space-y-4 md:space-y-6 px-3 pb-16 pt-5 md:px-8 md:pt-9">
+          
+          {/* ✅ ✅ ✅ جعبه دیباگ زنده: این بخش به ما می‌گوید دقیقاً چه چیزی خوانده شده است ✅ ✅ ✅ */}
+          <div className="bg-red-600 text-white p-3 rounded-xl text-xs font-mono text-center shadow-lg border-2 border-red-400">
+            🔍 DEBUG MODE: TX={transactions.length} | HW={hawalas.length} | CS={cashEntries.length} | Cust={customers.length}
+            <br/>
+            <span className="text-[10px] opacity-80">(اگر همه ۰ هستند، یعنی هوک داده‌ای پیدا نکرده است. کنسول مرورگر (F12) را چک کنید)</span>
+          </div>
 
           {isOffline && (
             <div className="cs-up flex items-center justify-center gap-2 bg-amber-500/20 border border-amber-500/50 text-amber-300 dark:text-amber-400 px-4 py-2.5 rounded-xl text-sm font-bold mb-4 shadow-lg shadow-amber-500/10 backdrop-blur-sm">
               <span className="text-lg animate-pulse">📡</span>
-              <span>شما در حالت آفلاین هستید. تغییرات ذخیره شده و به محض اتصال اینترنت به صورت خودکار همگام‌سازی می‌شوند.</span>
+              <span>شما در حالت آفلاین هستید.</span>
             </div>
           )}
 
@@ -551,13 +346,7 @@ export default function JournalPage() {
               </div>
               <div className="min-w-0">
                 <h1 className={`cs-display text-2xl md:text-4xl leading-none ${heading}`}>روزنامه کل معاملات</h1>
-                <p className={`mt-1 text-[10px] md:text-xs font-bold ${subText}`}>
-                  نمای یکپارچه و حسابرسی‌پذیر از تمام تب‌های سیستم
-                  <span className="mx-2 opacity-50">|</span>
-                  <span className="font-mono text-[9px] md:text-[10px] bg-slate-500/10 px-1.5 py-0.5 rounded">
-                    TX: {transactions.length} | HW: {hawalas.length} | CS: {cashEntries.length} | Cust: {customers.length}
-                  </span>
-                </p>
+                <p className={`mt-1 text-[10px] md:text-xs font-bold ${subText}`}>نمای یکپارچه و حسابرسی‌پذیر از تمام تب‌های سیستم</p>
               </div>
             </div>
             <div className="flex items-center gap-1.5 md:gap-2.5">
@@ -578,7 +367,7 @@ export default function JournalPage() {
                 </div>
                 <div>
                   <h2 className={`cs-display text-xl md:text-2xl leading-none ${heading}`}>موجودی لحظه‌ای صندوق</h2>
-                  <p className={`mt-0.5 text-[10px] md:text-xs font-bold ${subText}`}>موجودی فعلی هر ارز در سیستم (هماهنگ با صفحه صندوق)</p>
+                  <p className={`mt-0.5 text-[10px] md:text-xs font-bold ${subText}`}>موجودی فعلی هر ارز در سیستم</p>
                 </div>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
@@ -640,7 +429,7 @@ export default function JournalPage() {
                           <span className="font-bold">هیچ تراکنشی با این فیلترها یافت نشد.</span>
                           {transactions.length === 0 && hawalas.length === 0 && cashEntries.length === 0 && (
                             <span className="text-xs text-rose-400 mt-2 font-mono bg-rose-500/10 px-2 py-1 rounded">
-                              ⚠️ هشدار: هیچ داده‌ای خوانده نشد. لطفاً در تب‌های دیگر داده ثبت کنید.
+                              ⚠️ هشدار: هیچ داده‌ای خوانده نشد. لطفاً کنسول مرورگر (F12) را بررسی کنید.
                             </span>
                           )}
                         </div>
@@ -656,28 +445,14 @@ export default function JournalPage() {
                       const currColors = currencyColors[entry.currency as Currency];
 
                       return (
-                        <tr 
-                          key={entry.id} 
-                          className={`group transition-all duration-200 cursor-pointer ${
-                            isVoided 
-                              ? (dk ? "opacity-50" : "opacity-60") 
-                              : (dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/50")
-                          } ${dk ? "" : "even:bg-slate-50/30"}`}
-                          onClick={() => setSelectedEntry(entry)}
-                        >
+                        <tr key={entry.id} className={`group transition-all duration-200 cursor-pointer ${isVoided ? (dk ? "opacity-50" : "opacity-60") : (dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/50")} ${dk ? "" : "even:bg-slate-50/30"}`} onClick={() => setSelectedEntry(entry)}>
                           <td className={`px-2 py-2.5 text-center`}>
-                            <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-black transition-all ${
-                              dk ? "bg-slate-700/50 text-slate-300 group-hover:bg-slate-600" : "bg-slate-100 text-slate-600 group-hover:bg-emerald-100 group-hover:text-emerald-700"
-                            }`}>
+                            <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-black transition-all ${dk ? "bg-slate-700/50 text-slate-300 group-hover:bg-slate-600" : "bg-slate-100 text-slate-600 group-hover:bg-emerald-100 group-hover:text-emerald-700"}`}>
                               {toPersianDigits(String(globalIndex))}
                             </span>
                           </td>
                           <td className="px-2 py-2.5 text-center">
-                            <span className={`inline-block px-2 py-1 rounded-md text-[11px] font-bold font-mono tracking-wider whitespace-nowrap transition-all ${
-                              isVoided 
-                                ? (dk ? "bg-slate-700/30 text-slate-500 line-through" : "bg-slate-100 text-slate-400 line-through")
-                                : (dk ? "bg-gradient-to-r from-cyan-500/20 to-sky-500/20 text-cyan-300 border border-cyan-500/30 group-hover:border-cyan-400/60" : "bg-gradient-to-r from-cyan-50 to-sky-50 text-cyan-700 border border-cyan-200 group-hover:border-cyan-400")
-                            }`}>
+                            <span className={`inline-block px-2 py-1 rounded-md text-[11px] font-bold font-mono tracking-wider whitespace-nowrap transition-all ${isVoided ? (dk ? "bg-slate-700/30 text-slate-500 line-through" : "bg-slate-100 text-slate-400 line-through") : (dk ? "bg-gradient-to-r from-cyan-500/20 to-sky-500/20 text-cyan-300 border border-cyan-500/30 group-hover:border-cyan-400/60" : "bg-gradient-to-r from-cyan-50 to-sky-50 text-cyan-700 border border-cyan-200 group-hover:border-cyan-400")}`}>
                               {entry.trackingCode}
                             </span>
                           </td>
