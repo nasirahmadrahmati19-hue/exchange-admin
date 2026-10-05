@@ -69,7 +69,6 @@ interface Hawala {
   trackingCode?: string;
 }
 
-// ✅ اصلاح شده: customerName اضافه شد
 interface CashEntry {
   id: string; trackingCode: string; date: string; type: string; currency: Currency;
   amount: number; direction: "in" | "out"; status: "active" | "voided";
@@ -149,19 +148,14 @@ export default function JournalPage() {
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [selectedEntry, setSelectedEntry] = useState<UnifiedJournalEntry | null>(null);
   const [voidingId, setVoidingId] = useState<string | null>(null);
-
-  // ✅ نشانگر وضعیت آفلاین
   const [isOffline, setIsOffline] = useState(false);
 
   useEffect(() => {
-    // بررسی وضعیت اولیه
     if (typeof window !== "undefined") {
       setIsOffline(!navigator.onLine);
     }
-    
     const handleOnline = () => setIsOffline(false);
     const handleOffline = () => setIsOffline(true);
-
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
 
@@ -169,7 +163,6 @@ export default function JournalPage() {
       const saved = window.localStorage.getItem("fx-theme");
       if (saved === "dark" || saved === "light") setTheme(saved);
     } catch {}
-    
     setMounted(true);
 
     return () => {
@@ -178,7 +171,6 @@ export default function JournalPage() {
     };
   }, []);
 
-  // ✅ استفاده صحیح از هوک (بدون [] در جنریک)
   const [transactions, , isTxLoading, txActions] = useSafeSyncedState<Transaction>(TRANSACTIONS_KEY, []);
   const [hawalas, , isHawalaLoading] = useSafeSyncedState<Hawala>(HAWALAS_KEY, []);
   const [cashEntries, , isCashLoading, cashActions] = useSafeSyncedState<CashEntry>(CASH_KEY, []);
@@ -216,29 +208,64 @@ export default function JournalPage() {
   const unifiedEntries = useMemo<UnifiedJournalEntry[]>(() => {
     const entries: Omit<UnifiedJournalEntry, "trackingCode">[] = [];
     
+    // ✅ اصلاح اساسی: ثبت دوطرفه تبادلات برای محاسبه دقیق موجودی هر دو ارز
     transactions.forEach((tx) => {
       if (tx.status === "voided" && !tx.voidedReason) return;
-      let type: TxType = "تبدیل";
-      if (tx.type === "exchange") type = tx.dealType === "buy" ? "واریز" : "برداشت";
-      else if (tx.type === "transfer") type = "انتقال";
-      
-      let partyName: string;
-      if (tx.type === "transfer") {
+
+      if (tx.type === "exchange" || tx.type === "convert") {
+        const partyName = resolveCustomerName(tx.customerName, tx.customerId);
+        const desc = `معاوضه: ${tx.fromCurrency} به ${tx.toCurrency}`;
+        
+        // ۱. ثبت خروج ارز مبدا (برداشت)
+        entries.push({
+          id: `${tx.id}-out`,
+          date: tx.date,
+          type: "برداشت",
+          description: `${desc} (پرداخت)`,
+          partyName,
+          partyId: tx.customerId,
+          currency: tx.fromCurrency,
+          amount: tx.fromAmount,
+          status: tx.status,
+          voidedReason: tx.voidedReason,
+          source: "transaction",
+          sourceId: tx.id,
+          fee: tx.fee || 0
+        });
+
+        // ۲. ثبت ورود ارز مقصد (واریز)
+        entries.push({
+          id: `${tx.id}-in`,
+          date: tx.date,
+          type: "واریز",
+          description: `${desc} (دریافت)`,
+          partyName,
+          partyId: tx.customerId,
+          currency: tx.toCurrency,
+          amount: tx.toAmount,
+          status: tx.status,
+          voidedReason: tx.voidedReason,
+          source: "transaction",
+          sourceId: tx.id,
+          fee: 0
+        });
+      } else if (tx.type === "transfer") {
         const sender = resolveCustomerName(tx.senderName, tx.senderId);
         const receiver = resolveCustomerName(tx.receiverName, tx.receiverId);
-        partyName = `${sender} ← ${receiver}`;
-      } else {
-        partyName = resolveCustomerName(tx.customerName, tx.customerId);
+        entries.push({
+          id: tx.id, date: tx.date, type: "انتقال",
+          description: `انتقال از ${sender} به ${receiver}`,
+          partyName: `${sender} ← ${receiver}`,
+          partyId: tx.senderId,
+          currency: tx.fromCurrency,
+          amount: tx.fromAmount,
+          status: tx.status,
+          voidedReason: tx.voidedReason,
+          source: "transaction",
+          sourceId: tx.id,
+          fee: tx.fee || 0
+        });
       }
-      
-      entries.push({
-        id: tx.id, date: tx.date, type,
-        description: tx.description || `${tx.type} ${tx.fromCurrency} به ${tx.toCurrency}`,
-        partyName, partyId: tx.customerId || tx.senderId, currency: tx.fromCurrency,
-        amount: tx.fromAmount, balanceAfter: tx.balanceAfter, status: tx.status,
-        voidedReason: tx.voidedReason, source: "transaction", sourceId: tx.id,
-        fee: tx.fee || 0
-      });
     });
     
     hawalas.forEach((h) => {
@@ -342,6 +369,7 @@ export default function JournalPage() {
 
   const totalPages = Math.ceil(sortedEntries.length / itemsPerPage);
 
+  // ✅ محاسبه دقیق موجودی بر اساس منطق دوطرفه (واریز/برداشت)
   const currentBalances = useMemo(() => {
     const balances: Record<string, number> = {};
     currencies.forEach(curr => { balances[curr] = 0; });
@@ -353,18 +381,31 @@ export default function JournalPage() {
     return balances;
   }, [unifiedEntries]);
 
+  // ✅ اصلاح اساسی سود و زیان: عدم شمارش اصل مبلغ تبادل به عنوان درآمد/هزینه
   const profitLoss = useMemo(() => {
     let totalFees = 0;
-    let totalIncome = 0;
     let totalExpenses = 0;
+    
+    // محاسبه دقیق کارمزدها از منابع اصلی
+    transactions.forEach(tx => {
+      if (tx.status !== "voided" && tx.fee) totalFees += tx.fee;
+    });
+    hawalas.forEach(h => {
+      if (h.status !== "cancelled" && h.fee) totalFees += h.fee;
+    });
+
+    // محاسبه هزینه‌های عملیاتی واقعی از روزنامه
     filteredEntries.forEach((e) => {
       if (e.status === "voided") return;
-      if (e.fee) totalFees += e.fee;
-      if (e.type === "واریز") totalIncome += e.amount;
-      else if (e.type === "هزینه" || e.type === "برداشت") totalExpenses += e.amount;
+      if (e.type === "هزینه") totalExpenses += e.amount;
     });
-    return { totalFees, totalIncome, totalExpenses, netProfit: totalFees + totalIncome - totalExpenses };
-  }, [filteredEntries]);
+
+    return { 
+      totalFees, 
+      totalExpenses, 
+      netProfit: totalFees - totalExpenses 
+    };
+  }, [filteredEntries, transactions, hawalas]);
 
   const summary = useMemo(() => {
     let count = 0;
@@ -391,6 +432,7 @@ export default function JournalPage() {
     setVoidingId(entry.id);
     try {
       if (entry.source === "transaction") {
+        // ابطال تراکنش اصلی، هر دو ردیف (واریز و برداشت) را به طور خودکار باطل می‌کند
         await txActions.updateItem(entry.sourceId, { 
           status: "voided", 
           voidedReason: reason 
@@ -476,7 +518,6 @@ export default function JournalPage() {
 
         <div className="relative z-10 mx-auto w-full max-w-7xl space-y-4 md:space-y-6 px-3 pb-16 pt-5 md:px-8 md:pt-9">
 
-          {/* ✅ نشانگر وضعیت آفلاین */}
           {isOffline && (
             <div className="cs-up flex items-center justify-center gap-2 bg-amber-500/20 border border-amber-500/50 text-amber-300 dark:text-amber-400 px-4 py-2.5 rounded-xl text-sm font-bold mb-4 shadow-lg shadow-amber-500/10 backdrop-blur-sm">
               <span className="text-lg animate-pulse">📡</span>
@@ -484,7 +525,6 @@ export default function JournalPage() {
             </div>
           )}
 
-          {/* هدر */}
           <header className="cs-up flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 md:gap-3.5 min-w-0">
               <div className="relative grid h-11 w-11 md:h-14 md:w-14 shrink-0 place-items-center rounded-xl md:rounded-2xl bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-400 text-white shadow-lg shadow-emerald-500/30 ring-1 ring-white/30">
@@ -506,7 +546,6 @@ export default function JournalPage() {
             </div>
           </header>
 
-          {/* موجودی لحظه‌ای */}
           <section className="cs-up" style={{ animationDelay: "50ms" }}>
             <div className={`relative overflow-hidden rounded-2xl md:rounded-3xl border-2 p-5 md:p-6 transition-all duration-300 ${dk ? "border-emerald-400/30 bg-gradient-to-br from-emerald-900/30 via-slate-900/60 to-teal-900/30" : "border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50"}`}>
               <div className={`absolute -top-24 -left-24 h-48 w-48 rounded-full blur-3xl opacity-20 ${dk ? "bg-emerald-400" : "bg-emerald-300"}`} />
@@ -516,7 +555,7 @@ export default function JournalPage() {
                 </div>
                 <div>
                   <h2 className={`cs-display text-xl md:text-2xl leading-none ${heading}`}>موجودی لحظه‌ای صندوق</h2>
-                  <p className={`mt-0.5 text-[10px] md:text-xs font-bold ${subText}`}>موجودی فعلی هر ارز در سیستم</p>
+                  <p className={`mt-0.5 text-[10px] md:text-xs font-bold ${subText}`}>موجودی فعلی هر ارز در سیستم (هماهنگ با صفحه صندوق)</p>
                 </div>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
@@ -542,7 +581,6 @@ export default function JournalPage() {
             </div>
           </section>
 
-          {/* گزارش سود/زیان */}
           <section className="cs-up" style={{ animationDelay: "100ms" }}>
             <div className={`relative overflow-hidden rounded-2xl md:rounded-3xl border-2 p-5 md:p-6 transition-all duration-300 ${dk ? "border-amber-400/30 bg-gradient-to-br from-amber-900/20 via-slate-900/60 to-orange-900/20" : "border-amber-200 bg-gradient-to-br from-amber-50 via-white to-orange-50"}`}>
               <div className={`absolute -top-24 -right-24 h-48 w-48 rounded-full blur-3xl opacity-20 ${dk ? "bg-amber-400" : "bg-amber-300"}`} />
@@ -552,21 +590,21 @@ export default function JournalPage() {
                 </div>
                 <div>
                   <h2 className={`cs-display text-xl md:text-2xl leading-none ${heading}`}>گزارش سود و زیان دوره</h2>
-                  <p className={`mt-0.5 text-[10px] md:text-xs font-bold ${subText}`}>تحلیل مالی بر اساس فیلترهای انتخاب‌شده</p>
+                  <p className={`mt-0.5 text-[10px] md:text-xs font-bold ${subText}`}>تحلیل مالی بر اساس کارمزدها و هزینه‌های واقعی (بدون شمارش اصل سرمایه)</p>
                 </div>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div className={`rounded-xl p-4 border ${dk ? "border-slate-700 bg-slate-900/50" : "border-slate-200 bg-white/80"}`}>
-                  <div className={`text-xs font-black mb-2 ${dk ? "text-emerald-300" : "text-emerald-600"}`}>💵 درآمد کل</div>
-                  <div className={`text-xl font-black tabular-nums ${dk ? "text-emerald-400" : "text-emerald-700"}`}>{fmt(profitLoss.totalIncome)}</div>
+                  <div className={`text-xs font-black mb-2 ${dk ? "text-emerald-300" : "text-emerald-600"}`}>💵 کارمزد و درآمدها</div>
+                  <div className={`text-xl font-black tabular-nums ${dk ? "text-emerald-400" : "text-emerald-700"}`}>{fmt(profitLoss.totalFees)}</div>
                 </div>
                 <div className={`rounded-xl p-4 border ${dk ? "border-slate-700 bg-slate-900/50" : "border-slate-200 bg-white/80"}`}>
-                  <div className={`text-xs font-black mb-2 ${dk ? "text-rose-300" : "text-rose-600"}`}>💸 هزینه‌ها</div>
+                  <div className={`text-xs font-black mb-2 ${dk ? "text-rose-300" : "text-rose-600"}`}>💸 هزینه‌های عملیاتی</div>
                   <div className={`text-xl font-black tabular-nums ${dk ? "text-rose-400" : "text-rose-700"}`}>{fmt(profitLoss.totalExpenses)}</div>
                 </div>
                 <div className={`rounded-xl p-4 border ${dk ? "border-slate-700 bg-slate-900/50" : "border-slate-200 bg-white/80"}`}>
-                  <div className={`text-xs font-black mb-2 ${dk ? "text-blue-300" : "text-blue-600"}`}>🎯 کارمزدها</div>
-                  <div className={`text-xl font-black tabular-nums ${dk ? "text-blue-400" : "text-blue-700"}`}>{fmt(profitLoss.totalFees)}</div>
+                  <div className={`text-xs font-black mb-2 ${dk ? "text-blue-300" : "text-blue-600"}`}>🎯 خالص کارمزد</div>
+                  <div className={`text-xl font-black tabular-nums ${dk ? "text-blue-400" : "text-blue-700"}`}>{fmt(profitLoss.totalFees - profitLoss.totalExpenses)}</div>
                 </div>
                 <div className={`rounded-xl p-4 border-2 ${profitLoss.netProfit >= 0 ? (dk ? "border-emerald-400 bg-emerald-900/30" : "border-emerald-400 bg-emerald-50") : (dk ? "border-rose-400 bg-rose-900/30" : "border-rose-400 bg-rose-50")}`}>
                   <div className={`text-xs font-black mb-2 ${profitLoss.netProfit >= 0 ? (dk ? "text-emerald-300" : "text-emerald-700") : (dk ? "text-rose-300" : "text-rose-700")}`}>
@@ -580,7 +618,6 @@ export default function JournalPage() {
             </div>
           </section>
 
-          {/* فیلترها */}
           <section className={`cs-up rounded-2xl border p-4 md:p-5 shadow-sm transition-colors duration-300 ${uiCard}`} style={{ animationDelay: "150ms" }}>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
               <div>
@@ -606,7 +643,6 @@ export default function JournalPage() {
             </div>
           </section>
 
-          {/* خلاصه دوره */}
           <section className="cs-up" style={{ animationDelay: "200ms" }}>
             <div className={`relative overflow-hidden rounded-2xl md:rounded-3xl border-2 p-5 md:p-6 transition-all duration-300 ${dk ? "border-cyan-400/30 bg-gradient-to-br from-cyan-900/20 via-slate-900/60 to-blue-900/20" : "border-cyan-200 bg-gradient-to-br from-cyan-50 via-white to-blue-50"}`}>
               <div className={`absolute -top-24 -right-24 h-48 w-48 rounded-full blur-3xl opacity-20 ${dk ? "bg-cyan-400" : "bg-cyan-300"}`} />
@@ -687,7 +723,6 @@ export default function JournalPage() {
             </div>
           </section>
 
-          {/* جدول تراکنش‌ها */}
           <section className={`cs-up rounded-2xl md:rounded-3xl border-2 overflow-hidden ${uiCard}`} style={{ animationDelay: "250ms" }}>
             <div className={`relative overflow-hidden p-4 md:p-5 pb-3 md:pb-4 md:px-7 md:pt-6 ${dk ? "bg-gradient-to-l from-slate-800/80 via-slate-800/50 to-transparent" : "bg-gradient-to-l from-emerald-50/80 via-white/50 to-transparent"}`}>
               <div className={`absolute inset-0 shimmer opacity-30`} />
@@ -877,18 +912,15 @@ export default function JournalPage() {
             )}
           </section>
 
-          {/* راهنما */}
           <section className={`cs-up rounded-2xl border-2 px-5 py-4 md:py-5 ${dk ? "border-slate-700/70 bg-gradient-to-r from-slate-800/60 to-slate-900/60" : "border-slate-200 bg-gradient-to-r from-white to-slate-50"}`} style={{ animationDelay: "300ms" }}>
             <h3 className={`text-sm font-black mb-3 flex items-center ${dk ? "text-slate-200" : "text-slate-700"}`}>
               <span className={`w-2 h-2 rounded-full ml-2 ${dk ? "bg-blue-400" : "bg-blue-600"}`}></span> راهنمای سیستم
             </h3>
             <ul className={`text-xs space-y-2 list-disc pr-4 ${dk ? "text-slate-400" : "text-slate-600"}`}>
-              <li> <b>موجودی لحظه‌ای</b>: موجودی فعلی هر ارز در سیستم</li>
-              <li>📈 <b>سود/زیان</b>: درآمد، هزینه، کارمزدها و سود خالص دوره</li>
-              <li> <b>خلاصه دوره</b>: حجم کل (مجموع گردش) و تغییر خالص (واریز - برداشت)</li>
+              <li> <b>موجودی لحظه‌ای</b>: موجودی فعلی هر ارز در سیستم (محاسبه‌شده از مجموع تمام ورودی‌ها و خروجی‌ها)</li>
+              <li>📈 <b>سود/زیان</b>: فقط بر اساس کارمزدها و هزینه‌های عملیاتی محاسبه می‌شود (اصل مبلغ تبادل درآمد محسوب نمی‌شود)</li>
+              <li> <b>ثبت دوطرفه</b>: تبادلات ارز به صورت خودکار به دو ردیف (پرداخت و دریافت) تقسیم می‌شوند تا تراز ارزها دقیق باشد</li>
               <li>🔽 <b>مرتب‌سازی</b>: روی هدر ستون‌ها کلیک کنید</li>
-              <li>📄 <b>صفحه‌بندی</b>: ۲۰ تراکنش در هر صفحه</li>
-              <li>👤 <b>مشتری</b>: نام از لیست مشتریان خوانده می‌شود</li>
               <li>🖱️ <b>جزئیات</b>: روی هر ردیف کلیک کنید</li>
             </ul>
           </section>
@@ -898,7 +930,6 @@ export default function JournalPage() {
           </div>
         </div>
 
-        {/* مودال جزئیات */}
         {selectedEntry && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setSelectedEntry(null)}>
             <div className={`relative w-full max-w-lg rounded-2xl border-2 p-6 shadow-2xl ${dk ? "border-slate-700 bg-slate-800" : "border-emerald-200 bg-white"}`} onClick={(e) => e.stopPropagation()}>
