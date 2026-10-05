@@ -1,26 +1,30 @@
 /**
  * ═══════════════════════════════════════════════════════════
- * سیستم تولید کد پیگیری جهانی (نسخه نهایی - ضدگلوله آفلاین)
- * ✅ هرگز خطا به UI پرتاب نمی‌کند
- * ✅ در حالت آفلاین فوراً کد محلی تولید می‌کند
+ * سیستم تولید کد پیگیری جهانی (نسخه نهایی با پشتیبانی آفلاین)
+ * ✅ آنلاین: TR-1405-00001
+ * ✅ آفلاین: OF-1405-00001
+ * ✅ ریست خودکار شمارنده با تغییر سال شمسی
+ * ✅ بدون نیاز به تغییر در هیچ بخش دیگری از برنامه
  * ═══════════════════════════════════════════════════════════
  */
 
 import { doc, runTransaction } from "firebase/firestore";
 import { db } from "./firebase";
 
+const ONLINE_PREFIX = "TR";
+const OFFLINE_PREFIX = "OF";
 const SEQUENCE_LENGTH = 5;
 const MAX_SEQUENCE = 99999;
 const COUNTER_DOC_ID = "global_tracking_counter";
 const LS_LAST_CODE = "fx_last_tracking_code";
-const LS_OFFLINE_COUNTER = "fx_offline_tracking_counter";
+const LS_OFFLINE_COUNTER_PREFIX = "fx_offline_counter_";
 
 export function getCurrentShamsiYear(): string {
   try {
     const parts = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", { year: "numeric" }).formatToParts(new Date());
-    return parts.find((p) => p.type === "year")?.value || "1403";
+    return parts.find((p) => p.type === "year")?.value || "1405";
   } catch {
-    return "1403";
+    return "1405";
   }
 }
 
@@ -30,41 +34,37 @@ function isOnline(): boolean {
   return navigator.onLine;
 }
 
+// ✅ تولید کد با پیشوند OF برای حالت آفلاین
 function generateOfflineTrackingCode(): string {
   const year = getCurrentShamsiYear();
+  const storageKey = `${LS_OFFLINE_COUNTER_PREFIX}${year}`;
   
-  let offlineCounter = 1;
+  let localCounter = 1;
   try {
-    const stored = localStorage.getItem(LS_OFFLINE_COUNTER);
+    const stored = localStorage.getItem(storageKey);
     if (stored) {
-      const parsed = JSON.parse(stored);
-      if (parsed && parsed.year === year) {
-        offlineCounter = (parsed.count || 0) + 1;
-      }
+      localCounter = parseInt(stored, 10) + 1;
     }
-    localStorage.setItem(LS_OFFLINE_COUNTER, JSON.stringify({ year, count: offlineCounter }));
+    // ذخیره شمارنده مخصوص همین سال (با تغییر سال، کلید تغییر کرده و از ۱ شروع می‌شود)
+    localStorage.setItem(storageKey, localCounter.toString());
   } catch (e) {
     console.warn("⚠️ خطا در ذخیره شمارنده آفلاین:", e);
   }
 
-  const timePart = Date.now().toString().slice(-6);
-  const counterPart = String(offlineCounter).padStart(3, "0");
-  const randomPart = Math.floor(Math.random() * 100).toString().padStart(2, "0");
-  
-  const offlineCode = `TR-${year}-OFF${timePart}${counterPart}${randomPart}`;
+  const finalCode = `${OFFLINE_PREFIX}-${year}-${String(localCounter).padStart(SEQUENCE_LENGTH, "0")}`;
 
   try {
-    localStorage.setItem(LS_LAST_CODE, offlineCode);
+    localStorage.setItem(LS_LAST_CODE, finalCode);
   } catch {}
 
-  console.log(`📡 کد پیگیری آفلاین تولید شد: ${offlineCode}`);
-  return offlineCode;
+  console.log(`📡 کد پیگیری آفلاین تولید شد: ${finalCode}`);
+  return finalCode;
 }
 
 export async function consumeTrackingCode(): Promise<string> {
-  // ✅ خط دفاعی اول: اگر اینترنت قطع است، فوراً کد محلی برگردان
+  // ✅ خط دفاعی اول: اگر اینترنت قطع است، فوراً کد با پیشوند OF تولید کن
   if (!isOnline()) {
-    console.warn("⚠️ اینترنت قطع است. تولید کد محلی...");
+    console.warn("⚠️ اینترنت قطع است. تولید کد آفلاین (OF)...");
     return generateOfflineTrackingCode();
   }
 
@@ -89,7 +89,7 @@ export async function consumeTrackingCode(): Promise<string> {
       const nextCount = currentCount + 1;
       transaction.set(counterRef, { ...currentData, [year]: nextCount }, { merge: true });
 
-      return `TR-${year}-${String(nextCount).padStart(SEQUENCE_LENGTH, "0")}`;
+      return `${ONLINE_PREFIX}-${year}-${String(nextCount).padStart(SEQUENCE_LENGTH, "0")}`;
     });
 
     const trackingCode = await Promise.race([transactionPromise, timeoutPromise]);
@@ -102,56 +102,66 @@ export async function consumeTrackingCode(): Promise<string> {
     return trackingCode;
 
   } catch (error: any) {
-    // ✅ خط دفاعی سوم: هر خطایی را بگیر و کد محلی برگردان
     const errorMessage = error?.message || "";
     const errorCode = error?.code || "";
     
-    console.warn(`⚠️ خطا در دریافت کد از سرور (${errorCode || errorMessage}). سوئیچ به حالت آفلاین...`);
+    console.warn(`⚠️ خطا در دریافت کد از سرور (${errorCode || errorMessage}). سوئیچ به حالت آفلاین (OF)...`);
     
-    // ⭐⭐⭐ مهم‌ترین خط: هرگز خطا را throw نکن ⭐⭐⭐
+    // ✅ خط دفاعی سوم: در صورت هرگونه خطای سرور، کد آفلاین با پیشوند OF برگردان
     return generateOfflineTrackingCode();
   }
 }
 
 export function getNextTrackingCode(): string {
   const year = getCurrentShamsiYear();
+  const prefix = isOnline() ? ONLINE_PREFIX : OFFLINE_PREFIX;
+  
   try {
     const lastCode = localStorage.getItem(LS_LAST_CODE);
-    if (lastCode && lastCode.startsWith(`TR-${year}-`)) {
-      if (lastCode.includes("-OFF")) {
-        return generateOfflineTrackingCode();
-      }
-      const match = lastCode.match(/(\d+)$/);
+    if (lastCode && lastCode.startsWith(`${prefix}-${year}-`)) {
+      const match = lastCode.match(/-(\d+)$/);
       if (match) {
         const nextNum = Number(match[1]) + 1;
-        return `TR-${year}-${String(nextNum).padStart(SEQUENCE_LENGTH, "0")}`;
+        return `${prefix}-${year}-${String(nextNum).padStart(SEQUENCE_LENGTH, "0")}`;
       }
     }
   } catch {}
-  return `TR-${year}-00001`;
+  
+  // اگر کد قبلی وجود نداشت یا مربوط به سال دیگری بود، از ۱ شروع کن
+  return `${prefix}-${year}-00001`;
 }
 
+// ✅ به‌روزرسانی شده برای شناسایی صحیح هم TR و هم OF جهت مرتب‌سازی در جداول
 export function getTrackingNumberValue(code: string): number {
   if (!code) return 0;
   
-  const offlineMatch = String(code).match(/^TR-\d{4}-OFF(\d+)$/);
-  if (offlineMatch) return Number(offlineMatch[1]) || 0;
-
-  const match = String(code).match(/^TR-\d{4}-(\d{5})$/);
+  // استخراج عدد از فرمت‌های استاندارد (هم TR و هم OF)
+  const match = String(code).match(/^(?:TR|OF)-\d{4}-(\d+)$/);
   if (match) return Number(match[1]) || 0;
   
-  const legacyFormat = String(code).match(/^(?:HW|FX|TR)-(\d+)$/);
+  // پشتیبانی از فرمت‌های قدیمی در صورت وجود در دیتابیس
+  const legacyFormat = String(code).match(/^(?:HW|FX|TR|OF)-(\d+)$/);
   if (legacyFormat) return Number(legacyFormat[1]) || 0;
   
   return 0;
 }
 
+// ✅ به‌روزرسانی شده برای قبول کردن هر دو پیشوند TR و OF
 export function isValidTrackingCode(code: string): boolean {
   if (!code) return false;
-  return /^TR-\d{4}-\d{5}$|^(?:HW|FX|TR)-\d+$|^TR-\d{4}-OFF\d+$/.test(code);
+  return /^(?:TR|OF)-\d{4}-\d{5}$|^(?:HW|FX|TR|OF)-\d+$/.test(code);
 }
 
-export function initTrackingSystem(): void {}
+export function initTrackingSystem(): void {
+  // مقداردهی اولیه شمارنده محلی برای سال جاری در صورت عدم وجود
+  if (typeof window !== "undefined") {
+    const year = getCurrentShamsiYear();
+    const storageKey = `${LS_OFFLINE_COUNTER_PREFIX}${year}`;
+    if (!localStorage.getItem(storageKey)) {
+      localStorage.setItem(storageKey, "0");
+    }
+  }
+}
 
 export function getMaxCapacity(): number {
   return MAX_SEQUENCE;
