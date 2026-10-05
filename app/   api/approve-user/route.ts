@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { doc, updateDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase"; // مطمئن شوید مسیر فایل firebase شما درست است
+// ✅ مسیر نسبی و دقیق برای جلوگیری از خطای Build در Vercel
+import { db } from "../../dashboard/lib/firebase"; 
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
