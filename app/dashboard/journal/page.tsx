@@ -3,12 +3,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSafeSyncedState } from "../lib/useSafeSyncedState";
-import { 
-  CUSTOMERS_KEY, 
-  TRANSACTIONS_KEY, 
-  HAWALAS_KEY, 
-  CASH_KEY 
-} from "../lib/defaultData";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
@@ -171,24 +165,23 @@ export default function JournalPage() {
     };
   }, []);
 
-  // ✅ سازگاری ۱۰۰٪ با هوک جدید useSafeSyncedState (بازگشت ۴ مقداری)
-  // [0]: data, [1]: setSafeValue, [2]: isLoading, [3]: actions object
-  const txState = useSafeSyncedState<Transaction>(TRANSACTIONS_KEY, []);
+  // ✅ اصلاح نهایی: استفاده از نام دقیق کالکشن‌های فایربیس (مطابق با سایر تب‌ها)
+  const txState = useSafeSyncedState<Transaction>("transactions", []);
   const transactions = txState[0];
   const isTxLoading = txState[2];
   const txActions = txState[3];
 
-  const hwState = useSafeSyncedState<Hawala>(HAWALAS_KEY, []);
+  const hwState = useSafeSyncedState<Hawala>("hawalas", []);
   const hawalas = hwState[0];
   const isHawalaLoading = hwState[2];
   const hawalaActions = hwState[3];
 
-  const ceState = useSafeSyncedState<CashEntry>(CASH_KEY, []);
+  const ceState = useSafeSyncedState<CashEntry>("cash_entries", []);
   const cashEntries = ceState[0];
   const isCashLoading = ceState[2];
   const cashActions = ceState[3];
 
-  const custState = useSafeSyncedState<Customer>(CUSTOMERS_KEY, []);
+  const custState = useSafeSyncedState<Customer>("customers", []);
   const customers = custState[0];
 
   const isLoading = (isTxLoading && transactions.length === 0) || 
@@ -493,7 +486,6 @@ export default function JournalPage() {
     setVoidingId(entry.id);
     try {
       if (entry.source === "transaction") {
-        // ✅ استفاده صحیح از متد updateItem هوک جدید
         await txActions.updateItem(entry.sourceId, { 
           status: "voided", 
           voidedReason: reason 
@@ -599,7 +591,6 @@ export default function JournalPage() {
                 <p className={`mt-1 text-[10px] md:text-xs font-bold ${subText}`}>
                   نمای یکپارچه و حسابرسی‌پذیر از تمام تب‌های سیستم
                   <span className="mx-2 opacity-50">|</span>
-                  {/* ✅ نشانگر عیب‌یابی زنده: اگر این اعداد ۰ باشند، مشکل از نام کالکشن‌ها در Firebase است */}
                   <span className="font-mono text-[9px] md:text-[10px] bg-slate-500/10 px-1.5 py-0.5 rounded">
                     TX: {transactions.length} | HW: {hawalas.length} | CS: {cashEntries.length} | Cust: {customers.length}
                   </span>
@@ -616,7 +607,6 @@ export default function JournalPage() {
             </div>
           </header>
 
-          {/* بخش‌های نمایشی (موجودی، سود/زیان، فیلترها و جدول) دقیقاً مانند قبل حفظ شده‌اند */}
           <section className="cs-up" style={{ animationDelay: "50ms" }}>
             <div className={`relative overflow-hidden rounded-2xl md:rounded-3xl border-2 p-5 md:p-6 transition-all duration-300 ${dk ? "border-emerald-400/30 bg-gradient-to-br from-emerald-900/30 via-slate-900/60 to-teal-900/30" : "border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50"}`}>
               <div className="relative flex items-center gap-3 mb-4">
@@ -773,7 +763,6 @@ export default function JournalPage() {
                 </tbody>
               </table>
             </div>
-            {/* صفحه‌بندی در صورت نیاز */}
             {totalPages > 1 && (
               <div className={`flex flex-col sm:flex-row items-center justify-between gap-3 px-4 md:px-7 py-4 border-t ${dk ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50/50"}`}>
                 <div className={`text-xs font-bold ${subText}`}>
