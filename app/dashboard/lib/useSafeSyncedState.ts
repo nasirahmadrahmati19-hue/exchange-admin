@@ -152,7 +152,38 @@ type CacheEntry = {
   itemCount: number;
 };
 
+// مقایسه عمیق دو آیتم (فقط برای آیتم‌های تکی — ارزان است)
+function itemsEqual(a: any, b: any): boolean {
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    return false;
+  }
+}
+
 const globalCache = new Map<string, CacheEntry>();
+
+// ============================================================
+// نوشتن تدریجی در localStorage (برای دیتاست‌های بزرگ)
+// سریال‌سازی همگام JSON یک آرایه ۱۰ هزار عضوی می‌تواند UI را چند ثانیه قفل کند؛
+// این تابع کار را به idle موکول و از نوشتنهای همزمان تکراری جلوگیری می‌کند.
+// ============================================================
+
+const lsWriteScheduled = new Set<string>();
+
+function scheduleSaveToLS(key: string, value: any): void {
+  if (typeof window === "undefined") return;
+  if (lsWriteScheduled.has(key)) return; // نوشتن قبلی هنوز در صف است، مقدار جدید جای آن را می‌گیرد
+  lsWriteScheduled.add(key);
+  const doWrite = () => {
+    lsWriteScheduled.delete(key);
+    const latest = globalCache.get(key);
+    saveToLS(key, latest ? latest.value : value);
+  };
+  const ric: any = (window as any).requestIdleCallback;
+  if (typeof ric === "function") ric(doWrite, { timeout: 3000 });
+  else setTimeout(doWrite, 1500);
+}
 
 // ============================================================
 // هوک اصلی (Main Hook)
@@ -242,13 +273,19 @@ export function useSafeSyncedState<T extends { id: string | number }>(
                 return String(a.id).localeCompare(String(b.id));
               });
 
+              // ✅ مقایسه سریع بدون سریال‌سازی کامل (برای دیتاست‌های ۱۰ هزار عضوی)
               const oldData = dataRef.current;
               let isDataSame = oldData.length === newData.length;
-              
+
               if (isDataSame) {
-                const oldStr = JSON.stringify(oldData);
-                const newStr = JSON.stringify(newData);
-                if (oldStr !== newStr) isDataSame = false;
+                for (let idx = 0; idx < newData.length; idx++) {
+                  const o = oldData[idx] as any;
+                  const n = newData[idx] as any;
+                  if (String(o.id) !== String(n.id) || Number(o.updatedAt || 0) !== Number(n.updatedAt || 0)) {
+                    isDataSame = false;
+                    break;
+                  }
+                }
               }
 
               if (isDataSame) {
@@ -272,7 +309,7 @@ export function useSafeSyncedState<T extends { id: string | number }>(
                 itemCount: newData.length,
               });
 
-              saveToLS(collectionName, newData);
+              scheduleSaveToLS(collectionName, newData);
               saveToIDB(collectionName, newData).catch(() => {});
 
             } catch (err) {
@@ -346,11 +383,17 @@ export function useSafeSyncedState<T extends { id: string | number }>(
       const normalizedValue = resolvedValue.map(normalizeItem) as T[];
       const previousData = dataRef.current;
 
+      // ✅ مقایسه سریع: اگر idها و updatedAt یکسان بودند، تغییری نشده است
       let isSame = previousData.length === normalizedValue.length;
       if (isSame) {
-        const prevStr = JSON.stringify(previousData);
-        const newStr = JSON.stringify(normalizedValue);
-        if (prevStr !== newStr) isSame = false;
+        for (let idx = 0; idx < normalizedValue.length; idx++) {
+          const o = previousData[idx] as any;
+          const n = normalizedValue[idx] as any;
+          if (String(o.id) !== String(n.id) || Number(o.updatedAt || 0) !== Number(n.updatedAt || 0)) {
+            isSame = false;
+            break;
+          }
+        }
       }
 
       if (isSame) {
@@ -370,7 +413,7 @@ export function useSafeSyncedState<T extends { id: string | number }>(
         itemCount: normalizedValue.length,
       });
 
-      saveToLS(collectionName, normalizedValue);
+      scheduleSaveToLS(collectionName, normalizedValue);
       saveToIDB(collectionName, normalizedValue).catch(() => {});
 
       const currentMap = new Map(previousData.map((item) => [String(item.id), item]));
@@ -388,7 +431,7 @@ export function useSafeSyncedState<T extends { id: string | number }>(
             id: String(newItem.id) || generateId(),
             updatedAt: now,
           } as T);
-        } else if (JSON.stringify(currentItem) !== JSON.stringify(newItem)) {
+        } else if (!itemsEqual(currentItem, newItem)) {
           toUpdate.push({
             ...newItem,
             updatedAt: now,

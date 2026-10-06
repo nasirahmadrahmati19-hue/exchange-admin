@@ -213,6 +213,14 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
   const entries: LedgerEntry[] = [];
   if (!Array.isArray(customers) || !Array.isArray(transactions) || !Array.isArray(hawalas) || !Array.isArray(cashEntries)) return entries;
 
+  // ✅ ایندکس‌های سریع برای جستجوی نام/شناسه مشتری (به‌جای find خطی روی ده‌ها هزار رکورد)
+  const customersById = new Map<string, Customer>();
+  const customersByName = new Map<string, Customer>();
+  for (const c of customers) {
+    customersById.set(String(c.id), c);
+    if (c.name && !customersByName.has(String(c.name))) customersByName.set(String(c.name), c);
+  }
+
   for (const tx of transactions) {
     if (!tx || typeof tx !== "object") continue;
     if (tx.status === "voided" || tx.status === "cancelled") continue;
@@ -223,7 +231,7 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
     const fromAmt = Number(tx.fromAmount || 0) || 0, toAmt = Number(tx.toAmount || 0) || 0, commAmt = Number(tx.commission || 0) || 0;
 
     if (tx.type === "exchange") {
-      const cid = tx.customerId || customers.find(c => c.name === (tx.customerName || tx.customerId))?.id;
+      const cid = tx.customerId || customersByName.get(String(tx.customerName || tx.customerId || ""))?.id;
       if (cid && isCurrency(fromCur) && isCurrency(toCur)) {
         entries.push({ id: `${tx.id}-out`, date, customerId: cid, type: "exchange", description: `فروش ${labels[fromCur]} - ${tx.rateLabel || ""}`, currency: fromCur, amount: fromAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum, counterPartyId: CASH_BOX_ID });
         entries.push({ id: `${tx.id}-in`, date, customerId: cid, type: "exchange", description: `خرید ${labels[toCur]} - ${tx.rateLabel || ""}`, currency: toCur, amount: toAmt, direction: "in", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum, counterPartyId: CASH_BOX_ID });
@@ -231,19 +239,19 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
       }
     }
     if (tx.type === "transfer") {
-      const sId = tx.senderId || customers.find(c => c.name === (tx.senderName || tx.senderId))?.id;
-      const rId = tx.receiverId || customers.find(c => c.name === (tx.receiverName || tx.receiverId))?.id;
+      const sId = tx.senderId || customersByName.get(String(tx.senderName || tx.senderId || ""))?.id;
+      const rId = tx.receiverId || customersByName.get(String(tx.receiverName || tx.receiverId || ""))?.id;
       if (sId && isCurrency(fromCur)) {
-        entries.push({ id: `${tx.id}-s-out`, date, customerId: sId, type: "transfer", description: `انتقال ${labels[fromCur]} به ${customers.find(c => String(c.id) === String(rId))?.name || tx.receiverName || "—"}`, currency: fromCur, amount: fromAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum, counterPartyId: rId });
+        entries.push({ id: `${tx.id}-s-out`, date, customerId: sId, type: "transfer", description: `انتقال ${labels[fromCur]} به ${customersById.get(String(rId))?.name || tx.receiverName || "—"}`, currency: fromCur, amount: fromAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum, counterPartyId: rId });
         if (tx.commissionPayer === "sender" && commAmt > 0 && isCurrency(commCur)) entries.push({ id: `${tx.id}-s-fee`, date, customerId: sId, type: "fee", description: "کارمزد انتقال", currency: commCur, amount: commAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
       }
       if (rId && isCurrency(toCur)) {
-        entries.push({ id: `${tx.id}-r-in`, date, customerId: rId, type: "transfer", description: `دریافت ${labels[toCur]} از ${customers.find(c => String(c.id) === String(sId))?.name || tx.senderName || "—"}`, currency: toCur, amount: toAmt, direction: "in", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum, counterPartyId: sId });
+        entries.push({ id: `${tx.id}-r-in`, date, customerId: rId, type: "transfer", description: `دریافت ${labels[toCur]} از ${customersById.get(String(sId))?.name || tx.senderName || "—"}`, currency: toCur, amount: toAmt, direction: "in", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum, counterPartyId: sId });
         if (tx.commissionPayer === "receiver" && commAmt > 0 && isCurrency(commCur)) entries.push({ id: `${tx.id}-r-fee`, date, customerId: rId, type: "fee", description: "کارمزد انتقال", currency: commCur, amount: commAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
       }
     }
     if (tx.type === "convert") {
-      const cid = tx.customerId || customers.find(c => c.name === (tx.customerName || tx.customerId))?.id;
+      const cid = tx.customerId || customersByName.get(String(tx.customerName || tx.customerId || ""))?.id;
       if (cid && isCurrency(fromCur) && isCurrency(toCur)) {
         entries.push({ id: `${tx.id}-c-out`, date, customerId: cid, type: "convert", description: `تبدیل از ${labels[fromCur]}`, currency: fromCur, amount: fromAmt, direction: "out", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
         entries.push({ id: `${tx.id}-c-in`, date, customerId: cid, type: "convert", description: `تبدیل به ${labels[toCur]}`, currency: toCur, amount: toAmt, direction: "in", balanceAfter: 0, referenceId: tx.id, referenceNumber: refNum });
@@ -256,8 +264,8 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
     if (!h || typeof h !== "object") continue;
     if (h.status === "cancelled") continue;
     const date = h.date || new Date().toISOString(), refNum = h.number || "";
-    const sender = customers.find(c => String(c.id) === String(h.senderId)) || customers.find(c => c.name === h.senderName);
-    const receiver = customers.find(c => String(c.id) === String(h.receiverId)) || customers.find(c => c.name === h.receiverName);
+    const sender = customersById.get(String(h.senderId)) || customersByName.get(String(h.senderName || ""));
+    const receiver = customersById.get(String(h.receiverId)) || customersByName.get(String(h.receiverName || ""));
     const hFromCur = h.currencyFrom as Currency, hToCur = h.currencyTo as Currency, hFeeCur = h.feeCurrency as Currency;
     const hAmt = Number(h.amountFrom || 0) || 0, hFinal = Number(h.finalAmount || 0) || 0, hFee = Number(h.fee || 0) || 0;
 
@@ -276,7 +284,7 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
     if (ce.linkedHawalaId || ce.linkedHawalaSettleId || ce.linkedExchangeId || ce.linkedTransferId || ce.linkedConvertId) continue;
     if (ce.type !== "customer_deposit" && ce.type !== "customer_withdraw" && ce.type !== "loan_given" && ce.type !== "loan_received") continue;
     if (!ce.customerId) continue;
-    if (!customers.find(c => String(c.id) === String(ce.customerId)) && String(ce.customerId) !== EXCHANGE_ACCOUNT_ID) continue;
+    if (!customersById.has(String(ce.customerId)) && String(ce.customerId) !== EXCHANGE_ACCOUNT_ID) continue;
 
     const cur = ce.currency as Currency; if (!isCurrency(cur)) continue;
     const amt = Number(ce.amount || 0) || 0; if (amt <= 0) continue;
@@ -351,6 +359,9 @@ export default function CustomersPage() {
   const [ledgerTypeFilter, setLedgerTypeFilter] = useState<TxType | "all">("all");
   const [ledgerCurrencyFilter, setLedgerCurrencyFilter] = useState<Currency | "all">("all");
   const [ledgerDirFilter, setLedgerDirFilter] = useState<"all" | "in" | "out">("all");
+  // ✅ صفحه‌بندی فهرست مشتریان (برای دیتاست‌های بزرگ)
+  const [listPage, setListPage] = useState(1);
+  const PAGE_SIZE = 50;
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -368,6 +379,8 @@ export default function CustomersPage() {
 
   useEffect(() => { try { const s = window.localStorage.getItem("fx-theme"); if (s === "dark" || s === "light") setTheme(s); } catch {} }, []);
   useEffect(() => { try { window.localStorage.setItem("fx-theme", theme); } catch {} }, [theme]);
+  // ✅ با تغییر جستجو به صفحه اول برگرد
+  useEffect(() => { setListPage(1); }, [search]);
   const dk = theme === "dark";
 
   useEffect(() => {
@@ -395,10 +408,12 @@ export default function CustomersPage() {
     map[CASH_BOX_ID] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     map[EXCHANGE_ACCOUNT_ID] = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
 
-    for (const c of customers) {
-      if (String(c.id) !== CASH_BOX_ID && String(c.id) !== EXCHANGE_ACCOUNT_ID) {
-        for (const cur of currencies) { map[String(c.id)][cur] = getLedgerBalance(c.id, cur, cashEntries, ledger); }
-      }
+    // ✅ محاسبه یک‌-pass موجودی‌ها: به‌جای پیمایش کامل دفتر به ازای هر مشتری×هر ارز
+    // (که با ۱۰ هزار مشتری چند ثانیه CPU می‌گرفت)، کل دفتر فقط یک بار پیمایش می‌شود.
+    for (const e of ledger) {
+      const cid = String(e.customerId);
+      if (!map[cid]) continue; // صندوق و حساب صرافی جداگانه محاسبه می‌شوند
+      map[cid][e.currency as Currency] += e.direction === "in" ? e.amount : -e.amount;
     }
     map[EXCHANGE_ACCOUNT_ID] = {
       AFN: getLedgerBalance(EXCHANGE_ACCOUNT_ID, "AFN", cashEntries, ledger),
@@ -433,6 +448,14 @@ export default function CustomersPage() {
     result.push(...filtered);
     return result;
   }, [customers, search]);
+
+  // ✅ برش صفحه‌بندی‌شده برای رندر (فقط ۵۰ ردیف همزمان در DOM)
+  const totalPages = Math.max(1, Math.ceil(filteredCustomers.length / PAGE_SIZE));
+  const safePage = Math.min(listPage, totalPages);
+  const pagedCustomers = useMemo(
+    () => filteredCustomers.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
+    [filteredCustomers, safePage]
+  );
 
   const selectedCustomer = useMemo(() => {
     if (selectedCustomerId === CASH_BOX_ID || selectedCustomerId === CASH_BOX_NAME) return CASH_BOX_CUSTOMER;
@@ -720,7 +743,7 @@ export default function CustomersPage() {
               </div>
 
               <div className="md:hidden space-y-3">
-                {filteredCustomers.map(c => {
+                {pagedCustomers.map(c => {
                   const isCashBoxRow = String(c.id) === CASH_BOX_ID;
                   const isExchRow = String(c.id) === EXCHANGE_ACCOUNT_ID;
 
@@ -782,7 +805,7 @@ export default function CustomersPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                    {filteredCustomers.map(c => (
+                    {pagedCustomers.map(c => (
                       <tr key={String(c.id)} className={`transition-colors hover:${dk ? "bg-slate-800/50" : "bg-slate-50"}`}>
                         <td className="px-4 py-3">
                           <div className="font-bold text-slate-800 dark:text-slate-100">{c.name}</div>
@@ -819,6 +842,25 @@ export default function CustomersPage() {
                   </tbody>
                 </table>
               </div>
+
+              {/* ✅ نوار صفحه‌بندی فهرست مشتریان */}
+              {totalPages > 1 && (
+                <div className={`flex flex-wrap items-center justify-between gap-3 border-t pt-4 ${dk ? "border-slate-700" : "border-slate-100"}`}>
+                  <span className={`text-[11px] font-bold ${subTextVar}`}>
+                    صفحه {safePage} از {totalPages} — نمایش {pagedCustomers.length} از {filteredCustomers.length} نفر
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => setListPage(p => Math.max(1, p - 1))} disabled={safePage <= 1}
+                      className={`rounded-lg border px-3 py-1.5 text-xs font-black transition-all disabled:opacity-40 ${dk ? "border-slate-600 text-slate-200 hover:bg-slate-700" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}>قبلی</button>
+                    <select value={safePage} onChange={e => setListPage(Number(e.target.value))}
+                      className={`h-8 rounded-lg border px-2 text-xs font-bold outline-none ${dk ? "border-slate-600 bg-slate-800 text-slate-100" : "border-slate-200 bg-white text-slate-700"}`}>
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (<option key={p} value={p}>{p}</option>))}
+                    </select>
+                    <button type="button" onClick={() => setListPage(p => Math.min(totalPages, p + 1))} disabled={safePage >= totalPages}
+                      className={`rounded-lg border px-3 py-1.5 text-xs font-black transition-all disabled:opacity-40 ${dk ? "border-slate-600 text-slate-200 hover:bg-slate-700" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}>بعدی</button>
+                  </div>
+                </div>
+              )}
             </section>
           )}
 
