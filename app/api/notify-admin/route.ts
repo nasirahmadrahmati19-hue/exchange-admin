@@ -1,6 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
 
+// ⏱️ مهم: روی Vercel پلن رایگان، اگر تابع بیشتر از ۱۰ ثانیه کار کند خطای 504 می‌دهد.
+// بنابراین کل عملیات ارسال ایمیل را زیر ۸ ثانیه محدود می‌کنیم تا پاسخ سریع برگردد.
+const SEND_TIMEOUT_MS = 8000;
+
+async function sendWithTimeout(sendFn: () => Promise<any>) {
+  let timer: any;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('SMTP_TIMEOUT: اتصال به Gmail بیش از ۸ ثانیه طول کشید')), SEND_TIMEOUT_MS);
+  });
+  try {
+    await Promise.race([sendFn(), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export const maxDuration = 30; // در صورت پلن بالاتر، اجازه اجرای طولانی‌تر
+
 export async function POST(req: NextRequest) {
   let userEmail = '';
   let uid = '';
@@ -11,9 +29,14 @@ export async function POST(req: NextRequest) {
     const userName = body.userName;
     uid = body.uid;
 
-    // ساخت لینک تایید مستقیم (اگر در Vercel دیپلوی شده باشد، از آدرس دامنه شما استفاده می‌کند)
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-    const approvalLink = `${baseUrl}/api/approve-user?uid=${uid}&email=${encodeURIComponent(userEmail)}`;
+    // ساخت لینک تایید مستقیم — اگر NEXT_PUBLIC_APP_URL تنظیم نشده باشد،
+    // از دامنه واقعی درخواست (هدر host در Vercel) استفاده می‌شود تا لینک خراب نباشد
+    const forwardedProto = req.headers.get('x-forwarded-proto') || 'https';
+    const forwardedHost = req.headers.get('x-forwarded-host') || req.headers.get('host');
+    const baseUrl =
+      process.env.NEXT_PUBLIC_APP_URL ||
+      (forwardedHost ? `${forwardedProto}://${forwardedHost}` : 'http://localhost:3000');
+    approvalLink = `${baseUrl}/api/approve-user?uid=${uid}&email=${encodeURIComponent(userEmail)}`;
 
     // تنظیمات ارسال‌کننده ایمیل
     const adminEmail = process.env.GMAIL_USER || 'nasirahmadrahmati19@gmail.com';
@@ -33,13 +56,17 @@ export async function POST(req: NextRequest) {
         user: adminEmail,
         pass: process.env.GMAIL_APP_PASSWORD, // رمز ۱۶ رقمی اپلیکیشن گوگل
       },
+      connectionTimeout: 6000,
+      greetingTimeout: 6000,
+      socketTimeout: 8000,
     });
 
-    // ارسال ایمیل
-    await transporter.sendMail({
-      from: adminEmail,
-      to: adminEmail,
-      subject: `🔔 درخواست ثبت‌نام/ورود جدید به صرافی`,
+    // ارسال ایمیل (با سقف زمانی — برای جلوگیری از خطای 504 در Vercel)
+    await sendWithTimeout(() =>
+      transporter.sendMail({
+        from: adminEmail,
+        to: adminEmail,
+        subject: `🔔 درخواست ثبت‌نام/ورود جدید به صرافی`,
       html: `
         <div dir="rtl" style="font-family: Tahoma, Arial, sans-serif; padding: 20px; background: #f9f9f9;">
           <div style="max-width: 600px; margin: auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
@@ -73,33 +100,28 @@ export async function POST(req: NextRequest) {
           </div>
         </div>
       `,
-    });
+      })
+    );
 
     return NextResponse.json({ success: true, message: 'Email sent successfully' });
   } catch (error: any) {
     console.error('❌ خطا در ارسال ایمیل:', error);
-    // 🔑 اگر جیمیل ما را بلاک کرده باشد (خطای 429/530/552)، یک بار با مسیر جایگزین
-    // (SMTP عمومی Gmail با لاگ‌آوت کش) دوباره تلاش می‌کنیم.
-    try {
-      const adminEmail = process.env.GMAIL_USER || 'nasirahmadrahmati19@gmail.com';
-      const retryTransporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: { user: adminEmail, pass: process.env.GMAIL_APP_PASSWORD },
-      } as any);
-      await retryTransporter.sendMail({
-        from: adminEmail,
-        to: adminEmail,
-        subject: `🔔 (تلاش مجدد) درخواست ورود کاربر جدید`,
-        text: `کاربر ${userEmail} (uid: ${uid}) منتظر تایید است.\nلینک تایید:\n${approvalLink}`,
-      });
-      console.log('✅ ارسال مجدد با موفقیت انجام شد.');
-      return NextResponse.json({ success: true, message: 'Email sent on retry' });
-    } catch (retryError) {
-      console.error('❌ تلاش مجدد هم ناموفق بود:', retryError);
-      return NextResponse.json(
-        { success: false, error: String(error?.message || error) },
-        { status: 500 }
-      );
-    }
+    // ⚡ مهم: دیگر «تلاش مجدد» همزمان انجام نمی‌دهیم — چون روی Vercel پلن رایگان
+    // هر attempt تا ۸ ثانیه زمان می‌برد و دو attempt پشت سر هم باعث خطای 504 (timeout)
+    // و در نتیجه «Request failed with status code 504» برای مشتری می‌شد.
+    // به‌جای آن، بلافاصله پاسخ می‌دهیم؛ AuthProvider خودش بعداً مجدداً تلاش می‌کند.
+    return NextResponse.json(
+      {
+        success: false,
+        error: String(error?.message || error),
+        detail:
+          error?.code === 'EAUTH' || /535|Invalid credentials/i.test(String(error?.message))
+            ? 'رمز اپلیکیشن (GMAIL_APP_PASSWORD) برای این جیمیل معتبر نیست. یک App Password جدید از myaccount.google.com/apppasswords بسازید.'
+            : /ESMTP|ECONN|ETIMEDOUT|TIMEOUT/i.test(String(error?.message || '') + String(error?.code || ''))
+              ? 'اتصال SMTP به Gmail برقرار نشد (ممکن است IP سرور Vercel توسط گوگل کند شده باشد).'
+              : undefined,
+      },
+      { status: 500 }
+    );
   }
 }
