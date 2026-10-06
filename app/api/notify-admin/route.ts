@@ -10,18 +10,29 @@ export async function POST(req: NextRequest) {
     const approvalLink = `${baseUrl}/api/approve-user?uid=${uid}&email=${encodeURIComponent(userEmail)}`;
 
     // تنظیمات ارسال‌کننده ایمیل
+    const adminEmail = process.env.GMAIL_USER || 'nasirahmadrahmati19@gmail.com';
+
+    // بررسی وجود رمز اپلیکیشن — بدون آن ارسال ایمیل ممکن نیست
+    if (!process.env.GMAIL_APP_PASSWORD) {
+      console.error('❌ متغیر محیطی GMAIL_APP_PASSWORD تنظیم نشده است.');
+      return NextResponse.json(
+        { success: false, error: 'GMAIL_APP_PASSWORD is not configured' },
+        { status: 500 }
+      );
+    }
+
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
-        user: 'nasirahmadrahmati19@gmail.com',
+        user: adminEmail,
         pass: process.env.GMAIL_APP_PASSWORD, // رمز ۱۶ رقمی اپلیکیشن گوگل
       },
     });
 
     // ارسال ایمیل
     await transporter.sendMail({
-      from: 'nasirahmadrahmati19@gmail.com',
-      to: 'nasirahmadrahmati19@gmail.com',
+      from: adminEmail,
+      to: adminEmail,
       subject: `🔔 درخواست ثبت‌نام/ورود جدید به صرافی`,
       html: `
         <div dir="rtl" style="font-family: Tahoma, Arial, sans-serif; padding: 20px; background: #f9f9f9;">
