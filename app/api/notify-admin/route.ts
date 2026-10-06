@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
     const approvalLink = `${baseUrl}/api/approve-user?uid=${uid}&email=${encodeURIComponent(userEmail)}`;
 
     // تنظیمات ارسال‌کننده ایمیل
-    const adminEmail = process.env.GMAIL_USER || 'shababian.mohammad590@gmail.com';
+    const adminEmail = process.env.GMAIL_USER || 'nasirahmadrahmati19@gmail.com';
 
     // بررسی وجود رمز اپلیکیشن — بدون آن ارسال ایمیل ممکن نیست
     if (!process.env.GMAIL_APP_PASSWORD) {
