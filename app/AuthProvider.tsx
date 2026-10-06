@@ -30,7 +30,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(currentUser);
 
       // ۱. اگر خود مدیر وارد شود، مستقیم تأیید است
-      if (currentUser.email === "nasirahmadrahmati19@gmail.com") {
+      if (currentUser.email === "shababian.mohammad590@gmail.com") {
         console.log("✅ مدیر سیستم وارد شد. دسترسی مستقیم تأیید گردید.");
         setStatus("approved");
         setLoading(false);

@@ -7,7 +7,7 @@ import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChang
 const SETTINGS_KEY = "fx-settings";
 
 // 🚨 ایمیل مالک اصلی (شما)
-const OWNER_EMAIL = "nasirahmadrahmati19@gmail.com";
+const OWNER_EMAIL = "shababian.mohammad590@gmail.com";
 
 type Settings = {
   email: string;
