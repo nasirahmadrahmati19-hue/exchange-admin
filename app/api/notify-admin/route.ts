@@ -29,12 +29,14 @@ export async function POST(req: NextRequest) {
     const userName = body.userName;
     uid = body.uid;
 
-    // ساخت لینک تایید مستقیم — اگر NEXT_PUBLIC_APP_URL تنظیم نشده باشد،
-    // از دامنه واقعی درخواست (هدر host در Vercel) استفاده می‌شود تا لینک خراب نباشد
+    // ساخت لینک تایید مستقیم — اولویت با هدر دامنه واقعی درخواست (Vercel) است
+    // تا اگر NEXT_PUBLIC_APP_URL ساخته نشده باشد هم لینک درست باشد.
+    // اما اگر مقدار ست‌شده localhost نبود، همان را استفاده می‌کنیم.
     const forwardedProto = req.headers.get('x-forwarded-proto') || 'https';
     const forwardedHost = req.headers.get('x-forwarded-host') || req.headers.get('host');
+    const envUrl = process.env.NEXT_PUBLIC_APP_URL;
     const baseUrl =
-      process.env.NEXT_PUBLIC_APP_URL ||
+      (envUrl && !envUrl.includes('localhost') ? envUrl : null) ||
       (forwardedHost ? `${forwardedProto}://${forwardedHost}` : 'http://localhost:3000');
     approvalLink = `${baseUrl}/api/approve-user?uid=${uid}&email=${encodeURIComponent(userEmail)}`;
 
