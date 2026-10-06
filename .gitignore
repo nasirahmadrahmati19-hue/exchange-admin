@@ -1,0 +1,8 @@
+# Dependencies
+node_modules/
+.env*
+!.env.example
+.vercel
+out/
+
+.next/

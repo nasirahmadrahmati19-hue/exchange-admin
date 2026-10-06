@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useState, ReactNode } from "react";
 import { onAuthStateChanged, User, signOut } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { auth, db } from "./dashboard/lib/firebase";
 
 interface AuthContextType {
@@ -57,8 +57,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           
           console.log("✅ ثبت در دیتابیس با موفقیت انجام شد. در حال فراخوانی API ارسال ایمیل...");
 
-          // ✅ اصلاح مهم: ارسال uid به API برای ساخت لینک تایید
-          const response = await fetch("/api/notify-admin", {
+          // ✅ ارسال uid به API برای ساخت لینک تایید
+          // 🔑 مهم: قبلاً اینجا await بود؛ اگر مشتری پیش از تکمیل ارسال ایمیل تب را
+          // می‌بست، درخواست نصفه می‌ماند و ایمیل هرگز به مدیر نمی‌رسید.
+          // حالا اول زمان اطلاع را ثبت می‌کنیم، سپس ایمیل را fire-and-forget می‌فرستیم.
+          await updateDoc(userRef, { lastNotifiedAt: new Date().toISOString() });
+
+          fetch("/api/notify-admin", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -66,14 +71,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               userName: currentUser.displayName || "کاربر جدید",
               uid: currentUser.uid, // این خط حیاتی است
             }),
-          });
-
-          if (response.ok) {
-            console.log("📧 درخواست ارسال ایمیل با موفقیت به سرور فرستاده شد.");
-          } else {
-            const errorText = await response.text();
-            console.error("❌ سرور پاسخ خطا داد:", errorText);
-          }
+          })
+            .then((res) => {
+              if (!res.ok) res.text().then((t) => console.error("❌ سرور پاسخ خطا داد:", t));
+              else console.log("📧 درخواست ارسال ایمیل به مدیر با موفقیت ثبت شد.");
+            })
+            .catch((err) => console.error("❌ خطا در فراخوانی notify-admin:", err));
 
           setStatus("pending");
         } else {
@@ -86,6 +89,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           } else if (userData.status === "rejected") {
             setStatus("rejected");
           } else {
+            // 🔁 کاربر هنوز در انتظار تأیید است — اگر مدیر قبلاً درخواست را ندیده
+            // یا ایمیل گم شده، دوباره ایمیل یادآوری ارسال می‌شود.
+            // ⏱️ سقف زمان: حداکثر یک بار در هر ۲ دقیقه (قبلاً ۱ ساعت بود و باعث شد
+            // درخواست دوم شما اصلاً ایمیل نزند — این همان باگی بود که گزارش دادید).
+            try {
+              const lastNotifiedAt = userData.lastNotifiedAt
+                ? new Date(userData.lastNotifiedAt).getTime()
+                : 0;
+              const TWO_MINUTES = 2 * 60 * 1000;
+
+              if (Date.now() - lastNotifiedAt > TWO_MINUTES) {
+                console.log("📧 ارسال مجدد درخواست تأیید به مدیر (یادآوری)...");
+                // اول زمان را ثبت کن، سپس ایمیل را بدون await بفرست تا با بستن تب،
+                // هم ایمیل ارسال شود و هم دفعه بعد دوباره یادآوری تکراری نزند.
+                await updateDoc(userRef, { lastNotifiedAt: new Date().toISOString() });
+                fetch("/api/notify-admin", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    userEmail: currentUser.email,
+                    userName: userData.name || currentUser.displayName || "کاربر جدید",
+                    uid: currentUser.uid,
+                  }),
+                }).catch((err) => console.error("❌ خطا در ارسال یادآوری:", err));
+              } else {
+                console.log("⏳ آخرین ایمیل کمتر از ۲ دقیقه قبل ارسال شده؛ از ارسال مجدد خودداری شد.");
+              }
+            } catch (notifyError) {
+              console.error("❌ خطا در ارسال یادآوری:", notifyError);
+            }
             setStatus("pending");
           }
         }
