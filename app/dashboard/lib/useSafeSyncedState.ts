@@ -4,6 +4,9 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   collection,
   onSnapshot,
+  query,
+  where,
+  limit as fsLimit,
   doc,
   writeBatch,
   Timestamp,
@@ -189,10 +192,22 @@ function scheduleSaveToLS(key: string, value: any): void {
 // هوک اصلی (Main Hook)
 // ============================================================
 
+// محدود کردن همگام‌سازی به اسنادی که ownerField آن‌ها برابر ownerValue است.
+// با این گزینه هر کاربر فقط داده‌های خودش را دانلود می‌کند و می‌تواند
+// بدون برخورد با سقف حافظه مرورگر، صدها هزار مشتری ثبت کند.
+type SyncOptions = {
+  ownerField?: string;
+  ownerValue?: string;
+};
+
 export function useSafeSyncedState<T extends { id: string | number }>(
   collectionName: string,
-  initialValue: T[]
+  initialValue: T[],
+  options?: SyncOptions
 ) {
+  const ownerField = options?.ownerField;
+  const ownerValue = options?.ownerValue;
+  const scoped = !!(ownerField && ownerValue);
   if (!collectionName) {
     console.error("🔴 useSafeSyncedState: collectionName is required!");
     return [
@@ -210,8 +225,10 @@ export function useSafeSyncedState<T extends { id: string | number }>(
     ] as const;
   }
 
-  const cached = globalCache.get(collectionName);
-  const localData = readFromLS(collectionName);
+  const cacheKey = scoped ? `${collectionName}::${ownerValue}` : collectionName;
+
+  const cached = globalCache.get(cacheKey);
+  const localData = scoped ? undefined : readFromLS(collectionName); // در حالت scoped کش محلی کامل خوانده نمی‌شود
   const initial = cached?.loaded ? (cached.value as T[]) : (localData || initialValue);
 
   const [data, setData] = useState<T[]>(initial);
@@ -236,13 +253,16 @@ export function useSafeSyncedState<T extends { id: string | number }>(
       try {
         if (cancelled) return;
 
-        const colRef = collection(db, collectionName);
+        // در حالت scoped فقط اسناد متعلق به همین کاربر دانلود می‌شوند
+        const colRef = scoped
+          ? query(collection(db, collectionName), where(ownerField!, "==", ownerValue!), fsLimit(500))
+          : collection(db, collectionName);
         let persistedData = localData;
-        if (!persistedData) {
+        if (!persistedData && !scoped) {
           persistedData = await readFromIDB(collectionName);
         }
 
-        if (!cancelled && persistedData && hasData(persistedData) && !cached?.loaded) {
+        if (!cancelled && !scoped && persistedData && hasData(persistedData) && !cached?.loaded) {
           dataRef.current = persistedData;
           setData(persistedData);
           setIsLoading(false);
@@ -302,15 +322,15 @@ export function useSafeSyncedState<T extends { id: string | number }>(
               setError(null);
               setIsLoading(false);
 
-              globalCache.set(collectionName, {
+              globalCache.set(cacheKey, {
                 value: newData,
                 lastUpdated: now,
                 loaded: true,
                 itemCount: newData.length,
               });
 
-              scheduleSaveToLS(collectionName, newData);
-              saveToIDB(collectionName, newData).catch(() => {});
+              scheduleSaveToLS(scoped ? cacheKey : collectionName, newData);
+              saveToIDB(scoped ? cacheKey : collectionName, newData).catch(() => {});
 
             } catch (err) {
               console.error(`🔴 [${collectionName}] Snapshot Processing Error:`, err);
@@ -354,7 +374,7 @@ export function useSafeSyncedState<T extends { id: string | number }>(
       }
 
       if (hasData(dataRef.current)) {
-        globalCache.set(collectionName, {
+        globalCache.set(cacheKey, {
           value: dataRef.current,
           lastUpdated: lastUpdatedRef.current,
           loaded: true,
@@ -362,7 +382,7 @@ export function useSafeSyncedState<T extends { id: string | number }>(
         });
       }
     };
-  }, [collectionName]);
+  }, [collectionName, cacheKey, scoped, ownerField, ownerValue]);
 
   // ============================================================
   // توابع نوشتن (Write Operations)
@@ -406,15 +426,15 @@ export function useSafeSyncedState<T extends { id: string | number }>(
       const now = Date.now();
       lastUpdatedRef.current = now;
 
-      globalCache.set(collectionName, {
+      globalCache.set(cacheKey, {
         value: normalizedValue,
         lastUpdated: now,
         loaded: true,
         itemCount: normalizedValue.length,
       });
 
-      scheduleSaveToLS(collectionName, normalizedValue);
-      saveToIDB(collectionName, normalizedValue).catch(() => {});
+      scheduleSaveToLS(scoped ? cacheKey : collectionName, normalizedValue);
+      saveToIDB(scoped ? cacheKey : collectionName, normalizedValue).catch(() => {});
 
       const currentMap = new Map(previousData.map((item) => [String(item.id), item]));
       const newMap = new Map(normalizedValue.map((item) => [String(item.id), item]));
@@ -500,11 +520,13 @@ export function useSafeSyncedState<T extends { id: string | number }>(
         id: generateId(),
         createdAt: timestamp,
         updatedAt: timestamp,
+        // در حالت scoped، مالکیت سند هنگام ساخت ثبت می‌شود تا در فیلترها پیدا شود
+        ...(scoped ? { [ownerField!]: ownerValue } : {}),
       } as unknown as T;
 
       return setSafeValue((prev) => [...prev, newItem]);
     },
-    [setSafeValue]
+    [setSafeValue, scoped, ownerField, ownerValue]
   );
 
   const updateItem = useCallback(
@@ -530,7 +552,7 @@ export function useSafeSyncedState<T extends { id: string | number }>(
   const refreshData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
-    globalCache.delete(collectionName);
+    globalCache.delete(cacheKey);
     
     if (typeof window !== "undefined") {
       try {
@@ -542,7 +564,7 @@ export function useSafeSyncedState<T extends { id: string | number }>(
       const dbInstance = await openIDB();
       dbInstance.transaction(IDB_STORE, "readwrite").objectStore(IDB_STORE).delete(collectionName);
     } catch {}
-  }, [collectionName]);
+  }, [collectionName, cacheKey, scoped, ownerField, ownerValue]);
 
   return [
     data,

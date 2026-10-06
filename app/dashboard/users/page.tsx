@@ -2,7 +2,10 @@
 import { useEffect, useMemo, useState, useRef, useCallback, type ReactNode } from "react";
 // ✅ تغییر ۱: حذف useSyncedState و کلیدهای قدیمی، اضافه کردن هوک جدید
 import { useSafeSyncedState } from "../lib/useSafeSyncedState";
+import { useAuth } from "../../AuthProvider";
 import { initTrackingSystem } from "../lib/trackingCode";
+
+const OWNER_EMAIL = "nasirahmadrahmati19@gmail.com";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 // ✅ تغییر ۲: id به صورت string | number برای یکپارچگی با سایر تب‌ها
@@ -341,11 +344,19 @@ function buildCashBoxLedger(cashEntries: any[]): LedgerEntry[] {
 export default function CustomersPage() {
   const [mounted, setMounted] = useState(false);
   
+  // ✅ جداسازی داده‌ها بر اساس مالک: هر کاربر فقط داده‌های خودش را می‌بیند.
+  // با حذف بارگذاری کامل کالکشن، سقف ۱ مگابایتی سند Firestore دیگر مطرح نیست
+  // و هر حساب عملاً صدها هزار مشتری را پشتیبانی می‌کند.
+  const { user } = useAuth();
+  const isOwner = user?.email === OWNER_EMAIL;
+  const ownerValue = user?.email ?? "unknown";
+  const scopeOpt = isOwner ? undefined : { ownerField: "owner", ownerValue };
+
   // ✅ تغییر ۳: استفاده از هوک جدید و نام‌های کالکشن استاندارد
-  const [customers, setCustomers, isLoadingCustomers] = useSafeSyncedState<Customer>("customers", []);
-  const [transactions, setTransactions] = useSafeSyncedState<any>("transactions", []);
-  const [hawalas, setHawalas] = useSafeSyncedState<any>("hawalas", []);
-  const [cashEntries, setCashEntries] = useSafeSyncedState<any>("cash_entries", []);
+  const [customers, setCustomers, isLoadingCustomers] = useSafeSyncedState<Customer>("customers", [], scopeOpt);
+  const [transactions, setTransactions] = useSafeSyncedState<any>("transactions", [], scopeOpt);
+  const [hawalas, setHawalas] = useSafeSyncedState<any>("hawalas", [], scopeOpt);
+  const [cashEntries, setCashEntries] = useSafeSyncedState<any>("cash_entries", [], scopeOpt);
 
   const [activeTab, setActiveTab] = useState<"list" | "new" | "profile">("list");
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);

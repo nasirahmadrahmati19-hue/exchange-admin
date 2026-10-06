@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useState, ReactNode } from "react";
 import { onAuthStateChanged, User, signOut } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { auth, db } from "./dashboard/lib/firebase";
 
 interface AuthContextType {
@@ -70,6 +70,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
           if (response.ok) {
             console.log("📧 درخواست ارسال ایمیل با موفقیت به سرور فرستاده شد.");
+            // ثبت زمان ارسال برای جلوگیری از اسپم یادآوری‌ها
+            await updateDoc(userRef, { lastNotifiedAt: new Date().toISOString() });
           } else {
             const errorText = await response.text();
             console.error("❌ سرور پاسخ خطا داد:", errorText);
@@ -86,6 +88,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           } else if (userData.status === "rejected") {
             setStatus("rejected");
           } else {
+            // 🔁 کاربر هنوز در انتظار تأیید است — اگر مدیر قبلاً درخواست را ندیده
+            // یا ایمیل گم شده، دوباره ایمیل یادآوری ارسال می‌شود (حداکثر یک بار در ساعت).
+            try {
+              const lastNotifiedAt = userData.lastNotifiedAt
+                ? new Date(userData.lastNotifiedAt).getTime()
+                : 0;
+              const ONE_HOUR = 60 * 60 * 1000;
+
+              if (Date.now() - lastNotifiedAt > ONE_HOUR) {
+                console.log("📧 ارسال مجدد درخواست تأیید به مدیر (یادآوری)...");
+                const notifyRes = await fetch("/api/notify-admin", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    userEmail: currentUser.email,
+                    userName: userData.name || currentUser.displayName || "کاربر جدید",
+                    uid: currentUser.uid,
+                  }),
+                });
+                if (notifyRes.ok) {
+                  await updateDoc(userRef, { lastNotifiedAt: new Date().toISOString() });
+                  console.log("✅ ایمیل یادآوری برای مدیر ارسال شد.");
+                } else {
+                  console.error("❌ ارسال یادآوری ناموفق بود:", await notifyRes.text());
+                }
+              } else {
+                console.log("⏳ آخرین ایمیل کمتر از یک ساعت قبل ارسال شده؛ از ارسال مجدد خودداری شد.");
+              }
+            } catch (notifyError) {
+              console.error("❌ خطا در ارسال یادآوری:", notifyError);
+            }
             setStatus("pending");
           }
         }
