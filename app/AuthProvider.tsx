@@ -89,14 +89,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setStatus("rejected");
           } else {
             // 🔁 کاربر هنوز در انتظار تأیید است — اگر مدیر قبلاً درخواست را ندیده
-            // یا ایمیل گم شده، دوباره ایمیل یادآوری ارسال می‌شود (حداکثر یک بار در ساعت).
+            // یا ایمیل گم شده، دوباره ایمیل یادآوری ارسال می‌شود.
+            // ⏱️ سقف زمان: حداکثر یک بار در هر ۲ دقیقه (قبلاً ۱ ساعت بود و باعث شد
+            // درخواست دوم شما اصلاً ایمیل نزند — این همان باگی بود که گزارش دادید).
             try {
               const lastNotifiedAt = userData.lastNotifiedAt
                 ? new Date(userData.lastNotifiedAt).getTime()
                 : 0;
-              const ONE_HOUR = 60 * 60 * 1000;
+              const TWO_MINUTES = 2 * 60 * 1000;
 
-              if (Date.now() - lastNotifiedAt > ONE_HOUR) {
+              if (Date.now() - lastNotifiedAt > TWO_MINUTES) {
                 console.log("📧 ارسال مجدد درخواست تأیید به مدیر (یادآوری)...");
                 const notifyRes = await fetch("/api/notify-admin", {
                   method: "POST",
@@ -114,7 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   console.error("❌ ارسال یادآوری ناموفق بود:", await notifyRes.text());
                 }
               } else {
-                console.log("⏳ آخرین ایمیل کمتر از یک ساعت قبل ارسال شده؛ از ارسال مجدد خودداری شد.");
+                console.log("⏳ آخرین ایمیل کمتر از ۲ دقیقه قبل ارسال شده؛ از ارسال مجدد خودداری شد.");
               }
             } catch (notifyError) {
               console.error("❌ خطا در ارسال یادآوری:", notifyError);
