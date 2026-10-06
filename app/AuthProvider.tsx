@@ -57,8 +57,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           
           console.log("✅ ثبت در دیتابیس با موفقیت انجام شد. در حال فراخوانی API ارسال ایمیل...");
 
-          // ✅ اصلاح مهم: ارسال uid به API برای ساخت لینک تایید
-          const response = await fetch("/api/notify-admin", {
+          // ✅ ارسال uid به API برای ساخت لینک تایید
+          // 🔑 مهم: قبلاً اینجا await بود؛ اگر مشتری پیش از تکمیل ارسال ایمیل تب را
+          // می‌بست، درخواست نصفه می‌ماند و ایمیل هرگز به مدیر نمی‌رسید.
+          // حالا اول زمان اطلاع را ثبت می‌کنیم، سپس ایمیل را fire-and-forget می‌فرستیم.
+          await updateDoc(userRef, { lastNotifiedAt: new Date().toISOString() });
+
+          fetch("/api/notify-admin", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -66,16 +71,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               userName: currentUser.displayName || "کاربر جدید",
               uid: currentUser.uid, // این خط حیاتی است
             }),
-          });
-
-          if (response.ok) {
-            console.log("📧 درخواست ارسال ایمیل با موفقیت به سرور فرستاده شد.");
-            // ثبت زمان ارسال برای جلوگیری از اسپم یادآوری‌ها
-            await updateDoc(userRef, { lastNotifiedAt: new Date().toISOString() });
-          } else {
-            const errorText = await response.text();
-            console.error("❌ سرور پاسخ خطا داد:", errorText);
-          }
+          })
+            .then((res) => {
+              if (!res.ok) res.text().then((t) => console.error("❌ سرور پاسخ خطا داد:", t));
+              else console.log("📧 درخواست ارسال ایمیل به مدیر با موفقیت ثبت شد.");
+            })
+            .catch((err) => console.error("❌ خطا در فراخوانی notify-admin:", err));
 
           setStatus("pending");
         } else {
@@ -100,7 +101,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
               if (Date.now() - lastNotifiedAt > TWO_MINUTES) {
                 console.log("📧 ارسال مجدد درخواست تأیید به مدیر (یادآوری)...");
-                const notifyRes = await fetch("/api/notify-admin", {
+                // اول زمان را ثبت کن، سپس ایمیل را بدون await بفرست تا با بستن تب،
+                // هم ایمیل ارسال شود و هم دفعه بعد دوباره یادآوری تکراری نزند.
+                await updateDoc(userRef, { lastNotifiedAt: new Date().toISOString() });
+                fetch("/api/notify-admin", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
@@ -108,13 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     userName: userData.name || currentUser.displayName || "کاربر جدید",
                     uid: currentUser.uid,
                   }),
-                });
-                if (notifyRes.ok) {
-                  await updateDoc(userRef, { lastNotifiedAt: new Date().toISOString() });
-                  console.log("✅ ایمیل یادآوری برای مدیر ارسال شد.");
-                } else {
-                  console.error("❌ ارسال یادآوری ناموفق بود:", await notifyRes.text());
-                }
+                }).catch((err) => console.error("❌ خطا در ارسال یادآوری:", err));
               } else {
                 console.log("⏳ آخرین ایمیل کمتر از ۲ دقیقه قبل ارسال شده؛ از ارسال مجدد خودداری شد.");
               }

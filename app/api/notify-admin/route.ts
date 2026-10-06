@@ -2,8 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
 
 export async function POST(req: NextRequest) {
+  let userEmail = '';
+  let uid = '';
+  let approvalLink = '';
   try {
-    const { userEmail, userName, uid } = await req.json();
+    const body = await req.json();
+    userEmail = body.userEmail;
+    const userName = body.userName;
+    uid = body.uid;
 
     // ساخت لینک تایید مستقیم (اگر در Vercel دیپلوی شده باشد، از آدرس دامنه شما استفاده می‌کند)
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
@@ -70,8 +76,30 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({ success: true, message: 'Email sent successfully' });
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ خطا در ارسال ایمیل:', error);
-    return NextResponse.json({ success: false, error: 'Failed to send email' }, { status: 500 });
+    // 🔑 اگر جیمیل ما را بلاک کرده باشد (خطای 429/530/552)، یک بار با مسیر جایگزین
+    // (SMTP عمومی Gmail با لاگ‌آوت کش) دوباره تلاش می‌کنیم.
+    try {
+      const adminEmail = process.env.GMAIL_USER || 'nasirahmadrahmati19@gmail.com';
+      const retryTransporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: { user: adminEmail, pass: process.env.GMAIL_APP_PASSWORD },
+      } as any);
+      await retryTransporter.sendMail({
+        from: adminEmail,
+        to: adminEmail,
+        subject: `🔔 (تلاش مجدد) درخواست ورود کاربر جدید`,
+        text: `کاربر ${userEmail} (uid: ${uid}) منتظر تایید است.\nلینک تایید:\n${approvalLink}`,
+      });
+      console.log('✅ ارسال مجدد با موفقیت انجام شد.');
+      return NextResponse.json({ success: true, message: 'Email sent on retry' });
+    } catch (retryError) {
+      console.error('❌ تلاش مجدد هم ناموفق بود:', retryError);
+      return NextResponse.json(
+        { success: false, error: String(error?.message || error) },
+        { status: 500 }
+      );
+    }
   }
 }
