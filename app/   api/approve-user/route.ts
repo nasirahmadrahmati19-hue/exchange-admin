@@ -1,7 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { doc, updateDoc } from "firebase/firestore";
-// ✅ مسیر نسبی و دقیق برای جلوگیری از خطای Build در Vercel
-import { db } from "../../dashboard/lib/firebase"; 
+import * as admin from "firebase-admin";
+
+// مقداردهی اولیه Firebase Admin SDK فقط یک‌بار (جلوگیری از reinitialize در HMR یا چند درخواست همزمان)
+if (!admin.apps.length) {
+  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: privateKey,
+    }),
+  });
+}
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -13,15 +24,24 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // به‌روزرسانی وضعیت کاربر در Firestore
-    await updateDoc(doc(db, "users", uid), {
-      isApproved: true,
-      approvedAt: new Date().toISOString(),
-      approvedBy: "admin"
-    });
+    // ✅ استفاده از Admin SDK برای عبور از Firestore Security Rules
+    // ✅ استفاده از set با merge: true برای:
+    //    1. جلوگیری از خطای missing document
+    //    2. حفظ تمام فیلدهای موجود کاربر (نام، ایمیل و غیره)
+    //    3. تنظیم همزمان status و isApproved برای سازگاری با Rules و login
+    await admin.firestore().collection("users").doc(uid).set(
+      {
+        status: "approved",        // ✅ برای سازگاری با Firestore Rules
+        isApproved: true,          // ✅ برای سازگاری با login/page.tsx
+        approvedAt: new Date().toISOString(),
+        approvedBy: "admin",
+      },
+      { merge: true }
+    );
 
-    // نمایش صفحه موفقیت زیبا به مدیر
-    return new NextResponse(`
+    // نمایش صفحه موفقیت به مدیر
+    return new NextResponse(
+      `
       <!DOCTYPE html>
       <html dir="rtl" lang="fa">
       <head>
@@ -42,10 +62,12 @@ export async function GET(req: NextRequest) {
         <a href="/dashboard" class="btn">ورود به داشبورد مدیریت</a>
       </body>
       </html>
-    `, {
-      status: 200,
-      headers: { "Content-Type": "text/html; charset=utf-8" },
-    });
+    `,
+      {
+        status: 200,
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      }
+    );
   } catch (error) {
     console.error("خطا در تایید کاربر:", error);
     return new NextResponse("خطا در برقراری ارتباط با دیتابیس برای تایید کاربر.", { status: 500 });
