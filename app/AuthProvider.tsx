@@ -3,8 +3,8 @@
 import { createContext, useContext, useEffect, useMemo, useState, ReactNode } from "react";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
-// مسیر اصلاح شده: چون lib و AuthProvider هر دو داخل پوشه app هستند، از ./ استفاده می‌کنیم
-import { auth, db } from "./lib/firebase"; 
+// بازگشت به مسیر اصلی و صحیح بر اساس کد اولیه شما:
+import { auth, db } from "./dashboard/lib/firebase"; 
 
 interface AuthContextType {
   user: User | null;
