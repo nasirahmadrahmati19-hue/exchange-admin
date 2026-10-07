@@ -3,9 +3,8 @@
 import { createContext, useContext, useEffect, useMemo, useState, ReactNode } from "react";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
-// نکته: اگر فایل firebase.ts در پوشه ریشه lib است، مسیر باید "../lib/firebase" باشد. 
-// اگر در dashboard/lib است، همین مسیر زیر را نگه دارید.
-import { auth, db } from "../lib/firebase"; 
+// مسیر اصلاح شده: چون lib و AuthProvider هر دو داخل پوشه app هستند، از ./ استفاده می‌کنیم
+import { auth, db } from "./lib/firebase"; 
 
 interface AuthContextType {
   user: User | null;
@@ -48,12 +47,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.log("✅ حساب کاربری با موفقیت ساخته و فعال شد.");
         } else {
           console.log("ℹ️ کاربر قبلاً ثبت‌نام کرده است. اطلاعات بارگذاری شد.");
-          
-          // اختیاری: اگر می‌خواهید نام یا عکس پروفایل کاربر در صورت تغییر در گوگل، اینجا هم آپدیت شود:
-          // await setDoc(userRef, { 
-          //   name: currentUser.displayName || userSnap.data().name,
-          //   photoURL: currentUser.photoURL || userSnap.data().photoURL 
-          // }, { merge: true });
         }
       } catch (error) {
         console.error("❌ خطا در بررسی یا ساخت حساب کاربری:", error);
