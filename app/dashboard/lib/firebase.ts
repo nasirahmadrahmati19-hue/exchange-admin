@@ -1,7 +1,14 @@
 // dashboard/lib/firebase.ts
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
-import { getFirestore, initializeFirestore, persistentLocalCache } from "firebase/firestore";
+import { getAuth, setPersistence, browserLocalPersistence } from "firebase/auth";
+import { 
+  getFirestore, 
+  initializeFirestore, 
+  persistentLocalCache,
+  enableIndexedDbPersistence,
+  disableNetwork,
+  enableNetwork
+} from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyB_Ih73FJf6gTh6pQJlMemDD-FrDICY0pE",
@@ -17,10 +24,38 @@ const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
 export const auth = getAuth(app);
 
-// ✅ تنظیمات بهینه Firestore برای جلوگیری از خطای 400 و پرش اتصال
-// experimentalForceLongPolling: اتصال پایدارتر در شبکه‌های ناپایدار
-// persistentLocalCache: کش کردن داده‌ها برای لود سریع‌تر و جلوگیری از رفرش‌های تکراری
+// ✅ تنظیم Auth برای ماندگاری در حالت آفلاین (جلوگیری از لاگ‌اوت ناگهانی)
+if (typeof window !== 'undefined') {
+  setPersistence(auth, browserLocalPersistence).catch(console.error);
+}
+
+// ✅ تنظیمات بهینه Firestore
+// نکته: experimentalForceLongPolling حذف شد چون در حالت آفلاین باعث هنگ کردن و مصرف رم می‌شود.
+// persistentLocalCache جایگزین مدرن و پایدارتری برای کش آفلاین است.
 export const db = initializeFirestore(app, {
-  experimentalForceLongPolling: true,
   localCache: persistentLocalCache(),
 });
+
+// ✅ مدیریت هوشمند شبکه برای جلوگیری از کرش در حالت آفلاین
+if (typeof window !== 'undefined') {
+  // 1. فعال‌سازی پایگاه داده محلی (IndexedDB) با مدیریت خطا
+  enableIndexedDbPersistence(db).catch((err) => {
+    if (err.code === 'failed-precondition') {
+      console.warn('Persistence failed: Multiple tabs open. Only one tab can use persistence.');
+    } else if (err.code === 'unimplemented') {
+      console.warn('Persistence is not supported by this browser.');
+    }
+  });
+
+  // 2. شنود رویداد قطع اینترنت -> توقف فوری درخواست‌های شبکه (جلوگیری از Memory Leak)
+  window.addEventListener('offline', () => {
+    console.log('🔴 Network offline: Disabling Firestore network requests to save resources.');
+    disableNetwork(db).catch(console.error);
+  });
+
+  // 3. شنود رویداد وصل شدن اینترنت -> فعال‌سازی مجدد و همگام‌سازی خودکار
+  window.addEventListener('online', () => {
+    console.log('🟢 Network online: Enabling Firestore network requests and syncing.');
+    enableNetwork(db).catch(console.error);
+  });
+}
