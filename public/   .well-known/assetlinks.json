@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.sarrafi.admin",
+        "sha256_cert_fingerprints": ["C7:D3:25:06:57:27:96:AC:02:1F:76:52:E7:19:08:57:7F:A5:3C:95:2B:AB:BC:0B:4D:53:B0:26:EC:7A:C8:41"]
+      }
+    }]
