@@ -9,7 +9,9 @@ export const metadata: Metadata = {
   },
   description: "اپلیکیشن صرافی",
   
-  // ✅ فقط این بخش تغییر کرده تا آیکون‌های جدید 192 و 512 را بشناسد
+  // ✅ خط حیاتی که باعث می‌شود کروم فایل manifest را پیدا کرده و اجازه نصب بدهد
+  manifest: "/manifest.json",
+  
   icons: {
     icon: [
       { url: "/icon-192x192.png", sizes: "192x192", type: "image/png" },
