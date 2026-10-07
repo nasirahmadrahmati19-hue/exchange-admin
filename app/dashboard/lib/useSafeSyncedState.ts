@@ -8,7 +8,7 @@ import {
   writeBatch,
   Timestamp,
 } from "firebase/firestore";
-import { auth, db } from "./firebase"; // ✅ اضافه شدن auth
+import { auth, db } from "./firebase"; // ✅ auth اضافه شد
 
 // ============================================================
 // توابع کمکی (Helpers)
@@ -176,12 +176,11 @@ export function useSafeSyncedState<T extends { id: string | number }>(
     ] as const;
   }
 
-  // ✅ دریافت UID کاربر فعلی برای ایزوله‌سازی داده‌ها
+  // ✅ دریافت UID کاربر فعلی
   const userId = auth.currentUser?.uid;
   
   // ✅ ساخت کلیدهای یکتا بر اساس UID کاربر (جلوگیری از تداخل داده‌ها روی یک دستگاه)
   const uniqueKey = userId ? `${userId}_${collectionName}` : collectionName;
-  const firestorePath = userId ? ["users", userId, collectionName] : [collectionName];
 
   const cached = globalCache.get(uniqueKey);
   const localData = readFromLS(uniqueKey);
@@ -209,8 +208,11 @@ export function useSafeSyncedState<T extends { id: string | number }>(
       try {
         if (cancelled) return;
 
-        // ✅ استفاده از مسیر ایزوله شده: users/{uid}/{collectionName}
-        const colRef = collection(db, ...firestorePath);
+        // ✅ مسیردهی صریح و بدون خطای تایپ‌اسکریپت
+        const colRef = userId 
+          ? collection(db, "users", userId, collectionName)
+          : collection(db, collectionName);
+
         let persistedData = localData;
         if (!persistedData) {
           persistedData = await readFromIDB(uniqueKey);
@@ -330,7 +332,7 @@ export function useSafeSyncedState<T extends { id: string | number }>(
         });
       }
     };
-  }, [collectionName, uniqueKey, firestorePath]); // ✅ وابستگی‌ها به‌روز شدند
+  }, [collectionName, uniqueKey, userId]); // ✅ وابستگی‌ها به‌روز شدند
 
   // ============================================================
   // توابع نوشتن (Write Operations)
@@ -424,8 +426,11 @@ export function useSafeSyncedState<T extends { id: string | number }>(
           const batch = writeBatch(db);
 
           for (const op of chunk) {
-            // ✅ استفاده از مسیر ایزوله شده برای نوشتن در دیتابیس
-            const docRef = doc(db, ...firestorePath, op.id);
+            // ✅ مسیردهی صریح برای سند (Document)
+            const docRef = userId
+              ? doc(db, "users", userId, collectionName, op.id)
+              : doc(db, collectionName, op.id);
+
             if (op.type === "set") {
               batch.set(docRef, op.data);
             } else if (op.type === "update") {
@@ -452,7 +457,7 @@ export function useSafeSyncedState<T extends { id: string | number }>(
         pendingWritesRef.current = Math.max(0, pendingWritesRef.current - 1);
       }
     },
-    [collectionName, uniqueKey, firestorePath]
+    [collectionName, uniqueKey, userId] // ✅ وابستگی‌ها به‌روز شدند
   );
 
   const addItem = useCallback(
