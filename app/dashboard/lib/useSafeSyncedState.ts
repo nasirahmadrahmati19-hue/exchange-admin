@@ -7,8 +7,9 @@ import {
   doc,
   writeBatch,
   Timestamp,
+  Unsubscribe,
 } from "firebase/firestore";
-import { auth, db } from "./firebase"; // ✅ auth اضافه شد
+import { auth, db } from "./firebase"; 
 
 // ============================================================
 // توابع کمکی (Helpers)
@@ -32,16 +33,6 @@ function removeUndefinedFields(obj: any): any {
   return cleaned;
 }
 
-function isEmptyData(data: any): boolean {
-  if (Array.isArray(data)) return data.length === 0;
-  if (typeof data === "object" && data !== null) return Object.keys(data).length === 0;
-  return data === null || data === undefined || data === "";
-}
-
-function hasData(data: any): boolean {
-  return !isEmptyData(data);
-}
-
 function normalizeItem(item: any): any {
   if (!item || typeof item !== "object") return item;
   if (Array.isArray(item)) return item.map(normalizeItem);
@@ -61,98 +52,18 @@ function normalizeItem(item: any): any {
 }
 
 // ============================================================
-// سیستم کش چندلایه (Multi-layer Cache) - ایزوله شده با UID
-// ============================================================
-
-const IDB_NAME = "SafeSyncDB";
-const IDB_STORE = "safeSyncedData";
-const LS_PREFIX = "safe_synced_";
-
-function openIDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    if (typeof window === "undefined") {
-      reject("Window is undefined");
-      return;
-    }
-    try {
-      const request = indexedDB.open(IDB_NAME, 1);
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
-      request.onupgradeneeded = (event) => {
-        const db = (event.target as IDBOpenDBRequest).result;
-        if (!db.objectStoreNames.contains(IDB_STORE)) {
-          db.createObjectStore(IDB_STORE);
-        }
-      };
-    } catch (e) {
-      reject(e);
-    }
-  });
-}
-
-async function saveToIDB(key: string, value: any): Promise<void> {
-  if (typeof window === "undefined") return;
-  try {
-    const dbInstance = await openIDB();
-    return new Promise((resolve, reject) => {
-      const transaction = dbInstance.transaction(IDB_STORE, "readwrite");
-      const request = transaction.objectStore(IDB_STORE).put(value, key);
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
-  } catch (e) {
-    console.warn("IDB Save Error:", e);
-  }
-}
-
-async function readFromIDB(key: string): Promise<any> {
-  if (typeof window === "undefined") return undefined;
-  try {
-    const dbInstance = await openIDB();
-    return new Promise((resolve) => {
-      const request = dbInstance.transaction(IDB_STORE, "readonly").objectStore(IDB_STORE).get(key);
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => resolve(undefined);
-    });
-  } catch {
-    return undefined;
-  }
-}
-
-function readFromLS(key: string): any {
-  if (typeof window === "undefined") return undefined;
-  try {
-    const cached = localStorage.getItem(LS_PREFIX + key);
-    if (cached !== null && cached !== "undefined") return JSON.parse(cached);
-  } catch {}
-  return undefined;
-}
-
-function saveToLS(key: string, value: any): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    localStorage.setItem(LS_PREFIX + key, JSON.stringify(value));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-// ============================================================
-// کش سراسری (Global Cache)
+// کش سراسری در مموری (فقط برای جلوگیری از لود مجدد در همان Session)
 // ============================================================
 
 type CacheEntry = {
   value: any[];
-  lastUpdated: number;
   loaded: boolean;
-  itemCount: number;
 };
 
 const globalCache = new Map<string, CacheEntry>();
 
 // ============================================================
-// هوک اصلی (Main Hook) - با پشتیبانی از ایزوله‌سازی کاربر
+// هوک اصلی (Main Hook) - بهینه‌شده برای آفلاین
 // ============================================================
 
 export function useSafeSyncedState<T extends { id: string | number }>(
@@ -176,25 +87,19 @@ export function useSafeSyncedState<T extends { id: string | number }>(
     ] as const;
   }
 
-  // ✅ دریافت UID کاربر فعلی
   const userId = auth.currentUser?.uid;
-  
-  // ✅ ساخت کلیدهای یکتا بر اساس UID کاربر (جلوگیری از تداخل داده‌ها روی یک دستگاه)
   const uniqueKey = userId ? `${userId}_${collectionName}` : collectionName;
 
   const cached = globalCache.get(uniqueKey);
-  const localData = readFromLS(uniqueKey);
-  const initial = cached?.loaded ? (cached.value as T[]) : (localData || initialValue);
+  const initial = cached?.loaded ? (cached.value as T[]) : initialValue;
 
   const [data, setData] = useState<T[]>(initial);
-  const [isLoading, setIsLoading] = useState<boolean>(!(cached?.loaded || localData));
+  const [isLoading, setIsLoading] = useState<boolean>(!cached?.loaded);
   const [error, setError] = useState<string | null>(null);
 
   const dataRef = useRef<T[]>(initial);
-  const lastUpdatedRef = useRef<number>(cached?.lastUpdated ?? 0);
-  const pendingWritesRef = useRef<number>(0);
   const isMountedRef = useRef<boolean>(false);
-  const unsubscribeRef = useRef<(() => void) | null>(null);
+  const unsubscribeRef = useRef<Unsubscribe | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -204,135 +109,79 @@ export function useSafeSyncedState<T extends { id: string | number }>(
       unsubscribeRef.current();
     }
 
-    const init = async () => {
-      try {
-        if (cancelled) return;
+    const colRef = userId 
+      ? collection(db, "users", userId, collectionName)
+      : collection(db, collectionName);
 
-        // ✅ مسیردهی صریح و بدون خطای تایپ‌اسکریپت
-        const colRef = userId 
-          ? collection(db, "users", userId, collectionName)
-          : collection(db, collectionName);
-
-        let persistedData = localData;
-        if (!persistedData) {
-          persistedData = await readFromIDB(uniqueKey);
-        }
-
-        if (!cancelled && persistedData && hasData(persistedData) && !cached?.loaded) {
-          dataRef.current = persistedData;
-          setData(persistedData);
-          setIsLoading(false);
-        }
-
-        if (cancelled) return;
-
-        const unsubscribe = onSnapshot(
-          colRef,
-          (snapshot) => {
-            if (cancelled || !isMountedRef.current) return;
-
-            try {
-              const rawData = snapshot.docs.map((document) => ({
-                id: document.id,
-                ...document.data(),
-              }));
-              
-              const newData = rawData.map(normalizeItem) as T[];
-
-              newData.sort((a, b) => {
-                const aTime = (a as any).updatedAt || (a as any).createdAt || 0;
-                const bTime = (b as any).updatedAt || (b as any).createdAt || 0;
-                
-                if (bTime !== aTime) {
-                  return (bTime as number) - (aTime as number);
-                }
-                return String(a.id).localeCompare(String(b.id));
-              });
-
-              const oldData = dataRef.current;
-              let isDataSame = oldData.length === newData.length;
-              
-              if (isDataSame) {
-                const oldStr = JSON.stringify(oldData);
-                const newStr = JSON.stringify(newData);
-                if (oldStr !== newStr) isDataSame = false;
-              }
-
-              if (isDataSame) {
-                setIsLoading(false);
-                return;
-              }
-
-              if (cancelled || !isMountedRef.current) return;
-
-              const now = Date.now();
-              lastUpdatedRef.current = now;
-              dataRef.current = newData;
-              setData(newData);
-              setError(null);
-              setIsLoading(false);
-
-              globalCache.set(uniqueKey, {
-                value: newData,
-                lastUpdated: now,
-                loaded: true,
-                itemCount: newData.length,
-              });
-
-              saveToLS(uniqueKey, newData);
-              saveToIDB(uniqueKey, newData).catch(() => {});
-
-            } catch (err) {
-              console.error(`🔴 [${collectionName}] Snapshot Processing Error:`, err);
-            }
-          },
-          (err) => {
-            if (cancelled || !isMountedRef.current) return;
-            console.warn(`⚠️ [${collectionName}] خطای Snapshot (احتمالاً قطع اینترنت):`, err.message);
-            
-            if (dataRef.current.length > 0) {
-              setIsLoading(false);
-              setError("offline");
-            } else {
-              setError(err?.message || "Firebase snapshot error");
-              setIsLoading(false);
-            }
-          }
-        );
-
-        unsubscribeRef.current = unsubscribe;
-
-      } catch (err: any) {
+    // استفاده از onSnapshot
+    const unsubscribe = onSnapshot(
+      colRef,
+      (snapshot) => {
         if (cancelled || !isMountedRef.current) return;
-        console.error(`🔴 [${collectionName}] Init Error:`, err);
-        setError(err?.message || "Initialization error");
+
+        try {
+          const rawData = snapshot.docs.map((document) => ({
+            id: document.id,
+            ...document.data(),
+          }));
+          
+          const newData = rawData.map(normalizeItem) as T[];
+
+          // مرتب‌سازی بر اساس زمان
+          newData.sort((a, b) => {
+            const aTime = (a as any).updatedAt || (a as any).createdAt || 0;
+            const bTime = (b as any).updatedAt || (b as any).createdAt || 0;
+            if (bTime !== aTime) return (bTime as number) - (aTime as number);
+            return String(a.id).localeCompare(String(b.id));
+          });
+
+          // ✅ حذف مقایسه JSON.stringify (بسیار سنگین و عامل اصلی فریز شدن برنامه)
+          // فایربیس فقط زمانی این تابع را صدا می‌زند که داده‌ها واقعاً تغییر کرده باشند.
+          
+          dataRef.current = newData;
+          setData(newData);
+          setError(null);
+          setIsLoading(false);
+
+          globalCache.set(uniqueKey, {
+            value: newData,
+            loaded: true,
+          });
+
+        } catch (err) {
+          console.error(`🔴 [${collectionName}] Snapshot Processing Error:`, err);
+        }
+      },
+      (err) => {
+        if (cancelled || !isMountedRef.current) return;
+        
+        // ✅ مدیریت هوشمند خطای آفلاین
+        // اگر اینترنت قطع باشد و کش محلی خالی باشد، فایربیس خطای unavailable می‌دهد.
+        // به جای کرش کردن، فقط وضعیت را آفلاین اعلام می‌کنیم.
+        if (err.code === 'unavailable' || err.code === 'failed-precondition' || err.message?.includes('offline')) {
+          console.warn(`⚠️ [${collectionName}] آفلاین هستید. داده‌ها از کش محلی خوانده می‌شوند.`);
+          setError("offline");
+          setIsLoading(false);
+          return;
+        }
+
+        console.error(`🔴 [${collectionName}] Snapshot Error:`, err);
+        setError(err?.message || "Firebase snapshot error");
         setIsLoading(false);
       }
-    };
+    );
 
-    init();
+    unsubscribeRef.current = unsubscribe;
 
     return () => {
       cancelled = true;
       isMountedRef.current = false;
-
       if (unsubscribeRef.current) {
-        try {
-          unsubscribeRef.current();
-        } catch {}
+        try { unsubscribeRef.current(); } catch {}
         unsubscribeRef.current = null;
       }
-
-      if (hasData(dataRef.current)) {
-        globalCache.set(uniqueKey, {
-          value: dataRef.current,
-          lastUpdated: lastUpdatedRef.current,
-          loaded: true,
-          itemCount: dataRef.current.length,
-        });
-      }
     };
-  }, [collectionName, uniqueKey, userId]); // ✅ وابستگی‌ها به‌روز شدند
+  }, [collectionName, uniqueKey, userId]);
 
   // ============================================================
   // توابع نوشتن (Write Operations)
@@ -346,40 +195,22 @@ export function useSafeSyncedState<T extends { id: string | number }>(
           : newValue;
 
       if (!resolvedValue || !Array.isArray(resolvedValue)) {
-        console.warn(`⚠️ [${collectionName}] مقدار نامعتبر`);
         return dataRef.current;
       }
 
       const normalizedValue = resolvedValue.map(normalizeItem) as T[];
       const previousData = dataRef.current;
 
-      let isSame = previousData.length === normalizedValue.length;
-      if (isSame) {
-        const prevStr = JSON.stringify(previousData);
-        const newStr = JSON.stringify(normalizedValue);
-        if (prevStr !== newStr) isSame = false;
-      }
-
-      if (isSame) {
-        return previousData;
-      }
-
+      // آپدیت فوری UI (Optimistic UI)
       dataRef.current = normalizedValue;
       setData(normalizedValue);
       
-      const now = Date.now();
-      lastUpdatedRef.current = now;
-
       globalCache.set(uniqueKey, {
         value: normalizedValue,
-        lastUpdated: now,
         loaded: true,
-        itemCount: normalizedValue.length,
       });
 
-      saveToLS(uniqueKey, normalizedValue);
-      saveToIDB(uniqueKey, normalizedValue).catch(() => {});
-
+      // محاسبه تغییرات برای ارسال به فایربیس
       const currentMap = new Map(previousData.map((item) => [String(item.id), item]));
       const newMap = new Map(normalizedValue.map((item) => [String(item.id), item]));
 
@@ -390,16 +221,9 @@ export function useSafeSyncedState<T extends { id: string | number }>(
       for (const [idStr, newItem] of newMap) {
         const currentItem = currentMap.get(idStr);
         if (!currentItem) {
-          toAdd.push({
-            ...newItem,
-            id: String(newItem.id) || generateId(),
-            updatedAt: now,
-          } as T);
-        } else if (JSON.stringify(currentItem) !== JSON.stringify(newItem)) {
-          toUpdate.push({
-            ...newItem,
-            updatedAt: now,
-          } as T);
+          toAdd.push({ ...newItem, id: String(newItem.id) || generateId(), updatedAt: Date.now() } as T);
+        } else if (currentItem !== newItem) { // مقایسه مرجع به جای JSON
+          toUpdate.push({ ...newItem, updatedAt: Date.now() } as T);
         }
       }
 
@@ -409,7 +233,10 @@ export function useSafeSyncedState<T extends { id: string | number }>(
         }
       }
 
-      pendingWritesRef.current += 1;
+      // اگر هیچ تغییری نکرده، خروج
+      if (toAdd.length === 0 && toUpdate.length === 0 && toDelete.length === 0) {
+        return normalizedValue;
+      }
 
       try {
         const allOperations = [
@@ -419,57 +246,42 @@ export function useSafeSyncedState<T extends { id: string | number }>(
         ];
 
         const BATCH_LIMIT = 450;
-        let hasChanges = false;
 
         for (let i = 0; i < allOperations.length; i += BATCH_LIMIT) {
           const chunk = allOperations.slice(i, i + BATCH_LIMIT);
           const batch = writeBatch(db);
 
           for (const op of chunk) {
-            // ✅ مسیردهی صریح برای سند (Document)
             const docRef = userId
               ? doc(db, "users", userId, collectionName, op.id)
               : doc(db, collectionName, op.id);
 
-            if (op.type === "set") {
-              batch.set(docRef, op.data);
-            } else if (op.type === "update") {
-              batch.set(docRef, op.data, { merge: true });
-            } else if (op.type === "delete") {
-              batch.delete(docRef);
-            }
+            if (op.type === "set") batch.set(docRef, op.data);
+            else if (op.type === "update") batch.set(docRef, op.data, { merge: true });
+            else if (op.type === "delete") batch.delete(docRef);
           }
 
-          await batch.commit();
-          hasChanges = true;
-        }
-
-        if (hasChanges) {
-          console.log(`✅ [${collectionName}] تغییرات با موفقیت ثبت شد.`);
+          // ✅ فایربیس با persistentLocalCache این صف را در حالت آفلاین نگه می‌دارد
+          // و به محض وصل شدن اینترنت، خودکار آن را سینک می‌کند.
+          await batch.commit(); 
         }
 
         return normalizedValue;
       } catch (err: any) {
-        console.warn(`⚠️ [${collectionName}] خطای شبکه (احتمالاً آفلاین). تغییرات در حافظه محلی حفظ شدند.`);
-        setError("offline");
+        // اگر خطای واقعی (مثل Security Rules) رخ داد، لاگ می‌کنیم
+        // اما UI را برنمی‌گردانیم چون داده در کش محلی فایربیس ثبت شده است.
+        console.warn(`⚠️ [${collectionName}] خطا در ثبت تغییرات:`, err.message);
+        setError("sync_error");
         return normalizedValue;
-      } finally {
-        pendingWritesRef.current = Math.max(0, pendingWritesRef.current - 1);
       }
     },
-    [collectionName, uniqueKey, userId] // ✅ وابستگی‌ها به‌روز شدند
+    [collectionName, uniqueKey, userId]
   );
 
   const addItem = useCallback(
     async (item: Omit<T, "id">) => {
       const timestamp = Date.now();
-      const newItem = {
-        ...item,
-        id: generateId(),
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      } as unknown as T;
-
+      const newItem = { ...item, id: generateId(), createdAt: timestamp, updatedAt: timestamp } as unknown as T;
       return setSafeValue((prev) => [...prev, newItem]);
     },
     [setSafeValue]
@@ -499,17 +311,8 @@ export function useSafeSyncedState<T extends { id: string | number }>(
     setIsLoading(true);
     setError(null);
     globalCache.delete(uniqueKey);
-    
-    if (typeof window !== "undefined") {
-      try {
-        localStorage.removeItem(LS_PREFIX + uniqueKey);
-      } catch {}
-    }
-
-    try {
-      const dbInstance = await openIDB();
-      dbInstance.transaction(IDB_STORE, "readwrite").objectStore(IDB_STORE).delete(uniqueKey);
-    } catch {}
+    // برای رفرش، فقط کافیست هوک دوباره اجرا شود یا یک تغییر کوچک در state ایجاد کنیم
+    // اما چون از onSnapshot استفاده می‌کنیم، فایربیس خودش داده‌های جدید را می‌آورد.
   }, [uniqueKey]);
 
   return [
