@@ -8,7 +8,7 @@ import {
   writeBatch,
   Timestamp,
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { auth, db } from "./firebase"; // ✅ اضافه شدن auth
 
 // ============================================================
 // توابع کمکی (Helpers)
@@ -44,10 +44,7 @@ function hasData(data: any): boolean {
 
 function normalizeItem(item: any): any {
   if (!item || typeof item !== "object") return item;
-  
-  if (Array.isArray(item)) {
-    return item.map(normalizeItem);
-  }
+  if (Array.isArray(item)) return item.map(normalizeItem);
 
   const normalized: any = { ...item };
   for (const key in normalized) {
@@ -64,7 +61,7 @@ function normalizeItem(item: any): any {
 }
 
 // ============================================================
-// سیستم کش چندلایه (Multi-layer Cache)
+// سیستم کش چندلایه (Multi-layer Cache) - ایزوله شده با UID
 // ============================================================
 
 const IDB_NAME = "SafeSyncDB";
@@ -155,7 +152,7 @@ type CacheEntry = {
 const globalCache = new Map<string, CacheEntry>();
 
 // ============================================================
-// هوک اصلی (Main Hook)
+// هوک اصلی (Main Hook) - با پشتیبانی از ایزوله‌سازی کاربر
 // ============================================================
 
 export function useSafeSyncedState<T extends { id: string | number }>(
@@ -179,8 +176,15 @@ export function useSafeSyncedState<T extends { id: string | number }>(
     ] as const;
   }
 
-  const cached = globalCache.get(collectionName);
-  const localData = readFromLS(collectionName);
+  // ✅ دریافت UID کاربر فعلی برای ایزوله‌سازی داده‌ها
+  const userId = auth.currentUser?.uid;
+  
+  // ✅ ساخت کلیدهای یکتا بر اساس UID کاربر (جلوگیری از تداخل داده‌ها روی یک دستگاه)
+  const uniqueKey = userId ? `${userId}_${collectionName}` : collectionName;
+  const firestorePath = userId ? ["users", userId, collectionName] : [collectionName];
+
+  const cached = globalCache.get(uniqueKey);
+  const localData = readFromLS(uniqueKey);
   const initial = cached?.loaded ? (cached.value as T[]) : (localData || initialValue);
 
   const [data, setData] = useState<T[]>(initial);
@@ -205,10 +209,11 @@ export function useSafeSyncedState<T extends { id: string | number }>(
       try {
         if (cancelled) return;
 
-        const colRef = collection(db, collectionName);
+        // ✅ استفاده از مسیر ایزوله شده: users/{uid}/{collectionName}
+        const colRef = collection(db, ...firestorePath);
         let persistedData = localData;
         if (!persistedData) {
-          persistedData = await readFromIDB(collectionName);
+          persistedData = await readFromIDB(uniqueKey);
         }
 
         if (!cancelled && persistedData && hasData(persistedData) && !cached?.loaded) {
@@ -265,15 +270,15 @@ export function useSafeSyncedState<T extends { id: string | number }>(
               setError(null);
               setIsLoading(false);
 
-              globalCache.set(collectionName, {
+              globalCache.set(uniqueKey, {
                 value: newData,
                 lastUpdated: now,
                 loaded: true,
                 itemCount: newData.length,
               });
 
-              saveToLS(collectionName, newData);
-              saveToIDB(collectionName, newData).catch(() => {});
+              saveToLS(uniqueKey, newData);
+              saveToIDB(uniqueKey, newData).catch(() => {});
 
             } catch (err) {
               console.error(`🔴 [${collectionName}] Snapshot Processing Error:`, err);
@@ -317,7 +322,7 @@ export function useSafeSyncedState<T extends { id: string | number }>(
       }
 
       if (hasData(dataRef.current)) {
-        globalCache.set(collectionName, {
+        globalCache.set(uniqueKey, {
           value: dataRef.current,
           lastUpdated: lastUpdatedRef.current,
           loaded: true,
@@ -325,7 +330,7 @@ export function useSafeSyncedState<T extends { id: string | number }>(
         });
       }
     };
-  }, [collectionName]);
+  }, [collectionName, uniqueKey, firestorePath]); // ✅ وابستگی‌ها به‌روز شدند
 
   // ============================================================
   // توابع نوشتن (Write Operations)
@@ -363,15 +368,15 @@ export function useSafeSyncedState<T extends { id: string | number }>(
       const now = Date.now();
       lastUpdatedRef.current = now;
 
-      globalCache.set(collectionName, {
+      globalCache.set(uniqueKey, {
         value: normalizedValue,
         lastUpdated: now,
         loaded: true,
         itemCount: normalizedValue.length,
       });
 
-      saveToLS(collectionName, normalizedValue);
-      saveToIDB(collectionName, normalizedValue).catch(() => {});
+      saveToLS(uniqueKey, normalizedValue);
+      saveToIDB(uniqueKey, normalizedValue).catch(() => {});
 
       const currentMap = new Map(previousData.map((item) => [String(item.id), item]));
       const newMap = new Map(normalizedValue.map((item) => [String(item.id), item]));
@@ -419,7 +424,8 @@ export function useSafeSyncedState<T extends { id: string | number }>(
           const batch = writeBatch(db);
 
           for (const op of chunk) {
-            const docRef = doc(db, collectionName, op.id);
+            // ✅ استفاده از مسیر ایزوله شده برای نوشتن در دیتابیس
+            const docRef = doc(db, ...firestorePath, op.id);
             if (op.type === "set") {
               batch.set(docRef, op.data);
             } else if (op.type === "update") {
@@ -446,7 +452,7 @@ export function useSafeSyncedState<T extends { id: string | number }>(
         pendingWritesRef.current = Math.max(0, pendingWritesRef.current - 1);
       }
     },
-    [collectionName]
+    [collectionName, uniqueKey, firestorePath]
   );
 
   const addItem = useCallback(
@@ -487,19 +493,19 @@ export function useSafeSyncedState<T extends { id: string | number }>(
   const refreshData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
-    globalCache.delete(collectionName);
+    globalCache.delete(uniqueKey);
     
     if (typeof window !== "undefined") {
       try {
-        localStorage.removeItem(LS_PREFIX + collectionName);
+        localStorage.removeItem(LS_PREFIX + uniqueKey);
       } catch {}
     }
 
     try {
       const dbInstance = await openIDB();
-      dbInstance.transaction(IDB_STORE, "readwrite").objectStore(IDB_STORE).delete(collectionName);
+      dbInstance.transaction(IDB_STORE, "readwrite").objectStore(IDB_STORE).delete(uniqueKey);
     } catch {}
-  }, [collectionName]);
+  }, [uniqueKey]);
 
   return [
     data,
