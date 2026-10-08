@@ -9,8 +9,7 @@ export const metadata: Metadata = {
   },
   description: "اپلیکیشن صرافی",
   
-  // ✅ خط حیاتی که باعث می‌شود کروم فایل manifest را پیدا کرده و اجازه نصب بدهد
-  manifest: "/manifest.json",
+  // ✅ خط manifest حذف شد، چون Next.js آن را به صورت خودکار از فایل app/manifest.ts می‌خواند
   
   icons: {
     icon: [
@@ -25,7 +24,6 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
     title: "صرافی من",
   },
-  // ✅ اضافه کردن تگ استاندارد جدید برای رفع هشدار مرورگرهای مدرن
   other: {
     "mobile-web-app-capable": "yes",
   },
