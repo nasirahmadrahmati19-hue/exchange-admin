@@ -3,20 +3,9 @@ import withPWAInit from "@ducanh2912/next-pwa";
 const withPWA = withPWAInit({
   dest: "public",
   disable: process.env.NODE_ENV === "development",
-  fallbacks: {
-    document: "/offline.html", // اگر صفحه‌ای در کش نبود، این نمایش داده می‌شود
-  },
-  runtimeCaching: [
-    {
-      // فقط و فقط فایل‌های عمومی خاص را کش کن تا از خطای Syntax جلوگیری شود
-      urlPattern: /\/(manifest\.json|icon-.*\.png|offline\.html)$/i,
-      handler: "CacheFirst",
-      options: {
-        cacheName: "public-static-assets",
-        expiration: { maxEntries: 10, maxAgeSeconds: 30 * 24 * 60 * 60 },
-      },
-    },
-  ],
+  // ⚠️ تمام runtimeCaching ها حذف شدند.
+  // این کار باعث می‌شود سرویس ورکر دیگر درخواست‌های manifest.json یا dashboard را خراب نکند.
+  // Next.js و مرورگر به صورت بومی و هوشمند کش کردن را انجام می‌دهند.
 });
 
 const nextConfig = {
