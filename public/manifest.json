@@ -1,24 +1,14 @@
-{
-  "name": "صرافی من",
-  "short_name": "صرافی",
-  "description": "اپلیکیشن مدیریت صرافی",
-  "start_url": "/?source=pwa",
-  "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#1976d2",
-  "orientation": "portrait",
-  "icons": [
-    {
-      "src": "/icon-192x192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/icon-512x512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
-  ]
-}
+import withPWAInit from "@ducanh2912/next-pwa";
+
+const withPWA = withPWAInit({
+  dest: "public",
+  disable: process.env.NODE_ENV === "development",
+  // تنظیمات runtimeCaching حذف شده تا از تداخل و باگ جلوگیری شود.
+  // فایربیس و Next.js خودشان مدیریت کش را به بهترین شکل انجام می‌دهند.
+});
+
+const nextConfig = {
+  reactStrictMode: true,
+};
+
+export default withPWA(nextConfig);
