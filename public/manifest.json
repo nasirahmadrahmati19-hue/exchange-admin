@@ -4,7 +4,7 @@ const withPWA = withPWAInit({
   dest: "public",
   disable: process.env.NODE_ENV === "development",
   fallbacks: {
-    document: "/offline.html", // اگر صفحه‌ای در کش نبود، این را نشان بده
+    document: "/offline.html", // اگر صفحه‌ای کش نشده بود، این فایل زیبا نمایش داده می‌شود
   },
   runtimeCaching: [
     {
@@ -17,7 +17,7 @@ const withPWA = withPWAInit({
       },
     },
     {
-      // ۲. کش کردن فایل‌های public (شامل manifest.json و آیکون‌ها) - این خط جلوی خطای Syntax را می‌گیرد
+      // ۲. کش کردن فایل‌های public (شامل manifest.json و آیکون‌ها) -> رفع خطای Syntax
       urlPattern: /^https:\/\/[^/]+\/(manifest\.json|icon-.*\.png|.*\.(?:png|jpg|jpeg|svg|webp|ico|woff|woff2|ttf|css))$/i,
       handler: "CacheFirst",
       options: {
@@ -31,7 +31,7 @@ const withPWA = withPWAInit({
       handler: "NetworkFirst",
       options: {
         cacheName: "pages-cache",
-        networkTimeoutSeconds: 3, // فقط ۳ ثانیه صبر کن، اگر نشد سریع برو سراغ کش
+        networkTimeoutSeconds: 3, // فقط ۳ ثانیه صبر کن، اگر نشد سریع برو سراغ کش یا fallback
         expiration: { maxEntries: 32, maxAgeSeconds: 24 * 60 * 60 },
       },
     },
