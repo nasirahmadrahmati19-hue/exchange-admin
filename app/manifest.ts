@@ -15,13 +15,13 @@ export default function manifest(): MetadataRoute.Manifest {
         src: '/icon-192x192.png',
         sizes: '192x192',
         type: 'image/png',
-        purpose: ['any', 'maskable'], // ✅ اصلاح شده به صورت آرایه برای رفع خطای TypeScript
+        purpose: 'any', // ✅ فقط کلمه 'any' (تایپ‌اسکریپت Next.js فقط همین را قبول می‌کند)
       },
       {
         src: '/icon-512x512.png',
         sizes: '512x512',
         type: 'image/png',
-        purpose: ['any', 'maskable'], // ✅ اصلاح شده به صورت آرایه برای رفع خطای TypeScript
+        purpose: 'any', // ✅ فقط کلمه 'any'
       },
     ],
   }
