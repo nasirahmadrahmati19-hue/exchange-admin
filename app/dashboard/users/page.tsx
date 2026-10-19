@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState, useRef, useCallback, type ReactNode } fro
 // ✅ تغییر ۱: حذف useSyncedState و کلیدهای قدیمی، اضافه کردن هوک جدید
 import { useSafeSyncedState } from "../lib/useSafeSyncedState";
 import { initTrackingSystem } from "../lib/trackingCode";
+// 🔴 تنظیمات تلگرام از Firestore (کش مموری) — جایگزین خواندن fx-settings از localStorage
+import { getTelegramSettings } from "../lib/telegramSettings";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 // ✅ تغییر ۲: id به صورت string | number برای یکپارچگی با سایر تب‌ها
@@ -14,24 +16,10 @@ type FormState = { name: string; tazkira: string; phone: string; address: string
 type FormErrors = Partial<Record<keyof FormState, string>>;
 
 type TelegramUser = { id: number; name: string; username: string; chat_id: number };
-type TelegramSettings = { enabled: boolean; botToken: string; chatId: string; notifyNewHawala: boolean; notifySettlement: boolean; notifyVoid: boolean; notifyExchange: boolean; };
-type Settings = { email: string; supportEmail: string; language: "dari" | "pashto" | "english"; teamName: string; teamAddress: string; teamPhone: string; telegram: TelegramSettings; };
 
-const defaultSettings: Settings = {
-  email: "", supportEmail: "", language: "dari",
-  teamName: "صرافی برادران نورزاد", teamAddress: "هرات، افغانستان", teamPhone: "",
-  telegram: { enabled: false, botToken: "", chatId: "", notifyNewHawala: true, notifySettlement: true, notifyVoid: true, notifyExchange: true },
-};
-
-const getTelegramSettings = (): TelegramSettings => {
-  if (typeof window === "undefined") return defaultSettings.telegram;
-  try {
-    const raw = localStorage.getItem("fx-settings");
-    if (!raw) return defaultSettings.telegram;
-    const parsed = JSON.parse(raw);
-    return { ...defaultSettings.telegram, ...(parsed.telegram || {}) };
-  } catch { return defaultSettings.telegram; }
-};
+// ✅ حذف شد: تایپ‌های Settings/defaultSettings محلی و getTelegramSettings که از
+// localStorage («fx-settings») می‌خواند. منبع تنظیمات اکنون Firestore است
+// (users/{uid}/settings/user_settings) — see ../lib/telegramSettings.ts
 
 async function fetchTelegramUsers(botToken: string): Promise<TelegramUser[]> {
   if (!botToken.trim()) return [];

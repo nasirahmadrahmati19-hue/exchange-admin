@@ -1,17 +1,47 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState, ReactNode } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 // مسیر دقیق و صحیح بر اساس آدرسی که فرستادی:
 import { auth, db } from "./dashboard/lib/firebase"; 
 
-interface AuthContextType {
+export interface AuthContextType {
   user: User | null;
   loading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType>({ user: null, loading: true });
+
+// 🔴 مسیرهای عمومی که بدون احراز هویت قابل دسترسی‌اند
+const PUBLIC_PATHS = ["/", "/login"];
+
+// 🔴 بدون احراز هویت، هیچ خواندن/نوشتن‌ای مجاز نیست — Route Guard سراسری
+
+/**
+ * ✅ Route Guard سراسری:
+ * هر کاربر Unauthenticated از دسترسی به داشبورد، کیف پول، گزارش‌ها و KYC
+ * منع شده و به صفحه لاگین redirect می‌شود.
+ */
+export function useRouteGuard() {
+  const { user, loading } = useContext(AuthContext);
+  const router = useRouter();
+  const pathname = usePathname();
+
+  useEffect(() => {
+    if (loading) return; // هنوز وضعیت نشست مشخص نشده
+    const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
+    if (!user && !isPublic) {
+      router.replace("/login");
+    }
+    if (user && pathname === "/login") {
+      router.replace("/dashboard");
+    }
+  }, [user, loading, pathname, router]);
+
+  return { user, loading };
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);

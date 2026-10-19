@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { useSyncedState } from "../lib/useSyncedState";
+import { useSafeSyncedState } from "../lib/useSafeSyncedState";
 import { initTrackingSystem } from "../lib/trackingCode";
 
 // ============================================================
@@ -242,10 +242,11 @@ export default function ReportsPage() {
   const [mounted, setMounted] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   
-  const [customers, , customersLoading] = useSyncedState<Customer[]>("customers", []);
-  const [transactions, , txLoading] = useSyncedState<Transaction[]>("transactions", []);
-  const [hawalas, , hawalasLoading] = useSyncedState<any[]>("hawalas", []);
-  const [cashEntries, , cashLoading] = useSyncedState<CashEntry[]>("cash_entries", []);
+  // 🔴 Firestore تنها منبع حقیقت: خواندن کاربر-محور از users/{uid}/* — بدون appData عمومی
+  const [customers, , customersLoading] = useSafeSyncedState<Customer>("customers", []);
+  const [transactions, , txLoading] = useSafeSyncedState<Transaction>("transactions", []);
+  const [hawalas, , hawalasLoading] = useSafeSyncedState<any>("hawalas", []);
+  const [cashEntries, , cashLoading] = useSafeSyncedState<CashEntry>("cash_entries", []);
   
   const [activeSection, setActiveSection] = useState<"search" | "debtors" | "journal">("search");
   const [search, setSearch] = useState("");

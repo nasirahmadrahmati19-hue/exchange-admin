@@ -2,6 +2,8 @@
 import { useEffect, useMemo, useState, useRef, useCallback, memo, type ReactNode, type ChangeEvent } from "react";
 import { useSafeSyncedState } from "../lib/useSafeSyncedState";
 import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem, getTrackingNumberValue } from "../lib/trackingCode";
+// 🔴 تنظیمات تلگرام از Firestore (کش مموری) — جایگزین خواندن fx-settings از localStorage
+import { getTelegramSettings } from "../lib/telegramSettings";
 
 // ============================================================
 // تایپ‌ها و ثابت‌ها
@@ -409,14 +411,8 @@ async function sendTelegramMessage(botToken: string, chatId: string, text: strin
     const data = await res.json(); return data.ok === true;
   } catch { return false; }
 }
-function getTelegramSettings() {
-  try {
-    const r = localStorage.getItem("fx-settings");
-    if (!r) return { enabled: false, botToken: "", chatId: "", notifyNewHawala: true, notifySettlement: true, notifyVoid: true };
-    const s = JSON.parse(r);
-    return { enabled: s.telegram?.enabled || false, botToken: s.telegram?.botToken || "", chatId: s.telegram?.chatId || "", notifyNewHawala: s.telegram?.notifyNewHawala !== false, notifySettlement: s.telegram?.notifySettlement !== false, notifyVoid: s.telegram?.notifyVoid !== false };
-  } catch { return { enabled: false, botToken: "", chatId: "", notifyNewHawala: true, notifySettlement: true, notifyVoid: true }; }
-}
+// ✅ حذف شد: getTelegramSettings قدیمی که از localStorage («fx-settings») می‌خواند.
+// نسخه جدید در ../lib/telegramSettings.ts از کش Firestore استفاده می‌کند.
 function getCustomerChatId(customerId: string | number | undefined, customers: Customer[]): string {
   if (!customerId || String(customerId) === String(CASH_BOX_ID)) return "";
   try {
@@ -587,7 +583,8 @@ export default function HawalaPage() {
   const dk = theme === "dark";
 
   useEffect(() => { try { initTrackingSystem(); } catch (err) { console.error("Load error:", err); } setMounted(true); }, []);
-  useEffect(() => { try { localStorage.setItem("hawalaLastNames", JSON.stringify(lastNames)); } catch {} }, [lastNames]);
+  // ✅ حذف شد: ذخیره/خواندن «hawalaLastNames» (اطلاعات هویتی مشتری) از localStorage.
+  // داده‌های کاربر فقط در Firestore نگهداری می‌شوند.
   useEffect(() => {
     if (!openActionId) return;
     const handler = (e: MouseEvent) => {

@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+// 🔴 Firestore تنها منبع حقیقت: users/{uid}/markets — بدون localStorage
+import { useSafeSyncedState } from "../lib/useSafeSyncedState";
 
-interface Market { id: number; pair: string; price: string; change: string; }
+interface Market { id: string | number; pair: string; price: string; change: string; }
 
 const defaults: Market[] = [
   { id: 1, pair: "BTC/USDT", price: "45230", change: "+2.4" },
@@ -11,11 +13,8 @@ const defaults: Market[] = [
 ];
 
 export default function MarketsPage() {
-  const [markets, setMarkets] = useState<Market[]>(defaults);
+  const [markets, setMarkets] = useSafeSyncedState<Market>("markets", defaults);
   const [form, setForm] = useState({ pair: "", price: "", change: "" });
-
-  useEffect(() => { const s = localStorage.getItem("db_markets"); if (s) setMarkets(JSON.parse(s)); }, []);
-  useEffect(() => { localStorage.setItem("db_markets", JSON.stringify(markets)); }, [markets]);
 
   const add = () => {
     if (!form.pair || !form.price) return;

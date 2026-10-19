@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 // 🔴 Firestore تنها منبع حقیقت: هوک کاربر-محور (users/{uid}/wallets) — بدون appData و بدون localStorage
-import { useSyncedState } from "../lib/useSyncedState"; 
+import { useSafeSyncedState } from "../lib/useSafeSyncedState"; 
 
-interface Wallet { id: number; currency: string; balance: string; address: string; }
+interface Wallet { id: string | number; currency: string; balance: string; address: string; }
 
 const defaults: Wallet[] = [
   { id: 1, currency: "BTC", balance: "1.2045", address: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa" },
@@ -12,11 +12,11 @@ const defaults: Wallet[] = [
 ];
 
 export default function WalletsPage() {
-  const [wallets, setWallets] = useSyncedState<Wallet[]>("db_wallets", defaults);
+  const [wallets, setWallets] = useSafeSyncedState<Wallet>("wallets", defaults);
   const [modal, setModal] = useState(false);
-  const [editId, setEditId] = useState<number | null>(null);
+  const [editId, setEditId] = useState<string | number | null>(null);
   const [form, setForm] = useState({ currency: "", balance: "", address: "" });
-  const [copied, setCopied] = useState<number | null>(null);
+  const [copied, setCopied] = useState<string | number | null>(null);
 
   const save = () => {
     if (!form.currency) return;
@@ -25,13 +25,13 @@ export default function WalletsPage() {
     setModal(false); setForm({ currency: "", balance: "", address: "" }); setEditId(null);
   };
 
-  const copy = (id: number, text: string) => {
+  const copy = (id: string | number, text: string) => {
     navigator.clipboard.writeText(text);
     setCopied(id);
     setTimeout(() => setCopied(null), 1500);
   };
 
-  const handleDelete = (id: number) => {
+  const handleDelete = (id: string | number) => {
     if (confirm("آیا از حذف این کیف پول اطمینان دارید؟")) {
       setWallets(wallets.filter(w => w.id !== id));
     }

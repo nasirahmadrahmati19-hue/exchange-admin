@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+// 🔴 Firestore تنها منبع حقیقت: users/{uid}/withdrawals — بدون localStorage
+import { useSafeSyncedState } from "../lib/useSafeSyncedState";
 
-interface W { id: number; user: string; amount: string; currency: string; date: string; status: string; }
+interface W { id: string | number; user: string; amount: string; currency: string; date: string; status: string; }
 
 const defaults: W[] = [
   { id: 1, user: "علی محمدی", amount: "0.5", currency: "BTC", date: "۱۴۰۵/۰۵/۱۲", status: "در انتظار" },
@@ -10,11 +12,8 @@ const defaults: W[] = [
 ];
 
 export default function WithdrawalsPage() {
-  const [list, setList] = useState<W[]>(defaults);
+  const [list, setList] = useSafeSyncedState<W>("withdrawals", defaults);
   const [form, setForm] = useState({ user: "", amount: "", currency: "BTC" });
-
-  useEffect(() => { const s = localStorage.getItem("db_withdrawals"); if (s) setList(JSON.parse(s)); }, []);
-  useEffect(() => { localStorage.setItem("db_withdrawals", JSON.stringify(list)); }, [list]);
 
   const add = () => {
     if (!form.user || !form.amount) return;
@@ -22,7 +21,7 @@ export default function WithdrawalsPage() {
     setForm({ user: "", amount: "", currency: "BTC" });
   };
 
-  const setStatus = (id: number, status: string) => setList(list.map(x => x.id === id ? { ...x, status } : x));
+  const setStatus = (id: string | number, status: string) => setList(list.map(x => x.id === id ? { ...x, status } : x));
 
   const chip: Record<string, string> = {
     "در انتظار": "bg-amber-50 text-amber-700 border-amber-200",

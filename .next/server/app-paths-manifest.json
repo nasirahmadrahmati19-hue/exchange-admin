@@ -5,16 +5,16 @@
   "/manifest.webmanifest/route": "app/manifest.webmanifest/route.js",
   "/page": "app/page.js",
   "/settings/page": "app/settings/page.js",
-  "/dashboard/hawala/page": "app/dashboard/hawala/page.js",
   "/dashboard/cash/page": "app/dashboard/cash/page.js",
+  "/dashboard/hawala/page": "app/dashboard/hawala/page.js",
   "/dashboard/journal/page": "app/dashboard/journal/page.js",
   "/dashboard/kyc/page": "app/dashboard/kyc/page.js",
   "/dashboard/markets/page": "app/dashboard/markets/page.js",
   "/dashboard/page": "app/dashboard/page.js",
   "/dashboard/reports/page": "app/dashboard/reports/page.js",
   "/dashboard/settings/page": "app/dashboard/settings/page.js",
-  "/dashboard/trades/page": "app/dashboard/trades/page.js",
   "/dashboard/users/page": "app/dashboard/users/page.js",
   "/dashboard/wallets/page": "app/dashboard/wallets/page.js",
-  "/dashboard/withdrawals/page": "app/dashboard/withdrawals/page.js"
+  "/dashboard/withdrawals/page": "app/dashboard/withdrawals/page.js",
+  "/dashboard/trades/page": "app/dashboard/trades/page.js"
 }

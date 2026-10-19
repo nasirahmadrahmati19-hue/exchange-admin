@@ -2,6 +2,8 @@
 import { useEffect, useMemo, useState, useRef, useCallback, type ReactNode } from "react";
 import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem } from "../lib/trackingCode";
 import { useSafeSyncedState } from "../lib/useSafeSyncedState";
+// 🔴 تنظیمات تلگرام از Firestore (کش مموری) — جایگزین خواندن fx-settings از localStorage
+import { getTelegramSettings } from "../lib/telegramSettings";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type Customer = { id: string; name: string; phone?: string; tazkira?: string; address?: string; note?: string; telegram?: string; telegramChatId?: string; registeredAt: string; balances: Record<Currency, number>; };
@@ -299,11 +301,8 @@ async function sendTelegramMessage(botToken: string, chatId: string, text: strin
   } catch { return false; }
 }
 
-function getTelegramSettings() {
-  try { const r = localStorage.getItem("fx-settings"); if (!r) return { enabled: false, botToken: "", notifyCash: true };
-    const s = JSON.parse(r); return { enabled: s.telegram?.enabled || false, botToken: s.telegram?.botToken || "", notifyCash: s.telegram?.notifyCash !== false };
-  } catch { return { enabled: false, botToken: "", notifyCash: true }; }
-}
+// ✅ حذف شد: getTelegramSettings قدیمی که از localStorage («fx-settings») می‌خواند.
+// نسخه جدید در ../lib/telegramSettings.ts از کش Firestore استفاده می‌کند.
 
 function getCustomerChatId(customerId: string | undefined, customers: Customer[]): string {
   if (!customerId || customerId === CASH_BOX_ID || customerId === EXCHANGE_ACCOUNT_ID) return "";

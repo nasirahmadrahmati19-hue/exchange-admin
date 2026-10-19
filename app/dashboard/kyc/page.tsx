@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+// 🔴 Firestore تنها منبع حقیقت: users/{uid}/kyc — بدون localStorage
+import { useSafeSyncedState } from "../lib/useSafeSyncedState";
 
-interface Req { id: number; user: string; doc: string; date: string; status: string; }
+interface Req { id: string | number; user: string; doc: string; date: string; status: string; }
 
 const defaults: Req[] = [
   { id: 1, user: "علی محمدی", doc: "کارت ملی", date: "۱۴۰۵/۰۵/۱۰", status: "در انتظار" },
@@ -10,11 +12,8 @@ const defaults: Req[] = [
 ];
 
 export default function KYCPage() {
-  const [reqs, setReqs] = useState<Req[]>(defaults);
-  const [confirm, setConfirm] = useState<{ id: number; action: string } | null>(null);
-
-  useEffect(() => { const s = localStorage.getItem("db_kyc"); if (s) setReqs(JSON.parse(s)); }, []);
-  useEffect(() => { localStorage.setItem("db_kyc", JSON.stringify(reqs)); }, [reqs]);
+  const [reqs, setReqs] = useSafeSyncedState<Req>("kyc", defaults);
+  const [confirm, setConfirm] = useState<{ id: string | number; action: string } | null>(null);
 
   const act = (status: string) => {
     if (!confirm) return;

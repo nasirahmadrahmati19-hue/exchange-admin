@@ -2,6 +2,8 @@
 import { useEffect, useState, useMemo, useRef, useCallback, memo, type ReactNode } from "react";
 import { useSafeSyncedState } from "../lib/useSafeSyncedState";
 import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem } from "../lib/trackingCode";
+// 🔴 تنظیمات تلگرام از Firestore (کش مموری) — جایگزین خواندن fx-settings از localStorage
+import { getTelegramSettings } from "../lib/telegramSettings";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type RateMode = "same" | "afn" | "direct";
@@ -168,14 +170,8 @@ function convertDirectRate(amount: number, from: Currency, to: Currency, base: C
 const afnRateLabel = (foreign: Currency, rate: number) => `${fmt(rateUnits[foreign])} ${labels[foreign]} = ${fmt(rate)} ${labels.AFN}`;
 const directRateLabel = (base: Currency, counter: Currency, rate: number) => `${fmt(rateUnits[base])} ${labels[base]} = ${fmt(rate)} ${labels[counter]}`;
 
-function getTelegramSettings() {
-  try {
-    const r = typeof window !== "undefined" ? localStorage.getItem("fx-settings") : null;
-    if (!r) return { enabled: false, botToken: "", chatId: "" };
-    const s = JSON.parse(r);
-    return { enabled: s.telegram?.enabled || false, botToken: s.telegram?.botToken || "", chatId: s.telegram?.chatId || "" };
-  } catch { return { enabled: false, botToken: "", chatId: "" }; }
-}
+// ✅ حذف شد: getTelegramSettings قدیمی که از localStorage («fx-settings») می‌خواند.
+// نسخه جدید در ../lib/telegramSettings.ts از کش Firestore استفاده می‌کند.
 async function sendTelegramMessage(botToken: string, chatId: string, text: string): Promise<boolean> {
   if (!botToken || !chatId) return false;
   try {
