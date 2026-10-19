@@ -9,7 +9,8 @@ import {
   Timestamp,
   Unsubscribe,
 } from "firebase/firestore";
-import { auth, db } from "./firebase"; 
+import { auth, db } from "./firebase";
+import { migrateLocalDataToFirestore } from "./migrateFromLocalStorage";
 
 // ============================================================
 // توابع کمکی (Helpers)
@@ -109,9 +110,18 @@ export function useSafeSyncedState<T extends { id: string | number }>(
       unsubscribeRef.current();
     }
 
-    const colRef = userId 
-      ? collection(db, "users", userId, collectionName)
-      : collection(db, collectionName);
+    // 🔴 بدون احراز هویت، هیچ خوانده/نوشته‌ای مجاز نیست (جلوگیری از نشت داده عمومی)
+    if (!userId) {
+      setIsLoading(false);
+      setError("unauthenticated");
+      return;
+    }
+
+    // ✅ مهاجرت یک‌باره داده قدیمی localStorage → Firestore (قبل از اولین خواندن)
+    // فقط برای collectionهای داده کاربر انجام می‌شود و خودش فلگ یک‌بارمصرف دارد.
+    migrateLocalDataToFirestore(userId).catch(() => {});
+
+    const colRef = collection(db, "users", userId, collectionName);
 
     // استفاده از onSnapshot
     const unsubscribe = onSnapshot(
@@ -252,9 +262,9 @@ export function useSafeSyncedState<T extends { id: string | number }>(
           const batch = writeBatch(db);
 
           for (const op of chunk) {
-            const docRef = userId
-              ? doc(db, "users", userId, collectionName, op.id)
-              : doc(db, collectionName, op.id);
+            // 🔴 همیشه زیر users/{uid} — بدون احراز هویت نوشتن مجاز نیست
+            if (!userId) throw new Error("unauthenticated");
+            const docRef = doc(db, "users", userId, collectionName, op.id);
 
             if (op.type === "set") batch.set(docRef, op.data);
             else if (op.type === "update") batch.set(docRef, op.data, { merge: true });

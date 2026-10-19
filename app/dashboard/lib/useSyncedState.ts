@@ -1,12 +1,32 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import { doc, onSnapshot, getDoc, setDoc } from "firebase/firestore";
-import { db } from "./firebase";
+// ============================================================
+// lib/useSyncedState.ts — نسخه اصلاح‌شده (Firestore-only، کاربر-محور)
+// 🔴 اصل معماری: Firestore تنها منبع حقیقت است.
+// این هوک دیگر از collection عمومی «appData» نمی‌خواند (باگ قدیمی که
+// داده همه کاربران را در یک سند مشترک قرار می‌داد و باعث تداخل داده می‌شد).
+// اکنون داده در users/{uid}/{collection} ذخیره می‌شود و هر کاربر فقط
+// داده خودش را می‌بیند. API سازگار با نسخه قبلی نگه داشته شده است:
+//   [value, setValue, isLoading, { error, lastUpdated }]
+// ============================================================
 
-// ============================================================
-// توابع کمکی
-// ============================================================
+import { useState, useEffect, useCallback, useRef } from "react";
+import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import { auth, db } from "./firebase";
+
+// نگاشت کلیدهای قدیمی appData → نام collection کاربر-محور
+const LEGACY_KEY_TO_COLLECTION: Record<string, string> = {
+  "fx-customers": "customers",
+  "fx-transactions": "transactions",
+  "fx-hawalas": "hawalas",
+  "hawalas": "hawalas",
+  "fx-cash": "cash_entries",
+  "cash-entries": "cash_entries",
+  "db_wallets": "wallets",
+  "db_kyc": "kyc",
+  "db_markets": "markets",
+  "db_withdrawals": "withdrawals",
+};
 
 function removeUndefinedFields(obj: any): any {
   if (obj === null || obj === undefined) return obj;
@@ -19,10 +39,6 @@ function removeUndefinedFields(obj: any): any {
   return cleaned;
 }
 
-// ============================================================
-// هوک اصلی (Main Hook) - بهینه‌شده برای عملکرد آفلاین و جلوگیری از فریز
-// ============================================================
-
 export function useSyncedState<T>(key: string, initialValue: T) {
   const [value, setValue] = useState<T>(initialValue);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -33,56 +49,52 @@ export function useSyncedState<T>(key: string, initialValue: T) {
   const isMountedRef = useRef<boolean>(true);
   const unsubscribeRef = useRef<(() => void) | null>(null);
 
+  const userId = auth.currentUser?.uid ?? null;
+  const collectionName = LEGACY_KEY_TO_COLLECTION[key] ?? key;
+
   useEffect(() => {
     isMountedRef.current = true;
-    const docRef = doc(db, "appData", key);
 
-    // ✅ استفاده از onSnapshot به جای getDoc برای دریافت خودکار آپدیت‌ها و کش آفلاین
+    // 🔴 بدون احراز هویت هیچ داده‌ای خوانده نمی‌شود (Route Guard سطح داده)
+    if (!userId) {
+      setIsLoading(false);
+      setError("unauthenticated");
+      return;
+    }
+
+    const docRef = doc(db, "users", userId, collectionName, "data");
+
+    if (unsubscribeRef.current) {
+      try { unsubscribeRef.current(); } catch {}
+    }
+
     const unsubscribe = onSnapshot(
       docRef,
       (docSnap) => {
         if (!isMountedRef.current) return;
 
-        // ✅ نکته حیاتی: در حالت آفلاین، fromCache true است. ما نباید آن را نادیده بگیریم!
-        // فایربیس خودش مدیریت می‌کند که آیا داده جدید است یا خیر.
-        
         if (docSnap.exists()) {
-          const data = docSnap.data();
+          const data = docSnap.data() as any;
           const incomingTimestamp = data.lastUpdated || 0;
-
-          // ✅ مقایسه سبک با Timestamp به جای JSON.stringify سنگین (جلوگیری از کرش)
           if (incomingTimestamp > lastUpdatedRef.current) {
             lastUpdatedRef.current = incomingTimestamp;
-            valueRef.current = data.value;
-            setValue(data.value);
-            setError(null); // اگر قبلاً خطای آفلاین بود، حالا رفع شده
+            valueRef.current = data.value as T;
+            setValue(data.value as T);
+            setError(null);
           }
-        } else {
-          // اگر سند وجود نداشت و این اولین بار است
-          if (lastUpdatedRef.current === 0) {
-            valueRef.current = initialValue;
-            setValue(initialValue);
-            
-            // ایجاد سند اولیه در فایربیس (در صف آفلاین قرار می‌گیرد اگر اینترنت نباشد)
-            setDoc(docRef, { value: initialValue, lastUpdated: Date.now() }, { merge: true }).catch(() => {
-              // اگر آفلاین باشد، فایربیس خودش بعداً سینک می‌کند. نیازی به ارور دادن نیست.
-            });
-          }
+        } else if (lastUpdatedRef.current === 0) {
+          // سند اولیه ساخته می‌شود (در صف آفلاین فایربیس اگر اینترنت نباشد)
+          valueRef.current = initialValue;
+          setValue(initialValue);
+          setDoc(docRef, { value: initialValue, lastUpdated: Date.now(), owner: userId }, { merge: true }).catch(() => {});
         }
-        
+
         setIsLoading(false);
       },
       (err) => {
         if (!isMountedRef.current) return;
-        console.warn(`⚠️ [${key}] Snapshot Error (احتمالاً آفلاین):`, err.message);
-        
-        // ✅ مدیریت هوشمند خطا: به جای کرش یا صفحه سفید، فقط وضعیت را مشخص می‌کنیم
-        // داده‌های قبلی (valueRef.current) همچنان در UI نمایش داده می‌شوند.
-        if (err.code === 'unavailable' || err.message?.includes('offline')) {
-          setError("offline");
-        } else {
-          setError(err.message);
-        }
+        console.warn(`⚠️ [${collectionName}] Snapshot Error (احتمالاً آفلاین):`, err.message);
+        setError(err?.message || "offline");
         setIsLoading(false);
       }
     );
@@ -96,45 +108,39 @@ export function useSyncedState<T>(key: string, initialValue: T) {
         unsubscribeRef.current = null;
       }
     };
-  }, [key, initialValue]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, collectionName, userId]);
 
-  // ============================================================
-  // تابع نوشتن (Write Operation)
-  // ============================================================
+  const setSafeValue = useCallback(
+    async (newValue: T | ((prev: T) => T)) => {
+      const resolved =
+        typeof newValue === "function"
+          ? (newValue as (prev: T) => T)(valueRef.current)
+          : newValue;
 
-  const setSyncedValue = useCallback(async (newValue: T | ((prev: T) => T)) => {
-    const resolvedValue = typeof newValue === "function" 
-      ? (newValue as (prev: T) => T)(valueRef.current) 
-      : newValue;
+      valueRef.current = resolved;
+      setValue(resolved);
 
-    if (resolvedValue === undefined || resolvedValue === null) {
-      console.warn(`⚠️ [${key}] Attempted to save undefined/null.`);
-      return valueRef.current;
-    }
+      // 🔴 نوشتن فقط زیر سند کاربر خودی
+      if (!userId) {
+        console.error("🔴 بدون ورود به حساب، ذخیره‌سازی مجاز نیست.");
+        return;
+      }
+      const ts = Date.now();
+      lastUpdatedRef.current = ts;
+      try {
+        await setDoc(
+          doc(db, "users", userId, collectionName, "data"),
+          removeUndefinedFields({ value: resolved, lastUpdated: ts, owner: userId }),
+          { merge: true }
+        );
+      } catch (err: any) {
+        // در حالت آفلاین، فایربیس نوشتار را در صف محلی SDK نگه می‌دارد و بعداً سینک می‌کند
+        console.warn(`⚠️ [${collectionName}] خطا در ثبت تغییرات:`, err?.message);
+      }
+    },
+    [collectionName, userId]
+  );
 
-    const newTimestamp = Date.now();
-    const payload = { value: resolvedValue, lastUpdated: newTimestamp };
-
-    // 1. آپدیت فوری UI (Optimistic UI) - کاربر منتظر شبکه نمی‌ماند
-    valueRef.current = resolvedValue;
-    setValue(resolvedValue);
-    lastUpdatedRef.current = newTimestamp;
-
-    // 2. ارسال به فایربیس
-    try {
-      const docRef = doc(db, "appData", key);
-      // ✅ اگر آفلاین باشید، فایربیس این دستور را در صف (Queue) نگه می‌دارد
-      // و به محض وصل شدن اینترنت، خودش آن را ارسال می‌کند.
-      await setDoc(docRef, removeUndefinedFields(payload), { merge: true });
-    } catch (err: any) {
-      // این بخش فقط در صورتی اجرا می‌شود که خطای غیر از شبکه باشد (مثل Permission Denied)
-      // خطای شبکه توسط persistentLocalCache فایربیس جذب می‌شود.
-      console.warn(`⚠️ [${key}] Write queued or failed:`, err.message);
-      setError("sync_pending");
-    }
-
-    return resolvedValue;
-  }, [key]);
-
-  return [value, setSyncedValue, isLoading, error] as const;
+  return [value, setSafeValue, isLoading, { error, lastUpdated: lastUpdatedRef.current }] as const;
 }

@@ -3,7 +3,6 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { useSyncedState } from "../lib/useSyncedState";
 import { initTrackingSystem } from "../lib/trackingCode";
-import { CUSTOMERS_KEY, TRANSACTIONS_KEY, CASH_KEY, HAWALAS_KEY } from "../lib/defaultData";
 
 // ============================================================
 // Types
@@ -243,10 +242,10 @@ export default function ReportsPage() {
   const [mounted, setMounted] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   
-  const [customers, setCustomers] = useSyncedState<Customer[]>(CUSTOMERS_KEY, []);
-  const [transactions, setTransactions] = useSyncedState<Transaction[]>(TRANSACTIONS_KEY, []);
-  const [hawalas, setHawalas] = useSyncedState<any[]>(HAWALAS_KEY, []);
-  const [cashEntries, setCashEntries] = useSyncedState<CashEntry[]>(CASH_KEY, []);
+  const [customers, , customersLoading] = useSyncedState<Customer[]>("customers", []);
+  const [transactions, , txLoading] = useSyncedState<Transaction[]>("transactions", []);
+  const [hawalas, , hawalasLoading] = useSyncedState<any[]>("hawalas", []);
+  const [cashEntries, , cashLoading] = useSyncedState<CashEntry[]>("cash_entries", []);
   
   const [activeSection, setActiveSection] = useState<"search" | "debtors" | "journal">("search");
   const [search, setSearch] = useState("");
@@ -256,6 +255,7 @@ export default function ReportsPage() {
   const [toast, setToast] = useState("");
 
   useEffect(() => { 
+    // ✅ فقط خواندن یک‌باره تنظیم ظاهری (تم — داده کاربر/مالی نیست؛ نوشتن مجدد به localStorage حذف شد)
     try { 
       const s = window.localStorage.getItem("fx-theme"); 
       if (s === "dark" || s === "light") setTheme(s); 
@@ -267,10 +267,11 @@ export default function ReportsPage() {
     }
     setMounted(true);
   }, []);
-
-  useEffect(() => { try { window.localStorage.setItem("fx-theme", theme); } catch {} }, [theme]);
   
   const dk = theme === "dark";
+
+  // 🔴 تا وقتی Firestore داده‌های کاربر را تأیید نکرده، گزارش خالی/ناقص نشان نمی‌دهیم
+  const dataLoading = customersLoading || txLoading || hawalasLoading || cashLoading;
 
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => { setNow(new Date()); const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t); }, []);

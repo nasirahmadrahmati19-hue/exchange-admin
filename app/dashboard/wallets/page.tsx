@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-// ✅ این مسیر دقیقاً به پوشه lib که در کنار wallets است اشاره می‌کند
+// 🔴 Firestore تنها منبع حقیقت: هوک کاربر-محور (users/{uid}/wallets) — بدون appData و بدون localStorage
 import { useSyncedState } from "../lib/useSyncedState"; 
 
 interface Wallet { id: number; currency: string; balance: string; address: string; }
