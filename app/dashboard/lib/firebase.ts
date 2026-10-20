@@ -9,14 +9,24 @@ import {
   type FirestoreSettings,
 } from "firebase/firestore";
 
+// 🔧 پیکربندی Firebase:
+// - اگر متغیرهای محیطی NEXT_PUBLIC_FIREBASE_* در Vercel تنظیم شده باشند، از آن‌ها استفاده می‌شود.
+// - در غیر این صورت، مقادیر هاردکدشده fallback هستند (کلیدهای Web Config پروژه myproject-707c8).
 const firebaseConfig = {
-  apiKey: "AIzaSyB_Ih73FJf6gTh6pQJlMemDD-FrDICY0pE",
-  authDomain: "myproject-707c8.firebaseapp.com",
-  projectId: "myproject-707c8",
-  storageBucket: "myproject-707c8.firebasestorage.app",
-  messagingSenderId: "922894348479",
-  appId: "1:922894348479:web:82988406466df932e7160a"
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? "AIzaSyB_Ih73FJf6gTh6pQJlMemDD-FrDICY0pE",
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN ?? "myproject-707c8.firebaseapp.com",
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? "myproject-707c8",
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ?? "myproject-707c8.firebasestorage.app",
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID ?? "922894348479",
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID ?? "1:922894348479:web:82988406466df932e7160a"
 };
+
+// ⚠️ عیب‌یابی موقت build-time: فقط «تعریف شده بودن» کلیدها چاپ می‌شود، نه مقدار آن‌ها.
+console.log("[firebase config check]", {
+  NEXT_PUBLIC_FIREBASE_API_KEY: process.env.NEXT_PUBLIC_FIREBASE_API_KEY ? "defined" : "undefined (using hardcoded fallback)",
+  NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN ? "defined" : "undefined (using hardcoded fallback)",
+  NEXT_PUBLIC_FIREBASE_PROJECT_ID: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ? "defined" : "undefined (using hardcoded fallback)",
+});
 
 // ✅ جلوگیری از Initialize شدن تکراری اپلیکیشن در Hot Reload یا SSR
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
