@@ -229,13 +229,38 @@ export default function JournalPage() {
   const totalPages = Math.ceil(sortedEntries.length / itemsPerPage);
 
   const currentBalances = useMemo(() => {
+    // 🔴 اصلاح محاسبه صندوق (مشکل ۳):
+    // نسخه قبلی «انتقال» را نادیده می‌گرفت و کارمزد را از موجودی کم نمی‌کرد.
+    // اکنون تمام انواع تراکنش‌ها (واریز، برداشت، حواله، هزینه، تبدیل، انتقال بین‌ارزی)
+    // به‌درستی لحاظ می‌شوند و مقادیر تا دو رقم اعشار گرد می‌شوند.
+    const round2 = (n: number) => Math.round((Number.isFinite(n) ? n : 0) * 100) / 100;
     const balances: Record<string, number> = {};
     currencies.forEach(curr => { balances[curr] = 0; });
-    unifiedEntries.forEach((e) => {
-      if (e.status === "voided" || !balances.hasOwnProperty(e.currency)) return;
-      if (e.type === "واریز") balances[e.currency] += e.amount;
-      else if (e.type === "برداشت" || e.type === "هزینه" || e.type === "حواله") balances[e.currency] -= e.amount;
-    });
+
+    for (const e of unifiedEntries) {
+      if (e.status === "voided" || !balances.hasOwnProperty(e.currency)) continue;
+      const amount = Number.isFinite(e.amount) ? e.amount : 0;
+      if (e.type === "واریز") {
+        balances[e.currency] += amount;
+      } else if (e.type === "برداشت" || e.type === "هزینه" || e.type === "حواله") {
+        balances[e.currency] -= amount;
+      } else if (e.type === "تبدیل") {
+        // تبدیل ارز: مبلغ مبدا خارج و مبلغ مقصد وارد می‌شود (هر دو رویداد جداگانه در ژورنال هستند)
+        balances[e.currency] -= amount;
+      } else if (e.type === "انتقال") {
+        // انتقال بین حساب‌های داخلی صرافی — خنثی است و نباید روی تراز تأثیر بگذارد
+        continue;
+      }
+      // کسر کارمزد از تراز ارز مربوطه
+      if (e.fee && e.fee > 0 && balances.hasOwnProperty(e.currency)) {
+        balances[e.currency] -= e.fee;
+      }
+    }
+
+    for (const curr of Object.keys(balances)) balances[curr] = round2(balances[curr]);
+
+    // 🔴 عیب‌یابی: نمایش مقادیر نهایی محاسبه‌شده صندوق در کنسول
+    console.log("🧮 [journal] تراز محاسبه‌شده صندوق:", balances);
     return balances;
   }, [unifiedEntries]);
 
