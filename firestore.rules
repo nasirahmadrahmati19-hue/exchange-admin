@@ -2,58 +2,90 @@
 // 🔐 Firestore Security Rules — صرافی برادران نورزاد
 // ----------------------------------------------------
 // اصل: هر کاربر فقط به داده‌های خودش دسترسی دارد.
-// مالک (owner) از طریق لیست allowList در /meta/admin شناسایی می‌شود.
+// مدیر اصلی از طریق ایمیل و لیست allowList شناسایی می‌شود.
 // =====================================================
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // =========================
+    // توابع کمکی
+    // =========================
+
+    // آیا کاربر وارد حساب شده است؟
     function isSignedIn() {
       return request.auth != null;
     }
-    function uid() {
-      return request.auth.uid;
-    }
-    // آیا این کاربر در لیست مدیران است؟
+
+    // آیا کاربر مدیر اصلی است؟ (ایمیل + لیست allowList در /meta/admin)
     function isAdmin() {
-      return isSignedIn() &&
-        exists(/databases/$(database)/documents/meta/admin) &&
-        uid() in get(/databases/$(database)/documents/meta/admin).data.allowList;
+      return isSignedIn() && (
+        request.auth.token.email == "nasirahmadrahmati19@gmail.com" ||
+        (exists(/databases/$(database)/documents/meta/admin) &&
+         request.auth.uid in get(/databases/$(database)/documents/meta/admin).data.allowList)
+      );
     }
 
-    // ---------- سند پیش‌فرض برای همه اسناد ----------
-    // هیچ سند بدون احراز هویت خوانده یا نوشته نمی‌شود.
-    match /{document=**} {
-      allow read, write: if false;
+    // آیا کاربر صاحب این UID است؟
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
     }
 
-    // ---------- زیرمجموعه‌های کاربر: فقط صاحب داده ----------
-    // ساختار: users/{uid}/... (cash_entries, customers, kyc, wallets, ...)
-    match /users/{userDoc}/{collectionName}/{docId} {
-      allow read, write: if isSignedIn() && userDoc == uid();
-    }
-    match /users/{userDoc}/{collectionName}/{docId}/{subCol}/{subId} {
-      allow read, write: if isSignedIn() && userDoc == uid();
-    }
-
-    // ---------- شمارنده‌ها و متادیتا ----------
-    match /users/{userDoc}/counters/{key} {
-      allow read, write: if isSignedIn() && userDoc == uid();
-    }
-    match /users/{userDoc}/meta/{key} {
-      allow read, write: if isSignedIn() && userDoc == uid();
+    // =========================
+    // ⭐ ساختار جدید: داده‌های ایزوله شده هر کاربر ⭐
+    // =========================
+    // این خط تمام زیرمجموعه‌های کاربر (customers, transactions, hawalas, cash_entries, ...) را پوشش می‌دهد.
+    match /users/{userId}/{document=**} {
+      allow read, write: if isOwner(userId) || isAdmin();
     }
 
-    // ---------- تنظیمات عمومی نرخ ارز (فقط ادمین بنویسد، همه لاگین‌شده بخوانند) ----------
+    // =========================
+    // اطلاعات پروفایل کاربر (سند اصلی user)
+    // =========================
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId); // ساخت پروفایل هنگام اولین ورود
+      allow update: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // =========================
+    // تنظیمات عمومی (نرخ ارز و...)
+    // =========================
     match /settings/{docId} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
     }
 
-    // ---------- لیست ادمین (فقط از کنسول Firebase ویرایش شود) ----------
-    match /meta/{docId} {
+    // =========================
+    // داده‌های عمومی یا تنظیمات برنامه (مسیر قدیمی appData)
+    // =========================
+    match /appData/{documentId} {
       allow read: if isSignedIn();
-      allow write: if false;
+      allow write: if isAdmin();
+    }
+
+    // =========================
+    // سند متادیتا (لیست مدیران) — فقط ادمین
+    // =========================
+    match /meta/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // =========================
+    // کالکشن‌های قدیمی در ریشه (فقط ادمین)
+    // =========================
+    match /customers/{documentId}   { allow read, write: if isAdmin(); }
+    match /transactions/{documentId} { allow read, write: if isAdmin(); }
+    match /cash_entries/{documentId} { allow read, write: if isAdmin(); }
+    match /hawalas/{documentId}      { allow read, write: if isAdmin(); }
+
+    // =========================
+    // هر مسیر دیگری (پیش‌فرض امن)
+    // =========================
+    match /{document=**} {
+      allow read, write: if isAdmin();
     }
   }
 }
