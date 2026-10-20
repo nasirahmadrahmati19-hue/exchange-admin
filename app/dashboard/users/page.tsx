@@ -183,11 +183,24 @@ function getLedgerBalance(customerId: string | number, currency: Currency, cashE
       balance += e.direction === "in" ? e.amount : -e.amount;
     }
   } else if (strCustomerId === EXCHANGE_ACCOUNT_ID) {
+    // 🔧 باگ: حساب صرافی/مالک — سند واریز مالک (owner_deposit) در صندوق ثبت می‌شد
+    // اما چون customerId نداشت، هرگز به موجودی «حساب صرافی» در تب مشتریان اضافه نمی‌شد.
+    // اکنون بر اساس نوع سند محاسبه می‌شود (مطابق منطق صفحه صندوق):
     for (const e of cashEntries) {
       if (e.status === "voided" || e.currency !== currency) continue;
-      if (String(e.customerId) === EXCHANGE_ACCOUNT_ID) {
-        balance += e.direction === "in" ? e.amount : -e.amount;
+      let delta = 0;
+      switch (e.type) {
+        case "owner_deposit": delta = Number(e.amount || 0); break;
+        case "owner_withdraw": delta = -Number(e.amount || 0); break;
+        case "exchange_account_in": delta = Number(e.amount || 0); break;
+        case "exchange_account_out": delta = -Number(e.amount || 0); break;
+        case "loan_given": delta = -Number(e.amount || 0); break;
+        case "loan_received": delta = Number(e.amount || 0); break;
+        default:
+          // اسناد داخلی دیگر که صراحتاً به حساب صرافی نسبت داده شده‌اند
+          if (String(e.customerId) === EXCHANGE_ACCOUNT_ID) delta = e.direction === "in" ? Number(e.amount || 0) : -Number(e.amount || 0);
       }
+      balance += delta;
     }
   } else {
     for (const e of ledger) {
@@ -263,19 +276,26 @@ function buildLedger(customers: Customer[], transactions: any[], hawalas: any[],
 
   for (const ce of cashEntries) {
     if (!ce || typeof ce !== "object") continue;
+    if (ce.status === "voided" || ce.status === "cancelled") continue;
     if (ce.linkedHawalaId || ce.linkedHawalaSettleId || ce.linkedExchangeId || ce.linkedTransferId || ce.linkedConvertId) continue;
-    if (ce.type !== "customer_deposit" && ce.type !== "customer_withdraw" && ce.type !== "loan_given" && ce.type !== "loan_received") continue;
-    if (!ce.customerId) continue;
-    if (!customers.find(c => String(c.id) === String(ce.customerId)) && String(ce.customerId) !== EXCHANGE_ACCOUNT_ID) continue;
+    // 🔧 باگ: اسناد loans فقط وقتی ثبت می‌شدند که customerId داشته باشند، اما در صفحه صندوق
+    // برای «واریز/برداشت مالک» و «قرض» مقداردهی نمی‌شود → هیچ ردیفی در دفتر حساب صرافی ایجاد نمی‌شد.
+    // اکنون این اسناد به حساب صرافی (EXCHANGE_ACCOUNT) نسبت داده می‌شوند.
+    const isExchangeAccountCashType = ce.type === "owner_deposit" || ce.type === "owner_withdraw" || ce.type === "loan_given" || ce.type === "loan_received";
+    if (ce.type !== "customer_deposit" && ce.type !== "customer_withdraw" && !isExchangeAccountCashType) continue;
+
+    const effCustomerId = ce.customerId || (isExchangeAccountCashType ? EXCHANGE_ACCOUNT_ID : "");
+    if (!effCustomerId) continue;
+    if (!customers.find(c => String(c.id) === String(effCustomerId)) && String(effCustomerId) !== EXCHANGE_ACCOUNT_ID) continue;
 
     const cur = ce.currency as Currency; if (!isCurrency(cur)) continue;
     const amt = Number(ce.amount || 0) || 0; if (amt <= 0) continue;
 
-    const counterPartyId = ce.counterPartyId || (ce.type === "loan_given" || ce.type === "loan_received" ? EXCHANGE_ACCOUNT_ID : CASH_BOX_ID);
-    const isIn = ce.type === "customer_deposit" || ce.type === "loan_received";
+    const counterPartyId = ce.counterPartyId || (isExchangeAccountCashType ? CASH_BOX_ID : CASH_BOX_ID);
+    const isIn = ce.type === "customer_deposit" || ce.type === "loan_received" || ce.type === "owner_deposit";
 
     entries.push({
-      id: `${ce.id}-cash`, date: ce.date || new Date().toISOString(), customerId: ce.customerId,
+      id: `${ce.id}-cash`, date: ce.date || new Date().toISOString(), customerId: effCustomerId,
       type: isIn ? "deposit" : "withdraw", description: ce.reason || entryTypeLabels[ce.type as CashEntryType] || "عملیات",
       currency: cur, amount: amt, direction: isIn ? "in" : "out", balanceAfter: 0,
       referenceId: ce.id, referenceNumber: ce.trackingCode || "", counterPartyId
