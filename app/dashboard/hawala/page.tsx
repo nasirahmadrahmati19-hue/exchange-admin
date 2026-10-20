@@ -6,6 +6,7 @@ import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem, getTracki
 import { getTelegramSettings } from "../lib/telegramSettings";
 // دیالوگ تأیید مشترک به‌جای window.confirm
 import ConfirmationDialog, { useConfirmation } from "../../components/ConfirmationDialog";
+import { generateShareText, handleShare } from "../lib/shareTemplate";
 // ============================================================
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type RateMode = "same" | "afn" | "direct";
@@ -866,13 +867,36 @@ export default function HawalaPage() {
 
   const openDetails = useCallback((item: Hawala) => { setDetailTarget(item); setOpenActionId(null); }, []);
   const shareHawala = useCallback(async (item: Hawala) => {
-    const text = `حواله ${item.number}\nحواله‌دهنده: ${item.senderName}\nحواله‌گیرنده: ${item.receiverName}\nمبلغ: ${fmt(item.finalAmount)} ${labels[item.currencyTo]}\nکمیشن: ${fmt(item.fee)} ${labels[item.feeCurrency]}\nمقصد: ${item.destinationText}\nآدرس گیرنده: ${item.receiverAddress || "-"}\nیادداشت: ${item.note || "-"}`;
-    try {
-      if (navigator.share) await navigator.share({ title: `حواله ${item.number}`, text });
-      else { await navigator.clipboard.writeText(text); showToast("متن حواله کپی شد."); }
-    } catch {}
+    // 🔴 قالب استاندارد سند — بیلانس لحظه‌ای حواله‌دهنده از داده‌های Firestore (Live via useSafeSyncedState)
+    const balanceCid = item.senderId || "";
+    const balances = {
+      AFN: balanceCid ? getCustomerBalance(balanceCid, "AFN") : 0,
+      USD: balanceCid ? getCustomerBalance(balanceCid, "USD") : 0,
+      EUR: balanceCid ? getCustomerBalance(balanceCid, "EUR") : 0,
+      IRR: balanceCid ? getCustomerBalance(balanceCid, "IRR") : 0,
+      PKR: balanceCid ? getCustomerBalance(balanceCid, "PKR") : 0,
+    };
+    const text = generateShareText(
+      {
+        trackingCode: item.number,
+        date: item.date,
+        customerName: item.senderName,
+        senderName: item.senderName,
+        receiverName: item.receiverName,
+        destinationText: item.destinationText,
+        // 🔴 شرح همیشه مطابق قالب استاندارد — بدون استفاده از یادداشت قدیمی
+        description: item.receiverName
+          ? `ارسال حواله به ${item.receiverName}${item.destinationText ? ` — ${item.destinationText}` : ""}`
+          : undefined,
+        amount: Number(item.finalAmount) || 0,
+        currencyLabel: labels[item.currencyTo],
+      },
+      balances,
+      "hawala"
+    );
+    await handleShare(text);
     setOpenActionId(null);
-  }, [showToast]);
+  }, [getCustomerBalance]);
   const editHawala = useCallback((item: Hawala) => {
     setEditingId(item.id);
     setForm({

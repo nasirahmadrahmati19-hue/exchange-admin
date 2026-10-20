@@ -41,7 +41,14 @@ const LEGACY_KEYS = {
   appSettings: ["db_settings"],
   theme: ["fx-theme", "hawala-theme"],
   lastTrackingCode: ["fx_last_tracking_code"],
+  // 🔴 کلیدهای قدیمی شمارنده آفلاین (نسخه ۱) — در نسخه ۲ به counters/{prefix}{year} مهاجرت می‌کنند
+  offlineCountersV1: ["fx_offline_counter_1402", "fx_offline_counter_1403", "fx_offline_counter_1404", "fx_offline_counter_1405", "fx_offline_counter_1406"],
 };
+
+// 🔴 نسخه ۲ مهاجرت: پاک‌سازی کلیدهای localStorage که در نسخه ۱ جا مانده بودند
+//   - fx_offline_counter_{year}  → users/{uid}/counters/offline_tracking_{year}
+//   - fx_last_tracking_code      → حذف (کد پیگیری آخر فقط در مموری/Firestore نگه داشته می‌شود)
+const MIGRATION_FLAG_V2 = "fx_migration_v2_done";
 
 function readJSON<T>(key: string): T | null {
   try {
@@ -314,5 +321,50 @@ export async function migrateLocalDataToFirestore(uid: string): Promise<Migratio
     console.error("🔴 خطا در مهاجرت داده‌های محلی:", err);
   }
 
+  // 🔴 نسخه ۲: مهاجرت شمارنده‌های آفلاین باقی‌مانده + پاک‌سازی نهایی localStorage
+  try {
+    await runMigrationV2(uid);
+  } catch (e) {
+    console.warn("⚠️ مهاجرت نسخه ۲ انجام نشد:", e);
+  }
+
   return result;
+}
+
+/**
+ * ✅ مهاجرت نسخه ۲ — یک‌بار برای هر دستگاه/کاربر:
+ * - fx_offline_counter_{year}  → users/{uid}/counters/offline_tracking_{year} (Firestore)
+ * - fx_last_tracking_code      → حذف (داده موقت، نیاز به مهاجرت ندارد)
+ * سپس کلیدهای قدیمی از localStorage پاک می‌شوند تا هیچ داده‌ای روی مرورگر نماند.
+ */
+async function runMigrationV2(uid: string): Promise<void> {
+  if (typeof window === "undefined" || !db) return;
+  if (localStorage.getItem(MIGRATION_FLAG_V2) === uid) return;
+
+  // ۱) انتقال شمارنده‌های آفلاین سالانه به Firestore (max: مقدار فعلی Firestore کمتر نباشد)
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (!k || !k.startsWith("fx_offline_counter_")) continue;
+    const year = k.replace("fx_offline_counter_", "");
+    const n = Number(localStorage.getItem(k));
+    if (!Number.isFinite(n) || n <= 0) continue;
+    try {
+      const counterRef = doc(db!, "users", uid, USER_COLLECTIONS.counters, `${OFFLINE_TRACKING_KEY_PREFIX}${year}`);
+      const existing = await getDoc(counterRef);
+      const current = Number((existing.data() as any)?.last ?? 0);
+      if (n > current) {
+        await setDoc(counterRef, { last: n, updatedAt: Date.now(), migratedFrom: "localStorage-v2" }, { merge: true });
+      }
+      localStorage.removeItem(k);
+      console.log(`✅ [migration v2] شمارنده آفلاین ${k} (=${n}) منتقل و از localStorage پاک شد`);
+    } catch (e) {
+      console.warn(`⚠️ [migration v2] انتقال ${k} ناموفق بود (دوباره تلاش می‌شود):`, e);
+    }
+  }
+
+  // ۲) حذف کد پیگیری آخر قدیمی (موقتی بود؛ منبع حقیقت Firestore است)
+  try { localStorage.removeItem("fx_last_tracking_code"); } catch {}
+
+  // ۳) فلگ نسخه ۲ (per-device status flag — داده کاربر نیست)
+  try { localStorage.setItem(MIGRATION_FLAG_V2, uid); } catch {}
 }

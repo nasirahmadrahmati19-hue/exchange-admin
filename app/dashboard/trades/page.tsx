@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, useMemo, useRef, useCallback, memo, type ReactNode } from "react";
 import { useSafeSyncedState } from "../lib/useSafeSyncedState";
+import { generateShareText, handleShare } from "../lib/shareTemplate";
 import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem } from "../lib/trackingCode";
 // 🔴 تنظیمات تلگرام از Firestore (کش مموری) — جایگزین خواندن fx-settings از localStorage
 import { getTelegramSettings } from "../lib/telegramSettings";
@@ -346,7 +347,8 @@ const iconPaths = {
   wallet: "M21 12a2.25 2.25 0 0 0-2.25-2.25H15a3 3 0 1 1-6 0H5.25A2.25 2.25 0 0 0 3 12m18 0v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 9m18 0V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v3",
   tag: "M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z",
   more: "M12 6.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 12.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 18.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Z",
-  briefcase: "M20 7h-4V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2Zm-6 0h-4V5h4v2Z"
+  briefcase: "M20 7h-4V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2Zm-6 0h-4V5h4v2Z",
+  share: "M7.5 12h9m-9 0 3-3m-3 3 3 3M12 3.75A8.25 8.25 0 1 1 3.75 12 8.25 8.25 0 0 1 12 3.75Z"
 };
 type IconName = keyof typeof iconPaths;
 const Ic = memo(function Ic({ n, className = "h-5 w-5" }: { n: IconName; className?: string }) {
@@ -374,11 +376,12 @@ const getTypeChipClass = (tx: Transaction, isDark: boolean) => {
 };
 
 const ActionButtons = memo(function ActionButtons({
-  tx, isDark, openActionId, setOpenActionId, viewTransaction, editTransaction, voidTransaction, printReceipt, deleteTransaction
+  tx, isDark, openActionId, setOpenActionId, viewTransaction, editTransaction, voidTransaction, printReceipt, deleteTransaction, shareTransaction
 }: {
   tx: Transaction; isDark: boolean; openActionId: string | null; setOpenActionId: (id: string | null) => void;
   viewTransaction: (tx: Transaction) => void; editTransaction: (tx: Transaction) => void; voidTransaction: (tx: Transaction) => void;
   printReceipt: (tx: Transaction) => void; deleteTransaction: (tx: Transaction) => void;
+  shareTransaction?: (tx: Transaction) => void;
 }) {
   const isVoided = tx.status === "voided";
   const isOpen = openActionId === tx.id;
@@ -407,6 +410,11 @@ const ActionButtons = memo(function ActionButtons({
           <button onClick={() => { printReceipt(tx); setOpenActionId(null); }} className={`${btn} ${btnBase} ${isDark ? "text-emerald-300 hover:bg-emerald-400/15" : "text-emerald-600 hover:bg-emerald-50"}`}>
             <Ic n="printer" className="h-3.5 w-3.5" /> چاپ رسید
           </button>
+          {shareTransaction && (
+            <button onClick={() => { shareTransaction(tx); setOpenActionId(null); }} className={`${btn} ${btnBase} ${isDark ? "text-violet-300 hover:bg-violet-400/15" : "text-violet-600 hover:bg-violet-50"}`}>
+              <Ic n="share" className="h-3.5 w-3.5" /> اشتراک سند
+            </button>
+          )}
           <div className={`my-1 h-px ${isDark ? "bg-slate-700" : "bg-slate-100"}`} />
           <button onClick={() => { deleteTransaction(tx); setOpenActionId(null); }} className={`${btn} ${isDark ? "text-rose-300 hover:bg-rose-400/15" : "text-rose-500 hover:bg-rose-50"}`}>
             <Ic n="trash" className="h-3.5 w-3.5" /> حذف
@@ -417,10 +425,11 @@ const ActionButtons = memo(function ActionButtons({
   );
 });
 
-const TransactionRow = memo(({ tx, index, isSearching, isDark, transactionCustomerLabel, openActionId, setOpenActionId, viewTransaction, editTransaction, voidTransaction, printReceipt, deleteTransaction }: {
+const TransactionRow = memo(({ tx, index, isSearching, isDark, transactionCustomerLabel, openActionId, setOpenActionId, viewTransaction, editTransaction, voidTransaction, printReceipt, deleteTransaction, shareTransaction }: {
   tx: Transaction; index: number; isSearching: boolean; isDark: boolean; transactionCustomerLabel: (tx: Transaction) => string;
   openActionId: string | null; setOpenActionId: (id: string | null) => void; viewTransaction: (tx: Transaction) => void;
   editTransaction: (tx: Transaction) => void; voidTransaction: (tx: Transaction) => void; printReceipt: (tx: Transaction) => void; deleteTransaction: (tx: Transaction) => void;
+  shareTransaction?: (tx: Transaction) => void;
 }) => {
   const ms = true;
   let rc = isDark ? "hover:bg-slate-700/30" : "hover:bg-sky-50/70";
@@ -441,15 +450,16 @@ const TransactionRow = memo(({ tx, index, isSearching, isDark, transactionCustom
       <td className={`${cellClass} text-[11px] ${subTextLocal}`}>{tx.rateLabel}</td>
       <td className={`${cellClass} text-xs font-bold tabular-nums`}>{getTransactionCommissionLabel(tx)}</td>
       <td className={`${cellClass} text-xs ${isDark ? "text-slate-300" : "text-slate-600"}`}>{getCommissionPayerLabel(tx)}</td>
-      <td className={cellClass}><ActionButtons tx={tx} isDark={isDark} openActionId={openActionId} setOpenActionId={setOpenActionId} viewTransaction={viewTransaction} editTransaction={editTransaction} voidTransaction={voidTransaction} printReceipt={printReceipt} deleteTransaction={deleteTransaction} /></td>
+      <td className={cellClass}><ActionButtons tx={tx} isDark={isDark} openActionId={openActionId} setOpenActionId={setOpenActionId} viewTransaction={viewTransaction} editTransaction={editTransaction} voidTransaction={voidTransaction} printReceipt={printReceipt} deleteTransaction={deleteTransaction} shareTransaction={shareTransaction} /></td>
     </tr>
   );
 });
 
-const MobileTransactionCard = memo(({ tx, index, isDark, transactionCustomerLabel, openActionId, setOpenActionId, viewTransaction, editTransaction, voidTransaction, printReceipt, deleteTransaction }: {
+const MobileTransactionCard = memo(({ tx, index, isDark, transactionCustomerLabel, openActionId, setOpenActionId, viewTransaction, editTransaction, voidTransaction, printReceipt, deleteTransaction, shareTransaction }: {
   tx: Transaction; index: number; isDark: boolean; transactionCustomerLabel: (tx: Transaction) => string;
   openActionId: string | null; setOpenActionId: (id: string | null) => void; viewTransaction: (tx: Transaction) => void;
   editTransaction: (tx: Transaction) => void; voidTransaction: (tx: Transaction) => void; printReceipt: (tx: Transaction) => void; deleteTransaction: (tx: Transaction) => void;
+  shareTransaction?: (tx: Transaction) => void;
 }) => {
   const dt = splitDateTime(tx.date);
   const subTextLocal = isDark ? "text-slate-500" : "text-slate-400";
@@ -484,7 +494,7 @@ const MobileTransactionCard = memo(({ tx, index, isDark, transactionCustomerLabe
         </div>
       </div>
       <div className="mt-3 pt-3 border-t border-dashed border-slate-300/30 flex justify-end">
-        <ActionButtons tx={tx} isDark={isDark} openActionId={openActionId} setOpenActionId={setOpenActionId} viewTransaction={viewTransaction} editTransaction={editTransaction} voidTransaction={voidTransaction} printReceipt={printReceipt} deleteTransaction={deleteTransaction} />
+        <ActionButtons tx={tx} isDark={isDark} openActionId={openActionId} setOpenActionId={setOpenActionId} viewTransaction={viewTransaction} editTransaction={editTransaction} voidTransaction={voidTransaction} printReceipt={printReceipt} deleteTransaction={deleteTransaction} shareTransaction={shareTransaction} />
       </div>
     </div>
   );
@@ -1133,6 +1143,7 @@ export default function CurrencyExchangePage() {
     w.document.close(); w.focus(); w.print();
   }, [transactionCustomerLabel]);
 
+
   const getSharedCustomerBalances = useCallback((customerId: string | number): Record<Currency, number> => {
     const balances: Record<Currency, number> = { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
     if (!customerId || String(customerId) === String(CASH_BOX_ID) || String(customerId) === String(EXCHANGE_ACCOUNT_ID)) return balances;
@@ -1190,6 +1201,39 @@ export default function CurrencyExchangePage() {
     }
     return balances;
   }, [transactions, hawalas, cashEntries]);
+
+  // 🔴 اشتراک سند مطابق قالب استاندارد — بیلانس لحظه‌ای مشتری از داده‌های Firestore (Live)
+  const shareTransaction = useCallback(async (tx: Transaction) => {
+    const cid = tx.type === "transfer" ? tx.senderId : tx.customerId;
+    const bal = getSharedCustomerBalances(cid as string | number);
+    let amount = tx.toAmount, currency = labels[tx.toCurrency];
+    if (tx.type === "exchange") {
+      if (tx.dealType === "sell") { amount = tx.fromAmount; currency = labels[tx.fromCurrency]; }
+      else if (tx.dealType !== "buy") { amount = tx.fromAmount; currency = labels[tx.fromCurrency]; }
+    }
+    if (tx.type === "convert") { amount = tx.toAmount; currency = labels[tx.toCurrency]; }
+    // شرح استاندارد مطابق قالب: «تبادل ارز (خرید/فروش)» / «انتقال ...» / «تبدیل ارز»
+    let stdDescription = tx.description || "";
+    if (!stdDescription) {
+      if (tx.type === "exchange") stdDescription = `تبادل ارز (${tx.dealType === "buy" ? "خرید" : "فروش"})${tx.rateLabel ? ` — نرخ: ${tx.rateLabel}` : ""}`;
+      else if (tx.type === "transfer") stdDescription = `انتقال از ${tx.senderName || "-"} به ${tx.receiverName || "-"}`;
+      else if (tx.type === "convert") stdDescription = `تبدیل ارز ${labels[tx.fromCurrency]} به ${labels[tx.toCurrency]}`;
+    }
+    const text = generateShareText(
+      {
+        trackingCode: tx.trackingCode,
+        date: tx.date,
+        customerName: transactionCustomerLabel(tx),
+        description: stdDescription,
+        amount: Number(amount) || 0,
+        currencyLabel: currency,
+      },
+      bal,
+      "exchange"
+    );
+    await handleShare(text);
+    setOpenActionId(null);
+  }, [getSharedCustomerBalances, transactionCustomerLabel]);
 
   const CustomerBalanceCard = memo(({ customer, color, isCashBox }: { customer: Customer | null; color: "cyan" | "orange" | "violet"; isCashBox?: boolean }) => {
     if (!customer) return null;
@@ -1973,6 +2017,7 @@ export default function CurrencyExchangePage() {
                     voidTransaction={voidTransaction}
                     printReceipt={printReceipt}
                     deleteTransaction={deleteTransaction}
+                    shareTransaction={shareTransaction}
                   />
                 ))
               )}
@@ -2013,6 +2058,7 @@ export default function CurrencyExchangePage() {
                           voidTransaction={voidTransaction}
                           printReceipt={printReceipt}
                           deleteTransaction={deleteTransaction}
+                          shareTransaction={shareTransaction}
                         />
                       ))
                     )}
