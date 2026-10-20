@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 // 🔴 Firestore تنها منبع حقیقت: هوک کاربر-محور (users/{uid}/wallets) — بدون appData و بدون localStorage
-import { useSafeSyncedState } from "../lib/useSafeSyncedState"; 
+import { useSafeSyncedState } from "../lib/useSafeSyncedState";
+// دیالوگ تأیید مشترک به‌جای window.confirm
+import ConfirmationDialog, { useConfirmation } from "../../components/ConfirmationDialog"; 
 
 interface Wallet { id: string | number; currency: string; balance: string; address: string; }
 
@@ -13,6 +15,8 @@ const defaults: Wallet[] = [
 
 export default function WalletsPage() {
   const [wallets, setWallets] = useSafeSyncedState<Wallet>("wallets", defaults);
+  // دیالوگ تأیید مشترک (به‌جای window.confirm)
+  const { confirmation: confirmState, ask, close: closeConfirm } = useConfirmation();
   const [modal, setModal] = useState(false);
   const [editId, setEditId] = useState<string | number | null>(null);
   const [form, setForm] = useState({ currency: "", balance: "", address: "" });
@@ -32,9 +36,9 @@ export default function WalletsPage() {
   };
 
   const handleDelete = (id: string | number) => {
-    if (confirm("آیا از حذف این کیف پول اطمینان دارید؟")) {
-      setWallets(wallets.filter(w => w.id !== id));
-    }
+    ask({
+      onConfirm: () => setWallets(wallets.filter(w => w.id !== id)),
+    });
   };
 
   return (
@@ -84,6 +88,9 @@ export default function WalletsPage() {
           </div>
         </div>
       )}
+
+      {/* دیالوگ تأیید حذف — یکپارچه با تمام تب‌ها */}
+      <ConfirmationDialog state={confirmState} onClose={closeConfirm} />
     </div>
   );
 }

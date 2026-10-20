@@ -112,7 +112,8 @@ export default function SettingsDrawer() {
   useEffect(() => {
     const loadAuthorizedUsers = async () => {
       try {
-        const querySnapshot = await getDocs(collection(db, "authorized_users"));
+        if (!db) return;
+        const querySnapshot = await getDocs(collection(db!, "authorized_users"));
         const users: AuthorizedUser[] = [];
         querySnapshot.forEach((doc) => {
           users.push(doc.data() as AuthorizedUser);
@@ -128,7 +129,8 @@ export default function SettingsDrawer() {
   useEffect(() => {
     const loadInitialSettings = async () => {
       try {
-        const docSnap = await getDoc(doc(db, "app_settings", "global_settings"));
+        if (!db) return;
+        const docSnap = await getDoc(doc(db!, "app_settings", "global_settings"));
         if (docSnap.exists()) {
           const fbSettings = docSnap.data().value as Settings;
           let migratedChatIds: string[] = fbSettings?.telegram?.chatIds && Array.isArray(fbSettings.telegram.chatIds) ? fbSettings.telegram.chatIds : [];
@@ -174,7 +176,7 @@ export default function SettingsDrawer() {
   const canAccess = isOwner || isAuthorized;
 
   const handleAddUser = async () => {
-    if (!isOwner) return;
+    if (!isOwner || !db) return;
     if (!newUserEmail) {
       showToast("❌ لطفاً ایمیل را وارد کنید");
       return;
@@ -196,8 +198,10 @@ export default function SettingsDrawer() {
   };
 
   const handleRemoveUser = async (email: string) => {
+    if (!db) return;
     if (!isOwner) return;
     try {
+      if (!db) return;
       await deleteDoc(doc(db, "authorized_users", email));
       setAuthorizedUsers(authorizedUsers.filter(u => u.email !== email));
       showToast("✅ کاربر حذف شد");
@@ -220,9 +224,10 @@ export default function SettingsDrawer() {
       };
 
       if (isOwner) {
+        if (!db) return;
         const allKeys = ["fx-customers", "fx-transactions", "fx-hawalas", "fx-cash"];
         for (const key of allKeys) {
-          const docSnap = await getDoc(doc(db, "appData", key));
+          const docSnap = await getDoc(doc(db!, "appData", key));
           backupData.data[key] = docSnap.exists() ? docSnap.data() : { value: [], lastUpdated: 0 };
         }
       } else {
@@ -233,7 +238,7 @@ export default function SettingsDrawer() {
           `fx-cash-${user?.email}`
         ];
         for (const key of userKeys) {
-          const docSnap = await getDoc(doc(db, "appData", key));
+          const docSnap = await getDoc(doc(db!, "appData", key));
           backupData.data[key] = docSnap.exists() ? docSnap.data() : { value: [], lastUpdated: 0 };
         }
       }

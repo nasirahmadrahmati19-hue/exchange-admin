@@ -59,7 +59,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       try {
         // استفاده از UID به عنوان کلید اصلی، تضمین‌کننده بازگشت اطلاعات پس از نصب مجدد برنامه است
-        const userRef = doc(db, "users", currentUser.uid);
+        if (!db) throw new Error("Firestore unavailable");
+        const userRef = doc(db!, "users", currentUser.uid);
         const userSnap = await getDoc(userRef);
 
         if (!userSnap.exists()) {

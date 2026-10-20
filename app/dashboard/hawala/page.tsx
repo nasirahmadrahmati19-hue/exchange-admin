@@ -4,9 +4,8 @@ import { useSafeSyncedState } from "../lib/useSafeSyncedState";
 import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem, getTrackingNumberValue } from "../lib/trackingCode";
 // 🔴 تنظیمات تلگرام از Firestore (کش مموری) — جایگزین خواندن fx-settings از localStorage
 import { getTelegramSettings } from "../lib/telegramSettings";
-
-// ============================================================
-// تایپ‌ها و ثابت‌ها
+// دیالوگ تأیید مشترک به‌جای window.confirm
+import ConfirmationDialog, { useConfirmation } from "../../components/ConfirmationDialog";
 // ============================================================
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type RateMode = "same" | "afn" | "direct";
@@ -543,6 +542,8 @@ const Ic = memo(function Ic({ n, className = "h-5 w-5" }: { n: IconName; classNa
 // ============================================================
 export default function HawalaPage() {
   const [mounted, setMounted] = useState(false);
+  // دیالوگ تأیید مشترک (به‌جای window.confirm)
+  const { confirmation: confirmState, ask, close: closeConfirm } = useConfirmation();
   const [customers, setCustomers] = useSafeSyncedState<Customer>("customers", []);
   const [transactions] = useSafeSyncedState<any>("transactions", []);
   const [hawalas, setHawalas] = useSafeSyncedState<Hawala>("hawalas", []);
@@ -949,18 +950,22 @@ export default function HawalaPage() {
     } catch (err) { console.error("Restore error:", err); showToast("خطا در برگشت حواله"); }
   }, [customers, cashEntries, showToast, hawalas, transactions, setCustomers, setHawalas, setCashEntries, getUpdatedCustomerBalances]);
   const deleteHawala = useCallback(async (item: Hawala) => {
-    if (!window.confirm(`آیا از حذف کامل حواله ${item.number} مطمئن هستید؟`)) return;
-    try {
-      const newEntries1 = syncCashEntriesForHawala("remove", null, item.id, cashEntries);
-      const newEntries2 = syncCashEntriesForHawalaSettlement("remove", item, newEntries1);
-      const updatedHawalas = hawalas.filter(h => h.id !== item.id);
-      const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries2, transactions, updatedHawalas);
-      setHawalas(updatedHawalas);
-      setCashEntries(newEntries2);
-      setCustomers(updatedCustomers);
-      showToast(`حواله ${item.number} حذف شد.`);
-    } catch (err) { console.error("Delete error:", err); showToast("خطا در حذف حواله"); }
-  }, [customers, cashEntries, showToast, hawalas, transactions, setCustomers, setHawalas, setCashEntries, getUpdatedCustomerBalances]);
+    ask({
+      message: `آیا مطمئن هستید که می‌خواهید حواله ${item.number} را حذف کنید؟`,
+      onConfirm: async () => {
+        try {
+          const newEntries1 = syncCashEntriesForHawala("remove", null, item.id, cashEntries);
+          const newEntries2 = syncCashEntriesForHawalaSettlement("remove", item, newEntries1);
+          const updatedHawalas = hawalas.filter(h => h.id !== item.id);
+          const updatedCustomers = getUpdatedCustomerBalances(customers, newEntries2, transactions, updatedHawalas);
+          setHawalas(updatedHawalas);
+          setCashEntries(newEntries2);
+          setCustomers(updatedCustomers);
+          showToast(`حواله ${item.number} حذف شد.`);
+        } catch (err) { console.error("Delete error:", err); showToast("خطا در حذف حواله"); }
+      },
+    });
+  }, [ask, customers, cashEntries, showToast, hawalas, transactions, setCustomers, setHawalas, setCashEntries, getUpdatedCustomerBalances]);
 
   if (!mounted) return (
     <div className="min-h-screen flex items-center justify-center">
@@ -1310,6 +1315,9 @@ export default function HawalaPage() {
       )}
 
       {toast && (<div className={`fixed bottom-6 left-6 z-[99] rounded-xl px-4 py-3 text-sm font-bold shadow-lg ${dk ? "bg-slate-800 text-slate-100 border border-slate-600" : "bg-slate-900 text-white"}`}>{toast}</div>)}
+
+      {/* دیالوگ تأیید حذف — یکپارچه با تمام تب‌ها */}
+      <ConfirmationDialog state={confirmState} onClose={closeConfirm} />
     </div>
   );
 }

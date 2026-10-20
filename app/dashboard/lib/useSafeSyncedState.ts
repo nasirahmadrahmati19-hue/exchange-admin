@@ -110,6 +110,12 @@ export function useSafeSyncedState<T extends { id: string | number }>(
       unsubscribeRef.current();
     }
 
+    // 🔴 SSR guard: در سمت سرور Firestore نمونه‌ای وجود ندارد (فقط کلاینت)
+    if (!db) {
+      setIsLoading(false);
+      return;
+    }
+
     // 🔴 بدون احراز هویت، هیچ خوانده/نوشته‌ای مجاز نیست (جلوگیری از نشت داده عمومی)
     if (!userId) {
       setIsLoading(false);
@@ -121,7 +127,7 @@ export function useSafeSyncedState<T extends { id: string | number }>(
     // فقط برای collectionهای داده کاربر انجام می‌شود و خودش فلگ یک‌بارمصرف دارد.
     migrateLocalDataToFirestore(userId).catch(() => {});
 
-    const colRef = collection(db, "users", userId, collectionName);
+    const colRef = collection(db!, "users", userId, collectionName);
 
     // استفاده از onSnapshot
     const unsubscribe = onSnapshot(
@@ -259,12 +265,13 @@ export function useSafeSyncedState<T extends { id: string | number }>(
 
         for (let i = 0; i < allOperations.length; i += BATCH_LIMIT) {
           const chunk = allOperations.slice(i, i + BATCH_LIMIT);
-          const batch = writeBatch(db);
+          if (!db) throw new Error("Firestore is only available on the client");
+          const batch = writeBatch(db!);
 
           for (const op of chunk) {
             // 🔴 همیشه زیر users/{uid} — بدون احراز هویت نوشتن مجاز نیست
             if (!userId) throw new Error("unauthenticated");
-            const docRef = doc(db, "users", userId, collectionName, op.id);
+            const docRef = doc(db!, "users", userId, collectionName, op.id);
 
             if (op.type === "set") batch.set(docRef, op.data);
             else if (op.type === "update") batch.set(docRef, op.data, { merge: true });

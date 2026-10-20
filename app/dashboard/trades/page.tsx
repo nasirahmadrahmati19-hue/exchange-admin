@@ -4,6 +4,8 @@ import { useSafeSyncedState } from "../lib/useSafeSyncedState";
 import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem } from "../lib/trackingCode";
 // 🔴 تنظیمات تلگرام از Firestore (کش مموری) — جایگزین خواندن fx-settings از localStorage
 import { getTelegramSettings } from "../lib/telegramSettings";
+// دیالوگ تأیید مشترک به‌جای window.confirm
+import ConfirmationDialog, { useConfirmation } from "../../components/ConfirmationDialog";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type RateMode = "same" | "afn" | "direct";
@@ -540,6 +542,8 @@ export default function CurrencyExchangePage() {
   const currentDateTime = now ? formatDateTime(now) : "";
 
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  // دیالوگ تأیید مشترک (به‌جای window.confirm)
+  const { confirmation: confirmState, ask, close: closeConfirm } = useConfirmation();
   const [editingExchangeId, setEditingExchangeId] = useState<string | null>(null);
   const [editingTransferId, setEditingTransferId] = useState<string | null>(null);
   const [editingConvertId, setEditingConvertId] = useState<string | null>(null);
@@ -1091,25 +1095,36 @@ export default function CurrencyExchangePage() {
   const viewTransaction = useCallback((tx: Transaction) => setSelectedTransaction(tx), []);
   const voidTransaction = useCallback((tx: Transaction) => {
     if (tx.status === "voided") return;
-    if (!window.confirm("لغو شود؟")) return;
-    setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForTransaction(tx, "reverse")));
-    setTransactions(p => p.map(t => t.id === tx.id ? { ...t, status: "voided" } : t));
-    if (tx.type === "exchange") setCashEntries(prev => syncCashEntriesForExchange("remove", null, tx.id, prev));
-    else if (tx.type === "transfer") setCashEntries(prev => syncCashEntriesForTransfer("remove", null, tx.id, prev));
-    else if (tx.type === "convert") setCashEntries(prev => syncCashEntriesForConvert("remove", null, tx.id, prev));
-    setEditingExchangeId(null); setEditingTransferId(null); setEditingConvertId(null);
-  }, [setCustomers, setTransactions, setCashEntries]);
+    ask({
+      title: "لغو معامله",
+      message: `آیا مطمئن هستید که می‌خواهید معامله ${tx.trackingCode} لغو شود؟`,
+      description: "این عمل قابل بازگشت نیست و مانده حساب‌های مرتبط بازمحاسبه خواهد شد.",
+      confirmLabel: "لغو معامله",
+      onConfirm: () => {
+        setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForTransaction(tx, "reverse")));
+        setTransactions(p => p.map(t => t.id === tx.id ? { ...t, status: "voided" } : t));
+        if (tx.type === "exchange") setCashEntries(prev => syncCashEntriesForExchange("remove", null, tx.id, prev));
+        else if (tx.type === "transfer") setCashEntries(prev => syncCashEntriesForTransfer("remove", null, tx.id, prev));
+        else if (tx.type === "convert") setCashEntries(prev => syncCashEntriesForConvert("remove", null, tx.id, prev));
+        setEditingExchangeId(null); setEditingTransferId(null); setEditingConvertId(null);
+      },
+    });
+  }, [ask, setCustomers, setTransactions, setCashEntries]);
 
   const deleteTransaction = useCallback((tx: Transaction) => {
-    if (!window.confirm(`حذف ${tx.trackingCode}؟`)) return;
-    if (tx.status !== "voided") {
-      setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForTransaction(tx, "reverse")));
-      if (tx.type === "exchange") setCashEntries(prev => syncCashEntriesForExchange("remove", null, tx.id, prev));
-      else if (tx.type === "transfer") setCashEntries(prev => syncCashEntriesForTransfer("remove", null, tx.id, prev));
-      else if (tx.type === "convert") setCashEntries(prev => syncCashEntriesForConvert("remove", null, tx.id, prev));
-    }
-    setTransactions(p => p.filter(t => t.id !== tx.id));
-  }, [setCustomers, setTransactions, setCashEntries]);
+    ask({
+      message: `آیا مطمئن هستید که می‌خواهید معامله ${tx.trackingCode} را حذف کنید؟`,
+      onConfirm: () => {
+        if (tx.status !== "voided") {
+          setCustomers(prev => applyBalanceChanges(prev, getBalanceChangesForTransaction(tx, "reverse")));
+          if (tx.type === "exchange") setCashEntries(prev => syncCashEntriesForExchange("remove", null, tx.id, prev));
+          else if (tx.type === "transfer") setCashEntries(prev => syncCashEntriesForTransfer("remove", null, tx.id, prev));
+          else if (tx.type === "convert") setCashEntries(prev => syncCashEntriesForConvert("remove", null, tx.id, prev));
+        }
+        setTransactions(p => p.filter(t => t.id !== tx.id));
+      },
+    });
+  }, [ask, setCustomers, setTransactions, setCashEntries]);
 
   const printReceipt = useCallback((tx: Transaction) => {
     const w = window.open("", "_blank", "width=650,height=800");
@@ -2040,6 +2055,9 @@ export default function CurrencyExchangePage() {
           </div>
         </div>
       )}
+
+      {/* دیالوگ تأیید حذف/لغو — یکپارچه با تمام تب‌ها */}
+      <ConfirmationDialog state={confirmState} onClose={closeConfirm} />
     </div>
   );
 }

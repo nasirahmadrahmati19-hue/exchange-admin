@@ -4,6 +4,8 @@ import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem } from "..
 import { useSafeSyncedState } from "../lib/useSafeSyncedState";
 // 🔴 تنظیمات تلگرام از Firestore (کش مموری) — جایگزین خواندن fx-settings از localStorage
 import { getTelegramSettings } from "../lib/telegramSettings";
+// دیالوگ تأیید مشترک به‌جای window.confirm
+import ConfirmationDialog, { useConfirmation } from "../../components/ConfirmationDialog";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type Customer = { id: string; name: string; phone?: string; tazkira?: string; address?: string; note?: string; telegram?: string; telegramChatId?: string; registeredAt: string; balances: Record<Currency, number>; };
@@ -387,6 +389,8 @@ const Ic = ({ n, className = "h-5 w-5" }: { n: string; className?: string }) => 
 
 export default function CashPage() {
   const [mounted, setMounted] = useState(false);
+  // دیالوگ تأیید مشترک (به‌جای window.confirm)
+  const { confirmation: confirmState, ask, close: closeConfirm } = useConfirmation();
   
   const [entries, setEntries] = useSafeSyncedState<CashEntry>("cash_entries", []);
   const [customers, setCustomers] = useSafeSyncedState<Customer>("customers", []);
@@ -555,24 +559,35 @@ export default function CashPage() {
 
   const voidEntry = useCallback(async (entry: CashEntry) => {
     if (entry.status === "voided") return;
-    if (!window.confirm(`آیا از ابطال سند ${entry.trackingCode} مطمئن هستید؟`)) return;
-    const updatedCustomers = applyBalanceChanges(customers, getBalanceChangesForCashEntry(entry, "reverse"));
-    setCustomers(updatedCustomers);
-    const newEntries = recomputeCashBalances(entries.map((e) => (e.id === entry.id ? { ...e, status: "voided" as const } : e)), transactions);
-    setEntries(newEntries);
-    showToast(`سند ${entry.trackingCode} ابطال شد.`);
-  }, [showToast, customers, entries, transactions]);
+    ask({
+      title: "ابطال سند",
+      message: `آیا مطمئن هستید که می‌خواهید سند ${entry.trackingCode} را ابطال کنید؟`,
+      description: "این عمل قابل بازگشت نیست و مانده حساب‌های مرتبط بازمحاسبه خواهد شد.",
+      confirmLabel: "ابطال",
+      onConfirm: () => {
+        const updatedCustomers = applyBalanceChanges(customers, getBalanceChangesForCashEntry(entry, "reverse"));
+        setCustomers(updatedCustomers);
+        const newEntries = recomputeCashBalances(entries.map((e) => (e.id === entry.id ? { ...e, status: "voided" as const } : e)), transactions);
+        setEntries(newEntries);
+        showToast(`سند ${entry.trackingCode} ابطال شد.`);
+      },
+    });
+  }, [ask, showToast, customers, entries, transactions]);
 
   const deleteEntry = useCallback((entry: CashEntry) => {
-    if (!window.confirm(`آیا از حذف سند ${entry.trackingCode} مطمئن هستید؟`)) return;
-    if (entry.status !== "voided") {
-      const updatedCust = applyBalanceChanges(customers, getBalanceChangesForCashEntry(entry, "reverse"));
-      setCustomers(updatedCust);
-    }
-    const newEntries = recomputeCashBalances(entries.filter((e) => e.id !== entry.id), transactions);
-    setEntries(newEntries);
-    showToast(`سند ${entry.trackingCode} حذف شد.`);
-  }, [showToast, customers, entries, transactions]);
+    ask({
+      message: `آیا مطمئن هستید که می‌خواهید سند ${entry.trackingCode} را حذف کنید؟`,
+      onConfirm: () => {
+        if (entry.status !== "voided") {
+          const updatedCust = applyBalanceChanges(customers, getBalanceChangesForCashEntry(entry, "reverse"));
+          setCustomers(updatedCust);
+        }
+        const newEntries = recomputeCashBalances(entries.filter((e) => e.id !== entry.id), transactions);
+        setEntries(newEntries);
+        showToast(`سند ${entry.trackingCode} حذف شد.`);
+      },
+    });
+  }, [ask, showToast, customers, entries, transactions]);
 
   const handleSubmitClick = useCallback(() => {
     try {
@@ -1106,6 +1121,9 @@ export default function CashPage() {
       )}
 
       {toast && (<div className={`fixed bottom-6 left-6 z-[99] rounded-xl px-4 py-3 text-sm font-bold shadow-lg ${dk ? "bg-slate-800 text-slate-100 border border-slate-600" : "bg-slate-900 text-white"}`}>{toast}</div>)}
+
+      {/* دیالوگ تأیید حذف — یکپارچه با تمام تب‌ها */}
+      <ConfirmationDialog state={confirmState} onClose={closeConfirm} />
     </div>
   );
 }

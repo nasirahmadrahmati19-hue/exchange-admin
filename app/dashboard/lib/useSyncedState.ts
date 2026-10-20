@@ -62,7 +62,7 @@ export function useSyncedState<T>(key: string, initialValue: T) {
       return;
     }
 
-    const docRef = doc(db, "users", userId, collectionName, "data");
+    const docRef = doc(db!, "users", userId, collectionName, "data");
 
     if (unsubscribeRef.current) {
       try { unsubscribeRef.current(); } catch {}
@@ -130,7 +130,7 @@ export function useSyncedState<T>(key: string, initialValue: T) {
       lastUpdatedRef.current = ts;
       try {
         await setDoc(
-          doc(db, "users", userId, collectionName, "data"),
+          doc(db!, "users", userId, collectionName, "data"),
           removeUndefinedFields({ value: resolved, lastUpdated: ts, owner: userId }),
           { merge: true }
         );

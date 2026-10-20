@@ -5,6 +5,8 @@ import { useSafeSyncedState } from "../lib/useSafeSyncedState";
 import { initTrackingSystem } from "../lib/trackingCode";
 // 🔴 تنظیمات تلگرام از Firestore (کش مموری) — جایگزین خواندن fx-settings از localStorage
 import { getTelegramSettings } from "../lib/telegramSettings";
+// دیالوگ تأیید مشترک به‌جای window.confirm/prompt
+import ConfirmationDialog, { useConfirmation } from "../../components/ConfirmationDialog";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 // ✅ تغییر ۲: id به صورت string | number برای یکپارچگی با سایر تب‌ها
@@ -320,6 +322,8 @@ function buildCashBoxLedger(cashEntries: any[]): LedgerEntry[] {
 
 export default function CustomersPage() {
   const [mounted, setMounted] = useState(false);
+  // دیالوگ تأیید مشترک (به‌جای window.confirm/prompt)
+  const { confirmation: confirmState, ask, close: closeConfirm } = useConfirmation();
   
   // ✅ تغییر ۳: استفاده از هوک جدید و نام‌های کالکشن استاندارد
   const [customers, setCustomers, isLoadingCustomers] = useSafeSyncedState<Customer>("customers", []);
@@ -521,57 +525,56 @@ export default function CustomersPage() {
     const c = customers.find(x => String(x.id) === String(id));
     if (!c) return;
 
-    const confirmName = prompt(`⚠️ هشدار: این عمل غیرقابل بازگشت است.\nبرای حذف کامل "${c.name}" و تمام سوابق مالی (روزنامه، حواله، تراکنش)، نام مشتری را دقیقاً تایپ کنید:`);
-    if (confirmName?.trim() !== c.name.trim()) {
-      showToast("❌ نام وارد شده مطابقت ندارد. عملیات لغو شد.");
-      return;
-    }
+    ask({
+      message: `آیا مطمئن هستید که می‌خواهید مشتری «${c.name}» را حذف کنید؟`,
+      description: `این عمل قابل بازگشت نیست و تمام سوابق مالی مرتبط (روزنامه، حواله و تراکنش‌ها) نیز حذف خواهد شد.`,
+      onConfirm: () => {
+        try {
+          const strId = String(id);
+          const normalizedName = c.name.trim();
+          setTransactions(prev => prev.filter((t: any) => {
+            const tCustId = String(t.customerId || "");
+            const tSenderId = String(t.senderId || "");
+            const tReceiverId = String(t.receiverId || "");
+            const tCustName = String(t.customerName || "").trim();
+            const tSenderName = String(t.senderName || "").trim();
+            const tReceiverName = String(t.receiverName || "").trim();
 
-    const strId = String(id);
-    const normalizedName = c.name.trim();
+            return tCustId !== strId && tSenderId !== strId && tReceiverId !== strId &&
+                   tCustName !== normalizedName && tSenderName !== normalizedName && tReceiverName !== normalizedName;
+          }));
 
-    try {
-      setTransactions(prev => prev.filter((t: any) => {
-        const tCustId = String(t.customerId || "");
-        const tSenderId = String(t.senderId || "");
-        const tReceiverId = String(t.receiverId || "");
-        const tCustName = String(t.customerName || "").trim();
-        const tSenderName = String(t.senderName || "").trim();
-        const tReceiverName = String(t.receiverName || "").trim();
+          setHawalas(prev => prev.filter((h: any) => {
+            const hSenderId = String(h.senderId || "");
+            const hReceiverId = String(h.receiverId || "");
+            const hSenderName = String(h.senderName || "").trim();
+            const hReceiverName = String(h.receiverName || "").trim();
 
-        return tCustId !== strId && tSenderId !== strId && tReceiverId !== strId &&
-               tCustName !== normalizedName && tSenderName !== normalizedName && tReceiverName !== normalizedName;
-      }));
+            return hSenderId !== strId && hReceiverId !== strId &&
+                   hSenderName !== normalizedName && hReceiverName !== normalizedName;
+          }));
 
-      setHawalas(prev => prev.filter((h: any) => {
-        const hSenderId = String(h.senderId || "");
-        const hReceiverId = String(h.receiverId || "");
-        const hSenderName = String(h.senderName || "").trim();
-        const hReceiverName = String(h.receiverName || "").trim();
+          setCashEntries(prev => prev.filter((ce: any) => {
+            const ceCustId = String(ce.customerId || "");
+            const ceCustName = String(ce.customerName || "").trim();
 
-        return hSenderId !== strId && hReceiverId !== strId &&
-               hSenderName !== normalizedName && hReceiverName !== normalizedName;
-      }));
+            return ceCustId !== strId && ceCustName !== normalizedName;
+          }));
 
-      setCashEntries(prev => prev.filter((ce: any) => {
-        const ceCustId = String(ce.customerId || "");
-        const ceCustName = String(ce.customerName || "").trim();
+          setCustomers(prev => prev.filter(x => String(x.id) !== strId));
 
-        return ceCustId !== strId && ceCustName !== normalizedName;
-      }));
+          if (selectedCustomerId === id) {
+            setSelectedCustomerId(null);
+            setActiveTab("list");
+          }
 
-      setCustomers(prev => prev.filter(x => String(x.id) !== strId));
-
-      if (selectedCustomerId === id) {
-        setSelectedCustomerId(null);
-        setActiveTab("list");
-      }
-
-      showToast(`✅ "${c.name}" و تمام سوابق مالی او با موفقیت و به طور کامل حذف شدند.`);
-    } catch (err) {
-      console.error("خطا در حذف مشتری:", err);
-      showToast("❌ خطایی در هنگام حذف رخ داد.");
-    }
+          showToast(`✅ "${c.name}" و تمام سوابق مالی او با موفقیت و به طور کامل حذف شدند.`);
+        } catch (err) {
+          console.error("خطا در حذف مشتری:", err);
+          showToast("❌ خطایی در هنگام حذف رخ داد.");
+        }
+      },
+    });
   };
 
   const validateForm = () => {
@@ -587,11 +590,27 @@ export default function CustomersPage() {
   const submitNew = () => {
     const errs = validateForm(); setErrors(errs);
     if (Object.keys(errs).length > 0) { showToast("فیلدها را تکمیل کنید."); return; }
-    if (customers.length === 0 && !window.confirm("آیا مطمئن هستید؟ این اولین مشتری ثبت‌شده است.")) return;
 
-    const nc: Customer = { id: generateId(), name: form.name.trim(), phone: form.phone.trim(), tazkira: form.tazkira.trim(), address: form.address.trim(), note: form.note.trim(), telegram: form.telegram.trim(), registeredAt: new Date().toISOString(), balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
-    setCustomers(p => [...p, nc]); setForm(emptyForm); setErrors({}); setActiveTab("list");
-    showToast(`"${nc.name}" ثبت شد.`);
+    const doSave = () => {
+      const nc: Customer = { id: generateId(), name: form.name.trim(), phone: form.phone.trim(), tazkira: form.tazkira.trim(), address: form.address.trim(), note: form.note.trim(), telegram: form.telegram.trim(), registeredAt: new Date().toISOString(), balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
+      setCustomers(p => [...p, nc]); setForm(emptyForm); setErrors({}); setActiveTab("list");
+      showToast(`"${nc.name}" ثبت شد.`);
+    };
+
+    // اولین مشتری — تأیید با دیالوگ مشترک (به‌جای window.confirm)
+    if (customers.length === 0) {
+      ask({
+        title: "تأیید ثبت",
+        message: "این اولین مشتری ثبت‌شده است. آیا مطمئن هستید؟",
+        description: "پس از تأیید، مشتری در Firestore ذخیره خواهد شد.",
+        confirmLabel: "ثبت",
+        cancelLabel: "انصراف",
+        danger: false,
+        onConfirm: doSave,
+      });
+      return;
+    }
+    doSave();
   };
 
   const updateCustomer = () => {
@@ -1023,6 +1042,9 @@ export default function CustomersPage() {
               </div>
             </div>
           )}
+
+          {/* دیالوگ تأیید حذف — مشترک در تمام تب‌ها */}
+          <ConfirmationDialog state={confirmState} onClose={closeConfirm} />
         </div>
       </div>
     </div>

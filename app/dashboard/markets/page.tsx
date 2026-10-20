@@ -3,6 +3,8 @@
 import { useState } from "react";
 // 🔴 Firestore تنها منبع حقیقت: users/{uid}/markets — بدون localStorage
 import { useSafeSyncedState } from "../lib/useSafeSyncedState";
+// دیالوگ تأیید مشترک به‌جای حذف یک‌طرفه
+import ConfirmationDialog, { useConfirmation } from "../../components/ConfirmationDialog";
 
 interface Market { id: string | number; pair: string; price: string; change: string; }
 
@@ -15,6 +17,21 @@ const defaults: Market[] = [
 export default function MarketsPage() {
   const [markets, setMarkets] = useSafeSyncedState<Market>("markets", defaults);
   const [form, setForm] = useState({ pair: "", price: "", change: "" });
+
+  // دیالوگ تأیید حذف — استایل یکسان با تمام تب‌ها
+  const { confirmation: confirmState, ask, close: closeConfirm } = useConfirmation();
+
+  const removeMarket = (m: Market) => {
+    ask({
+      title: "تأیید حذف",
+      message: `آیا مطمئن هستید که می‌خواهید بازار «${m.pair}» را حذف کنید؟`,
+      description: "این عمل قابل بازگشت نیست و تمام اطلاعات مرتبط حذف خواهد شد.",
+      confirmLabel: "حذف",
+      cancelLabel: "انصراف",
+      danger: true,
+      onConfirm: () => setMarkets(markets.filter((x) => x.id !== m.id)),
+    });
+  };
 
   const add = () => {
     if (!form.pair || !form.price) return;
@@ -43,11 +60,14 @@ export default function MarketsPage() {
             <p className="text-2xl font-extrabold text-[#c98f2d]">{Number(m.price).toLocaleString("fa-IR")}</p>
             <div className="flex gap-2 mt-4">
               <input className="input" placeholder="قیمت جدید" defaultValue={m.price} onBlur={e => setMarkets(markets.map(x => x.id === m.id ? { ...x, price: e.target.value } : x))} />
-              <button className="px-3 rounded-xl text-red-600 hover:bg-red-50 text-xs font-bold" onClick={() => setMarkets(markets.filter(x => x.id !== m.id))}>حذف</button>
+              <button className="px-3 rounded-xl text-red-600 hover:bg-red-50 text-xs font-bold" onClick={() => removeMarket(m)}>حذف</button>
             </div>
           </div>
         ))}
       </div>
+
+      {/* دیالوگ تأیید حذف — مشترک در تمام تب‌ها */}
+      <ConfirmationDialog state={confirmState} onClose={closeConfirm} />
     </div>
   );
 }

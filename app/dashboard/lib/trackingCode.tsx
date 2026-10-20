@@ -68,8 +68,10 @@ export async function consumeTrackingCode(): Promise<string> {
     return generateOfflineTrackingCode();
   }
 
+  if (!db) return generateOfflineTrackingCode();
+
   const year = getCurrentShamsiYear();
-  const counterRef = doc(db, "system_counters", COUNTER_DOC_ID);
+  const counterRef = doc(db!, "system_counters", COUNTER_DOC_ID);
 
   try {
     // ✅ خط دفاعی دوم: تلاش با Timeout کوتاه (۳ ثانیه)
@@ -77,7 +79,7 @@ export async function consumeTrackingCode(): Promise<string> {
       setTimeout(() => reject(new Error("TIMEOUT_AFTER_3_SECONDS")), 3000)
     );
 
-    const transactionPromise = runTransaction(db, async (transaction) => {
+    const transactionPromise = runTransaction(db!, async (transaction) => {
       const counterDoc = await transaction.get(counterRef);
       const currentData = counterDoc.exists() ? counterDoc.data() : {};
       const currentCount = currentData[year] || 0;

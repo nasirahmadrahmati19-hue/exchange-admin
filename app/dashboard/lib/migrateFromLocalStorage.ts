@@ -73,7 +73,8 @@ async function migrateArray(
   let migrated = 0;
   for (let i = 0; i < items.length; i += BATCH_LIMIT) {
     const chunk = items.slice(i, i + BATCH_LIMIT);
-    const batch = writeBatch(db);
+    if (!db) return migrated;
+    const batch = writeBatch(db!);
     for (const item of chunk) {
       if (!item || typeof item !== "object") continue;
       const id = String(item.id ?? `${Date.now()}_${migrated}`);
@@ -81,7 +82,7 @@ async function migrateArray(
       for (const [k, v] of Object.entries(item)) {
         if (v !== undefined && k !== "id") cleaned[k] = v;
       }
-      const docRef = doc(db, "users", uid, colName, id);
+      const docRef = doc(db!, "users", uid, colName, id);
       batch.set(docRef, { ...cleaned, migratedAt: Date.now(), migratedFrom: "localStorage" }, { merge: true });
       migrated++;
     }
@@ -109,7 +110,26 @@ export interface MigrationResult {
  * اجرای یک‌باره مهاجرت برای کاربر فعلی.
  * اگر قبلاً اجرا شده باشد (فلگ)، کاری نمی‌کند.
  */
+/** نتیجه خالی برای حالت SSR/بدون Firestore */
+function EMPTY_RESULT(): MigrationResult {
+  return {
+    ran: false,
+    customers: 0,
+    transactions: 0,
+    hawalas: 0,
+    cashEntries: 0,
+    kyc: 0,
+    wallets: 0,
+    markets: 0,
+    withdrawals: 0,
+    settingsMigrated: false,
+    countersMigrated: false,
+    keysCleared: [],
+  };
+}
+
 export async function migrateLocalDataToFirestore(uid: string): Promise<MigrationResult> {
+  if (!db) return EMPTY_RESULT();
   const result: MigrationResult = {
     ran: false,
     customers: 0,
@@ -162,7 +182,7 @@ export async function migrateLocalDataToFirestore(uid: string): Promise<Migratio
       result.wallets = await migrateArray(uid, USER_COLLECTIONS.wallets, wal.value);
     } else {
       try {
-        const legacyAppData = await getDoc(doc(db, "appData", "db_wallets"));
+        const legacyAppData = await getDoc(doc(db!, "appData", "db_wallets"));
         if (legacyAppData.exists()) {
           const val = (legacyAppData.data() as any)?.value;
           if (Array.isArray(val) && val.length > 0) {

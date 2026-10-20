@@ -38,6 +38,7 @@ export function getSettingsCache(): SettingsSchema | null {
  * باید یک‌بار بعد از لاگین (در DashboardLayout) صدا زده شود.
  */
 export function subscribeUserSettings(): () => void {
+  if (!db) return () => {};
   const uid = auth.currentUser?.uid;
   if (!uid) return () => {};
 
@@ -53,7 +54,7 @@ export function subscribeUserSettings(): () => void {
   cachedSettings = null;
   subscribedUid = uid;
 
-  const docRef = doc(db, "users", uid, USER_COLLECTIONS.settings, SETTINGS_DOC_ID);
+  const docRef = doc(db!, "users", uid, USER_COLLECTIONS.settings, SETTINGS_DOC_ID);
   settingsUnsub = onSnapshot(
     docRef,
     (snap) => {
@@ -83,9 +84,10 @@ export function subscribeUserSettings(): () => void {
 
 /** ذخیره (مرج) تنظیمات در Firestore — تنها مسیر نوشتن تنظیمات */
 export async function saveUserSettings(partial: Partial<SettingsSchema>): Promise<void> {
+  if (!db) throw new Error("Firestore is only available on the client");
   const uid = auth.currentUser?.uid;
   if (!uid) throw new Error("کاربر وارد نشده است — امکان ذخیره تنظیمات نیست.");
-  const docRef = doc(db, "users", uid, USER_COLLECTIONS.settings, SETTINGS_DOC_ID);
+  const docRef = doc(db!, "users", uid, USER_COLLECTIONS.settings, SETTINGS_DOC_ID);
   await setDoc(docRef, partial as any, { merge: true });
   // به‌روزرسانی آنی کش (onSnapshot هم بعداً تأیید می‌کند)
   cachedSettings = {
@@ -97,10 +99,11 @@ export async function saveUserSettings(partial: Partial<SettingsSchema>): Promis
 
 /** خواندن یک‌باره تنظیمات (برای محیط‌هایی که اشتراک فعال ندارند) */
 export async function fetchUserSettingsOnce(): Promise<SettingsSchema> {
+  if (!db) return defaultSettingsSchema;
   const uid = auth.currentUser?.uid;
   if (!uid) return { ...defaultSettingsSchema };
   try {
-    const snap = await getDoc(doc(db, "users", uid, USER_COLLECTIONS.settings, SETTINGS_DOC_ID));
+    const snap = await getDoc(doc(db!, "users", uid, USER_COLLECTIONS.settings, SETTINGS_DOC_ID));
     if (!snap.exists()) return { ...defaultSettingsSchema };
     const data = snap.data() as any;
     return {

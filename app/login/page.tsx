@@ -26,7 +26,8 @@ export default function LoginPage() {
       const user = userCredential.user;
 
       // ۲. بررسی وضعیت تایید در دیتابیس Firestore
-      const userDoc = await getDoc(doc(db, "users", user.uid));
+      if (!db) throw new Error("Firestore unavailable");
+      const userDoc = await getDoc(doc(db!, "users", user.uid));
 
       if (userDoc.exists()) {
         const userData = userDoc.data();
