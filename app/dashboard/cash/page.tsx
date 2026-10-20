@@ -414,8 +414,7 @@ export default function CashPage() {
   const [openActionId, setOpenActionId] = useState<string | null>(null);
   const [selectedEntry, setSelectedEntry] = useState<CashEntry | null>(null);
 
-  useEffect(() => { try { const saved = window.localStorage.getItem("fx-theme"); if (saved === "dark" || saved === "light") setTheme(saved); } catch (e) { /* ignore */ } }, []);
-  useEffect(() => { try { window.localStorage.setItem("fx-theme", theme); } catch (e) { /* ignore */ } }, [theme]);
+
   const dk = theme === "dark";
 
   useEffect(() => {
@@ -647,6 +646,8 @@ export default function CashPage() {
 
   const confirmRegister = useCallback(async () => {
     if (!previewData) return;
+    // 🔴 عیب‌یابی: لاگ نقاط کلیدی ثبت واریز (مشکل ۲)
+    console.log("💾 [cash] در حال ثبت سند صندوق:", { type: previewData.type, currency: previewData.currency, amount: previewData.amount, customerId: previewData.customerId, editing: !!editingEntryId });
     const wasEditing = !!editingEntryId;
     let updatedCustomers = customers;
     let finalEntry = previewData;
@@ -668,11 +669,12 @@ export default function CashPage() {
       updatedCustomers = applyBalanceChanges(updatedCustomers, getBalanceChangesForCashEntry(entry, "register"));
       
       const updatedEntriesForNew = recomputeCashBalances([...entries, entry], transactions);
-      setEntries(updatedEntriesForNew);
+      await setEntries(updatedEntriesForNew);
       finalEntry = entry;
     }
-    setCustomers(updatedCustomers);
+    await setCustomers(updatedCustomers);
     setForm(emptyForm); setErrors({}); setEditingEntryId(null); setPreviewOpen(false); setPreviewData(null);
+    console.log("✅ [cash] سند ثبت شد و به Firestore ارسال گردید:", finalEntry.trackingCode);
     await sendCashReceipts({ entry: finalEntry, action: "register", customers: updatedCustomers });
     showToast(wasEditing ? "سند با موفقیت ویرایش شد." : isCommissionType ? "کارمزد با موفقیت برداشت شد." : "عملیات صندوق با موفقیت ثبت شد.");
   }, [previewData, editingEntryId, entries, customers, showToast, isCommissionType, transactions]);

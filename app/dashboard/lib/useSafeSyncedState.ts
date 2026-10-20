@@ -255,6 +255,9 @@ export function useSafeSyncedState<T extends { id: string | number }>(
       }
 
       try {
+        if (!db) throw new Error("Firestore is only available on the client");
+        if (!userId) throw new Error("unauthenticated");
+
         const allOperations = [
           ...toAdd.map((item) => ({ type: "set" as const, id: String(item.id), data: removeUndefinedFields(item) })),
           ...toUpdate.map((item) => ({ type: "update" as const, id: String(item.id), data: removeUndefinedFields(item) })),
@@ -265,12 +268,10 @@ export function useSafeSyncedState<T extends { id: string | number }>(
 
         for (let i = 0; i < allOperations.length; i += BATCH_LIMIT) {
           const chunk = allOperations.slice(i, i + BATCH_LIMIT);
-          if (!db) throw new Error("Firestore is only available on the client");
           const batch = writeBatch(db!);
 
           for (const op of chunk) {
             // 🔴 همیشه زیر users/{uid} — بدون احراز هویت نوشتن مجاز نیست
-            if (!userId) throw new Error("unauthenticated");
             const docRef = doc(db!, "users", userId, collectionName, op.id);
 
             if (op.type === "set") batch.set(docRef, op.data);
@@ -283,11 +284,19 @@ export function useSafeSyncedState<T extends { id: string | number }>(
           await batch.commit(); 
         }
 
+        console.log(`✅ [${collectionName}] ذخیره موفق در Firestore: +${toAdd.length} ~${toUpdate.length} -${toDelete.length}`);
+        setError(null);
         return normalizedValue;
       } catch (err: any) {
-        // اگر خطای واقعی (مثل Security Rules) رخ داد، لاگ می‌کنیم
-        // اما UI را برنمی‌گردانیم چون داده در کش محلی فایربیس ثبت شده است.
-        console.warn(`⚠️ [${collectionName}] خطا در ثبت تغییرات:`, err.message);
+        // 🔴 عیب‌یابی: ثبت دقیق جزئیات خطا (Permission denied / offline / network)
+        console.error(`🔴 [${collectionName}] خطا در ثبت تغییرات در Firestore:`, {
+          code: err?.code,
+          message: err?.message,
+          userId,
+          opsCount: resolvedValue.length,
+        });
+        // اگر خطای واقعی (مثل Security Rules) رخ داد، UI را برنمی‌گردانیم چون
+        // داده در کش محلی فایربیس ثبت شده و پس از رفع مشکل سینک می‌شود.
         setError("sync_error");
         return normalizedValue;
       }
