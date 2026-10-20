@@ -4,25 +4,26 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "صرافی من",
-    template: "%s | صرافی من",
+    default: "صرافی برادران نورزاد",
+    template: "%s | صرافی برادران نورزاد",
   },
-  description: "اپلیکیشن صرافی",
-  
-  // ✅ خط manifest حذف شد، چون Next.js آن را به صورت خودکار از فایل app/manifest.ts می‌خواند
-  
+  description: "پنل مدیریت صرافی",
+
+  // PWA manifest served statically from public/manifest.json
+  manifest: "/manifest.json",
+
   icons: {
     icon: [
-      { url: "/icon-192x192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icon-512x512.png", sizes: "512x512", type: "image/png" },
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
     ],
-    apple: "/icon-192x192.png",
+    apple: "/icons/apple-touch-icon.png",
   },
-  
+
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
-    title: "صرافی من",
+    statusBarStyle: "black-translucent",
+    title: "صرافی نورزاد",
   },
   other: {
     "mobile-web-app-capable": "yes",
@@ -44,7 +45,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    // ✅ خط suppressHydrationWarning حیاتی است و جلوی پرش ناشی از تفاوت سرور/کلاینت را می‌گیرد
+    // suppressHydrationWarning prevents hydration mismatch from theme/localStorage scripts
     <html lang="fa" dir="rtl" suppressHydrationWarning>
       <body className="antialiased">
         <AuthProvider>
