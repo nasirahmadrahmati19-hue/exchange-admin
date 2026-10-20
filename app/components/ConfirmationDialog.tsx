@@ -1,7 +1,8 @@
 "use client";
 
 // 🔴 دیالوگ تأیید حذف — کامپوننت مشترک برای تمام تب‌ها
-// استایل: پس‌زمینه شیشه‌ای (backdrop blur)، انیمیشن fade-in، RTL با فونت وزیرمتن
+// استایل: Bottom Sheet که از پایین صفحه بالا می‌آید (موبایل و دسکتاپ)
+// پس‌زمینه شیشه‌ای (backdrop blur)، انیمیشن slide-up، RTL با فونت وزیرمتن
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
@@ -58,74 +59,68 @@ export default function ConfirmationDialog({
   } = state;
 
   return (
-    <div
-      dir="rtl"
-      className={`fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 transition-opacity duration-200 ${
-        visible ? "opacity-100" : "opacity-0"
-      }`}
-    >
-      {/* پس‌زمینه شیشه‌ای */}
+    <div dir="rtl" className="confirmation-dialog-root">
+      {/* پس‌زمینه تار (backdrop) با افکت شیشه‌ای */}
       <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        className={`confirmation-dialog-backdrop ${visible ? "open" : ""}`}
         onClick={onClose}
         aria-hidden="true"
       />
 
-      {/* کارت دیالوگ — در موبایل تمام عرض نمی‌گیرد (p-4 margin دارد) */}
+      {/* Bottom Sheet — همیشه از پایین صفحه بالا می‌آید (موبایل و دسکتاپ) */}
       <div
         role="alertdialog"
         aria-modal="true"
-        className={`relative w-full max-w-md rounded-2xl bg-white dark:bg-slate-800 shadow-2xl text-right transition-transform duration-200 ${
-          visible ? "scale-100 translate-y-0" : "scale-95 translate-y-2"
-        }`}
+        className={`confirmation-dialog ${visible ? "open" : ""}`}
       >
-        <div className="p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div
-              className={`w-11 h-11 shrink-0 rounded-full flex items-center justify-center ${
-                danger ? "bg-red-100 dark:bg-red-900/40" : "bg-amber-100 dark:bg-amber-900/40"
-              }`}
-            >
-              <svg
-                className={`w-6 h-6 ${danger ? "text-red-600" : "text-amber-600"}`}
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
-                />
-              </svg>
-            </div>
-            <h2 className="text-lg font-extrabold text-slate-800 dark:text-white font-[Vazirmatn]">
-              {title}
-            </h2>
-          </div>
+        {/* هندل (خط کوچک بالای شیت) */}
+        <div className="confirmation-dialog-handle" />
 
-          <p className="font-bold text-slate-700 dark:text-slate-200 mb-2">{message}</p>
-          <p className="text-sm text-slate-500 dark:text-slate-400 leading-6">{description}</p>
+        <div className="flex items-center gap-3 mb-4">
+          <div
+            className={`w-11 h-11 shrink-0 rounded-full flex items-center justify-center ${
+              danger ? "bg-red-100 dark:bg-red-900/40" : "bg-amber-100 dark:bg-amber-900/40"
+            }`}
+          >
+            <svg
+              className={`w-6 h-6 ${danger ? "text-red-600" : "text-amber-600"}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+              />
+            </svg>
+          </div>
+          <h2 className="confirmation-dialog-title font-[Vazirmatn]">{title}</h2>
         </div>
 
-        <div className="flex gap-3 px-6 pb-6">
+        <p className="confirmation-dialog-message confirmation-dialog-message-strong">
+          {message}
+        </p>
+        <p className="confirmation-dialog-message">{description}</p>
+
+        <div className="confirmation-dialog-buttons">
           <button
             onClick={() => {
               state.onConfirm();
               onClose();
             }}
-            className={`flex-1 rounded-xl py-2.5 text-sm font-bold text-white transition-all duration-150 active:scale-[0.98] ${
+            className={`confirmation-dialog-button ${
               danger
-                ? "bg-red-600 hover:bg-red-700 shadow-lg shadow-red-600/25"
-                : "bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-600/25"
+                ? "confirmation-dialog-button-delete"
+                : "confirmation-dialog-button-confirm"
             }`}
           >
             {confirmLabel}
           </button>
           <button
             onClick={onClose}
-            className="flex-1 rounded-xl py-2.5 text-sm font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 transition-all duration-150 active:scale-[0.98]"
+            className="confirmation-dialog-button confirmation-dialog-button-cancel"
           >
             {cancelLabel}
           </button>
