@@ -358,8 +358,7 @@ export default function CustomersPage() {
   const [cwCurrency, setCwCurrency] = useState<Currency>("AFN");
   const [cwReason, setCwReason] = useState("");
 
-  useEffect(() => { try { const s = window.localStorage.getItem("fx-theme"); if (s === "dark" || s === "light") setTheme(s); } catch {} }, []);
-  useEffect(() => { try { window.localStorage.setItem("fx-theme", theme); } catch {} }, [theme]);
+
   const dk = theme === "dark";
 
   useEffect(() => {
@@ -738,7 +737,8 @@ export default function CustomersPage() {
                           {isCashBoxRow ? "💰" : isExchRow ? "🏦" : c.name.charAt(0)}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <b className={`text-sm font-black ${dk ? "text-slate-100" : "text-slate-800"}`}>{c.name}</b>
+                          {/* ✅ اصلاح کنتراست (WCAG ≥ 4.5:1): در تم روشن رنگ تیره‌تر و در تم تاریک کاملاً سفید */}
+                          <b className={`text-sm font-black ${dk ? "text-white" : "text-slate-950"}`}>{c.name}</b>
                           {isCashBoxRow && <span className={`mr-2 text-[9px] font-black ${dk ? "text-emerald-300" : "text-emerald-600"}`}>صندوق</span>}
                           {isExchRow && <span className={`mr-2 text-[9px] font-black ${dk ? "text-violet-300" : "text-violet-600"}`}>حساب صرافی</span>}
                           {!isCashBoxRow && !isExchRow && (
@@ -792,7 +792,8 @@ export default function CustomersPage() {
                     {filteredCustomers.map(c => (
                       <tr key={String(c.id)} className={`transition-colors hover:${dk ? "bg-slate-800/50" : "bg-slate-50"}`}>
                         <td className="px-4 py-3">
-                          <div className="font-bold text-slate-800 dark:text-slate-100">{c.name}</div>
+                          {/* ✅ اصلاح کنتراست (WCAG ≥ 4.5:1) */}
+                          <div className={`font-bold ${dk ? "text-white" : "text-slate-950"}`}>{c.name}</div>
                           {String(c.id) === CASH_BOX_ID && <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">صندوق</span>}
                           {String(c.id) === EXCHANGE_ACCOUNT_ID && <span className="text-[10px] text-violet-600 dark:text-violet-400 font-bold">حساب صرافی</span>}
                         </td>
