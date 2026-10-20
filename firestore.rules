@@ -1,0 +1,59 @@
+// =====================================================
+// 🔐 Firestore Security Rules — صرافی برادران نورزاد
+// ----------------------------------------------------
+// اصل: هر کاربر فقط به داده‌های خودش دسترسی دارد.
+// مالک (owner) از طریق لیست allowList در /meta/admin شناسایی می‌شود.
+// =====================================================
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function uid() {
+      return request.auth.uid;
+    }
+    // آیا این کاربر در لیست مدیران است؟
+    function isAdmin() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/meta/admin) &&
+        uid() in get(/databases/$(database)/documents/meta/admin).data.allowList;
+    }
+
+    // ---------- سند پیش‌فرض برای همه اسناد ----------
+    // هیچ سند بدون احراز هویت خوانده یا نوشته نمی‌شود.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ---------- زیرمجموعه‌های کاربر: فقط صاحب داده ----------
+    // ساختار: users/{uid}/... (cash_entries, customers, kyc, wallets, ...)
+    match /users/{userDoc}/{collectionName}/{docId} {
+      allow read, write: if isSignedIn() && userDoc == uid();
+    }
+    match /users/{userDoc}/{collectionName}/{docId}/{subCol}/{subId} {
+      allow read, write: if isSignedIn() && userDoc == uid();
+    }
+
+    // ---------- شمارنده‌ها و متادیتا ----------
+    match /users/{userDoc}/counters/{key} {
+      allow read, write: if isSignedIn() && userDoc == uid();
+    }
+    match /users/{userDoc}/meta/{key} {
+      allow read, write: if isSignedIn() && userDoc == uid();
+    }
+
+    // ---------- تنظیمات عمومی نرخ ارز (فقط ادمین بنویسد، همه لاگین‌شده بخوانند) ----------
+    match /settings/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ---------- لیست ادمین (فقط از کنسول Firebase ویرایش شود) ----------
+    match /meta/{docId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+  }
+}
