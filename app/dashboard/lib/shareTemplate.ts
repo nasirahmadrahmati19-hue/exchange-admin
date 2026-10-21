@@ -125,6 +125,14 @@ export function formatShamsiDateTime(dateInput: string | Date): string {
 // =========================
 export type ShareTxType = "withdraw" | "deposit" | "hawala" | "exchange";
 
+/** عنوان رنگی متناسب با هر نوع سند */
+export const SHARE_TYPE_LABELS: Record<ShareTxType, string> = {
+  withdraw: "🔴 سند برد",
+  deposit: "🟢 سند واریز",
+  hawala: "🔵 سند حواله",
+  exchange: "🔵 سند مبادله",
+};
+
 export interface ShareTransaction {
   trackingCode?: string;
   number?: string;

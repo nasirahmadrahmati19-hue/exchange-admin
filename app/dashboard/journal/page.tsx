@@ -3,6 +3,8 @@
 import { useState, useMemo, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSafeSyncedState } from "../lib/useSafeSyncedState";
+// 🔴 قالب استاندارد اشتراک‌گذاری اسناد مالی (مشترک در تمام تب‌ها)
+import { generateShareText, handleShare } from "../lib/shareTemplate";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 const currencies: Currency[] = ["AFN", "USD", "EUR", "IRR", "PKR"];
@@ -227,6 +229,46 @@ export default function JournalPage() {
 
   const paginatedEntries = useMemo(() => sortedEntries.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage), [sortedEntries, currentPage, itemsPerPage]);
   const totalPages = Math.ceil(sortedEntries.length / itemsPerPage);
+
+  // 🔴 اشتراک‌گذاری هر رویداد دفتر کل با قالب استاندارد + بیلانس لحظه‌ای از Firestore
+  const shareJournalEntry = async (entry: UnifiedJournalEntry) => {
+    const cid = String(entry.partyId || "");
+    // محاسبه بیلانس مشتری در تمام ارزها از داده‌های زنده Firestore (بدون localStorage)
+    const balOf = (cur: Currency): number => {
+      let b = 0;
+      cashEntries.forEach((ce) => {
+        if (ce.status === "voided" || String(ce.customerId || "") !== cid || ce.currency !== cur) return;
+        if (ce.type === "customer_deposit" || ce.type === "loan_received") b += Number(ce.amount) || 0;
+        else if (ce.type === "customer_withdraw" || ce.type === "loan_given" || ce.type === "fee" || ce.type === "adjustment") b -= Number(ce.amount) || 0;
+      });
+      transactions.forEach((tx) => {
+        if (tx.status === "voided" || String(tx.customerId || "") !== cid) return;
+        const t = (tx.type || "").toLowerCase();
+        if ((t === "exchange" || t === "convert") && tx.fromCurrency === cur) b -= Number(tx.fromAmount) || 0;
+        if ((t === "exchange" || t === "convert") && tx.toCurrency === cur) b += Number(tx.toAmount) || 0;
+      });
+      hawalas.forEach((h) => {
+        if (h.status === "cancelled" || String(h.senderId || "") !== cid) return;
+        if (h.currencyFrom === cur) b -= Number(h.amountFrom) || 0;
+      });
+      return Math.round((b + Number.EPSILON) * 100) / 100;
+    };
+    const balances = { AFN: balOf("AFN"), USD: balOf("USD"), EUR: balOf("EUR"), IRR: balOf("IRR"), PKR: balOf("PKR") };
+    const type: "deposit" | "withdraw" | "hawala" | "exchange" =
+      entry.source === "hawala" ? "hawala" : entry.type === "واریز" ? "deposit" : "withdraw";
+    await handleShare(generateShareText(
+      {
+        trackingCode: entry.trackingCode,
+        date: entry.date,
+        customerName: entry.partyName || "—",
+        description: entry.description,
+        amount: Number(entry.amount) || 0,
+        currencyLabel: currencyLabels[entry.currency as Currency] || entry.currency,
+      },
+      balances,
+      type
+    ));
+  };
 
   const currentBalances = useMemo(() => {
     // 🔴 اصلاح محاسبه صندوق (مشکل ۳):
@@ -483,13 +525,21 @@ export default function JournalPage() {
                             <span className="truncate block max-w-[180px] mx-auto" title={entry.description}>{entry.description}</span>
                           </td>
                           <td className="px-2 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center justify-center gap-1.5">
                             {!isVoided ? (
+                              <>
+                              {/* 🔴 اشتراک با قالب استاندارد */}
+                              <button onClick={() => shareJournalEntry(entry)} className={`text-[10px] px-2 py-1 rounded-lg font-black transition whitespace-nowrap ${dk ? "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20" : "bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200"}`}>
+                                اشتراک
+                              </button>
                               <button onClick={() => handleVoid(entry)} disabled={voidingId === entry.id} className={`text-[10px] px-2 py-1 rounded-lg font-black transition disabled:opacity-50 whitespace-nowrap ${dk ? "bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20" : "bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200"}`}>
                                 {voidingId === entry.id ? "..." : "ابطال"}
                               </button>
+                              </>
                             ) : (
                               <span className={`text-[9px] px-2 py-1 rounded font-black whitespace-nowrap ${dk ? "text-slate-400 bg-slate-700/50" : "text-slate-500 bg-slate-200"}`}>باطل‌شده</span>
                             )}
+                            </div>
                           </td>
                         </tr>
                       );

@@ -3,8 +3,10 @@
 import { useState } from "react";
 // 🔴 Firestore تنها منبع حقیقت: users/{uid}/withdrawals — بدون localStorage
 import { useSafeSyncedState } from "../lib/useSafeSyncedState";
+// 🔴 قالب استاندارد اشتراک‌گذاری اسناد مالی (مشترک در تمام تب‌ها)
+import { generateShareText, handleShare } from "../lib/shareTemplate";
 
-interface W { id: string | number; user: string; amount: string; currency: string; date: string; status: string; }
+interface W { id: string | number; user: string; amount: string; currency: string; date: string; status: string; trackingCode?: string; note?: string; }
 
 const defaults: W[] = [
   { id: 1, user: "علی محمدی", amount: "0.5", currency: "BTC", date: "۱۴۰۵/۰۵/۱۲", status: "در انتظار" },
@@ -22,6 +24,22 @@ export default function WithdrawalsPage() {
   };
 
   const setStatus = (id: string | number, status: string) => setList(list.map(x => x.id === id ? { ...x, status } : x));
+
+  // 🔴 اشتراک درخواست برداشت با قالب استاندارد سند
+  const shareW = async (w: W) => {
+    await handleShare(generateShareText(
+      {
+        trackingCode: w.trackingCode || String(w.id),
+        date: w.date,
+        customerName: w.user,
+        description: w.note || `درخواست برداشت (${w.status})`,
+        amount: Number(String(w.amount).replace(/[^0-9.]/g, "")) || 0,
+        currencyLabel: w.currency,
+      },
+      { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 },
+      "withdraw"
+    ));
+  };
 
   const chip: Record<string, string> = {
     "در انتظار": "bg-amber-50 text-amber-700 border-amber-200",
@@ -61,12 +79,16 @@ export default function WithdrawalsPage() {
                 <td className="px-5 py-3 text-slate-500">{w.date}</td>
                 <td className="px-5 py-3"><span className={`text-xs px-3 py-1 rounded-full border ${chip[w.status]}`}>{w.status}</span></td>
                 <td className="px-5 py-3">
+                  <div className="flex gap-2 flex-wrap">
+                    {/* 🔴 اشتراک با قالب استاندارد */}
+                    <button className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700" onClick={() => shareW(w)}>اشتراک</button>
                   {w.status === "در انتظار" && (
-                    <div className="flex gap-2">
+                    <>
                       <button className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700" onClick={() => setStatus(w.id, "تأیید شده")}>تأیید</button>
                       <button className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-bold hover:bg-red-700" onClick={() => setStatus(w.id, "رد شده")}>رد</button>
-                    </div>
+                    </>
                   )}
+                  </div>
                 </td>
               </tr>
             ))}
