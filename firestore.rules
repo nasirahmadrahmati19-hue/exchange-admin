@@ -19,12 +19,21 @@ service cloud.firestore {
     }
 
     // آیا کاربر مدیر اصلی است؟ (ایمیل + لیست allowList در /meta/admin)
+    // نکته: اگر سند meta/admin وجود نداشت، خطا نده — فقط ایمیل چک شود.
     function isAdmin() {
       return isSignedIn() && (
         request.auth.token.email == "nasirahmadrahmati19@gmail.com" ||
         (exists(/databases/$(database)/documents/meta/admin) &&
          request.auth.uid in get(/databases/$(database)/documents/meta/admin).data.allowList)
       );
+    }
+
+    // آیا کاربر می‌تواند سند پروفایل اولیه خود را بسازد؟
+    // هر کاربر لاگین‌شده هنگام ثبت‌نام باید بتواند users/{uid} خودش را create کند.
+    function isNewSelfProfile(userId) {
+      return isSignedIn()
+        && request.auth.uid == userId
+        && !exists(/databases/$(database)/documents/users/$(userId));
     }
 
     // آیا کاربر صاحب این UID است؟
@@ -45,7 +54,9 @@ service cloud.firestore {
     // =========================
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
-      allow create: if isOwner(userId); // ساخت پروفایل هنگام اولین ورود
+      // 🔓 ثبت‌نام عادی: هر کاربر لاگین‌شده می‌تواند پروفایل اولیه خودش را بسازد
+      // (بدون نیاز به تأیید مدیر — حتی اگر سند meta/admin وجود نداشته باشد)
+      allow create: if isOwner(userId) || isNewSelfProfile(userId);
       allow update: if isOwner(userId) || isAdmin();
       allow delete: if isAdmin();
     }
