@@ -67,22 +67,35 @@ export default function SecretAccountsPage() {
       showToast("⚠️ اسم الزامی است");
       return;
     }
-    if (editingId !== null) {
-      await setAccounts((prev: SecretAccount[]) =>
-        prev.map((a) => (a.id === editingId ? { ...a, ...form } : a))
-      );
-      setEditingId(null);
-      showToast("✅ حساب ویرایش شد");
-    } else {
-      const newAccount: SecretAccount = {
-        id: Date.now(),
-        ...form,
-        createdAt: new Date().toLocaleString("fa-IR"),
-      };
-      await setAccounts((prev: SecretAccount[]) => [newAccount, ...prev]);
-      showToast("✅ حساب اضافه شد");
+    try {
+      if (editingId !== null) {
+        await setAccounts((prev: SecretAccount[]) =>
+          prev.map((a) =>
+            String(a.id) === String(editingId)
+              ? { ...a, ...form, updatedAt: Date.now() }
+              : a
+          )
+        );
+        setEditingId(null);
+        showToast("✅ حساب ویرایش شد");
+      } else {
+        const now = Date.now();
+        // 🔴 شناسه رشته‌ای — Firestore فقط کلید رشته‌ای می‌پذیرد.
+        // (دلیل خرابی قبلی: id عددی باعث رد شدن batch.commit و ناپدید شدن حساب می‌شد)
+        const newAccount: SecretAccount = {
+          id: `${now}_${Math.random().toString(36).slice(2, 8)}`,
+          ...form,
+          createdAt: new Date().toLocaleString("fa-AF"),
+          updatedAt: now,
+        } as SecretAccount & { updatedAt: number };
+        await setAccounts((prev: SecretAccount[]) => [newAccount, ...prev]);
+        showToast("✅ حساب ثبت شد و در فهرست پایین نمایش داده می‌شود");
+      }
+      setForm(EMPTY_FORM);
+    } catch (err) {
+      console.error("❌ خطا در ثبت حساب:", err);
+      showToast("❌ ثبت ناموفق بود — اینترنت خود را بررسی کنید");
     }
-    setForm(EMPTY_FORM);
   };
 
   const edit = (acc: SecretAccount) => {
@@ -96,7 +109,9 @@ export default function SecretAccountsPage() {
   };
 
   const remove = async (id: string | number) => {
-    await setAccounts((prev: SecretAccount[]) => prev.filter((a) => a.id !== id));
+    await setAccounts((prev: SecretAccount[]) =>
+      prev.filter((a) => String(a.id) !== String(id))
+    );
     if (editingId === id) {
       setEditingId(null);
       setForm(EMPTY_FORM);
@@ -166,6 +181,7 @@ export default function SecretAccountsPage() {
               className={inputCls}
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
+              onKeyDown={(e) => e.key === "Enter" && submit()}
             />
           </label>
           <label className="block space-y-1.5">
@@ -174,6 +190,7 @@ export default function SecretAccountsPage() {
               className={inputCls}
               value={form.wald}
               onChange={(e) => setForm({ ...form, wald: e.target.value })}
+              onKeyDown={(e) => e.key === "Enter" && submit()}
             />
           </label>
           <label className="block space-y-1.5">
@@ -183,6 +200,7 @@ export default function SecretAccountsPage() {
               inputMode="tel"
               value={form.phone}
               onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              onKeyDown={(e) => e.key === "Enter" && submit()}
             />
           </label>
           <label className="block space-y-1.5">
@@ -191,6 +209,7 @@ export default function SecretAccountsPage() {
               className={inputCls}
               value={form.address}
               onChange={(e) => setForm({ ...form, address: e.target.value })}
+              onKeyDown={(e) => e.key === "Enter" && submit()}
             />
           </label>
         </div>
