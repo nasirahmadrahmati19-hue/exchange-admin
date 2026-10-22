@@ -15,7 +15,8 @@ type SecretAccount = {
   title: string;      // نام سرویس / سایت
   username: string;   // نام کاربری یا ایمیل
   password: string;   // رمز عبور
-  name: string;       // اسم و ولد
+  name: string;       // اسم
+  wald: string;       // ولد
   phone: string;      // شماره
   address: string;    // آدرس
   note: string;       // یادداشت اختیاری
@@ -36,6 +37,7 @@ const EMPTY_FORM: Omit<SecretAccount, "id" | "createdAt"> = {
   username: "",
   password: "",
   name: "",
+  wald: "",
   phone: "",
   address: "",
   note: "",
@@ -65,6 +67,7 @@ export default function SecretAccountsPage() {
       a.title?.includes(q) ||
       a.username?.includes(q) ||
       a.name?.includes(q) ||
+      a.wald?.includes(q) ||
       a.phone?.includes(q) ||
       a.address?.includes(q) ||
       a.note?.includes(q)
@@ -73,7 +76,7 @@ export default function SecretAccountsPage() {
 
   const submit = async () => {
     if (!form.name.trim()) {
-      showToast("⚠️ اسمو ولد الزامی است");
+      showToast("⚠️ اسم الزامی است");
       return;
     }
     if (editingId !== null) {
@@ -100,6 +103,7 @@ export default function SecretAccountsPage() {
       username: acc.username || "",
       password: acc.password || "",
       name: acc.name || "",
+      wald: acc.wald || "",
       phone: acc.phone || "",
       address: acc.address || "",
       note: acc.note || "",
@@ -172,50 +176,80 @@ export default function SecretAccountsPage() {
           {editingId !== null ? "✏️ ویرایش حساب" : "➕ ساخت حساب"}
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <input
-            className={inputCls}
-            placeholder="اسمو ولد *"
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-          />
-          <input
-            className={inputCls}
-            placeholder="شماره"
-            inputMode="tel"
-            value={form.phone}
-            onChange={(e) => setForm({ ...form, phone: e.target.value })}
-          />
-          <input
-            className={inputCls}
-            placeholder="آدرس"
-            value={form.address}
-            onChange={(e) => setForm({ ...form, address: e.target.value })}
-          />
-          <input
-            className={inputCls}
-            placeholder="نام سرویس / سایت"
-            value={form.title}
-            onChange={(e) => setForm({ ...form, title: e.target.value })}
-          />
-          <input
-            className={inputCls}
-            placeholder="نام کاربری / ایمیل"
-            value={form.username}
-            onChange={(e) => setForm({ ...form, username: e.target.value })}
-          />
-          <input
-            className={inputCls}
-            type="password"
-            placeholder="رمز عبور"
-            value={form.password}
-            onChange={(e) => setForm({ ...form, password: e.target.value })}
-          />
-          <input
-            className={inputCls + " md:col-span-2"}
-            placeholder="یادداشت (اختیاری)"
-            value={form.note}
-            onChange={(e) => setForm({ ...form, note: e.target.value })}
-          />
+          <label className="block space-y-1.5">
+            <span className="text-xs font-semibold text-slate-700">اسم *</span>
+            <input
+              className={inputCls}
+              placeholder="اسم خود را بنویسید"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+            />
+          </label>
+          <label className="block space-y-1.5">
+            <span className="text-xs font-semibold text-slate-700">ولد</span>
+            <input
+              className={inputCls}
+              placeholder="ولد خود را بنویسید"
+              value={form.wald}
+              onChange={(e) => setForm({ ...form, wald: e.target.value })}
+            />
+          </label>
+          <label className="block space-y-1.5">
+            <span className="text-xs font-semibold text-slate-700">شماره</span>
+            <input
+              className={inputCls}
+              placeholder="شماره موبایل خود را بنویسید"
+              inputMode="tel"
+              value={form.phone}
+              onChange={(e) => setForm({ ...form, phone: e.target.value })}
+            />
+          </label>
+          <label className="block space-y-1.5">
+            <span className="text-xs font-semibold text-slate-700">آدرس</span>
+            <input
+              className={inputCls}
+              placeholder="آدرس خود را بنویسید"
+              value={form.address}
+              onChange={(e) => setForm({ ...form, address: e.target.value })}
+            />
+          </label>
+          <label className="block space-y-1.5">
+            <span className="text-xs font-semibold text-slate-700">نام سرویس / سایت</span>
+            <input
+              className={inputCls}
+              placeholder="نام سرویس یا سایت مورد نظر"
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+            />
+          </label>
+          <label className="block space-y-1.5">
+            <span className="text-xs font-semibold text-slate-700">نام کاربری / ایمیل</span>
+            <input
+              className={inputCls}
+              placeholder="نام کاربری یا ایمیل خود را بنویسید"
+              value={form.username}
+              onChange={(e) => setForm({ ...form, username: e.target.value })}
+            />
+          </label>
+          <label className="block space-y-1.5">
+            <span className="text-xs font-semibold text-slate-700">رمز عبور</span>
+            <input
+              className={inputCls}
+              type="password"
+              placeholder="رمز عبور خود را بنویسید"
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+            />
+          </label>
+          <label className="block space-y-1.5 md:col-span-2">
+            <span className="text-xs font-semibold text-slate-700">یادداشت (اختیاری)</span>
+            <input
+              className={inputCls}
+              placeholder="یادداشت اختیاری خود را بنویسید"
+              value={form.note}
+              onChange={(e) => setForm({ ...form, note: e.target.value })}
+            />
+          </label>
         </div>
         <div className="flex gap-2">
           <button
@@ -265,19 +299,20 @@ export default function SecretAccountsPage() {
               >
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <h3 className="font-semibold text-slate-900">
-                    {acc.name || acc.title}
+                    {acc.name}
+                    {acc.wald ? ` — ولد: ${acc.wald}` : ""}
                   </h3>
                   <span className="text-[11px] text-slate-400">{acc.createdAt}</span>
                 </div>
 
-                {acc.title && acc.name && (
+                {acc.title && (
                   <p className="text-xs text-slate-500">🌐 {acc.title}</p>
                 )}
 
                 {acc.phone && (
                   <div className="flex items-center justify-between gap-2 text-sm">
                     <span className="text-slate-700" dir="ltr">
-                      📞 {acc.phone}
+                      📞 شماره: {acc.phone}
                     </span>
                     <button
                       onClick={() => copy(acc.phone, "شماره")}
@@ -289,7 +324,7 @@ export default function SecretAccountsPage() {
                 )}
 
                 {acc.address && (
-                  <p className="text-sm text-slate-700">📍 {acc.address}</p>
+                  <p className="text-sm text-slate-700">📍 آدرس: {acc.address}</p>
                 )}
 
                 {acc.username && (
