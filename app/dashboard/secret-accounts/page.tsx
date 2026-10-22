@@ -12,14 +12,10 @@ import { useSafeSyncedState } from "../lib/useSafeSyncedState";
 
 type SecretAccount = {
   id: string | number;
-  title: string;      // نام سرویس / سایت
-  username: string;   // نام کاربری یا ایمیل
-  password: string;   // رمز عبور
   name: string;       // اسم
   wald: string;       // ولد
   phone: string;      // شماره
   address: string;    // آدرس
-  note: string;       // یادداشت اختیاری
   createdAt: string;  // تاریخ ثبت
 };
 
@@ -33,14 +29,10 @@ const CRYPTOS = [
 ];
 
 const EMPTY_FORM: Omit<SecretAccount, "id" | "createdAt"> = {
-  title: "",
-  username: "",
-  password: "",
   name: "",
   wald: "",
   phone: "",
   address: "",
-  note: "",
 };
 
 export default function SecretAccountsPage() {
@@ -51,7 +43,6 @@ export default function SecretAccountsPage() {
 
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | number | null>(null);
-  const [revealed, setRevealed] = useState<Record<string, boolean>>({});
   const [search, setSearch] = useState("");
   const [toast, setToast] = useState("");
 
@@ -64,13 +55,10 @@ export default function SecretAccountsPage() {
     const q = search.trim();
     if (!q) return true;
     return (
-      a.title?.includes(q) ||
-      a.username?.includes(q) ||
       a.name?.includes(q) ||
       a.wald?.includes(q) ||
       a.phone?.includes(q) ||
-      a.address?.includes(q) ||
-      a.note?.includes(q)
+      a.address?.includes(q)
     );
   });
 
@@ -99,14 +87,10 @@ export default function SecretAccountsPage() {
 
   const edit = (acc: SecretAccount) => {
     setForm({
-      title: acc.title || "",
-      username: acc.username || "",
-      password: acc.password || "",
       name: acc.name || "",
       wald: acc.wald || "",
       phone: acc.phone || "",
       address: acc.address || "",
-      note: acc.note || "",
     });
     setEditingId(acc.id);
   };
@@ -141,7 +125,7 @@ export default function SecretAccountsPage() {
             🔐 حسابات رمزی
           </h1>
           <p className="text-xs md:text-sm text-slate-500 mt-1">
-            نگهداری امن نام کاربری و رمز عبور — فقط مخصوص شما
+            نگهداری امن معلومات شما — فقط مخصوص شما
           </p>
         </div>
         <span className="rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-xs text-emerald-700">
@@ -213,43 +197,6 @@ export default function SecretAccountsPage() {
               onChange={(e) => setForm({ ...form, address: e.target.value })}
             />
           </label>
-          <label className="block space-y-1.5">
-            <span className="text-xs font-semibold text-slate-700">نام سرویس / سایت</span>
-            <input
-              className={inputCls}
-              placeholder="نام سرویس یا سایت مورد نظر"
-              value={form.title}
-              onChange={(e) => setForm({ ...form, title: e.target.value })}
-            />
-          </label>
-          <label className="block space-y-1.5">
-            <span className="text-xs font-semibold text-slate-700">نام کاربری / ایمیل</span>
-            <input
-              className={inputCls}
-              placeholder="نام کاربری یا ایمیل خود را بنویسید"
-              value={form.username}
-              onChange={(e) => setForm({ ...form, username: e.target.value })}
-            />
-          </label>
-          <label className="block space-y-1.5">
-            <span className="text-xs font-semibold text-slate-700">رمز عبور</span>
-            <input
-              className={inputCls}
-              type="password"
-              placeholder="رمز عبور خود را بنویسید"
-              value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })}
-            />
-          </label>
-          <label className="block space-y-1.5 md:col-span-2">
-            <span className="text-xs font-semibold text-slate-700">یادداشت (اختیاری)</span>
-            <input
-              className={inputCls}
-              placeholder="یادداشت اختیاری خود را بنویسید"
-              value={form.note}
-              onChange={(e) => setForm({ ...form, note: e.target.value })}
-            />
-          </label>
         </div>
         <div className="flex gap-2">
           <button
@@ -291,7 +238,6 @@ export default function SecretAccountsPage() {
         <div className="space-y-3">
           {filtered.map((acc) => {
             const key = String(acc.id);
-            const isShown = !!revealed[key];
             return (
               <div
                 key={key}
@@ -304,10 +250,6 @@ export default function SecretAccountsPage() {
                   </h3>
                   <span className="text-[11px] text-slate-400">{acc.createdAt}</span>
                 </div>
-
-                {acc.title && (
-                  <p className="text-xs text-slate-500">🌐 {acc.title}</p>
-                )}
 
                 {acc.phone && (
                   <div className="flex items-center justify-between gap-2 text-sm">
@@ -325,53 +267,6 @@ export default function SecretAccountsPage() {
 
                 {acc.address && (
                   <p className="text-sm text-slate-700">📍 آدرس: {acc.address}</p>
-                )}
-
-                {acc.username && (
-                  <div className="flex items-center justify-between gap-2 text-sm">
-                    <span className="text-slate-700">
-                      👤 {acc.username}
-                    </span>
-                    <button
-                      onClick={() => copy(acc.username, "نام کاربری")}
-                      className="text-xs rounded-lg bg-slate-100 hover:bg-slate-200 px-3 py-1.5 text-slate-700 transition-colors"
-                    >
-                      📋 کپی
-                    </button>
-                  </div>
-                )}
-
-                {acc.password && (
-                  <div className="flex items-center justify-between gap-2 text-sm">
-                    <span className="text-slate-700 font-mono" dir="ltr">
-                      🔑{" "}
-                      {isShown
-                        ? acc.password
-                        : "•".repeat(Math.min(acc.password.length, 14))}
-                    </span>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() =>
-                          setRevealed({ ...revealed, [key]: !isShown })
-                        }
-                        className="text-xs rounded-lg bg-slate-100 hover:bg-slate-200 px-3 py-1.5 text-slate-700 transition-colors"
-                      >
-                        {isShown ? "🙈 پنهان" : "👁 نمایش"}
-                      </button>
-                      <button
-                        onClick={() => copy(acc.password, "رمز عبور")}
-                        className="text-xs rounded-lg bg-slate-100 hover:bg-slate-200 px-3 py-1.5 text-slate-700 transition-colors"
-                      >
-                        📋 کپی
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {acc.note && (
-                  <p className="text-xs text-slate-600 bg-slate-50 rounded-lg px-3 py-2">
-                    📝 {acc.note}
-                  </p>
                 )}
 
                 <div className="flex gap-2 pt-1">
