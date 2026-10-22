@@ -164,7 +164,6 @@ export default function SecretAccountsPage() {
             <span className="text-xs font-semibold text-slate-700">اسم *</span>
             <input
               className={inputCls}
-              placeholder="اسم خود را بنویسید"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
@@ -173,7 +172,6 @@ export default function SecretAccountsPage() {
             <span className="text-xs font-semibold text-slate-700">ولد</span>
             <input
               className={inputCls}
-              placeholder="ولد خود را بنویسید"
               value={form.wald}
               onChange={(e) => setForm({ ...form, wald: e.target.value })}
             />
@@ -182,7 +180,6 @@ export default function SecretAccountsPage() {
             <span className="text-xs font-semibold text-slate-700">شماره</span>
             <input
               className={inputCls}
-              placeholder="شماره موبایل خود را بنویسید"
               inputMode="tel"
               value={form.phone}
               onChange={(e) => setForm({ ...form, phone: e.target.value })}
@@ -192,7 +189,6 @@ export default function SecretAccountsPage() {
             <span className="text-xs font-semibold text-slate-700">آدرس</span>
             <input
               className={inputCls}
-              placeholder="آدرس خود را بنویسید"
               value={form.address}
               onChange={(e) => setForm({ ...form, address: e.target.value })}
             />
@@ -219,15 +215,17 @@ export default function SecretAccountsPage() {
         </div>
       </div>
 
-      {/* جستجو */}
+      {/* لیست */}
+      <h2 className="text-sm font-semibold text-slate-900">📒 فهرست حسابات</h2>
+
+      {/* جستجو — بالای فهرست */}
       <input
         className={inputCls + " max-w-md"}
-        placeholder="🔍 جستجو در حسابات..."
+        placeholder="🔍 اسم، ولد، شماره یا آدرس را جستجو کنید..."
         value={search}
         onChange={(e) => setSearch(e.target.value)}
       />
 
-      {/* لیست */}
       {!loaded ? (
         <p className="text-sm text-slate-400">در حال بارگذاری…</p>
       ) : filtered.length === 0 ? (
