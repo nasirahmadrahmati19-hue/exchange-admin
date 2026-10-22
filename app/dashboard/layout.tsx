@@ -16,6 +16,7 @@ const menuItems = [
   { title: "مشتریان", href: "/dashboard/users" },
   { title: "روزنامچه", href: "/dashboard/journal" },
   { title: "گزارشات", href: "/dashboard/reports" },
+  { title: "حسابات رمزی", href: "/dashboard/secret-accounts" },
 ];
 
 const CUSTOMERS_KEY = "fx-customers";
