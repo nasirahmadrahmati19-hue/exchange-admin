@@ -24,11 +24,11 @@ type SecretAccount = {
 
 // پنج ارز — کارت بالای صفحه
 const CRYPTOS = [
-  { symbol: "USD",  name: "دالر امریکا",     icon: "💵", color: "text-emerald-300" },
-  { symbol: "AFN",  name: "افغانی",           icon: "🇦🇫", color: "text-sky-300" },
-  { symbol: "EUR",  name: "یورو",             icon: "💶", color: "text-amber-300" },
-  { symbol: "USDT", name: "تتر (USDT)",       icon: "🪙", color: "text-teal-300" },
-  { symbol: "TRX",  name: "تترون (TRX)",      icon: "⚡", color: "text-red-300" },
+  { symbol: "TOM",   name: "تومان",            icon: "🎟️", color: "text-emerald-600" },
+  { symbol: "AFN",   name: "افغانی",           icon: "🇦🇫", color: "text-sky-600" },
+  { symbol: "EUR",   name: "یورو",             icon: "💶", color: "text-amber-600" },
+  { symbol: "USD",   name: "دالر",             icon: "💵", color: "text-green-600" },
+  { symbol: "KANDAR",name: "کالدار",           icon: "🧱", color: "text-red-600" },
 ];
 
 const EMPTY_FORM: Omit<SecretAccount, "id" | "createdAt"> = {
@@ -126,49 +126,49 @@ export default function SecretAccountsPage() {
   };
 
   const inputCls =
-    "w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-slate-400 outline-none focus:border-emerald-400/60 transition-colors";
+    "w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 placeholder:text-slate-400 outline-none focus:border-emerald-500 transition-colors";
 
   return (
-    <div dir="rtl" className="p-4 md:p-6 space-y-6 min-h-screen">
+    <div dir="rtl" className="p-4 md:p-6 space-y-6 min-h-screen bg-white">
       {/* هدر */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
+          <h1 className="text-xl md:text-2xl font-bold text-slate-900 flex items-center gap-2">
             🔐 حسابات رمزی
           </h1>
-          <p className="text-xs md:text-sm text-slate-300 mt-1">
+          <p className="text-xs md:text-sm text-slate-500 mt-1">
             نگهداری امن نام کاربری و رمز عبور — فقط مخصوص شما
           </p>
         </div>
-        <span className="rounded-full bg-emerald-500/15 border border-emerald-400/30 px-3 py-1 text-xs text-emerald-300">
+        <span className="rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-xs text-emerald-700">
           {accounts.length} حساب
         </span>
       </div>
 
       {/* کارت پنج ارز */}
-      <div className="rounded-2xl border border-white/10 bg-slate-900/60 backdrop-blur p-4 md:p-5 space-y-3">
-        <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 md:p-5 space-y-3">
+        <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
           💰 پنچ ارز
         </h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
           {CRYPTOS.map((c) => (
             <div
               key={c.symbol}
-              className="rounded-xl border border-white/10 bg-white/5 p-3 flex flex-col items-center gap-1 text-center hover:bg-white/10 transition-colors"
+              className="rounded-xl border border-slate-200 bg-slate-50 p-3 flex flex-col items-center gap-1 text-center hover:bg-slate-100 transition-colors"
             >
               <span className="text-2xl">{c.icon}</span>
               <span className={`text-sm font-bold ${c.color}`} dir="ltr">
                 {c.symbol}
               </span>
-              <span className="text-[11px] text-slate-400">{c.name}</span>
+              <span className="text-[11px] text-slate-500">{c.name}</span>
             </div>
           ))}
         </div>
       </div>
 
       {/* فرم افزودن/ویرایش */}
-      <div className="rounded-2xl border border-white/10 bg-slate-900/60 backdrop-blur p-4 md:p-5 space-y-3">
-        <h2 className="text-sm font-semibold text-white">
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 md:p-5 space-y-3">
+        <h2 className="text-sm font-semibold text-slate-900">
           {editingId !== null ? "✏️ ویرایش حساب" : "➕ ساخت حساب"}
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -230,7 +230,7 @@ export default function SecretAccountsPage() {
                 setEditingId(null);
                 setForm(EMPTY_FORM);
               }}
-              className="rounded-xl bg-white/10 hover:bg-white/15 transition-all px-5 py-2.5 text-sm text-white"
+              className="rounded-xl bg-slate-100 hover:bg-slate-200 transition-all px-5 py-2.5 text-sm text-slate-700"
             >
               انصراف
             </button>
@@ -250,7 +250,7 @@ export default function SecretAccountsPage() {
       {!loaded ? (
         <p className="text-sm text-slate-400">در حال بارگذاری…</p>
       ) : filtered.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-white/15 p-8 text-center text-slate-400 text-sm">
+        <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-slate-500 text-sm">
           هنوز حسابی ثبت نشده است. اولین حساب را از فرم بالا اضافه کنید.
         </div>
       ) : (
@@ -261,27 +261,27 @@ export default function SecretAccountsPage() {
             return (
               <div
                 key={key}
-                className="rounded-2xl border border-white/10 bg-slate-900/60 backdrop-blur p-4 space-y-2"
+                className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 space-y-2"
               >
                 <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <h3 className="font-semibold text-white">
+                  <h3 className="font-semibold text-slate-900">
                     {acc.name || acc.title}
                   </h3>
                   <span className="text-[11px] text-slate-400">{acc.createdAt}</span>
                 </div>
 
                 {acc.title && acc.name && (
-                  <p className="text-xs text-slate-400">🌐 {acc.title}</p>
+                  <p className="text-xs text-slate-500">🌐 {acc.title}</p>
                 )}
 
                 {acc.phone && (
                   <div className="flex items-center justify-between gap-2 text-sm">
-                    <span className="text-slate-300" dir="ltr">
+                    <span className="text-slate-700" dir="ltr">
                       📞 {acc.phone}
                     </span>
                     <button
                       onClick={() => copy(acc.phone, "شماره")}
-                      className="text-xs rounded-lg bg-white/10 hover:bg-white/15 px-3 py-1.5 text-white transition-colors"
+                      className="text-xs rounded-lg bg-slate-100 hover:bg-slate-200 px-3 py-1.5 text-slate-700 transition-colors"
                     >
                       📋 کپی
                     </button>
@@ -289,17 +289,17 @@ export default function SecretAccountsPage() {
                 )}
 
                 {acc.address && (
-                  <p className="text-sm text-slate-300">📍 {acc.address}</p>
+                  <p className="text-sm text-slate-700">📍 {acc.address}</p>
                 )}
 
                 {acc.username && (
                   <div className="flex items-center justify-between gap-2 text-sm">
-                    <span className="text-slate-300">
+                    <span className="text-slate-700">
                       👤 {acc.username}
                     </span>
                     <button
                       onClick={() => copy(acc.username, "نام کاربری")}
-                      className="text-xs rounded-lg bg-white/10 hover:bg-white/15 px-3 py-1.5 text-white transition-colors"
+                      className="text-xs rounded-lg bg-slate-100 hover:bg-slate-200 px-3 py-1.5 text-slate-700 transition-colors"
                     >
                       📋 کپی
                     </button>
@@ -308,7 +308,7 @@ export default function SecretAccountsPage() {
 
                 {acc.password && (
                   <div className="flex items-center justify-between gap-2 text-sm">
-                    <span className="text-slate-300 font-mono" dir="ltr">
+                    <span className="text-slate-700 font-mono" dir="ltr">
                       🔑{" "}
                       {isShown
                         ? acc.password
@@ -319,13 +319,13 @@ export default function SecretAccountsPage() {
                         onClick={() =>
                           setRevealed({ ...revealed, [key]: !isShown })
                         }
-                        className="text-xs rounded-lg bg-white/10 hover:bg-white/15 px-3 py-1.5 text-white transition-colors"
+                        className="text-xs rounded-lg bg-slate-100 hover:bg-slate-200 px-3 py-1.5 text-slate-700 transition-colors"
                       >
                         {isShown ? "🙈 پنهان" : "👁 نمایش"}
                       </button>
                       <button
                         onClick={() => copy(acc.password, "رمز عبور")}
-                        className="text-xs rounded-lg bg-white/10 hover:bg-white/15 px-3 py-1.5 text-white transition-colors"
+                        className="text-xs rounded-lg bg-slate-100 hover:bg-slate-200 px-3 py-1.5 text-slate-700 transition-colors"
                       >
                         📋 کپی
                       </button>
@@ -334,7 +334,7 @@ export default function SecretAccountsPage() {
                 )}
 
                 {acc.note && (
-                  <p className="text-xs text-slate-400 bg-white/5 rounded-lg px-3 py-2">
+                  <p className="text-xs text-slate-600 bg-slate-50 rounded-lg px-3 py-2">
                     📝 {acc.note}
                   </p>
                 )}
@@ -361,7 +361,7 @@ export default function SecretAccountsPage() {
 
       {/* Toast */}
       {toast && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 rounded-xl bg-slate-900/95 border border-white/15 px-5 py-3 text-sm text-white shadow-2xl backdrop-blur">
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 rounded-xl bg-slate-900 border border-slate-700 px-5 py-3 text-sm text-white shadow-2xl">
           {toast}
         </div>
       )}
