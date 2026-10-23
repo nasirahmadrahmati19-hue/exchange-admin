@@ -35,6 +35,7 @@ type Transaction = {
   day: string;                  // روز هفته (شنبه..جمعه)
   time: string;                 // ساعت دقیق واریز/برداشت
   transferNo: string;           // 🆔 شماره حواله
+  currency?: string;            // ارز تراکنش (برای فاکتور)
   ts: number;                   // timestamp برای مرتب‌سازی
 };
 
@@ -129,6 +130,7 @@ function toTransaction(raw: any): Transaction | null {
       typeof raw.transferNo === "string" && raw.transferNo
         ? raw.transferNo
         : genTransferNo(),
+    currency: String(raw.currency ?? ""),
     ts,
   };
 }
@@ -136,6 +138,142 @@ function toTransaction(raw: any): Transaction | null {
 // 🔴 مرتب‌سازی: جدیدترین بالا (id رشته‌ای با timestamp_ شروع می‌شود)
 function sortDesc(list: SecretAccount[]): SecretAccount[] {
   return [...list].sort((a, b) => String(b.id).localeCompare(String(a.id)));
+}
+
+// 📊 تبدیل تاریخ میلادی به شمسی — مثال: ۱۴۰۵/۰۸/۰۱ (الگوریتم jala-js)
+function gregorianToJalali(gy: number, gm: number, gd: number): [number, number, number] {
+  const gDays = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+  let jy = gy <= 1600 ? 0 : 979;
+  gy -= 1600;
+  const gm2 = gm - 1;
+  const leapGy = Math.floor(gy / 4) - Math.floor((gy + 3) / 100) + Math.floor((gy - 80) / 400) + 180;
+  const days = leapGy + 365 * gy + gDays[gm2] + (gm2 > 1 && gy % 4 === 0 ? 1 : 0) + gd - 1;
+  const jm1 = Math.floor(days / 12053);
+  jy += 33 * jm1;
+  let rem = days % 12053;
+  jy += 4 * Math.floor(rem / 1461);
+  rem %= 1461;
+  if (rem >= 366) {
+    jy += Math.floor((rem - 1) / 365);
+    rem = (rem - 1) % 365;
+  }
+  const jm = rem < 186 ? Math.floor(rem / 31) + 1 : Math.floor((rem - 186) / 30) + 7;
+  const jmd = rem < 186 ? (rem % 31) + 1 : ((rem - 186) % 30) + 1;
+  return [jy, jm, jmd];
+}
+
+const toFaDigits = (s: string) => s.replace(/\d/g, (x) => "۰۱۲۳۴۵۶۷۸۹"[Number(x)]);
+
+function toJalaliDate(ts: number): string {
+  // روش مطمئن: Intl با تقویم persian (همه مرورگرهای مدرن + Node)
+  try {
+    const parts = new Intl.DateTimeFormat("en-u-ca-persian", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date(ts));
+    const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+    const y = parseInt(get("year"), 10);
+    const m = parseInt(get("month"), 10);
+    const d = parseInt(get("day"), 10);
+    if (isFinite(y) && isFinite(m) && isFinite(d)) {
+      const pad = (n: number) => String(n).padStart(2, "0");
+      return toFaDigits(`${y}/${pad(m)}/${pad(d)}`);
+    }
+  } catch {}
+  // fallback محاسباتی
+  const dt = new Date(ts);
+  const [jy, jm, jmd] = gregorianToJalali(dt.getFullYear(), dt.getMonth() + 1, dt.getDate());
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return toFaDigits(`${jy}/${pad(jm)}/${pad(jmd)}`);
+}
+
+const TX_TYPE_LABEL: Record<string, string> = {
+  deposit: "واریز",
+  withdraw: "برداشت",
+  transfer: "انتقال",
+};
+
+// 🧾 ساخت متن فاکتور قابل اشتراک‌گذاری برای یک تراکنش
+function buildTxInvoiceText(
+  tx: Transaction,
+  acc: SecretAccount | undefined,
+  allTx: Transaction[]
+): string {
+  const curName = CURRENCY_NAMES[acc?.currency ?? tx.currency ?? ""] ?? (tx.currency || "");
+  const accTx = acc
+    ? allTx
+        .filter((t) => t.accountId === String(acc.id))
+        .sort((a, b) => b.ts - a.ts)
+    : [tx];
+  const balance = accTx.reduce(
+    (s, t) => s + (t.type === "withdraw" ? -t.amount : t.amount),
+    0
+  );
+  const balLabel = balance >= 0 ? "طلب" : "طلب"; // مشتری بیلانس مثبت = طلب از صرافی
+  const dateStr = toJalaliDate(tx.ts);
+
+  const lines: string[] = [];
+  lines.push("📊 گزارش معاملات مشتری");
+  lines.push("");
+  lines.push(`👤 نام: ${acc?.name ?? "—"}`);
+  if (acc?.phone) lines.push(`📞 تلفن: ${acc.phone}`);
+  if (acc?.wald) lines.push(`🆔 ولد: ${acc.wald}`);
+  lines.push("");
+  lines.push("━━━━━━━━━━━━━━━━━━━━");
+  lines.push("💼 موجودی حساب:");
+  lines.push(`  • ${curName}: ${balance.toLocaleString()} (${balLabel})`);
+  lines.push("");
+  lines.push("━━━━━━━━━━━━━━━━━━━━");
+  lines.push(`📋 معامله اخیر:`);
+  lines.push(`   ${TX_TYPE_LABEL[tx.type] ?? tx.type}`);
+  lines.push(`   📅 ${dateStr}`);
+  lines.push(`   🕐 ساعت: ${tx.time}`);
+  lines.push(`   💱 ${tx.amount.toLocaleString()} ${curName} → ${tx.amount.toLocaleString()} ${curName}`);
+  lines.push(`   🆔 شماره حواله: ${tx.transferNo}`);
+  if (tx.note) lines.push(`   📝 توضیحات: ${tx.note}`);
+  lines.push("");
+  lines.push("━━━━━━━━━━━━━━━━━━━━");
+  lines.push("🏦 صرافی برادران نورزاد — هرات");
+  return lines.join("\n");
+}
+
+// 🧾 ساخت متن صورت‌حساب کامل یک حساب (همه معاملات)
+function buildStatementText(
+  acc: SecretAccount,
+  accTx: Transaction[]
+): string {
+  const curName = CURRENCY_NAMES[acc.currency] ?? acc.currency;
+  const sorted = [...accTx].sort((a, b) => b.ts - a.ts);
+  const balance = sorted.reduce(
+    (s, t) => s + (t.type === "withdraw" ? -t.amount : t.amount),
+    0
+  );
+  const lines: string[] = [];
+  lines.push("📊 گزارش معاملات مشتری");
+  lines.push("");
+  lines.push(`👤 نام: ${acc.name}`);
+  if (acc.phone) lines.push(`📞 تلفن: ${acc.phone}`);
+  if (acc.wald) lines.push(`🆔 ولد: ${acc.wald}`);
+  lines.push("");
+  lines.push("━━━━━━━━━━━━━━━━━━━━");
+  lines.push("💼 موجودی حساب:");
+  lines.push(`  • ${curName}: ${balance.toLocaleString()} (طلب)`);
+  lines.push("");
+  lines.push("━━━━━━━━━━━━━━━━━━━━");
+  lines.push(`📋 تاریخچه معاملات (${sorted.length} معامله):`);
+  lines.push("");
+  sorted.forEach((t, i) => {
+    lines.push(`${i + 1}. ${TX_TYPE_LABEL[t.type] ?? t.type}`);
+    lines.push(`   📅 ${toJalaliDate(t.ts)}`);
+    lines.push(`   🕐 ${t.time}`);
+    lines.push(`   💱 ${t.amount.toLocaleString()} ${curName} → ${t.amount.toLocaleString()} ${curName}`);
+    lines.push(`   🆔 ${t.transferNo}`);
+    lines.push("");
+  });
+  lines.push("━━━━━━━━━━━━━━━━━━━━");
+  lines.push("🏦 صرافی برادران نورزاد — هرات");
+  return lines.join("\n");
 }
 
 const STORAGE_KEY = "secret_accounts_local_v1";
@@ -403,6 +541,7 @@ export default function SecretAccountsPage() {
       day: parts.day,
       time: parts.time,
       transferNo: genTransferNo(),
+      currency: acc.currency,
       ts: now,
     };
 
@@ -426,6 +565,7 @@ export default function SecretAccountsPage() {
           day: newTx.day,
           time: newTx.time,
           transferNo: newTx.transferNo,
+          currency: newTx.currency,
           ts: newTx.ts,
         });
         const newBalance = balanceOfFromList(nextTx, acc.id);
@@ -525,6 +665,47 @@ export default function SecretAccountsPage() {
       showToast(`📋 ${label} کپی شد`);
     } catch {
       showToast("❌ کپی ناموفق بود");
+    }
+  };
+
+  // 📤 اشتراک‌گذاری فاکتور یک تراکنش (Web Share API → واتساپ/تلگرام، وگرنه کپی)
+  const shareTxInvoice = async (tx: Transaction) => {
+    const acc = validAccounts.find((a) => String(a.id) === tx.accountId);
+    const text = buildTxInvoiceText(tx, acc, transactions);
+    try {
+      if (typeof navigator !== "undefined" && navigator.share) {
+        await navigator.share({ title: "فاکتور معامله", text });
+        return;
+      }
+    } catch {
+      /* کاربر لغو کرد — کاری نمی‌کنیم */
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast("📤 فاکتور کپی شد — در واتساپ/تلگرام Paste کنید");
+    } catch {
+      showToast("❌ اشتراک‌گذاری ناموفق بود");
+    }
+  };
+
+  // 📤 اشتراک‌گذاری صورت‌حساب کامل یک حساب
+  const shareAccountStatement = async (acc: SecretAccount) => {
+    const accTx = transactions.filter((t) => t.accountId === String(acc.id));
+    const text = buildStatementText(acc, accTx);
+    try {
+      if (typeof navigator !== "undefined" && navigator.share) {
+        await navigator.share({ title: "گزارش معاملات مشتری", text });
+        return;
+      }
+    } catch {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast("📤 صورت‌حساب کپی شد — در واتساپ/تلگرام Paste کنید");
+    } catch {
+      showToast("❌ اشتراک‌گذاری ناموفق بود");
     }
   };
 
@@ -783,6 +964,12 @@ export default function SecretAccountsPage() {
                       🧾 صورت‌حساب ({accTx.length})
                     </button>
                     <button
+                      onClick={() => shareAccountStatement(acc)}
+                      className="cursor-pointer text-xs rounded-lg bg-gradient-to-l from-teal-500 to-cyan-600 hover:brightness-110 active:scale-95 px-3.5 py-2 font-black text-white shadow-md shadow-teal-500/20 transition-all"
+                    >
+                      📤 اشتراک فاکتور
+                    </button>
+                    <button
                       onClick={() => remove(acc.id)}
                       className="cursor-pointer text-xs rounded-lg bg-gradient-to-l from-red-600 to-rose-600 hover:brightness-110 active:scale-95 px-3.5 py-2 font-black text-white shadow-md shadow-red-500/20 transition-all"
                     >
@@ -809,12 +996,20 @@ export default function SecretAccountsPage() {
                                   </span>
                                   <span className="text-slate-800 font-black tabular-nums" dir="ltr">{t.amount.toLocaleString()} {curName}</span>
                                 </div>
-                                <button
-                                  onClick={() => removeTx(t.id)}
-                                  className="cursor-pointer text-[11px] rounded-md bg-red-50 hover:bg-red-100 text-red-600 font-bold px-2 py-1 shrink-0 transition-colors"
-                                >
-                                  حذف
-                                </button>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <button
+                                    onClick={() => shareTxInvoice(t)}
+                                    className="cursor-pointer text-[11px] rounded-md bg-teal-50 hover:bg-teal-100 text-teal-700 font-bold px-2 py-1 transition-colors"
+                                  >
+                                    📤 فاکتور
+                                  </button>
+                                  <button
+                                    onClick={() => removeTx(t.id)}
+                                    className="cursor-pointer text-[11px] rounded-md bg-red-50 hover:bg-red-100 text-red-600 font-bold px-2 py-1 transition-colors"
+                                  >
+                                    حذف
+                                  </button>
+                                </div>
                               </div>
                               {/* ردیف شماره حواله */}
                               <div className="flex items-center gap-2 flex-wrap">
