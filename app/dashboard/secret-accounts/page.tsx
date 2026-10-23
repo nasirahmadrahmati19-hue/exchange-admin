@@ -10,6 +10,7 @@ import { auth, db } from "../lib/firebase";
 // به هیچ بخش دیگری از برنامه وصل نیست.
 // داده‌ها فقط در Firestore کاربر لاگین‌شده ذخیره می‌شوند
 // (مسیر: users/{uid}/secret_accounts) و در localStorage نیستند.
+// تراکنش‌های واریز/برداشت: users/{uid}/secret_transactions
 // ============================================================
 
 type SecretAccount = {
@@ -18,7 +19,28 @@ type SecretAccount = {
   wald: string;       // ولد
   phone: string;      // شماره
   address: string;    // آدرس
+  currency: string;   // ارز (TOM / AFN / EUR / USD / KANDAR)
+  balance: number;    // بیلانس فعلی (مجموع واریز منهای برداشت)
   createdAt: string;  // تاریخ ثبت
+};
+
+// تراکنش واریز یا برداشت — صورت‌حساب هر حساب
+type Transaction = {
+  id: string;
+  accountId: string;
+  type: "deposit" | "withdraw"; // واریز | برداشت
+  amount: number;
+  note: string;
+  date: string;                 // تاریخ شمسی/محلی خوانا
+  ts: number;                   // timestamp برای مرتب‌سازی
+};
+
+const CURRENCY_NAMES: Record<string, string> = {
+  TOM: "تومان",
+  AFN: "افغانی",
+  EUR: "یورو",
+  USD: "دالر",
+  KANDAR: "کالدار",
 };
 
 // پنج ارز — کارت بالای صفحه
@@ -30,11 +52,12 @@ const CRYPTOS = [
   { symbol: "KANDAR",name: "کالدار",           icon: "🧱", color: "text-red-600" },
 ];
 
-const EMPTY_FORM: Omit<SecretAccount, "id" | "createdAt"> = {
+const EMPTY_FORM: Omit<SecretAccount, "id" | "createdAt" | "balance"> = {
   name: "",
   wald: "",
   phone: "",
   address: "",
+  currency: "TOM",
 };
 
 // 🔴 تبدیل هر رکورد خام Firestore به فرمت امن صفحه
@@ -48,10 +71,34 @@ function toAccount(raw: any): SecretAccount | null {
     wald: String(raw.wald ?? ""),
     phone: String(raw.phone ?? ""),
     address: String(raw.address ?? ""),
+    currency: String(raw.currency ?? "TOM"),
+    balance: Number(raw.balance ?? 0),
     createdAt:
       typeof raw.createdAt === "number"
         ? new Date(raw.createdAt).toLocaleString("fa-AF")
         : String(raw.createdAt ?? ""),
+  };
+}
+
+// 🔴 تبدیل تراکنش خام به فرمت امن
+function toTransaction(raw: any): Transaction | null {
+  if (!raw || typeof raw !== "object") return null;
+  const amount = Number(raw.amount ?? 0);
+  if (!isFinite(amount) || amount <= 0) return null;
+  const ts = Number(raw.ts ?? 0);
+  return {
+    id: String(raw.id ?? ""),
+    accountId: String(raw.accountId ?? ""),
+    type: raw.type === "withdraw" ? "withdraw" : "deposit",
+    amount,
+    note: String(raw.note ?? ""),
+    date:
+      typeof raw.date === "string" && raw.date
+        ? raw.date
+        : ts
+        ? new Date(ts).toLocaleString("fa-AF")
+        : "",
+    ts,
   };
 }
 
@@ -61,6 +108,7 @@ function sortDesc(list: SecretAccount[]): SecretAccount[] {
 }
 
 const STORAGE_KEY = "secret_accounts_local_v1";
+const TX_STORAGE_KEY = "secret_transactions_local_v1";
 
 export default function SecretAccountsPage() {
   // 🔴 صبر تا Firebase Auth وضعیت کاربر را مشخص کند.
@@ -88,11 +136,24 @@ export default function SecretAccountsPage() {
   const [accounts, setAccounts] = useState<SecretAccount[]>([]);
   const [loaded, setLoaded] = useState(false);
 
+  // تراکنش‌های واریز/برداشت — صورت‌حساب
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | number | null>(null);
   const [search, setSearch] = useState("");
   const [toast, setToast] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // فرم واریز/برداشت
+  const [txForm, setTxForm] = useState({
+    accountId: "",
+    type: "deposit" as "deposit" | "withdraw",
+    amount: "",
+    note: "",
+  });
+  const [txSaving, setTxSaving] = useState(false);
+  const [openStatementId, setOpenStatementId] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -110,6 +171,15 @@ export default function SecretAccountsPage() {
           : [];
         setAccounts(sortDesc(list));
       }
+      const rawTx = localStorage.getItem(TX_STORAGE_KEY);
+      if (rawTx) {
+        const parsedTx = JSON.parse(rawTx);
+        if (Array.isArray(parsedTx)) {
+          setTransactions(
+            parsedTx.map(toTransaction).filter(Boolean) as Transaction[]
+          );
+        }
+      }
     } catch {}
     setLoaded(true);
   }, []);
@@ -122,9 +192,12 @@ export default function SecretAccountsPage() {
       try {
         console.log(`🔵 [secret-accounts] در حال خواندن از Firestore برای کاربر ${uid}...`);
         const { collection, getDocs } = await import("firebase/firestore");
-        const snap = await getDocs(collection(db!, "users", uid, "secret_accounts"));
+        const [snapAcc, snapTx] = await Promise.all([
+          getDocs(collection(db!, "users", uid, "secret_accounts")),
+          getDocs(collection(db!, "users", uid, "secret_transactions")).catch(() => null),
+        ]);
         if (cancelled) return;
-        const list = snap.docs
+        const list = snapAcc.docs
           .map((d) => toAccount({ id: d.id, ...d.data() }))
           .filter(Boolean) as SecretAccount[];
         const sorted = sortDesc(list);
@@ -132,6 +205,18 @@ export default function SecretAccountsPage() {
         setAccounts(sorted);
         try {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(sorted));
+        } catch {}
+
+        // تراکنش‌ها — صورت‌حساب
+        const txList = snapTx
+          ? (snapTx.docs
+              .map((d) => toTransaction({ id: d.id, ...d.data() }))
+              .filter(Boolean) as Transaction[])
+          : [];
+        txList.sort((a, b) => b.ts - a.ts);
+        setTransactions(txList);
+        try {
+          localStorage.setItem(TX_STORAGE_KEY, JSON.stringify(txList));
         } catch {}
       } catch (err) {
         console.error("🔴 [secret-accounts] خطا در خواندن Firestore:", err);
@@ -190,6 +275,7 @@ export default function SecretAccountsPage() {
           id: newId,
           ...form,
           name: form.name.trim(),
+          balance: 0,
           createdAt: new Date(now).toLocaleString("fa-AF"),
         };
         nextList = [newAccount, ...accounts];
@@ -214,6 +300,8 @@ export default function SecretAccountsPage() {
           wald: record.wald,
           phone: record.phone,
           address: record.address,
+          currency: record.currency,
+          balance: record.balance ?? 0,
           createdAt: record.createdAt,
           updatedAt: now,
         });
@@ -237,9 +325,140 @@ export default function SecretAccountsPage() {
       wald: acc.wald || "",
       phone: acc.phone || "",
       address: acc.address || "",
+      currency: acc.currency || "TOM",
     });
     setEditingId(acc.id);
   };
+
+  // 🔴 محاسبه بیلانس از روی تراکنش‌ها (منبع حقیقت = صورت‌حساب)
+  const balanceOf = (accountId: string): number =>
+    transactions
+      .filter((t) => t.accountId === String(accountId))
+      .reduce((sum, t) => sum + (t.type === "deposit" ? t.amount : -t.amount), 0);
+
+  // 🔴 ثبت واریز / برداشت
+  const submitTx = async () => {
+    if (txSaving) return;
+    if (!authReady || !auth?.currentUser) {
+      showToast("⚠️ لطفاً ابتدا وارد حساب کاربری خود شوید");
+      return;
+    }
+    const acc = validAccounts.find((a) => String(a.id) === txForm.accountId);
+    if (!acc) {
+      showToast("⚠️ لطفاً یک حساب را انتخاب کنید");
+      return;
+    }
+    const amount = Number(txForm.amount);
+    if (!isFinite(amount) || amount <= 0) {
+      showToast("⚠️ مبلغ باید یک عدد بزرگ‌تر از صفر باشد");
+      return;
+    }
+    if (txForm.type === "withdraw" && balanceOf(String(acc.id)) < amount) {
+      showToast("⚠️ بیلانس این حساب کافی نیست");
+      return;
+    }
+    setTxSaving(true);
+
+    const now = Date.now();
+    const txId = `${now}_${Math.random().toString(36).slice(2, 8)}`;
+    const newTx: Transaction = {
+      id: txId,
+      accountId: String(acc.id),
+      type: txForm.type,
+      amount,
+      note: txForm.note.trim(),
+      date: new Date(now).toLocaleString("fa-AF"),
+      ts: now,
+    };
+
+    try {
+      // ۱. آپدیت فوری State — تراکنش همان لحظه در صورت‌حساب دیده می‌شود
+      const nextTx = [newTx, ...transactions];
+      setTransactions(nextTx);
+      try {
+        localStorage.setItem(TX_STORAGE_KEY, JSON.stringify(nextTx));
+      } catch {}
+
+      // ۲. ذخیره تراکنش و سپس بیلانس جدید در Firestore
+      const currentUid = auth.currentUser.uid;
+      if (db) {
+        await setDoc(doc(db, "users", currentUid, "secret_transactions", txId), {
+          accountId: newTx.accountId,
+          type: newTx.type,
+          amount: newTx.amount,
+          note: newTx.note,
+          date: newTx.date,
+          ts: newTx.ts,
+        });
+        const newBalance = balanceOfFromList(nextTx, acc.id);
+        await setDoc(
+          doc(db, "users", currentUid, "secret_accounts", String(acc.id)),
+          {
+            name: acc.name,
+            wald: acc.wald,
+            phone: acc.phone,
+            address: acc.address,
+            currency: acc.currency,
+            balance: newBalance,
+            createdAt: acc.createdAt,
+            updatedAt: now,
+          },
+          { merge: true }
+        );
+        setAccounts((prev) =>
+          prev.map((a) =>
+            String(a.id) === String(acc.id) ? { ...a, balance: newBalance } : a
+          )
+        );
+      }
+
+      setTxForm({ accountId: txForm.accountId, type: txForm.type, amount: "", note: "" });
+      showToast(
+        txForm.type === "deposit"
+          ? `✅ ${amount.toLocaleString()} واریز شد به «${acc.name}»`
+          : `✅ ${amount.toLocaleString()} از «${acc.name}» برداشت شد`
+      );
+    } catch (error) {
+      console.error("❌ خطا در ثبت تراکنش:", error);
+      showToast("❌ خطا در ذخیره‌سازی تراکنش — اینترنت را بررسی کنید");
+    } finally {
+      setTxSaving(false);
+    }
+  };
+
+  // حذف تراکنش از صورت‌حساب + بازمحاسبه بیلانس
+  const removeTx = async (txId: string) => {
+    const target = transactions.find((t) => String(t.id) === String(txId));
+    const nextTx = transactions.filter((t) => String(t.id) !== String(txId));
+    setTransactions(nextTx);
+    try {
+      localStorage.setItem(TX_STORAGE_KEY, JSON.stringify(nextTx));
+    } catch {}
+    if (target && db && auth?.currentUser) {
+      try {
+        await deleteDoc(doc(db, "users", auth.currentUser.uid, "secret_transactions", String(txId)));
+        const newBalance = balanceOfFromList(nextTx, target.accountId);
+        await setDoc(
+          doc(db, "users", auth.currentUser.uid, "secret_accounts", target.accountId),
+          { balance: newBalance, updatedAt: Date.now() },
+          { merge: true }
+        );
+        setAccounts((prev) =>
+          prev.map((a) =>
+            String(a.id) === target.accountId ? { ...a, balance: newBalance } : a
+          )
+        );
+      } catch (err) {
+        console.error("🔴 خطا در حذف تراکنش:", err);
+      }
+    }
+    showToast("🗑️ تراکنش حذف شد");
+  };
+
+  const balanceOfFromList = (list: Transaction[], accountId: string | number): number =>
+    list
+      .filter((t) => t.accountId === String(accountId))
+      .reduce((s, t) => s + (t.type === "deposit" ? t.amount : -t.amount), 0);
 
   const remove = async (id: string | number) => {
     // 🔴 حذف فوری از State و localStorage، سپس از Firestore
@@ -355,6 +574,20 @@ export default function SecretAccountsPage() {
               onKeyDown={(e) => e.key === "Enter" && submit()}
             />
           </label>
+          <label className="block space-y-1.5">
+            <span className="text-xs font-semibold text-slate-700">ارز</span>
+            <select
+              className={inputCls}
+              value={form.currency}
+              onChange={(e) => setForm({ ...form, currency: e.target.value })}
+            >
+              {CRYPTOS.map((c) => (
+                <option key={c.symbol} value={c.symbol}>
+                  {c.icon} {c.name} ({c.symbol})
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
         <div className="flex gap-2">
           <button
@@ -376,6 +609,90 @@ export default function SecretAccountsPage() {
             </button>
           )}
         </div>
+      </div>
+
+      {/* بخش واریز و برداشت */}
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 md:p-5 space-y-3">
+        <h2 className="text-sm font-semibold text-slate-900">💸 واریز و برداشت</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label className="block space-y-1.5 md:col-span-2">
+            <span className="text-xs font-semibold text-slate-700">حساب مشتری *</span>
+            <select
+              className={inputCls}
+              value={txForm.accountId}
+              onChange={(e) => setTxForm({ ...txForm, accountId: e.target.value })}
+            >
+              <option value="">— انتخاب حساب —</option>
+              {validAccounts.map((a) => (
+                <option key={String(a.id)} value={String(a.id)}>
+                  {a.name}{a.wald ? ` (${a.wald})` : ""} — بیلانس: {(balanceOf(String(a.id)) || a.balance || 0).toLocaleString()} {CURRENCY_NAMES[a.currency] ?? a.currency}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block space-y-1.5">
+            <span className="text-xs font-semibold text-slate-700">نوع عملیات</span>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setTxForm({ ...txForm, type: "deposit" })}
+                className={`rounded-xl px-4 py-2.5 text-sm font-medium transition-all ${
+                  txForm.type === "deposit"
+                    ? "bg-emerald-600 text-white shadow"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                ⬇️ واریز
+              </button>
+              <button
+                type="button"
+                onClick={() => setTxForm({ ...txForm, type: "withdraw" })}
+                className={`rounded-xl px-4 py-2.5 text-sm font-medium transition-all ${
+                  txForm.type === "withdraw"
+                    ? "bg-red-600 text-white shadow"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                ⬆️ برداشت
+              </button>
+            </div>
+          </label>
+          <label className="block space-y-1.5">
+            <span className="text-xs font-semibold text-slate-700">مبلغ *</span>
+            <input
+              className={inputCls}
+              inputMode="numeric"
+              dir="ltr"
+              value={txForm.amount}
+              onChange={(e) =>
+                setTxForm({ ...txForm, amount: e.target.value.replace(/[^\d.]/g, "") })
+              }
+              onKeyDown={(e) => e.key === "Enter" && submitTx()}
+            />
+          </label>
+          <label className="block space-y-1.5 md:col-span-2">
+            <span className="text-xs font-semibold text-slate-700">توضیحات (اختیاری)</span>
+            <input
+              className={inputCls}
+              value={txForm.note}
+              onChange={(e) => setTxForm({ ...txForm, note: e.target.value })}
+              onKeyDown={(e) => e.key === "Enter" && submitTx()}
+            />
+          </label>
+        </div>
+        <button
+          onClick={submitTx}
+          disabled={txSaving || !txForm.accountId}
+          className={`rounded-xl px-5 py-2.5 text-sm font-medium text-white transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed ${
+            txForm.type === "deposit" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-red-600 hover:bg-red-700"
+          }`}
+        >
+          {txSaving
+            ? "در حال ثبت…"
+            : txForm.type === "deposit"
+            ? "⬇️ ثبت واریز"
+            : "⬆️ ثبت برداشت"}
+        </button>
       </div>
 
       {/* لیست */}
@@ -401,6 +718,10 @@ export default function SecretAccountsPage() {
         <div className="space-y-3">
           {filtered.map((acc) => {
             const key = String(acc.id);
+            const accTx = transactions.filter((t) => t.accountId === key);
+            const liveBalance = accTx.length > 0 ? balanceOf(key) : (acc.balance || 0);
+            const curName = CURRENCY_NAMES[acc.currency] ?? acc.currency;
+            const isOpen = openStatementId === key;
             return (
               <div
                 key={key}
@@ -412,6 +733,17 @@ export default function SecretAccountsPage() {
                     {acc.wald ? ` — ولد: ${acc.wald}` : ""}
                   </h3>
                   <span className="text-[11px] text-slate-400">{acc.createdAt}</span>
+                </div>
+
+                {/* بیلانس و ارز */}
+                <div className="flex items-center justify-between gap-2 flex-wrap rounded-xl bg-slate-50 border border-slate-200 px-3 py-2">
+                  <span className="text-xs text-slate-500">ارز: {acc.currency} ({curName})</span>
+                  <span
+                    className={`text-sm font-bold ${liveBalance >= 0 ? "text-emerald-600" : "text-red-600"}`}
+                    dir="ltr"
+                  >
+                    💰 {liveBalance.toLocaleString()} {curName}
+                  </span>
                 </div>
 
                 {acc.phone && (
@@ -432,12 +764,21 @@ export default function SecretAccountsPage() {
                   <p className="text-sm text-slate-700">📍 آدرس: {acc.address}</p>
                 )}
 
-                <div className="flex gap-2 pt-1">
+                <div className="flex gap-2 pt-1 flex-wrap">
                   <button
                     onClick={() => edit(acc)}
                     className="text-xs rounded-lg bg-sky-600/80 hover:bg-sky-600 px-3 py-1.5 text-white transition-colors"
                   >
                     ✏️ ویرایش
+                  </button>
+                  <button
+                    onClick={() => {
+                      setTxForm({ ...txForm, accountId: key });
+                      setOpenStatementId(isOpen ? null : key);
+                    }}
+                    className="text-xs rounded-lg bg-violet-600/80 hover:bg-violet-600 px-3 py-1.5 text-white transition-colors"
+                  >
+                    🧾 صورت‌حساب ({accTx.length})
                   </button>
                   <button
                     onClick={() => remove(acc.id)}
@@ -446,6 +787,54 @@ export default function SecretAccountsPage() {
                     🗑 حذف
                   </button>
                 </div>
+
+                {/* 🔴 صورت‌حساب — تاریخ، ساعت، نوع، مقدار */}
+                {isOpen && (
+                  <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+                    <h4 className="text-xs font-bold text-slate-700">
+                      🧾 صورت‌حساب «{acc.name}» — {accTx.length} تراکنش
+                    </h4>
+                    {accTx.length === 0 ? (
+                      <p className="text-xs text-slate-500">هنوز تراکنشی ثبت نشده است.</p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {accTx.map((t) => (
+                          <div
+                            key={t.id}
+                            className="flex items-center justify-between gap-2 rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs"
+                          >
+                            <div className="flex items-center gap-2 flex-wrap min-w-0">
+                              <span
+                                className={`font-bold ${
+                                  t.type === "deposit" ? "text-emerald-600" : "text-red-600"
+                                }`}
+                              >
+                                {t.type === "deposit" ? "⬇️ واریز" : "⬆️ برداشت"}
+                              </span>
+                              <span className="text-slate-800 font-medium" dir="ltr">
+                                {t.amount.toLocaleString()} {curName}
+                              </span>
+                              <span className="text-slate-500" dir="ltr">
+                                🕐 {t.date}
+                              </span>
+                              {t.note && (
+                                <span className="text-slate-400 truncate max-w-[140px]">
+                                  ({t.note})
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => removeTx(t.id)}
+                              className="text-[11px] rounded-md bg-red-50 hover:bg-red-100 text-red-600 px-2 py-1 shrink-0"
+                            >
+                              حذف
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
