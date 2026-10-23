@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { onAuthStateChanged } from "firebase/auth";
 import { useSafeSyncedState } from "../lib/useSafeSyncedState";
+import { auth } from "../lib/firebase";
 
 // ============================================================
 // تب حسابات رمزی — کاملاً مستقل
@@ -36,6 +38,23 @@ const EMPTY_FORM: Omit<SecretAccount, "id" | "createdAt"> = {
 };
 
 export default function SecretAccountsPage() {
+  // 🔴 صبر تا Firebase Auth وضعیت کاربر را مشخص کند.
+  // اگر هوک بدون uid اجرا شود، نوشتن در Firestore رد می‌شود و حساب ثبت نمی‌گردد.
+  const [authReady, setAuthReady] = useState(false);
+
+  useEffect(() => {
+    if (!auth) {
+      setAuthReady(true);
+      return;
+    }
+    if (auth.currentUser) {
+      setAuthReady(true);
+      return;
+    }
+    const unsub = onAuthStateChanged(auth, () => setAuthReady(true));
+    return () => unsub();
+  }, []);
+
   const [accounts, setAccounts, loaded] = useSafeSyncedState<SecretAccount>(
     "secret_accounts",
     []
@@ -45,28 +64,41 @@ export default function SecretAccountsPage() {
   const [editingId, setEditingId] = useState<string | number | null>(null);
   const [search, setSearch] = useState("");
   const [toast, setToast] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const showToast = (msg: string) => {
     setToast(msg);
-    setTimeout(() => setToast(""), 2000);
+    setTimeout(() => setToast(""), 2500);
   };
 
-  const filtered = accounts.filter((a) => {
+  // 🔴 فیلتر امن: اگر یک رکورد قدیمی بدون name در Firestore وجود داشته باشد،
+  // برنامه نباید کرش کند — آن را نادیده می‌گیریم.
+  const validAccounts = accounts.filter(
+    (a) => a && typeof a === "object" && String(a.name ?? "").trim() !== ""
+  );
+
+  const filtered = validAccounts.filter((a) => {
     const q = search.trim();
     if (!q) return true;
     return (
-      a.name?.includes(q) ||
-      a.wald?.includes(q) ||
-      a.phone?.includes(q) ||
-      a.address?.includes(q)
+      String(a.name ?? "").includes(q) ||
+      String(a.wald ?? "").includes(q) ||
+      String(a.phone ?? "").includes(q) ||
+      String(a.address ?? "").includes(q)
     );
   });
 
   const submit = async () => {
+    if (saving) return; // جلوگیری از دابل‌کلیک
+    if (!authReady || !auth?.currentUser) {
+      showToast("⚠️ لطفاً ابتدا وارد حساب کاربری خود شوید");
+      return;
+    }
     if (!form.name.trim()) {
       showToast("⚠️ اسم الزامی است");
       return;
     }
+    setSaving(true);
     try {
       if (editingId !== null) {
         await setAccounts((prev: SecretAccount[]) =>
@@ -81,7 +113,6 @@ export default function SecretAccountsPage() {
       } else {
         const now = Date.now();
         // 🔴 شناسه رشته‌ای — Firestore فقط کلید رشته‌ای می‌پذیرد.
-        // (دلیل خرابی قبلی: id عددی باعث رد شدن batch.commit و ناپدید شدن حساب می‌شد)
         const newAccount: SecretAccount = {
           id: `${now}_${Math.random().toString(36).slice(2, 8)}`,
           ...form,
@@ -95,6 +126,8 @@ export default function SecretAccountsPage() {
     } catch (err) {
       console.error("❌ خطا در ثبت حساب:", err);
       showToast("❌ ثبت ناموفق بود — اینترنت خود را بررسی کنید");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -216,9 +249,10 @@ export default function SecretAccountsPage() {
         <div className="flex gap-2">
           <button
             onClick={submit}
-            className="rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 transition-all px-5 py-2.5 text-sm font-medium text-white"
+            disabled={saving}
+            className="rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 transition-all px-5 py-2.5 text-sm font-medium text-white disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {editingId !== null ? "ذخیره تغییرات" : "افزودن"}
+            {saving ? "در حال ثبت…" : editingId !== null ? "ذخیره تغییرات" : "افزودن"}
           </button>
           {editingId !== null && (
             <button
@@ -245,11 +279,13 @@ export default function SecretAccountsPage() {
         onChange={(e) => setSearch(e.target.value)}
       />
 
-      {!loaded ? (
+      {!loaded || !authReady ? (
         <p className="text-sm text-slate-400">در حال بارگذاری…</p>
       ) : filtered.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-slate-500 text-sm">
-          هنوز حسابی ثبت نشده است. اولین حساب را از فرم بالا اضافه کنید.
+          {validAccounts.length === 0
+            ? "هنوز حسابی ثبت نشده است. اولین حساب را از فرم بالا اضافه کنید."
+            : "هیچ حسابی با این جستجو یافت نشد."}
         </div>
       ) : (
         <div className="space-y-3">
