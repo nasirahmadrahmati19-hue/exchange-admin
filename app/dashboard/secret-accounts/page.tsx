@@ -32,8 +32,34 @@ type Transaction = {
   amount: number;
   note: string;
   date: string;                 // تاریخ شمسی/محلی خوانا
+  day: string;                  // روز هفته (شنبه..جمعه)
+  time: string;                 // ساعت دقیق واریز/برداشت
+  transferNo: string;           // 🆔 شماره حواله
   ts: number;                   // timestamp برای مرتب‌سازی
 };
+
+// 🆓 محاسبه تاریخ، روز و ساعت خوانا از timestamp
+function fmtDateTime(ts: number) {
+  const d = new Date(ts);
+  const date = d.toLocaleDateString("fa-AF");
+  const day = d.toLocaleDateString("fa-AF", { weekday: "long" });
+  const time = d.toLocaleTimeString("fa-AF", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  return { date, day, time };
+}
+
+// 🆔 تولید شماره حواله — مثال: HV-20261023-4831
+function genTransferNo(): string {
+  const d = new Date();
+  const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(
+    d.getDate()
+  ).padStart(2, "0")}`;
+  const rnd = Math.floor(1000 + Math.random() * 9000);
+  return `HV-${ymd}-${rnd}`;
+}
 
 const CURRENCY_NAMES: Record<string, string> = {
   TOM: "تومان",
@@ -86,6 +112,7 @@ function toTransaction(raw: any): Transaction | null {
   const amount = Number(raw.amount ?? 0);
   if (!isFinite(amount) || amount <= 0) return null;
   const ts = Number(raw.ts ?? 0);
+  const parts = fmtDateTime(ts || Date.now());
   return {
     id: String(raw.id ?? ""),
     accountId: String(raw.accountId ?? ""),
@@ -95,9 +122,13 @@ function toTransaction(raw: any): Transaction | null {
     date:
       typeof raw.date === "string" && raw.date
         ? raw.date
-        : ts
-        ? new Date(ts).toLocaleString("fa-AF")
-        : "",
+        : parts.date,
+    day: typeof raw.day === "string" && raw.day ? raw.day : parts.day,
+    time: typeof raw.time === "string" && raw.time ? raw.time : parts.time,
+    transferNo:
+      typeof raw.transferNo === "string" && raw.transferNo
+        ? raw.transferNo
+        : genTransferNo(),
     ts,
   };
 }
@@ -361,13 +392,17 @@ export default function SecretAccountsPage() {
 
     const now = Date.now();
     const txId = `${now}_${Math.random().toString(36).slice(2, 8)}`;
+    const parts = fmtDateTime(now);
     const newTx: Transaction = {
       id: txId,
       accountId: String(acc.id),
       type: txForm.type,
       amount,
       note: txForm.note.trim(),
-      date: new Date(now).toLocaleString("fa-AF"),
+      date: parts.date,
+      day: parts.day,
+      time: parts.time,
+      transferNo: genTransferNo(),
       ts: now,
     };
 
@@ -388,6 +423,9 @@ export default function SecretAccountsPage() {
           amount: newTx.amount,
           note: newTx.note,
           date: newTx.date,
+          day: newTx.day,
+          time: newTx.time,
+          transferNo: newTx.transferNo,
           ts: newTx.ts,
         });
         const newBalance = balanceOfFromList(nextTx, acc.id);
@@ -415,8 +453,8 @@ export default function SecretAccountsPage() {
       setTxForm({ accountId: txForm.accountId, type: txForm.type, amount: "", note: "" });
       showToast(
         txForm.type === "deposit"
-          ? `✅ ${amount.toLocaleString()} واریز شد به «${acc.name}»`
-          : `✅ ${amount.toLocaleString()} از «${acc.name}» برداشت شد`
+          ? `✅ ${amount.toLocaleString()} واریز شد به «${acc.name}» — حواله ${newTx.transferNo}`
+          : `✅ ${amount.toLocaleString()} از «${acc.name}» برداشت شد — حواله ${newTx.transferNo}`
       );
     } catch (error) {
       console.error("❌ خطا در ثبت تراکنش:", error);
@@ -627,16 +665,17 @@ export default function SecretAccountsPage() {
                 </button>
               </div>
             ))}
-            {fld("مبلغ *", (
+            {fld("مبلغ * (دستی وارد کنید)", (
               <input
-                className={inputCls}
-                type="number"
-                inputMode="decimal"
-                min="0"
-                step="any"
+                className={inputCls + " font-black tabular-nums"}
+                type="text"
+                inputMode="numeric"
                 dir="ltr"
+                autoComplete="off"
                 value={txForm.amount}
-                onChange={(e) => setTxForm({ ...txForm, amount: e.target.value })}
+                onChange={(e) =>
+                  setTxForm({ ...txForm, amount: e.target.value.replace(/[^\d.]/g, "") })
+                }
               />
             ))}
             {fld("توضیحات (اختیاری)", <input className={inputCls} value={txForm.note} onChange={(e) => setTxForm({ ...txForm, note: e.target.value })} />, "md:col-span-2")}
@@ -762,21 +801,40 @@ export default function SecretAccountsPage() {
                       ) : (
                         <div className="space-y-1.5">
                           {accTx.map((t) => (
-                            <div key={t.id} className="flex items-center justify-between gap-2 rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs shadow-sm">
-                              <div className="flex items-center gap-2 flex-wrap min-w-0">
-                                <span className={`rounded-md px-2 py-0.5 font-black ${t.type === "deposit" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
-                                  {t.type === "deposit" ? "⬇️ واریز" : "⬆️ برداشت"}
-                                </span>
-                                <span className="text-slate-800 font-black tabular-nums" dir="ltr">{t.amount.toLocaleString()} {curName}</span>
-                                <span className="text-slate-500 font-bold" dir="ltr">🕐 {t.date}</span>
-                                {t.note && <span className="text-slate-400 truncate max-w-[140px]">({t.note})</span>}
+                            <div key={t.id} className="rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs shadow-sm space-y-1">
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <div className="flex items-center gap-2 flex-wrap min-w-0">
+                                  <span className={`rounded-md px-2 py-0.5 font-black ${t.type === "deposit" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
+                                    {t.type === "deposit" ? "⬇️ واریز" : "⬆️ برداشت"}
+                                  </span>
+                                  <span className="text-slate-800 font-black tabular-nums" dir="ltr">{t.amount.toLocaleString()} {curName}</span>
+                                </div>
+                                <button
+                                  onClick={() => removeTx(t.id)}
+                                  className="cursor-pointer text-[11px] rounded-md bg-red-50 hover:bg-red-100 text-red-600 font-bold px-2 py-1 shrink-0 transition-colors"
+                                >
+                                  حذف
+                                </button>
                               </div>
-                              <button
-                                onClick={() => removeTx(t.id)}
-                                className="cursor-pointer text-[11px] rounded-md bg-red-50 hover:bg-red-100 text-red-600 font-bold px-2 py-1 shrink-0 transition-colors"
-                              >
-                                حذف
-                              </button>
+                              {/* ردیف شماره حواله */}
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="rounded-md bg-indigo-50 px-2 py-0.5 font-black text-indigo-700" dir="ltr">
+                                  🆔 شماره حواله: {t.transferNo}
+                                </span>
+                                <button
+                                  onClick={() => copy(t.transferNo, "شماره حواله")}
+                                  className="cursor-pointer text-[11px] rounded-md bg-slate-100 hover:bg-slate-200 px-2 py-0.5 font-bold text-slate-600 transition-colors"
+                                >
+                                  📋 کپی
+                                </button>
+                              </div>
+                              {/* ردیف تاریخ، روز و ساعت */}
+                              <div className="flex items-center gap-3 flex-wrap text-slate-500 font-bold">
+                                <span>📅 {t.date}</span>
+                                <span>🗓 روز: {t.day}</span>
+                                <span dir="ltr">🕐 ساعت: {t.time}</span>
+                                {t.note && <span className="text-slate-400 truncate max-w-[160px]">({t.note})</span>}
+                              </div>
                             </div>
                           ))}
                         </div>
