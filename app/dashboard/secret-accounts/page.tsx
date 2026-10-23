@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { onAuthStateChanged } from "firebase/auth";
-import { useSafeSyncedState } from "../lib/useSafeSyncedState";
-import { auth } from "../lib/firebase";
+import { doc, setDoc, deleteDoc } from "firebase/firestore";
+import { auth, db } from "../lib/firebase";
 
 // ============================================================
 // تب حسابات رمزی — کاملاً مستقل
@@ -37,9 +37,34 @@ const EMPTY_FORM: Omit<SecretAccount, "id" | "createdAt"> = {
   address: "",
 };
 
+// 🔴 تبدیل هر رکورد خام Firestore به فرمت امن صفحه
+function toAccount(raw: any): SecretAccount | null {
+  if (!raw || typeof raw !== "object") return null;
+  const name = String(raw.name ?? "").trim();
+  if (!name) return null;
+  return {
+    id: String(raw.id ?? ""),
+    name,
+    wald: String(raw.wald ?? ""),
+    phone: String(raw.phone ?? ""),
+    address: String(raw.address ?? ""),
+    createdAt:
+      typeof raw.createdAt === "number"
+        ? new Date(raw.createdAt).toLocaleString("fa-AF")
+        : String(raw.createdAt ?? ""),
+  };
+}
+
+// 🔴 مرتب‌سازی: جدیدترین بالا (id رشته‌ای با timestamp_ شروع می‌شود)
+function sortDesc(list: SecretAccount[]): SecretAccount[] {
+  return [...list].sort((a, b) => String(b.id).localeCompare(String(a.id)));
+}
+
+const STORAGE_KEY = "secret_accounts_local_v1";
+
 export default function SecretAccountsPage() {
   // 🔴 صبر تا Firebase Auth وضعیت کاربر را مشخص کند.
-  // اگر هوک بدون uid اجرا شود، نوشتن در Firestore رد می‌شود و حساب ثبت نمی‌گردد.
+  const [uid, setUid] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
@@ -48,17 +73,20 @@ export default function SecretAccountsPage() {
       return;
     }
     if (auth.currentUser) {
+      setUid(auth.currentUser.uid);
       setAuthReady(true);
       return;
     }
-    const unsub = onAuthStateChanged(auth, () => setAuthReady(true));
+    const unsub = onAuthStateChanged(auth, (user) => {
+      setUid(user?.uid ?? null);
+      setAuthReady(true);
+    });
     return () => unsub();
   }, []);
 
-  const [accounts, setAccounts, loaded] = useSafeSyncedState<SecretAccount>(
-    "secret_accounts",
-    []
-  );
+  // لیست — ابتدا از localStorage (فوری)، سپس همگام با Firestore
+  const [accounts, setAccounts] = useState<SecretAccount[]>([]);
+  const [loaded, setLoaded] = useState(false);
 
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | number | null>(null);
@@ -70,6 +98,51 @@ export default function SecretAccountsPage() {
     setToast(msg);
     setTimeout(() => setToast(""), 2500);
   };
+
+  // 🔴 بارگذاری فوری از localStorage + کش سراسری (جلوگیری از پرش لیست هنگام رندر)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const list = Array.isArray(parsed)
+          ? parsed.map(toAccount).filter(Boolean) as SecretAccount[]
+          : [];
+        setAccounts(sortDesc(list));
+      }
+    } catch {}
+    setLoaded(true);
+  }, []);
+
+  // 🔴 خواندن مستقیم یک‌باره از Firestore (getDocs به جای هوک پیچیده)
+  useEffect(() => {
+    if (!db || !uid) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        console.log(`🔵 [secret-accounts] در حال خواندن از Firestore برای کاربر ${uid}...`);
+        const { collection, getDocs } = await import("firebase/firestore");
+        const snap = await getDocs(collection(db!, "users", uid, "secret_accounts"));
+        if (cancelled) return;
+        const list = snap.docs
+          .map((d) => toAccount({ id: d.id, ...d.data() }))
+          .filter(Boolean) as SecretAccount[];
+        const sorted = sortDesc(list);
+        console.log(`🟢 [secret-accounts] خوانده شد ${sorted.length} حساب از Firestore.`);
+        setAccounts(sorted);
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(sorted));
+        } catch {}
+      } catch (err) {
+        console.error("🔴 [secret-accounts] خطا در خواندن Firestore:", err);
+        if (!cancelled) showToast("⚠️ خواندن از سرور ناموفق بود — نسخه محلی نمایش داده می‌شود");
+      } finally {
+        if (!cancelled) setLoaded(true);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uid]);
 
   // 🔴 فیلتر امن: اگر یک رکورد قدیمی بدون name در Firestore وجود داشته باشد،
   // برنامه نباید کرش کند — آن را نادیده می‌گیریم.
@@ -90,6 +163,7 @@ export default function SecretAccountsPage() {
 
   const submit = async () => {
     if (saving) return; // جلوگیری از دابل‌کلیک
+    console.log("1. فرم سابمیت شد. داده‌ها:", form);
     if (!authReady || !auth?.currentUser) {
       showToast("⚠️ لطفاً ابتدا وارد حساب کاربری خود شوید");
       return;
@@ -99,33 +173,59 @@ export default function SecretAccountsPage() {
       return;
     }
     setSaving(true);
+
+    const now = Date.now();
+    const newId = `${now}_${Math.random().toString(36).slice(2, 8)}`;
+
     try {
+      let nextList: SecretAccount[];
       if (editingId !== null) {
-        await setAccounts((prev: SecretAccount[]) =>
-          prev.map((a) =>
-            String(a.id) === String(editingId)
-              ? { ...a, ...form, updatedAt: Date.now() }
-              : a
-          )
+        nextList = accounts.map((a) =>
+          String(a.id) === String(editingId)
+            ? { ...a, ...form, name: form.name.trim() }
+            : a
         );
-        setEditingId(null);
-        showToast("✅ حساب ویرایش شد");
       } else {
-        const now = Date.now();
-        // 🔴 شناسه رشته‌ای — Firestore فقط کلید رشته‌ای می‌پذیرد.
         const newAccount: SecretAccount = {
-          id: `${now}_${Math.random().toString(36).slice(2, 8)}`,
+          id: newId,
           ...form,
-          createdAt: new Date().toLocaleString("fa-AF"),
-          updatedAt: now,
-        } as SecretAccount & { updatedAt: number };
-        await setAccounts((prev: SecretAccount[]) => [newAccount, ...prev]);
-        showToast("✅ حساب ثبت شد و در فهرست پایین نمایش داده می‌شود");
+          name: form.name.trim(),
+          createdAt: new Date(now).toLocaleString("fa-AF"),
+        };
+        nextList = [newAccount, ...accounts];
       }
+
+      // 🔴 مرحله ۲: بلافاصله State را آپدیت کن — حساب همان لحظه در پایین نمایش داده می‌شود
+      const sorted = sortDesc(nextList);
+      setAccounts(sorted);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(sorted));
+      } catch {}
+
+      // 🔴 مرحله ۱/۳: نوشتن مستقیم تک‌سند در Firestore users/{uid}/secret_accounts
+      const currentUid = auth.currentUser.uid;
+      const targetId = editingId !== null ? String(editingId) : newId;
+      const record = sorted.find((a) => String(a.id) === targetId);
+      if (db && record) {
+        console.log("2. در حال ارسال به Firestore...");
+        const docRef = doc(db, "users", currentUid, "secret_accounts", targetId);
+        await setDoc(docRef, {
+          name: record.name,
+          wald: record.wald,
+          phone: record.phone,
+          address: record.address,
+          createdAt: record.createdAt,
+          updatedAt: now,
+        });
+        console.log("3. با موفقیت در Firestore ذخیره شد. ID:", targetId);
+      }
+
+      setEditingId(null);
       setForm(EMPTY_FORM);
-    } catch (err) {
-      console.error("❌ خطا در ثبت حساب:", err);
-      showToast("❌ ثبت ناموفق بود — اینترنت خود را بررسی کنید");
+      showToast(editingId !== null ? "✅ حساب ویرایش شد" : "✅ حساب ثبت شد و در فهرست پایین نمایش داده می‌شود");
+    } catch (error) {
+      console.error("4. خطا در ذخیره‌سازی:", error);
+      showToast("❌ خطا در ذخیره‌سازی — لیست محلی حفظ شد، اینترنت را بررسی کنید");
     } finally {
       setSaving(false);
     }
@@ -142,10 +242,20 @@ export default function SecretAccountsPage() {
   };
 
   const remove = async (id: string | number) => {
-    await setAccounts((prev: SecretAccount[]) =>
-      prev.filter((a) => String(a.id) !== String(id))
-    );
-    if (editingId === id) {
+    // 🔴 حذف فوری از State و localStorage، سپس از Firestore
+    const nextList = accounts.filter((a) => String(a.id) !== String(id));
+    setAccounts(nextList);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(nextList));
+    } catch {}
+    if (db && auth?.currentUser) {
+      try {
+        await deleteDoc(doc(db, "users", auth.currentUser.uid, "secret_accounts", String(id)));
+      } catch (err) {
+        console.error("🔴 [secret-accounts] خطا در حذف از Firestore:", err);
+      }
+    }
+    if (editingId !== null && String(editingId) === String(id)) {
       setEditingId(null);
       setForm(EMPTY_FORM);
     }
