@@ -505,353 +505,297 @@ export default function SecretAccountsPage() {
   );
 
   return (
-    <div dir="rtl" className="p-4 md:p-6 space-y-6 min-h-screen bg-white">
-      {/* هدر */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl md:text-2xl font-bold text-slate-900 flex items-center gap-2">
-            🔐 حسابات رمزی
-          </h1>
-          <p className="text-xs md:text-sm text-slate-500 mt-1">
-            نگهداری امن معلومات شما — فقط مخصوص شما
-          </p>
-        </div>
-        <span className="rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-xs text-emerald-700">
-          {accounts.length} حساب
-        </span>
-      </div>
+    <div dir="rtl" className="sa-font relative min-h-screen overflow-x-hidden antialiased bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 text-slate-800">
+      <style>{`@import url("https://fonts.googleapis.com/css2?family=Lalezar&family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap");.sa-font{font-family:"Vazirmatn","Segoe UI",Tahoma,sans-serif}.sa-display{font-family:"Lalezar","Vazirmatn",Tahoma,sans-serif;letter-spacing:.01em}@keyframes saUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}.sa-up{animation:saUp .5s cubic-bezier(.22,.8,.35,1) both}::selection{background:rgba(16,185,129,.25)}`}</style>
+      {/* نوار رنگی بالای صفحه */}
+      <div className="fixed inset-x-0 top-0 z-30 h-1 bg-gradient-to-l from-emerald-500 via-teal-500 to-cyan-500" />
 
-      {/* کارت پنج ارز */}
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 md:p-5 space-y-3">
-        <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
-          💰 پنچ ارز
-        </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-          {CRYPTOS.map((c) => (
-            <div
-              key={c.symbol}
-              className="rounded-xl border border-slate-200 bg-slate-50 p-3 flex flex-col items-center gap-1 text-center hover:bg-slate-100 transition-colors"
-            >
-              <span className="text-2xl">{c.icon}</span>
-              <span className={`text-sm font-bold ${c.color}`} dir="ltr">
-                {c.symbol}
-              </span>
-              <span className="text-[11px] text-slate-500">{c.name}</span>
+      <div className="relative z-10 mx-auto w-full max-w-7xl space-y-4 md:space-y-6 px-3 pb-16 pt-5 md:px-8 md:pt-9">
+        {/* هدر */}
+        <header className="sa-up flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 md:gap-3.5 min-w-0">
+            <div className="grid h-11 w-11 md:h-14 md:w-14 shrink-0 place-items-center rounded-xl md:rounded-2xl bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-400 text-white text-xl md:text-2xl shadow-lg shadow-emerald-500/30 ring-1 ring-white/30">🔐</div>
+            <div className="min-w-0">
+              <h1 className="sa-display text-2xl md:text-4xl leading-none text-slate-900">حسابات رمزی</h1>
+              <p className="mt-1 text-[10px] md:text-xs font-bold text-slate-400">نگهداری امن معلومات مشتریان — فقط مخصوص شما</p>
             </div>
-          ))}
-        </div>
-      </div>
+          </div>
+          <div className="flex items-center gap-2 rounded-xl border border-emerald-100 bg-white/85 px-3 py-2 shadow-sm backdrop-blur">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-70" />
+              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+            </span>
+            <span className="text-xs font-black text-emerald-700">{validAccounts.length} حساب</span>
+          </div>
+        </header>
 
-      {/* فرم افزودن/ویرایش */}
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 md:p-5 space-y-3">
-        <h2 className="text-sm font-semibold text-slate-900">
-          {editingId !== null ? "✏️ ویرایش حساب" : "➕ ساخت حساب"}
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <label className="block space-y-1.5">
-            <span className="text-xs font-semibold text-slate-700">اسم *</span>
-            <input
-              className={inputCls}
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-            />
-          </label>
-          <label className="block space-y-1.5">
-            <span className="text-xs font-semibold text-slate-700">ولد</span>
-            <input
-              className={inputCls}
-              value={form.wald}
-              onChange={(e) => setForm({ ...form, wald: e.target.value })}
-            />
-          </label>
-          <label className="block space-y-1.5">
-            <span className="text-xs font-semibold text-slate-700">شماره</span>
-            <input
-              className={inputCls}
-              inputMode="tel"
-              value={form.phone}
-              onChange={(e) => setForm({ ...form, phone: e.target.value })}
-            />
-          </label>
-          <label className="block space-y-1.5">
-            <span className="text-xs font-semibold text-slate-700">آدرس</span>
-            <input
-              className={inputCls}
-              value={form.address}
-              onChange={(e) => setForm({ ...form, address: e.target.value })}
-            />
-          </label>
-          <label className="block space-y-1.5">
-            <span className="text-xs font-semibold text-slate-700">ارز</span>
-            <select
-              className={inputCls}
-              value={form.currency}
-              onChange={(e) => setForm({ ...form, currency: e.target.value })}
-            >
-              {CRYPTOS.map((c) => (
-                <option key={c.symbol} value={c.symbol}>
-                  {c.icon} {c.name} ({c.symbol})
-                </option>
-              ))}
-            </select>
-          </label>
+        {/* کارت پنج ارز */}
+        <div className="sa-up relative overflow-hidden rounded-xl md:rounded-2xl border-2 border-emerald-300 bg-gradient-to-br from-emerald-50 via-white to-teal-50 p-3 md:p-4 shadow-[0_10px_30px_-10px_rgba(16,185,129,0.25)] transition-all duration-300 hover:shadow-xl" style={{ animationDelay: "70ms" }}>
+          <div className="mb-3 flex items-center gap-2">
+            <span className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 text-white text-sm shadow-md">💰</span>
+            <b className="text-sm md:text-base font-black text-emerald-700">پنچ ارز</b>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-3">
+            {CRYPTOS.map((c) => (
+              <div key={c.symbol} className="group relative overflow-hidden rounded-xl bg-white/90 p-2.5 md:p-3 text-center ring-1 ring-emerald-100 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md">
+                <div className="text-2xl md:text-3xl mb-1 transition-transform duration-300 group-hover:scale-110">{c.icon}</div>
+                <div className={`text-[11px] md:text-sm font-black ${c.color}`} dir="ltr">{c.symbol}</div>
+                <div className="text-[10px] md:text-[11px] font-bold text-slate-500">{c.name}</div>
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={submit}
-            disabled={saving}
-            className="rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 transition-all px-5 py-2.5 text-sm font-medium text-white disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            {saving ? "در حال ثبت…" : editingId !== null ? "ذخیره تغییرات" : "افزودن"}
-          </button>
-          {editingId !== null && (
+
+        {/* فرم افزودن/ویرایش */}
+        <div className={`sa-up ${uiCard} p-4 md:p-5 space-y-4`} style={{ animationDelay: "140ms" }}>
+          <div className="flex items-center gap-2">
+            <span className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-sky-500 to-cyan-500 text-white text-sm shadow-md">{editingId !== null ? "✏️" : "➕"}</span>
+            <b className="text-sm md:text-base font-black text-slate-800">{editingId !== null ? "ویرایش حساب" : "ساخت حساب جدید"}</b>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {fld("اسم *", <input className={inputCls} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />)}
+            {fld("ولد", <input className={inputCls} value={form.wald} onChange={(e) => setForm({ ...form, wald: e.target.value })} />)}
+            {fld("شماره", <input className={inputCls} inputMode="tel" dir="ltr" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />)}
+            {fld("آدرس", <input className={inputCls} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />)}
+            {fld("ارز", (
+              <select className={inputCls} value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}>
+                {CRYPTOS.map((c) => (
+                  <option key={c.symbol} value={c.symbol}>{c.icon} {c.name} ({c.symbol})</option>
+                ))}
+              </select>
+            ), "md:col-span-2")}
+          </div>
+          <div className="flex gap-2">
             <button
-              onClick={() => {
-                setEditingId(null);
-                setForm(EMPTY_FORM);
-              }}
-              className="rounded-xl bg-slate-100 hover:bg-slate-200 transition-all px-5 py-2.5 text-sm text-slate-700"
+              onClick={submit}
+              disabled={saving}
+              className="cursor-pointer rounded-xl bg-gradient-to-l from-emerald-600 to-teal-600 hover:brightness-110 active:scale-95 transition-all px-6 py-2.5 text-sm font-black text-white shadow-lg shadow-emerald-500/25 disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              انصراف
+              {saving ? "در حال ثبت…" : editingId !== null ? "💾 ذخیره تغییرات" : "➕ افزودن حساب"}
             </button>
-          )}
-        </div>
-      </div>
-
-      {/* بخش واریز و برداشت */}
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 md:p-5 space-y-3">
-        <h2 className="text-sm font-semibold text-slate-900">💸 واریز و برداشت</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <label className="block space-y-1.5 md:col-span-2">
-            <span className="text-xs font-semibold text-slate-700">حساب مشتری *</span>
-            <select
-              className={inputCls}
-              value={txForm.accountId}
-              onChange={(e) => setTxForm({ ...txForm, accountId: e.target.value })}
-            >
-              <option value="">— انتخاب حساب —</option>
-              {validAccounts.map((a) => (
-                <option key={String(a.id)} value={String(a.id)}>
-                  {a.name}{a.wald ? ` (${a.wald})` : ""} — بیلانس: {(balanceOf(String(a.id)) || a.balance || 0).toLocaleString()} {CURRENCY_NAMES[a.currency] ?? a.currency}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block space-y-1.5">
-            <span className="text-xs font-semibold text-slate-700">نوع عملیات</span>
-            <div className="grid grid-cols-2 gap-2">
+            {editingId !== null && (
               <button
-                type="button"
-                onClick={() => setTxForm({ ...txForm, type: "deposit" })}
-                className={`rounded-xl px-4 py-2.5 text-sm font-medium transition-all ${
-                  txForm.type === "deposit"
-                    ? "bg-emerald-600 text-white shadow"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                }`}
+                onClick={() => { setEditingId(null); setForm(EMPTY_FORM); }}
+                className="cursor-pointer rounded-xl bg-slate-100 hover:bg-slate-200 transition-all px-5 py-2.5 text-sm font-bold text-slate-600"
               >
-                ⬇️ واریز
+                انصراف
               </button>
-              <button
-                type="button"
-                onClick={() => setTxForm({ ...txForm, type: "withdraw" })}
-                className={`rounded-xl px-4 py-2.5 text-sm font-medium transition-all ${
-                  txForm.type === "withdraw"
-                    ? "bg-red-600 text-white shadow"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                }`}
-              >
-                ⬆️ برداشت
-              </button>
-            </div>
-          </label>
-          <label className="block space-y-1.5">
-            <span className="text-xs font-semibold text-slate-700">مبلغ *</span>
-            <input
-              className={inputCls}
-              inputMode="numeric"
-              dir="ltr"
-              value={txForm.amount}
-              onChange={(e) =>
-                setTxForm({ ...txForm, amount: e.target.value.replace(/[^\d.]/g, "") })
-              }
-            />
-          </label>
-          <label className="block space-y-1.5 md:col-span-2">
-            <span className="text-xs font-semibold text-slate-700">توضیحات (اختیاری)</span>
-            <input
-              className={inputCls}
-              value={txForm.note}
-              onChange={(e) => setTxForm({ ...txForm, note: e.target.value })}
-            />
-          </label>
+            )}
+          </div>
         </div>
-        <button
-          onClick={submitTx}
-          disabled={txSaving || !txForm.accountId}
-          className={`rounded-xl px-5 py-2.5 text-sm font-medium text-white transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed ${
-            txForm.type === "deposit" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-red-600 hover:bg-red-700"
-          }`}
-        >
-          {txSaving
-            ? "در حال ثبت…"
-            : txForm.type === "deposit"
-            ? "⬇️ ثبت واریز"
-            : "⬆️ ثبت برداشت"}
-        </button>
-      </div>
 
-      {/* لیست */}
-      <h2 className="text-sm font-semibold text-slate-900">📒 فهرست حسابات</h2>
-
-      {/* جستجو — بالای فهرست */}
-      <input
-        className={inputCls + " max-w-md"}
-        placeholder="🔍 اسم، ولد، شماره یا آدرس را جستجو کنید..."
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-      />
-
-      {!loaded || !authReady ? (
-        <p className="text-sm text-slate-400">در حال بارگذاری…</p>
-      ) : filtered.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-slate-500 text-sm">
-          {validAccounts.length === 0
-            ? "هنوز حسابی ثبت نشده است. اولین حساب را از فرم بالا اضافه کنید."
-            : "هیچ حسابی با این جستجو یافت نشد."}
+        {/* بخش واریز و برداشت */}
+        <div className="sa-up relative overflow-hidden rounded-xl md:rounded-2xl border-2 border-violet-300 bg-gradient-to-br from-violet-50 via-white to-indigo-50 p-3 md:p-4 shadow-[0_10px_30px_-10px_rgba(139,92,246,0.25)] transition-all duration-300 hover:shadow-xl" style={{ animationDelay: "210ms" }}>
+          <div className="mb-3 flex items-center gap-2">
+            <span className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-violet-500 to-indigo-500 text-white text-sm shadow-md">💸</span>
+            <b className="text-sm md:text-base font-black text-violet-700">واریز و برداشت</b>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {fld("حساب مشتری *", (
+              <select className={inputCls} value={txForm.accountId} onChange={(e) => setTxForm({ ...txForm, accountId: e.target.value })}>
+                <option value="">— انتخاب حساب —</option>
+                {validAccounts.map((a) => (
+                  <option key={String(a.id)} value={String(a.id)}>
+                    {a.name}{a.wald ? ` (${a.wald})` : ""} — بیلانس: {(balanceOf(String(a.id)) || a.balance || 0).toLocaleString()} {CURRENCY_NAMES[a.currency] ?? a.currency}
+                  </option>
+                ))}
+              </select>
+            ), "md:col-span-2")}
+            {fld("نوع عملیات", (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTxForm({ ...txForm, type: "deposit" })}
+                  className={`cursor-pointer rounded-xl px-4 py-3 text-sm font-black transition-all active:scale-95 ${
+                    txForm.type === "deposit"
+                      ? "bg-gradient-to-l from-emerald-600 to-teal-600 text-white shadow-lg shadow-emerald-500/25"
+                      : "bg-white text-slate-500 ring-1 ring-slate-200 hover:bg-slate-50"
+                  }`}
+                >
+                  ⬇️ واریز
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTxForm({ ...txForm, type: "withdraw" })}
+                  className={`cursor-pointer rounded-xl px-4 py-3 text-sm font-black transition-all active:scale-95 ${
+                    txForm.type === "withdraw"
+                      ? "bg-gradient-to-l from-red-600 to-rose-600 text-white shadow-lg shadow-red-500/25"
+                      : "bg-white text-slate-500 ring-1 ring-slate-200 hover:bg-slate-50"
+                  }`}
+                >
+                  ⬆️ برداشت
+                </button>
+              </div>
+            ))}
+            {fld("مبلغ *", (
+              <input
+                className={inputCls}
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="any"
+                dir="ltr"
+                value={txForm.amount}
+                onChange={(e) => setTxForm({ ...txForm, amount: e.target.value })}
+              />
+            ))}
+            {fld("توضیحات (اختیاری)", <input className={inputCls} value={txForm.note} onChange={(e) => setTxForm({ ...txForm, note: e.target.value })} />, "md:col-span-2")}
+          </div>
+          <button
+            onClick={submitTx}
+            disabled={txSaving || !txForm.accountId}
+            className={`cursor-pointer mt-1 rounded-xl px-6 py-2.5 text-sm font-black text-white transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed shadow-lg ${
+              txForm.type === "deposit"
+                ? "bg-gradient-to-l from-emerald-600 to-teal-600 hover:brightness-110 shadow-emerald-500/25"
+                : "bg-gradient-to-l from-red-600 to-rose-600 hover:brightness-110 shadow-red-500/25"
+            }`}
+          >
+            {txSaving ? "در حال ثبت…" : txForm.type === "deposit" ? "⬇️ ثبت واریز" : "⬆️ ثبت برداشت"}
+          </button>
         </div>
-      ) : (
-        <div className="space-y-3">
-          {filtered.map((acc) => {
-            const key = String(acc.id);
-            const accTx = transactions.filter((t) => t.accountId === key);
-            const liveBalance = accTx.length > 0 ? balanceOf(key) : (acc.balance || 0);
-            const curName = CURRENCY_NAMES[acc.currency] ?? acc.currency;
-            const isOpen = openStatementId === key;
-            return (
-              <div
-                key={key}
-                className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 space-y-2"
-              >
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <h3 className="font-semibold text-slate-900">
-                    {acc.name}
-                    {acc.wald ? ` — ولد: ${acc.wald}` : ""}
-                  </h3>
-                  <span className="text-[11px] text-slate-400">{acc.createdAt}</span>
-                </div>
 
-                {/* بیلانس و ارز */}
-                <div className="flex items-center justify-between gap-2 flex-wrap rounded-xl bg-slate-50 border border-slate-200 px-3 py-2">
-                  <span className="text-xs text-slate-500">ارز: {acc.currency} ({curName})</span>
-                  <span
-                    className={`text-sm font-bold ${liveBalance >= 0 ? "text-emerald-600" : "text-red-600"}`}
-                    dir="ltr"
-                  >
-                    💰 {liveBalance.toLocaleString()} {curName}
-                  </span>
-                </div>
+        {/* فهرست حسابات */}
+        <div className="sa-up flex items-center gap-2" style={{ animationDelay: "280ms" }}>
+          <span className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-amber-500 to-orange-500 text-white text-sm shadow-md">📒</span>
+          <b className="text-sm md:text-base font-black text-slate-800">فهرست حسابات</b>
+        </div>
 
-                {acc.phone && (
-                  <div className="flex items-center justify-between gap-2 text-sm">
-                    <span className="text-slate-700" dir="ltr">
-                      📞 شماره: {acc.phone}
+        {/* جستجو — بالای فهرست */}
+        <div className="relative max-w-md">
+          <span className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
+          <input
+            className={inputCls + " pr-10"}
+            placeholder="اسم، ولد، شماره یا آدرس را جستجو کنید..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+
+        {!loaded || !authReady ? (
+          <div className="py-10 text-center">
+            <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-slate-300 border-t-emerald-500" />
+            <p className="mt-4 text-slate-500 text-sm font-bold">در حال بارگذاری…</p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="rounded-2xl border-2 border-dashed border-emerald-200 bg-white/70 p-8 text-center text-slate-500 text-sm font-bold">
+            {validAccounts.length === 0
+              ? "هنوز حسابی ثبت نشده است. اولین حساب را از فرم بالا اضافه کنید."
+              : "هیچ حسابی با این جستجو یافت نشد."}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filtered.map((acc) => {
+              const key = String(acc.id);
+              const accTx = transactions.filter((t) => t.accountId === key);
+              const liveBalance = accTx.length > 0 ? balanceOf(key) : (acc.balance || 0);
+              const curName = CURRENCY_NAMES[acc.currency] ?? acc.currency;
+              const isOpen = openStatementId === key;
+              return (
+                <div key={key} className={`${uiCard} sa-up p-4 space-y-2.5 transition-all duration-300 hover:shadow-lg`}>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white text-xs font-black shadow-md">
+                        {(CRYPTOS.find((c) => c.symbol === acc.currency)?.icon) || "👤"}
+                      </span>
+                      <h3 className="font-black text-slate-900 truncate">
+                        {acc.name}
+                        {acc.wald ? <span className="text-slate-500 font-bold"> — ولد: {acc.wald}</span> : ""}
+                      </h3>
+                    </div>
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-500">{acc.createdAt}</span>
+                  </div>
+
+                  {/* بیلانس و ارز */}
+                  <div className="flex items-center justify-between gap-2 flex-wrap rounded-xl bg-gradient-to-l from-emerald-50 to-teal-50 border border-emerald-100 px-3 py-2">
+                    <span className="text-[11px] font-black text-slate-500">ارز: {acc.currency} ({curName})</span>
+                    <span className={`text-sm font-black tabular-nums ${liveBalance >= 0 ? "text-emerald-700" : "text-red-600"}`} dir="ltr">
+                      💰 {liveBalance.toLocaleString()} {curName}
                     </span>
+                  </div>
+
+                  {acc.phone && (
+                    <div className="flex items-center justify-between gap-2 text-sm">
+                      <span className="font-bold text-slate-700" dir="ltr">📞 {acc.phone}</span>
+                      <button
+                        onClick={() => copy(acc.phone, "شماره")}
+                        className="cursor-pointer text-xs rounded-lg bg-slate-100 hover:bg-slate-200 px-3 py-1.5 font-bold text-slate-700 transition-colors"
+                      >
+                        📋 کپی
+                      </button>
+                    </div>
+                  )}
+
+                  {acc.address && <p className="text-sm font-bold text-slate-700">📍 آدرس: {acc.address}</p>}
+
+                  <div className="flex gap-2 pt-1 flex-wrap">
                     <button
-                      onClick={() => copy(acc.phone, "شماره")}
-                      className="text-xs rounded-lg bg-slate-100 hover:bg-slate-200 px-3 py-1.5 text-slate-700 transition-colors"
+                      onClick={() => edit(acc)}
+                      className="cursor-pointer text-xs rounded-lg bg-gradient-to-l from-sky-600 to-cyan-600 hover:brightness-110 active:scale-95 px-3.5 py-2 font-black text-white shadow-md shadow-sky-500/20 transition-all"
                     >
-                      📋 کپی
+                      ✏️ ویرایش
+                    </button>
+                    <button
+                      onClick={() => {
+                        setTxForm({ ...txForm, accountId: key });
+                        setOpenStatementId(isOpen ? null : key);
+                      }}
+                      className="cursor-pointer text-xs rounded-lg bg-gradient-to-l from-violet-600 to-indigo-600 hover:brightness-110 active:scale-95 px-3.5 py-2 font-black text-white shadow-md shadow-violet-500/20 transition-all"
+                    >
+                      🧾 صورت‌حساب ({accTx.length})
+                    </button>
+                    <button
+                      onClick={() => remove(acc.id)}
+                      className="cursor-pointer text-xs rounded-lg bg-gradient-to-l from-red-600 to-rose-600 hover:brightness-110 active:scale-95 px-3.5 py-2 font-black text-white shadow-md shadow-red-500/20 transition-all"
+                    >
+                      🗑 حذف
                     </button>
                   </div>
-                )}
 
-                {acc.address && (
-                  <p className="text-sm text-slate-700">📍 آدرس: {acc.address}</p>
-                )}
-
-                <div className="flex gap-2 pt-1 flex-wrap">
-                  <button
-                    onClick={() => edit(acc)}
-                    className="text-xs rounded-lg bg-sky-600/80 hover:bg-sky-600 px-3 py-1.5 text-white transition-colors"
-                  >
-                    ✏️ ویرایش
-                  </button>
-                  <button
-                    onClick={() => {
-                      setTxForm({ ...txForm, accountId: key });
-                      setOpenStatementId(isOpen ? null : key);
-                    }}
-                    className="text-xs rounded-lg bg-violet-600/80 hover:bg-violet-600 px-3 py-1.5 text-white transition-colors"
-                  >
-                    🧾 صورت‌حساب ({accTx.length})
-                  </button>
-                  <button
-                    onClick={() => remove(acc.id)}
-                    className="text-xs rounded-lg bg-red-600/80 hover:bg-red-600 px-3 py-1.5 text-white transition-colors"
-                  >
-                    🗑 حذف
-                  </button>
-                </div>
-
-                {/* 🔴 صورت‌حساب — تاریخ، ساعت، نوع، مقدار */}
-                {isOpen && (
-                  <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
-                    <h4 className="text-xs font-bold text-slate-700">
-                      🧾 صورت‌حساب «{acc.name}» — {accTx.length} تراکنش
-                    </h4>
-                    {accTx.length === 0 ? (
-                      <p className="text-xs text-slate-500">هنوز تراکنشی ثبت نشده است.</p>
-                    ) : (
-                      <div className="space-y-1.5">
-                        {accTx.map((t) => (
-                          <div
-                            key={t.id}
-                            className="flex items-center justify-between gap-2 rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs"
-                          >
-                            <div className="flex items-center gap-2 flex-wrap min-w-0">
-                              <span
-                                className={`font-bold ${
-                                  t.type === "deposit" ? "text-emerald-600" : "text-red-600"
-                                }`}
-                              >
-                                {t.type === "deposit" ? "⬇️ واریز" : "⬆️ برداشت"}
-                              </span>
-                              <span className="text-slate-800 font-medium" dir="ltr">
-                                {t.amount.toLocaleString()} {curName}
-                              </span>
-                              <span className="text-slate-500" dir="ltr">
-                                🕐 {t.date}
-                              </span>
-                              {t.note && (
-                                <span className="text-slate-400 truncate max-w-[140px]">
-                                  ({t.note})
+                  {/* صورت‌حساب — تاریخ، ساعت، نوع، مقدار */}
+                  {isOpen && (
+                    <div className="mt-2 rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50/60 to-white p-3 space-y-2">
+                      <h4 className="text-xs font-black text-violet-700">
+                        🧾 صورت‌حساب «{acc.name}» — {accTx.length} تراکنش
+                      </h4>
+                      {accTx.length === 0 ? (
+                        <p className="text-xs font-bold text-slate-500">هنوز تراکنشی ثبت نشده است.</p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {accTx.map((t) => (
+                            <div key={t.id} className="flex items-center justify-between gap-2 rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs shadow-sm">
+                              <div className="flex items-center gap-2 flex-wrap min-w-0">
+                                <span className={`rounded-md px-2 py-0.5 font-black ${t.type === "deposit" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
+                                  {t.type === "deposit" ? "⬇️ واریز" : "⬆️ برداشت"}
                                 </span>
-                              )}
+                                <span className="text-slate-800 font-black tabular-nums" dir="ltr">{t.amount.toLocaleString()} {curName}</span>
+                                <span className="text-slate-500 font-bold" dir="ltr">🕐 {t.date}</span>
+                                {t.note && <span className="text-slate-400 truncate max-w-[140px]">({t.note})</span>}
+                              </div>
+                              <button
+                                onClick={() => removeTx(t.id)}
+                                className="cursor-pointer text-[11px] rounded-md bg-red-50 hover:bg-red-100 text-red-600 font-bold px-2 py-1 shrink-0 transition-colors"
+                              >
+                                حذف
+                              </button>
                             </div>
-                            <button
-                              onClick={() => removeTx(t.id)}
-                              className="text-[11px] rounded-md bg-red-50 hover:bg-red-100 text-red-600 px-2 py-1 shrink-0"
-                            >
-                              حذف
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
-      {/* Toast */}
-      {toast && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 rounded-xl bg-slate-900 border border-slate-700 px-5 py-3 text-sm text-white shadow-2xl">
-          {toast}
-        </div>
-      )}
+        {/* Toast */}
+        {toast && (
+          <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 rounded-xl bg-slate-900 border border-slate-700 px-5 py-3 text-sm font-bold text-white shadow-2xl">
+            {toast}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
