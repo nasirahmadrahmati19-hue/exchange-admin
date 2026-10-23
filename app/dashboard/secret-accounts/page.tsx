@@ -36,6 +36,8 @@ type Transaction = {
   time: string;                 // ساعت دقیق واریز/برداشت
   transferNo: string;           // 🆔 شماره حواله
   currency?: string;            // ارز تراکنش (برای فاکتور)
+  cardNumber?: string;          // 💳 شماره کارت
+  contactNumber?: string;       // 📞 نمبر تماس
   ts: number;                   // timestamp برای مرتب‌سازی
 };
 
@@ -131,6 +133,8 @@ function toTransaction(raw: any): Transaction | null {
         ? raw.transferNo
         : genTransferNo(),
     currency: String(raw.currency ?? ""),
+    cardNumber: String(raw.cardNumber ?? ""),
+    contactNumber: String(raw.contactNumber ?? ""),
     ts,
   };
 }
@@ -231,6 +235,8 @@ function buildTxInvoiceText(
   lines.push(`   🕐 ساعت: ${tx.time}`);
   lines.push(`   💱 ${tx.amount.toLocaleString()} ${curName} → ${tx.amount.toLocaleString()} ${curName}`);
   lines.push(`   🆔 شماره حواله: ${tx.transferNo}`);
+  if (tx.cardNumber) lines.push(`   💳 شماره کارت: ${tx.cardNumber}`);
+  if (tx.contactNumber) lines.push(`   📞 نمبر تماس: ${tx.contactNumber}`);
   if (tx.note) lines.push(`   📝 توضیحات: ${tx.note}`);
   lines.push("");
   lines.push("━━━━━━━━━━━━━━━━━━━━");
@@ -269,6 +275,8 @@ function buildStatementText(
     lines.push(`   🕐 ${t.time}`);
     lines.push(`   💱 ${t.amount.toLocaleString()} ${curName} → ${t.amount.toLocaleString()} ${curName}`);
     lines.push(`   🆔 ${t.transferNo}`);
+    if (t.cardNumber) lines.push(`   💳 کارت: ${t.cardNumber}`);
+    if (t.contactNumber) lines.push(`   📞 تماس: ${t.contactNumber}`);
     lines.push("");
   });
   lines.push("━━━━━━━━━━━━━━━━━━━━");
@@ -320,6 +328,8 @@ export default function SecretAccountsPage() {
     type: "deposit" as "deposit" | "withdraw",
     amount: "",
     note: "",
+    cardNumber: "",
+    contactNumber: "",
   });
   const [txSaving, setTxSaving] = useState(false);
   const [openStatementId, setOpenStatementId] = useState<string | null>(null);
@@ -526,6 +536,15 @@ export default function SecretAccountsPage() {
       showToast("⚠️ بیلانس این حساب کافی نیست");
       return;
     }
+    // 🔴 شماره کارت و نمبر تماس الزامی‌اند — تا تکمیل نشوند ثبت نمی‌شود
+    if (!txForm.cardNumber.trim()) {
+      showToast("⚠️ شماره کارت را وارد کنید");
+      return;
+    }
+    if (!txForm.contactNumber.trim()) {
+      showToast("⚠️ نمبر تماس را وارد کنید");
+      return;
+    }
     setTxSaving(true);
 
     const now = Date.now();
@@ -542,6 +561,8 @@ export default function SecretAccountsPage() {
       time: parts.time,
       transferNo: genTransferNo(),
       currency: acc.currency,
+      cardNumber: txForm.cardNumber.trim(),
+      contactNumber: txForm.contactNumber.trim(),
       ts: now,
     };
 
@@ -566,6 +587,8 @@ export default function SecretAccountsPage() {
           time: newTx.time,
           transferNo: newTx.transferNo,
           currency: newTx.currency,
+          cardNumber: newTx.cardNumber,
+          contactNumber: newTx.contactNumber,
           ts: newTx.ts,
         });
         const newBalance = balanceOfFromList(nextTx, acc.id);
@@ -590,7 +613,7 @@ export default function SecretAccountsPage() {
         );
       }
 
-      setTxForm({ accountId: txForm.accountId, type: txForm.type, amount: "", note: "" });
+      setTxForm({ accountId: txForm.accountId, type: txForm.type, amount: "", note: "", cardNumber: "", contactNumber: "" });
       showToast(
         txForm.type === "deposit"
           ? `✅ ${amount.toLocaleString()} واریز شد به «${acc.name}» — حواله ${newTx.transferNo}`
@@ -859,11 +882,37 @@ export default function SecretAccountsPage() {
                 }
               />
             ))}
+            {fld("💳 شماره کارت *", (
+              <input
+                className={inputCls + " tabular-nums"}
+                type="text"
+                inputMode="numeric"
+                dir="ltr"
+                autoComplete="off"
+                value={txForm.cardNumber}
+                onChange={(e) =>
+                  setTxForm({ ...txForm, cardNumber: e.target.value.replace(/[^\d ]/g, "") })
+                }
+              />
+            ))}
+            {fld("📞 نمبر تماس *", (
+              <input
+                className={inputCls + " tabular-nums"}
+                type="text"
+                inputMode="tel"
+                dir="ltr"
+                autoComplete="off"
+                value={txForm.contactNumber}
+                onChange={(e) =>
+                  setTxForm({ ...txForm, contactNumber: e.target.value.replace(/[^\d+]/g, "") })
+                }
+              />
+            ))}
             {fld("توضیحات (اختیاری)", <input className={inputCls} value={txForm.note} onChange={(e) => setTxForm({ ...txForm, note: e.target.value })} />, "md:col-span-2")}
           </div>
           <button
             onClick={submitTx}
-            disabled={txSaving || !txForm.accountId}
+            disabled={txSaving || !txForm.accountId || !txForm.cardNumber.trim() || !txForm.contactNumber.trim()}
             className={`cursor-pointer mt-1 rounded-xl px-6 py-2.5 text-sm font-black text-white transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed shadow-lg ${
               txForm.type === "deposit"
                 ? "bg-gradient-to-l from-emerald-600 to-teal-600 hover:brightness-110 shadow-emerald-500/25"
@@ -1023,6 +1072,21 @@ export default function SecretAccountsPage() {
                                   📋 کپی
                                 </button>
                               </div>
+                              {/* ردیف شماره کارت و نمبر تماس */}
+                              {(t.cardNumber || t.contactNumber) && (
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {t.cardNumber && (
+                                    <span className="rounded-md bg-sky-50 px-2 py-0.5 font-black text-sky-700" dir="ltr">
+                                      💳 {t.cardNumber}
+                                    </span>
+                                  )}
+                                  {t.contactNumber && (
+                                    <span className="rounded-md bg-amber-50 px-2 py-0.5 font-black text-amber-700" dir="ltr">
+                                      📞 {t.contactNumber}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                               {/* ردیف تاریخ، روز و ساعت */}
                               <div className="flex items-center gap-3 flex-wrap text-slate-500 font-bold">
                                 <span>📅 {t.date}</span>
