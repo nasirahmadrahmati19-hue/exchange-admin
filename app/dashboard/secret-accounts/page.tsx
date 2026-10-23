@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, setDoc, deleteDoc } from "firebase/firestore";
 import { auth, db } from "../lib/firebase";
@@ -490,8 +490,19 @@ export default function SecretAccountsPage() {
     }
   };
 
-  const inputCls =
-    "w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 placeholder:text-slate-400 outline-none focus:border-emerald-500 transition-colors";
+  // 🎨 استایل‌های مشترک — هماهنگ با تب صندوق (cash)
+  const inputShell =
+    "rounded-xl border text-sm font-medium shadow-sm outline-none transition-all duration-200 focus:ring-4 border-slate-200 bg-white text-slate-800 placeholder:text-slate-400 hover:border-emerald-400 focus:border-emerald-500 focus:ring-emerald-500/10";
+  const inputCls = `w-full h-12 px-3.5 ${inputShell}`;
+  const uiCard =
+    "rounded-2xl border backdrop-blur transition-colors duration-300 border-emerald-100 bg-white/95 shadow-[0_16px_40px_-28px_rgba(16,185,129,0.35)]";
+  const uiLabel = "mb-1.5 block text-[11px] font-black tracking-wide text-slate-500";
+  const fld = (label: string, node: ReactNode, cls = "") => (
+    <div className={cls}>
+      <label className={uiLabel}>{label}</label>
+      {node}
+    </div>
+  );
 
   return (
     <div dir="rtl" className="p-4 md:p-6 space-y-6 min-h-screen bg-white">
@@ -543,7 +554,6 @@ export default function SecretAccountsPage() {
               className={inputCls}
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
-              onKeyDown={(e) => e.key === "Enter" && submit()}
             />
           </label>
           <label className="block space-y-1.5">
@@ -552,7 +562,6 @@ export default function SecretAccountsPage() {
               className={inputCls}
               value={form.wald}
               onChange={(e) => setForm({ ...form, wald: e.target.value })}
-              onKeyDown={(e) => e.key === "Enter" && submit()}
             />
           </label>
           <label className="block space-y-1.5">
@@ -562,7 +571,6 @@ export default function SecretAccountsPage() {
               inputMode="tel"
               value={form.phone}
               onChange={(e) => setForm({ ...form, phone: e.target.value })}
-              onKeyDown={(e) => e.key === "Enter" && submit()}
             />
           </label>
           <label className="block space-y-1.5">
@@ -571,7 +579,6 @@ export default function SecretAccountsPage() {
               className={inputCls}
               value={form.address}
               onChange={(e) => setForm({ ...form, address: e.target.value })}
-              onKeyDown={(e) => e.key === "Enter" && submit()}
             />
           </label>
           <label className="block space-y-1.5">
@@ -667,7 +674,6 @@ export default function SecretAccountsPage() {
               onChange={(e) =>
                 setTxForm({ ...txForm, amount: e.target.value.replace(/[^\d.]/g, "") })
               }
-              onKeyDown={(e) => e.key === "Enter" && submitTx()}
             />
           </label>
           <label className="block space-y-1.5 md:col-span-2">
@@ -676,7 +682,6 @@ export default function SecretAccountsPage() {
               className={inputCls}
               value={txForm.note}
               onChange={(e) => setTxForm({ ...txForm, note: e.target.value })}
-              onKeyDown={(e) => e.key === "Enter" && submitTx()}
             />
           </label>
         </div>
