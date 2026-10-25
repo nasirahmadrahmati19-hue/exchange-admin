@@ -12,7 +12,7 @@ import {
   onSnapshot, 
   serverTimestamp 
 } from "firebase/firestore";
-import { auth, db } from "../lib/firebase";
+import { auth, db } from "../../lib/firebase"; // مسیر را بر اساس ساختار پوشه‌بندی خود تنظیم کنید (ممکن است ../lib/firebase باشد)
 
 // ============================================================
 // انواع داده (Types)
@@ -39,10 +39,10 @@ type Transaction = {
   time: string;
   transferNo: string;
   currency: string;
-  cardNumber?: string;      // برای سازگاری با نسخه‌های قبلی
-  cardReference?: string;   // فیلد جدید: ۶ رقم آخر کارت / کد پیگیری
+  cardNumber?: string;
+  cardReference?: string;
   contactNumber?: string;
-  shamsiDisplay?: string;   // فیلد جدید: نمایشگر شمسی
+  shamsiDisplay?: string;
   ts: number;
 };
 
@@ -51,14 +51,12 @@ type Transaction = {
 // ============================================================
 const toFaDigits = (s: string | number) => String(s).replace(/\d/g, (x) => "۰۱۲۳۴۵۶۷۸۹"[Number(x)]);
 
-// فرمت کردن مبلغ با جداکننده هزارگان و اعداد فارسی
 const formatAmount = (value: string) => {
   const numericValue = value.replace(/[^\d]/g, "");
   if (!numericValue) return "";
   return toFaDigits(Number(numericValue).toLocaleString("en-US"));
 };
 
-// دریافت تاریخ و ساعت شمسی فعلی
 const getCurrentShamsiDateTime = () => {
   const now = new Date();
   const formatter = new Intl.DateTimeFormat("fa-IR", {
@@ -90,8 +88,8 @@ const CURRENCY_NAMES: Record<string, string> = {
   EUR: "یورو",
   USD: "دالر",
   PKR: "کلدار",
-  TOM: "تومان", // برای سازگاری با داده‌های قدیمی
-  KANDAR: "کلدار", // برای سازگاری با داده‌های قدیمی
+  TOM: "تومان",
+  KANDAR: "کلدار",
 };
 
 const CRYPTOS = [
@@ -136,7 +134,7 @@ function toTransaction(raw: any): Transaction | null {
     transferNo: typeof raw.transferNo === "string" && raw.transferNo ? raw.transferNo : genTransferNo(),
     currency: String(raw.currency ?? ""),
     cardNumber: String(raw.cardNumber ?? ""),
-    cardReference: String(raw.cardReference ?? raw.cardNumber ?? ""), // پشتیبانی از هر دو فیلد
+    cardReference: String(raw.cardReference ?? raw.cardNumber ?? ""),
     contactNumber: String(raw.contactNumber ?? ""),
     shamsiDisplay: typeof raw.shamsiDisplay === "string" ? raw.shamsiDisplay : `${parts.date} ${parts.time}`,
     ts,
@@ -167,7 +165,6 @@ export default function SecretAccountsPage() {
   const [toast, setToast] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // فرم واریز/برداشت جدید
   const [txForm, setTxForm] = useState({
     accountId: "",
     type: "deposit" as "deposit" | "withdraw",
@@ -179,7 +176,6 @@ export default function SecretAccountsPage() {
   const [txSaving, setTxSaving] = useState(false);
   const [openStatementId, setOpenStatementId] = useState<string | null>(null);
 
-  // دیالوگ تأیید حذف داخلی
   const [confirmDialog, setConfirmDialog] = useState<{ show: boolean; type: "account" | "transaction"; id: string; accountId?: string } | null>(null);
 
   useEffect(() => {
@@ -192,7 +188,6 @@ export default function SecretAccountsPage() {
     return () => unsub();
   }, []);
 
-  // بارگذاری فوری از localStorage
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -203,12 +198,12 @@ export default function SecretAccountsPage() {
     setLoaded(true);
   }, []);
 
-  // همگام‌سازی لحظه‌ای (Real-time) با Firestore
   useEffect(() => {
     if (!db || !uid) return;
     
-    const qAccounts = query(collection(db, "users", uid, "secret_accounts"), orderBy("createdAt", "desc"));
-    const qTransactions = query(collection(db, "users", uid, "secret_transactions"), orderBy("ts", "desc"));
+    // استفاده از db! برای رفع خطای TypeScript در Vercel
+    const qAccounts = query(collection(db!, "users", uid, "secret_accounts"), orderBy("createdAt", "desc"));
+    const qTransactions = query(collection(db!, "users", uid, "secret_transactions"), orderBy("ts", "desc"));
 
     const unsubAccounts = onSnapshot(qAccounts, (snapshot) => {
       const list = snapshot.docs.map(d => toAccount({ id: d.id, ...d.data() })).filter(Boolean) as SecretAccount[];
@@ -260,8 +255,16 @@ export default function SecretAccountsPage() {
       }
       
       setAccounts(sortDesc(nextList));
+      
+      // رفع خطای TypeScript با استفاده از ! و بررسی null
+      if (!db || !auth.currentUser) {
+        showToast("❌ اتصال به دیتابیس برقرار نیست");
+        setSaving(false);
+        return;
+      }
+      
       const currentUid = auth.currentUser.uid;
-      await setDoc(doc(db, "users", currentUid, "secret_accounts", newId), {
+      await setDoc(doc(db!, "users", currentUid, "secret_accounts", newId), {
         ...form, name: form.name.trim(),
         balance: editingId !== null ? accounts.find(a => String(a.id) === newId)?.balance ?? 0 : 0,
         createdAt: editingId !== null ? accounts.find(a => String(a.id) === newId)?.createdAt : new Date(now).toLocaleString("fa-AF"),
@@ -284,20 +287,19 @@ export default function SecretAccountsPage() {
   };
 
   const executeDelete = async () => {
-    if (!confirmDialog || !auth?.currentUser) return;
+    if (!confirmDialog || !auth?.currentUser || !db) return;
     const { type, id, accountId } = confirmDialog;
     
     try {
       if (type === "account") {
-        await deleteDoc(doc(db, "users", auth.currentUser.uid, "secret_accounts", String(id)));
-        // حذف تراکنش‌های مرتبط
+        await deleteDoc(doc(db!, "users", auth.currentUser.uid, "secret_accounts", String(id)));
         const txs = transactions.filter(t => t.accountId === String(id));
         for (const tx of txs) {
-          await deleteDoc(doc(db, "users", auth.currentUser.uid, "secret_transactions", tx.id));
+          await deleteDoc(doc(db!, "users", auth.currentUser.uid, "secret_transactions", tx.id));
         }
         showToast("🗑️ حساب و سوابق آن حذف شد");
       } else {
-        await deleteDoc(doc(db, "users", auth.currentUser.uid, "secret_transactions", String(id)));
+        await deleteDoc(doc(db!, "users", auth.currentUser.uid, "secret_transactions", String(id)));
         showToast("🗑️ تراکنش حذف شد");
       }
     } catch (err) {
@@ -308,9 +310,9 @@ export default function SecretAccountsPage() {
     }
   };
 
-  // --- مدیریت تراکنش‌ها (طبق درخواست جدید) ---
+  // --- مدیریت تراکنش‌ها ---
   const submitTx = async () => {
-    if (txSaving || !authReady || !auth?.currentUser) {
+    if (txSaving || !authReady || !auth?.currentUser || !db) {
       showToast("⚠️ لطفاً ابتدا وارد حساب کاربری خود شوید");
       return;
     }
@@ -359,7 +361,7 @@ export default function SecretAccountsPage() {
       transferNo: genTransferNo(),
       currency: acc.currency,
       cardReference: txForm.cardReference.trim(),
-      cardNumber: txForm.cardReference.trim(), // برای سازگاری با کدهای قدیمی
+      cardNumber: txForm.cardReference.trim(),
       shamsiDisplay: txForm.shamsiDateTime,
       ts: now,
     };
@@ -378,15 +380,14 @@ export default function SecretAccountsPage() {
         note: newTx.note,
         transferNo: newTx.transferNo,
         timestamp: serverTimestamp(),
-        userId: auth.currentUser.uid,
+        userId: auth.currentUser!.uid,
         ts: newTx.ts,
       };
 
-      await setDoc(doc(db, "users", auth.currentUser.uid, "secret_transactions", txId), txData);
+      await setDoc(doc(db!, "users", auth.currentUser!.uid, "secret_transactions", txId), txData);
       
-      // به‌روزرسانی بیلانس حساب
       const newBalance = balanceOf(String(acc.id)) + (txForm.type === "deposit" ? numericAmount : -numericAmount);
-      await setDoc(doc(db, "users", auth.currentUser.uid, "secret_accounts", String(acc.id)), {
+      await setDoc(doc(db!, "users", auth.currentUser!.uid, "secret_accounts", String(acc.id)), {
         balance: newBalance,
         updatedAt: now,
       }, { merge: true });
@@ -422,7 +423,6 @@ export default function SecretAccountsPage() {
     }
   };
 
-  // 🎨 استایل‌های مشترک
   const inputShell = "rounded-xl border text-sm font-medium shadow-sm outline-none transition-all duration-200 focus:ring-4 border-slate-200 bg-white text-slate-800 placeholder:text-slate-400 hover:border-emerald-400 focus:border-emerald-500 focus:ring-emerald-500/10";
   const inputCls = `w-full h-12 px-3.5 ${inputShell}`;
   const uiCard = "rounded-2xl border backdrop-blur transition-colors duration-300 border-emerald-100 bg-white/95 shadow-[0_16px_40px_-28px_rgba(16,185,129,0.35)]";
@@ -441,7 +441,6 @@ export default function SecretAccountsPage() {
       <div className="fixed inset-x-0 top-0 z-30 h-1 bg-gradient-to-l from-emerald-500 via-teal-500 to-cyan-500" />
 
       <div className="relative z-10 mx-auto w-full max-w-7xl space-y-4 md:space-y-6 px-3 pb-16 pt-5 md:px-8 md:pt-9">
-        {/* هدر */}
         <header className="sa-up flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 md:gap-3.5 min-w-0">
             <div className="grid h-11 w-11 md:h-14 md:w-14 shrink-0 place-items-center rounded-xl md:rounded-2xl bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-400 text-white text-xl md:text-2xl shadow-lg shadow-emerald-500/30 ring-1 ring-white/30">🔐</div>
@@ -459,7 +458,6 @@ export default function SecretAccountsPage() {
           </div>
         </header>
 
-        {/* کارت پنج ارز */}
         <div className="sa-up relative overflow-hidden rounded-xl md:rounded-2xl border-2 border-emerald-300 bg-gradient-to-br from-emerald-50 via-white to-teal-50 p-3 md:p-4 shadow-[0_10px_30px_-10px_rgba(16,185,129,0.25)] transition-all duration-300 hover:shadow-xl" style={{ animationDelay: "70ms" }}>
           <div className="mb-3 flex items-center gap-2">
             <span className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 text-white text-sm shadow-md">💰</span>
@@ -476,7 +474,6 @@ export default function SecretAccountsPage() {
           </div>
         </div>
 
-        {/* فرم افزودن/ویرایش حساب */}
         <div className={`sa-up ${uiCard} p-4 md:p-5 space-y-4`} style={{ animationDelay: "140ms" }}>
           <div className="flex items-center gap-2">
             <span className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-sky-500 to-cyan-500 text-white text-sm shadow-md">{editingId !== null ? "✏️" : "➕"}</span>
@@ -503,7 +500,6 @@ export default function SecretAccountsPage() {
           </div>
         </div>
 
-        {/* بخش واریز و برداشت (اصلاح شده طبق درخواست) */}
         <div className="sa-up relative overflow-hidden rounded-xl md:rounded-2xl border-2 border-violet-300 bg-gradient-to-br from-violet-50 via-white to-indigo-50 p-3 md:p-4 shadow-[0_10px_30px_-10px_rgba(139,92,246,0.25)] transition-all duration-300 hover:shadow-xl" style={{ animationDelay: "210ms" }}>
           <div className="mb-3 flex items-center gap-2">
             <span className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-violet-500 to-indigo-500 text-white text-sm shadow-md">💸</span>
@@ -521,7 +517,6 @@ export default function SecretAccountsPage() {
               </select>
             ), "md:col-span-2")}
             
-            {/* فیلد ۱: مبلغ و انتخاب ارز */}
             <div>
               <label className={uiLabel}>مبلغ</label>
               <div className="flex gap-2">
@@ -545,7 +540,6 @@ export default function SecretAccountsPage() {
               </div>
             </div>
 
-            {/* فیلد ۲: تاریخ و ساعت شمسی */}
             <div>
               <label className={uiLabel}>تاریخ و ساعت</label>
               <input
@@ -562,7 +556,6 @@ export default function SecretAccountsPage() {
               <p className="mt-1 text-[10px] text-slate-400">فرمت: سال/ماه/روز ساعت:دقیقه</p>
             </div>
 
-            {/* فیلد ۳: ۶ رقم آخر کارت */}
             <div className="md:col-span-2">
               <label className={uiLabel}>۶ رقم آخر کارت / کد پیگیری واریز *</label>
               <input
@@ -603,7 +596,6 @@ export default function SecretAccountsPage() {
           </div>
         </div>
 
-        {/* فهرست حسابات */}
         <div className="sa-up flex items-center gap-2" style={{ animationDelay: "280ms" }}>
           <span className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-amber-500 to-orange-500 text-white text-sm shadow-md">📒</span>
           <b className="text-sm md:text-base font-black text-slate-800">فهرست حسابات</b>
@@ -665,7 +657,6 @@ export default function SecretAccountsPage() {
                     <button onClick={() => handleDeleteRequest("account", key)} className="cursor-pointer text-xs rounded-lg bg-gradient-to-l from-red-600 to-rose-600 hover:brightness-110 active:scale-95 px-3.5 py-2 font-black text-white shadow-md shadow-red-500/20 transition-all">🗑 حذف</button>
                   </div>
 
-                  {/* صورت‌حساب */}
                   {isOpen && (
                     <div className="mt-2 rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50/60 to-white p-3 space-y-2">
                       <h4 className="text-xs font-black text-violet-700">🧾 صورت‌حساب «{acc.name}» — {accTx.length} تراکنش</h4>
@@ -712,14 +703,12 @@ export default function SecretAccountsPage() {
           </div>
         )}
 
-        {/* Toast Notification */}
         {toast && (
           <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 rounded-xl bg-slate-900 border border-slate-700 px-5 py-3 text-sm font-bold text-white shadow-2xl animate-in fade-in slide-in-from-bottom-4">
             {toast}
           </div>
         )}
 
-        {/* Confirmation Dialog (Internal) */}
         {confirmDialog?.show && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
             <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl animate-in zoom-in-95">
