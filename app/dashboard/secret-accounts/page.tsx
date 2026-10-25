@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { 
   doc, 
@@ -132,8 +132,32 @@ function formatShamsiFromLocal(localStr: string): string {
 // ============================================================
 const toFaDigits = (s: string | number) => String(s).replace(/\d/g, (x) => "۰۱۲۳۴۵۶۷۸۹"[Number(x)]);
 
+// تبدیل ارقام فارسی/عربی/فارسی‌نما به لاتین — تا کاربر بتواند با هر کیبوردی عدد تایپ کند
+const toLatinDigits = (s: string) =>
+  s
+    .replace(/[۰-۹]/g, (x) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(x)))
+    .replace(/[٠-٩]/g, (x) => String("٠١٢٣٤٥٦٧٨٩".indexOf(x)));
+
+// ✅ فیلتر هوشمند مبلغ: فقط ارقام را نگه می‌دارد، جداکننده هزارگان فارسی اضافه می‌کند
+// و caret را حفظ می‌کند تا هنگام ویرایش (Backspace/Delete در وسط عدد) پرش مکان‌نما نداشته باشیم
+const formatAmountKeepCaret = (rawValue: string, selStart: number): { text: string; caret: number } => {
+  const digitsOnly = toLatinDigits(rawValue).replace(/[^\d]/g, "");
+  const digitsBeforeCaret = toLatinDigits(rawValue.slice(0, selStart)).replace(/[^\d]/g, "").length;
+  if (!digitsOnly) return { text: "", caret: 0 };
+  const formatted = Number(digitsOnly).toLocaleString("en-US"); // مثل 50,000
+  const fa = toFaDigits(formatted); // مثل ۵۰,۰۰۰
+  let digitCount = 0;
+  let caretPos = 0;
+  for (let i = 0; i < fa.length; i++) {
+    if (digitCount === digitsBeforeCaret) { caretPos = i; break; }
+    if ("۰۱۲۳۴۵۶۷۸۹".includes(fa[i])) digitCount++;
+    if (i === fa.length - 1) caretPos = fa.length;
+  }
+  return { text: fa, caret: caretPos };
+};
+
 const formatAmount = (value: string) => {
-  const numericValue = value.replace(/[^\d]/g, "");
+  const numericValue = toLatinDigits(value).replace(/[^\d]/g, "");
   if (!numericValue) return "";
   return toFaDigits(Number(numericValue).toLocaleString("en-US"));
 };
@@ -260,6 +284,18 @@ export default function SecretAccountsPage() {
   });
   const [ccSaving, setCcSaving] = useState(false);
   const [ccLoaded, setCcLoaded] = useState(false);
+
+  // ✅ Ref و caret برای رفع مشکل «عدد وارد نمی‌شود» — حفظ مکان‌نما بعد از فرمت‌دهی هزارگان
+  const amountInputRef = useRef<HTMLInputElement | null>(null);
+  const pendingCaret = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (pendingCaret.current != null && amountInputRef.current) {
+      const pos = pendingCaret.current;
+      amountInputRef.current.setSelectionRange(pos, pos);
+      pendingCaret.current = null;
+    }
+  }, [ccForm.amount]);
 
   const [confirmDialog, setConfirmDialog] = useState<{ show: boolean; type: "account" | "transaction"; id: string; accountId?: string } | null>(null);
 
@@ -483,7 +519,7 @@ export default function SecretAccountsPage() {
       showToast("⚠️ لطفاً یک حساب را انتخاب کنید");
       return;
     }
-    const numericAmount = Number(ccForm.amount.replace(/[^\d]/g, ""));
+    const numericAmount = Number(toLatinDigits(ccForm.amount).replace(/[^\d]/g, ""));
     if (!isFinite(numericAmount) || numericAmount <= 0) {
       showToast("⚠️ مبلغ باید یک عدد بزرگ‌تر از صفر باشد");
       return;
@@ -689,13 +725,18 @@ export default function SecretAccountsPage() {
               <label className={uiLabel}>مبلغ</label>
               <div className="flex gap-2">
                 <input
-                  className={`${inputCls} flex-1 font-black text-lg tracking-wider`}
+                  ref={amountInputRef}
+                  className={`${inputCls} flex-1 font-black text-lg tracking-wider select-text`}
                   type="text"
                   inputMode="numeric"
                   dir="ltr"
                   autoComplete="off"
                   value={ccForm.amount}
-                  onChange={(e) => setCcForm({ ...ccForm, amount: formatAmount(e.target.value) })}
+                  onChange={(e) => {
+                    const { text, caret } = formatAmountKeepCaret(e.target.value, e.target.selectionStart ?? e.target.value.length);
+                    setCcForm((prev) => ({ ...prev, amount: text }));
+                    pendingCaret.current = caret;
+                  }}
                   placeholder="مثلاً 50,000"
                 />
                 <select
