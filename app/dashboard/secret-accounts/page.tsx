@@ -138,6 +138,10 @@ const toLatinDigits = (s: string) =>
     .replace(/[۰-۹]/g, (x) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(x)))
     .replace(/[٠-٩]/g, (x) => String("٠١٢٣٤٥٦٧٨٩".indexOf(x)));
 
+// ✅ نرمال‌سازی کد کارت: ارقام فارسی/عربی → لاتین، حذف غیرعدد، حداکثر ۶ رقم
+const normalizeCardRef = (raw: string): string =>
+  toLatinDigits(String(raw ?? "")).replace(/[^\d]/g, "").slice(0, 6);
+
 // ✅ فیلتر هوشمند مبلغ: فقط ارقام را نگه می‌دارد، جداکننده هزارگان فارسی اضافه می‌کند
 // و caret را حفظ می‌کند تا هنگام ویرایش (Backspace/Delete در وسط عدد) پرش مکان‌نما نداشته باشیم
 const formatAmountKeepCaret = (rawValue: string, selStart: number): { text: string; caret: number } => {
@@ -288,6 +292,18 @@ export default function SecretAccountsPage() {
   // ✅ Ref و caret برای رفع مشکل «عدد وارد نمی‌شود» — حفظ مکان‌نما بعد از فرمت‌دهی هزارگان
   const amountInputRef = useRef<HTMLInputElement | null>(null);
   const pendingCaret = useRef<number | null>(null);
+
+  // ✅ فیلد ۶ رقم کارت: کنترل مهارتی (uncontrolled) — تایپ با هر کیبوردی آزاد است،
+  // مقدار فقط هنگام onBlur/Paste به state منتقل و نرمال‌سازی می‌شود
+  const cardInputRef = useRef<HTMLInputElement | null>(null);
+  const [ccResetKey, setCcResetKey] = useState(0);
+  const commitCardReference = (raw: string) => {
+    const clean = normalizeCardRef(raw);
+    if (cardInputRef.current && cardInputRef.current.value !== clean) {
+      cardInputRef.current.value = clean;
+    }
+    setCcForm((prev) => (prev.cardReference === clean ? prev : { ...prev, cardReference: clean }));
+  };
 
   useEffect(() => {
     if (pendingCaret.current != null && amountInputRef.current) {
@@ -508,6 +524,9 @@ export default function SecretAccountsPage() {
 
   /** ثبت واریز/برداشت در subcollection حساب */
   const submitCcTx = async (type: CryptoTxType) => {
+    // ✅ ابتدا مقدار فیلد مهارتی ۶ رقم را از DOM بخوان و commit کن
+    // (اگر کاربر بدون Leave کردن فیلد دکمه را بزند، onBlur اجرا نمی‌شود)
+    commitCardReference(cardInputRef.current?.value ?? "");
     console.log("1. فرم سابمیت شد:", { ...ccForm, type });
 
     if (ccSaving) return;
@@ -528,7 +547,8 @@ export default function SecretAccountsPage() {
       showToast("⚠️ لطفاً واحد ارز را انتخاب کنید");
       return;
     }
-    if (!/^\d{6}$/.test(ccForm.cardReference)) {
+    const cardRef = normalizeCardRef(ccForm.cardReference);
+    if (!/^\d{6}$/.test(cardRef)) {
       showToast("⚠️ ۶ رقم آخر کارت / کد پیگیری باید دقیقاً ۶ عدد باشد");
       return;
     }
@@ -550,7 +570,7 @@ export default function SecretAccountsPage() {
           currency: currencyCode,
           type,
           timestamp: serverTimestamp(),
-          cardReference: ccForm.cardReference,
+          cardReference: cardRef,
           userId: uidNow,
           // فیلدهای کمکی برای نمایش (serverTimestamp تا سینک شدن pending است)
           timestampMs: new Date(ccForm.dateTimeLocal).getTime() || Date.now(),
@@ -565,7 +585,7 @@ export default function SecretAccountsPage() {
         amount: numericAmount,
         currency: currencyCode,
         type,
-        cardReference: ccForm.cardReference,
+        cardReference: cardRef,
         userId: uidNow,
         timestampMs: new Date(ccForm.dateTimeLocal).getTime() || Date.now(),
         shamsiDateTime: formatShamsiFromLocal(ccForm.dateTimeLocal),
@@ -591,6 +611,8 @@ export default function SecretAccountsPage() {
 
       // ✅ ریست فرم — همه چیز خالی می‌ماند (بدون پیش‌فرض)، فقط حساب انتخاب‌شده باقی می‌ماند
       setCcForm((prev) => ({ ...prev, amount: "", currency: "", dateTimeLocal: "", cardReference: "" }));
+      if (cardInputRef.current) cardInputRef.current.value = "";
+      setCcResetKey((k) => k + 1); // remount فیلد مهارتی تا واقعاً خالی شود
     } catch (error) {
       console.error("4. خطا:", error);
       showToast("❌ خطا در ذخیره‌سازی تراکنش — اینترنت را بررسی کنید");
@@ -769,19 +791,26 @@ export default function SecretAccountsPage() {
               </p>
             </div>
 
-            {/* فیلد ۳: ۶ رقم آخر کارت */}
+            {/* فیلد ۳: ۶ رقم آخر کارت — کنترل کاملاً مهارتی (uncontrolled) برای رفع مشکل «عدد وارد نمی‌شود»
+                (مقدار فقط در onBlur به state می‌نویسد؛ در حالت RTL با controlled input کیبورد فارسی گاهی کار نمی‌کند) */}
             <div className="md:col-span-2">
               <label className={uiLabel}>۶ رقم آخر کارت / کد پیگیری واریز</label>
               <input
-                className={`${inputCls} ${/^\d{6}$/.test(ccForm.cardReference) ? "border-emerald-400 bg-emerald-50/50" : ""}`}
+                ref={cardInputRef}
+                key={`card-${ccResetKey}`}
+                className={`${inputCls} select-text font-black tracking-[0.3em] text-center ${/^\d{6}$/.test(ccForm.cardReference) ? "border-emerald-400 bg-emerald-50/50" : ""}`}
                 type="text"
                 inputMode="numeric"
-                pattern="\d{6}"
                 dir="ltr"
                 autoComplete="off"
-                maxLength={6}
-                value={ccForm.cardReference}
-                onChange={(e) => setCcForm({ ...ccForm, cardReference: e.target.value.replace(/[^\d]/g, "").slice(0, 6) })}
+                name="card-reference"
+                defaultValue=""
+                onInput={() => commitCardReference(cardInputRef.current?.value ?? "")}
+                onBlur={() => commitCardReference(cardInputRef.current?.value ?? "")}
+                onPaste={() => {
+                  // پس از Paste هم مقدار را نرمال‌سازی و به state منتقل کن
+                  setTimeout(() => commitCardReference(cardInputRef.current?.value ?? ""), 0);
+                }}
                 placeholder="مثلاً 123456"
               />
               <p className="mt-1 text-[10px] text-slate-400">
