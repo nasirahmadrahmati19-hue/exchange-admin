@@ -10,7 +10,9 @@ import {
   query, 
   orderBy, 
   onSnapshot, 
-  serverTimestamp 
+  serverTimestamp,
+  getDocs,
+  addDoc,
 } from "firebase/firestore";
 
 // ✅ مسیر نسبی دقیق و تضمینی (سه مرحله به عقب تا ریشه پروژه)
@@ -47,6 +49,89 @@ type Transaction = {
   shamsiDisplay?: string;
   ts: number;
 };
+
+// ✅ تراکنش‌های تب «محاسبات رمزی» — ذخیره در secret_accounts/{accountId}/transactions
+type CurrencyCode = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
+type CryptoTxType = "deposit" | "withdrawal";
+
+type CryptocalcTransaction = {
+  id: string;
+  accountId: string;
+  amount: number;
+  currency: CurrencyCode;
+  type: CryptoTxType;
+  cardReference: string; // ۶ رقم آخر کارت / کد پیگیری
+  userId: string;
+  timestampMs: number; // معادل محلی serverTimestamp برای نمایش
+  shamsiDateTime: string; // تاریخ شمسی انتخاب‌شده توسط کاربر
+};
+
+// ============================================================
+// تبدیل تاریخ میلادی <-> شمسی (Jalali) — بدون کتابخانه خارجی
+// ============================================================
+function toJalali(gy: number, gm: number, gd: number): { jy: number; jm: number; jd: number } {
+  const g_d_m = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+  let jy = gy <= 1600 ? 0 : 979;
+  gy -= gy <= 1600 ? 621 : 1600;
+  const gy2 = gm > 2 ? gy + 1 : gy;
+  let days =
+    365 * gy + Math.floor((gy2 + 3) / 4) - Math.floor((gy2 + 99) / 100) +
+    Math.floor((gy2 + 399) / 400) - 80 + gd + g_d_m[gm - 1];
+  jy += 33 * Math.floor(days / 12053);
+  days %= 12053;
+  jy += 4 * Math.floor(days / 1461);
+  days %= 1461;
+  if (days > 365) {
+    jy += Math.floor((days - 1) / 365);
+    days = (days - 1) % 365;
+  }
+  const jm = days < 186 ? 1 + Math.floor(days / 31) : 7 + Math.floor((days - 186) / 30);
+  const jd = 1 + (days < 186 ? days % 31 : (days - 186) % 30);
+  return { jy, jm, jd };
+}
+
+function toGregory(jy: number, jm: number, jd: number): { gy: number; gm: number; gd: number } {
+  jy += jy > 979 ? -979 : 0;
+  let gy = jy <= 979 ? 621 : 1600;
+  let days =
+    365 * jy + 78 + Math.floor(jy / 33) * Math.floor(((jy % 33) + 3) / 4) +
+    ((jm - 1) < 7 ? (jm - 1) * 31 : ((jm - 1) * 30) + 6) + jd;
+  gy += 400 * Math.floor(days / 146097);
+  days %= 146097;
+  if (days > 36524) {
+    days--;
+    gy += 100 * Math.floor(days / 36524);
+    days %= 36524;
+    if (days >= 365) days++;
+  }
+  gy += 4 * Math.floor(days / 1461);
+  days %= 1461;
+  if (days > 365) {
+    const c = Math.floor((days - 1) / 365);
+    gy += c;
+    days -= c * 365 + Math.floor(c / 4);
+  }
+  const gm = days < 186 ? 1 + Math.floor(days / 31) : Math.floor((days - 186) / 30) + 7;
+  const gd = 1 + (days < 186 ? days % 31 : (days - 186) % 30);
+  return { gy, gm, gd };
+}
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/** مقدار پیش‌فرض input[type=datetime-local] با ساعت فعلی */
+const nowDatetimeLocalValue = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+};
+
+/** رشته datetime-local (میلادی) -> نمایش شمسی مثل «۱۴۰۵/۰۷/۲۸ ۰۹:۳۸» */
+function formatShamsiFromLocal(localStr: string): string {
+  if (!localStr) return "";
+  const d = new Date(localStr);
+  if (isNaN(d.getTime())) return localStr;
+  const j = toJalali(d.getFullYear(), d.getMonth() + 1, d.getDate());
+  return toFaDigits(`${j.jy}/${pad2(j.jm)}/${pad2(j.jd)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`);
+}
 
 // ============================================================
 // توابع کمکی (Helpers)
@@ -177,6 +262,26 @@ export default function SecretAccountsPage() {
   });
   const [txSaving, setTxSaving] = useState(false);
   const [openStatementId, setOpenStatementId] = useState<string | null>(null);
+
+  // ✅ فرم «محاسبات رمزی»: واریز/برداشت روی secret_accounts/{id}/transactions
+  const CURRENCY_OPTIONS: { code: CurrencyCode; name: string }[] = [
+    { code: "AFN", name: "افغانی" },
+    { code: "USD", name: "دالر" },
+    { code: "EUR", name: "یورو" },
+    { code: "IRR", name: "تومان" },
+    { code: "PKR", name: "کلدار" },
+  ];
+  const CC_STORAGE_KEY = "cryptocalc_transactions_local_v1";
+  const [ccForm, setCcForm] = useState({
+    accountId: "",
+    amount: "",
+    currency: "AFN" as CurrencyCode,
+    dateTimeLocal: nowDatetimeLocalValue(),
+    cardReference: "",
+  });
+  const [ccTransactions, setCcTransactions] = useState<CryptocalcTransaction[]>([]);
+  const [ccSaving, setCcSaving] = useState(false);
+  const [ccLoaded, setCcLoaded] = useState(false);
 
   const [confirmDialog, setConfirmDialog] = useState<{ show: boolean; type: "account" | "transaction"; id: string; accountId?: string } | null>(null);
 
@@ -423,6 +528,178 @@ export default function SecretAccountsPage() {
     }
   };
 
+  // ============================================================
+  // ✅ منطق تب «محاسبات رمزی» — secret_accounts/{accountId}/transactions
+  // ============================================================
+  const toCcTransaction = (id: string, accountId: string, raw: any): CryptocalcTransaction | null => {
+    if (!raw || typeof raw !== "object") return null;
+    const amount = Number(raw.amount ?? 0);
+    if (!isFinite(amount) || amount <= 0) return null;
+    const tsRaw = raw.timestamp;
+    let timestampMs = Number(raw.timestampMs ?? 0);
+    if (!timestampMs && tsRaw && typeof tsRaw.toMillis === "function") {
+      try { timestampMs = tsRaw.toMillis(); } catch {}
+    }
+    if (!timestampMs) timestampMs = Date.now();
+    return {
+      id,
+      accountId,
+      amount,
+      currency: (["AFN", "USD", "EUR", "IRR", "PKR"].includes(String(raw.currency)) ? String(raw.currency) : "AFN") as CurrencyCode,
+      type: raw.type === "withdrawal" ? "withdrawal" : "deposit",
+      cardReference: String(raw.cardReference ?? ""),
+      userId: String(raw.userId ?? ""),
+      timestampMs,
+      shamsiDateTime: String(raw.shamsiDateTime ?? formatShamsiFromLocal(new Date(timestampMs).toISOString().slice(0, 16))),
+    };
+  };
+
+  const refreshCcTransactions = async () => {
+    if (!db || !auth?.currentUser) return;
+    const uidNow = auth.currentUser.uid;
+    try {
+      const accSnap = await getDocs(collection(db!, "users", uidNow, "secret_accounts"));
+      const all: CryptocalcTransaction[] = [];
+      for (const a of accSnap.docs) {
+        const txSnap = await getDocs(collection(db!, "users", uidNow, "secret_accounts", a.id, "transactions"));
+        txSnap.forEach((t) => {
+          const parsed = toCcTransaction(t.id, a.id, t.data());
+          if (parsed) all.push(parsed);
+        });
+      }
+      all.sort((x, y) => y.timestampMs - x.timestampMs);
+      setCcTransactions(all);
+      try { localStorage.setItem(CC_STORAGE_KEY, JSON.stringify(all)); } catch {}
+    } catch (err) {
+      console.error("خطا در بارگذاری تراکنش‌های محاسبات رمزی:", err);
+    } finally {
+      setCcLoaded(true);
+    }
+  };
+
+  useEffect(() => {
+    // بارگذاری کش محلی برای حالت آفلاین
+    try {
+      const raw = localStorage.getItem(CC_STORAGE_KEY);
+      if (raw) setCcTransactions(JSON.parse(raw));
+    } catch {}
+    if (db && auth?.currentUser) {
+      refreshCcTransactions();
+    } else {
+      setCcLoaded(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uid]);
+
+  /** ثبت واریز/برداشت در subcollection حساب */
+  const submitCcTx = async (type: CryptoTxType) => {
+    console.log("1. فرم سابمیت شد:", { ...ccForm, type });
+
+    if (ccSaving) return;
+    if (!authReady || !auth?.currentUser || !db) {
+      showToast("⚠️ لطفاً ابتدا وارد حساب کاربری خود شوید");
+      return;
+    }
+    if (!ccForm.accountId) {
+      showToast("⚠️ لطفاً یک حساب را انتخاب کنید");
+      return;
+    }
+    const numericAmount = Number(ccForm.amount.replace(/[^\d]/g, ""));
+    if (!isFinite(numericAmount) || numericAmount <= 0) {
+      showToast("⚠️ مبلغ باید یک عدد بزرگ‌تر از صفر باشد");
+      return;
+    }
+    if (!/^\d{6}$/.test(ccForm.cardReference)) {
+      showToast("⚠️ ۶ رقم آخر کارت / کد پیگیری باید دقیقاً ۶ عدد باشد");
+      return;
+    }
+    if (!ccForm.dateTimeLocal) {
+      showToast("⚠️ تاریخ و ساعت را انتخاب کنید");
+      return;
+    }
+
+    setCcSaving(true);
+    const uidNow = auth.currentUser.uid;
+    try {
+      console.log("2. در حال ذخیره در Firestore...");
+      const docRef = await addDoc(
+        collection(db!, "users", uidNow, "secret_accounts", ccForm.accountId, "transactions"),
+        {
+          amount: numericAmount,
+          currency: ccForm.currency,
+          type,
+          timestamp: serverTimestamp(),
+          cardReference: ccForm.cardReference,
+          userId: uidNow,
+          // فیلدهای کمکی برای نمایش (serverTimestamp تا سینک شدن pending است)
+          timestampMs: new Date(ccForm.dateTimeLocal).getTime() || Date.now(),
+          shamsiDateTime: formatShamsiFromLocal(ccForm.dateTimeLocal),
+        }
+      );
+      console.log("3. با موفقیت ذخیره شد. ID:", docRef.id);
+
+      const newTx: CryptocalcTransaction = {
+        id: docRef.id,
+        accountId: ccForm.accountId,
+        amount: numericAmount,
+        currency: ccForm.currency,
+        type,
+        cardReference: ccForm.cardReference,
+        userId: uidNow,
+        timestampMs: new Date(ccForm.dateTimeLocal).getTime() || Date.now(),
+        shamsiDateTime: formatShamsiFromLocal(ccForm.dateTimeLocal),
+      };
+      const nextList = [newTx, ...ccTransactions].sort((a, b) => b.timestampMs - a.timestampMs);
+      setCcTransactions(nextList);
+      try { localStorage.setItem(CC_STORAGE_KEY, JSON.stringify(nextList)); } catch {}
+
+      // به‌روزرسانی بیلانس همان حساب (سازگار با منطق موجود)
+      const acc = validAccounts.find((a) => String(a.id) === ccForm.accountId);
+      if (acc) {
+        const delta = type === "deposit" ? numericAmount : -numericAmount;
+        const newBalance = balanceOf(String(acc.id)) + delta;
+        await setDoc(doc(db!, "users", uidNow, "secret_accounts", String(acc.id)), {
+          balance: newBalance,
+          updatedAt: Date.now(),
+        }, { merge: true });
+      }
+
+      showToast(type === "deposit"
+        ? `✅ ${toFaDigits(numericAmount.toLocaleString())} ${CURRENCY_NAMES[ccForm.currency]} واریز شد`
+        : `✅ ${toFaDigits(numericAmount.toLocaleString())} ${CURRENCY_NAMES[ccForm.currency]} برداشت شد`);
+
+      setCcForm((prev) => ({
+        ...prev,
+        amount: "",
+        cardReference: "",
+        dateTimeLocal: nowDatetimeLocalValue(),
+      }));
+    } catch (error) {
+      console.error("4. خطا:", error);
+      showToast("❌ خطا در ذخیره‌سازی تراکنش — اینترنت را بررسی کنید");
+    } finally {
+      setCcSaving(false);
+    }
+  };
+
+  const deleteCcTx = async (tx: CryptocalcTransaction) => {
+    if (!confirm(`آیا از حذف این تراکنش (${tx.type === "deposit" ? "واریز" : "برداشت"} ${toFaDigits(tx.amount.toLocaleString())}) اطمینان دارید؟`)) return;
+    if (!db || !auth?.currentUser) { showToast("❌ اتصال به دیتابیس برقرار نیست"); return; }
+    try {
+      await deleteDoc(doc(db!, "users", auth.currentUser.uid, "secret_accounts", tx.accountId, "transactions", tx.id));
+      const nextList = ccTransactions.filter((t) => !(t.id === tx.id && t.accountId === tx.accountId));
+      setCcTransactions(nextList);
+      try { localStorage.setItem(CC_STORAGE_KEY, JSON.stringify(nextList)); } catch {}
+      showToast("🗑️ تراکنش حذف شد");
+    } catch (err) {
+      console.error("خطا در حذف تراکنش:", err);
+      showToast("❌ خطا در حذف");
+    }
+  };
+
+  const ccAccountName = (accountId: string) =>
+    validAccounts.find((a) => String(a.id) === accountId)?.name ?? "حساب حذف‌شده";
+
   const inputShell = "rounded-xl border text-sm font-medium shadow-sm outline-none transition-all duration-200 focus:ring-4 border-slate-200 bg-white text-slate-800 placeholder:text-slate-400 hover:border-emerald-400 focus:border-emerald-500 focus:ring-emerald-500/10";
   const inputCls = `w-full h-12 px-3.5 ${inputShell}`;
   const uiCard = "rounded-2xl border backdrop-blur transition-colors duration-300 border-emerald-100 bg-white/95 shadow-[0_16px_40px_-28px_rgba(16,185,129,0.35)]";
@@ -599,6 +876,151 @@ export default function SecretAccountsPage() {
         <div className="sa-up flex items-center gap-2" style={{ animationDelay: "280ms" }}>
           <span className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-amber-500 to-orange-500 text-white text-sm shadow-md">📒</span>
           <b className="text-sm md:text-base font-black text-slate-800">فهرست حسابات</b>
+        </div>
+
+        {/* ============================================================ */}
+        {/* ✅ تب محاسبات رمزی — فرم واریز/برداشت + لیست تراکنش‌ها        */}
+        {/* ============================================================ */}
+        <div className="sa-up relative overflow-hidden rounded-xl md:rounded-2xl border-2 border-fuchsia-300 bg-gradient-to-br from-fuchsia-50 via-white to-purple-50 p-3 md:p-4 shadow-[0_10px_30px_-10px_rgba(192,38,211,0.25)] transition-all duration-300 hover:shadow-xl" style={{ animationDelay: "245ms" }}>
+          <div className="mb-3 flex items-center gap-2">
+            <span className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-fuchsia-500 to-purple-500 text-white text-sm shadow-md">🧮</span>
+            <b className="text-sm md:text-base font-black text-fuchsia-700">محاسبات رمزی — ثبت واریز و برداشت</b>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {fld("حساب *", (
+              <select className={inputCls} value={ccForm.accountId} onChange={(e) => setCcForm({ ...ccForm, accountId: e.target.value })}>
+                <option value="">— انتخاب حساب —</option>
+                {validAccounts.map((a) => (
+                  <option key={String(a.id)} value={String(a.id)}>
+                    {a.name}{a.wald ? ` (${a.wald})` : ""}
+                  </option>
+                ))}
+              </select>
+            ), "md:col-span-2")}
+
+            {/* فیلد ۱: مبلغ + واحد ارز */}
+            <div>
+              <label className={uiLabel}>مبلغ</label>
+              <div className="flex gap-2">
+                <input
+                  className={`${inputCls} flex-1 font-black text-lg tracking-wider`}
+                  type="text"
+                  inputMode="numeric"
+                  dir="ltr"
+                  autoComplete="off"
+                  value={ccForm.amount}
+                  onChange={(e) => setCcForm({ ...ccForm, amount: formatAmount(e.target.value) })}
+                  placeholder="مثلاً 50,000"
+                />
+                <select
+                  className="h-12 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 outline-none focus:border-fuchsia-500"
+                  value={ccForm.currency}
+                  onChange={(e) => setCcForm({ ...ccForm, currency: e.target.value as CurrencyCode })}
+                >
+                  {CURRENCY_OPTIONS.map((c) => (
+                    <option key={c.code} value={c.code}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* فیلد ۲: تاریخ و ساعت */}
+            <div>
+              <label className={uiLabel}>تاریخ و ساعت</label>
+              <input
+                className={inputCls}
+                type="datetime-local"
+                dir="ltr"
+                value={ccForm.dateTimeLocal}
+                onChange={(e) => setCcForm({ ...ccForm, dateTimeLocal: e.target.value })}
+              />
+              <p className="mt-1 text-[10px] text-slate-400">
+                نمایش شمسی: <b className="text-fuchsia-600">{formatShamsiFromLocal(ccForm.dateTimeLocal)}</b>
+              </p>
+            </div>
+
+            {/* فیلد ۳: ۶ رقم آخر کارت */}
+            <div className="md:col-span-2">
+              <label className={uiLabel}>۶ رقم آخر کارت / کد پیگیری واریز</label>
+              <input
+                className={`${inputCls} ${/^\d{6}$/.test(ccForm.cardReference) ? "border-emerald-400 bg-emerald-50/50" : ""}`}
+                type="text"
+                inputMode="numeric"
+                pattern="\d{6}"
+                dir="ltr"
+                autoComplete="off"
+                maxLength={6}
+                value={ccForm.cardReference}
+                onChange={(e) => setCcForm({ ...ccForm, cardReference: e.target.value.replace(/[^\d]/g, "").slice(0, 6) })}
+                placeholder="مثلاً 123456"
+              />
+              <p className="mt-1 text-[10px] text-slate-400">
+                برای واریزهای شبا/پایا، ۶ رقم آخر کارت یا کد پیگیری را وارد کنید
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-col sm:flex-row gap-3">
+            <button
+              onClick={() => submitCcTx("deposit")}
+              disabled={ccSaving || !ccForm.accountId}
+              className="flex-1 cursor-pointer rounded-xl bg-gradient-to-l from-green-600 to-emerald-600 hover:brightness-110 active:scale-95 transition-all px-6 py-3 text-sm font-black text-white shadow-lg shadow-green-500/25 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              <span>⬇️</span> {ccSaving ? "در حال ثبت…" : "واریز"}
+            </button>
+            <button
+              onClick={() => submitCcTx("withdrawal")}
+              disabled={ccSaving || !ccForm.accountId}
+              className="flex-1 cursor-pointer rounded-xl bg-gradient-to-l from-red-600 to-rose-600 hover:brightness-110 active:scale-95 transition-all px-6 py-3 text-sm font-black text-white shadow-lg shadow-red-500/25 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              <span>⬆️</span> {ccSaving ? "در حال ثبت…" : "برداشت"}
+            </button>
+          </div>
+
+          {/* لیست تراکنش‌های محاسبات رمزی */}
+          <div className="mt-4 space-y-2">
+            <h4 className="text-xs font-black text-fuchsia-700">🧾 لیست تراکنش‌ها ({ccTransactions.length})</h4>
+            {!ccLoaded ? (
+              <p className="text-xs font-bold text-slate-500 py-3 text-center">در حال بارگذاری…</p>
+            ) : ccTransactions.length === 0 ? (
+              <p className="rounded-xl border-2 border-dashed border-fuchsia-200 bg-white/70 p-4 text-center text-xs font-bold text-slate-500">
+                هنوز تراکنشی در محاسبات رمزی ثبت نشده است.
+              </p>
+            ) : (
+              <div className="space-y-1.5 max-h-[420px] overflow-y-auto">
+                {ccTransactions.map((t) => (
+                  <div key={`${t.accountId}_${t.id}`} className="rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs shadow-sm space-y-1">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2 flex-wrap min-w-0">
+                        <span className={`rounded-md px-2 py-0.5 font-black ${t.type === "deposit" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
+                          {t.type === "deposit" ? "🟢 واریز" : "🔴 برداشت"}
+                        </span>
+                        <span className="text-slate-800 font-black tabular-nums" dir="ltr">
+                          {toFaDigits(t.amount.toLocaleString("en-US"))} {CURRENCY_NAMES[t.currency] ?? t.currency}
+                        </span>
+                        <span className="rounded-md bg-fuchsia-50 px-2 py-0.5 font-bold text-fuchsia-700 truncate max-w-[120px]">
+                          👤 {ccAccountName(t.accountId)}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => deleteCcTx(t)}
+                        className="cursor-pointer text-[11px] rounded-md bg-red-50 hover:bg-red-100 text-red-600 font-bold px-2 py-1 transition-colors"
+                      >
+                        🗑 حذف
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-3 flex-wrap text-slate-500 font-bold">
+                      <span>📅 {t.shamsiDateTime}</span>
+                      {t.cardReference && (
+                        <span className="rounded-md bg-sky-50 px-2 py-0.5 font-black text-sky-700" dir="ltr">💳 {toFaDigits(t.cardReference)}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="relative max-w-md">
