@@ -124,13 +124,14 @@ const toLatinDigits = (s: string) =>
     .replace(/[۰-۹]/g, (x) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(x)))
     .replace(/[٠-٩]/g, (x) => String("٠١٢٣٤٥٦٧٨٩".indexOf(x)));
 
-/** رشته datetime-local (میلادی) -> نمایش شمسی مثل «۱۴۰۵/۰۷/۲۸ ۰۹:۳۸» */
+/** رشته datetime-local (میلادی) -> نمایش شمسی با ساعت ۱۲ ساعته مثل «۱۴۰۵/۰۷/۲۸ ۹:۳۸ ق.ظ» */
 function formatShamsiFromLocal(localStr: string): string {
   if (!localStr) return "";
   const d = new Date(localStr);
   if (isNaN(d.getTime())) return localStr;
   const j = toJalali(d.getFullYear(), d.getMonth() + 1, d.getDate());
-  return toFaDigits(`${j.jy}/${pad2(j.jm)}/${pad2(j.jd)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`);
+  const { hour, period } = to12HourLabel(d.getHours());
+  return toFaDigits(`${j.jy}/${pad2(j.jm)}/${pad2(j.jd)} ${hour}:${pad2(d.getMinutes())} ${period}`);
 }
 
 // ✅ زمان فعلی به وقت کابل (UTC+4:30) — ساعت سیستم کاربر مهم نیست
@@ -139,11 +140,19 @@ function kabulNow(): Date {
   // با افزودن آفست کابل به UTC، اجزای getUTC* دقیقاً ساعت و دقیقه کابل را می‌دهند
   return new Date(Date.now() + KABUL_UTC_OFFSET_MS);
 }
-/** نمایش همیشه-زنده تاریخ/ساعت هجری شمسی به وقت افغانستان (کابل، UTC+4:30) */
+/** ✅ تبدیل ساعت ۲۴ ساعته به فرمت ۱۲ ساعته با برچسب ق.ظ / ب.ظ */
+function to12HourLabel(h24: number): { hour: number; period: string } {
+  const period = h24 < 12 ? "ق.ظ" : "ب.ظ";
+  let h12 = h24 % 12;
+  if (h12 === 0) h12 = 12;
+  return { hour: h12, period };
+}
+/** نمایش همیشه-زنده تاریخ/ساعت هجری شمسی به وقت افغانستان — فرمت ۱۲ ساعته (ق.ظ/ب.ظ) */
 function formatKabulShamsi(): string {
   const d = kabulNow();
   const j = toJalali(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
-  return toFaDigits(`${j.jy}/${pad2(j.jm)}/${pad2(j.jd)} ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`);
+  const { hour, period } = to12HourLabel(d.getUTCHours());
+  return toFaDigits(`${j.jy}/${pad2(j.jm)}/${pad2(j.jd)} ${hour}:${pad2(d.getUTCMinutes())} ${period}`);
 }
 /** رشته datetime-local معادلِ ساعت کابل (برای ذخیره سازگار با منطق قبلی) */
 function kabulDateTimeLocalStr(): string {
@@ -807,9 +816,6 @@ export default function SecretAccountsPage() {
               <label className={uiLabel}>تاریخ و ساعت (هجری شمسی — خودکار)</label>
               <div className={`${inputCls} flex items-center justify-between bg-slate-50 text-slate-600`}>
                 <span className="font-black tracking-wider">🗓️ {formatKabulShamsi()}</span>
-                <span dir="ltr" className="rounded-lg bg-fuchsia-100 px-2 py-1 text-[10px] font-black text-fuchsia-700">
-                  🇦🇫 کابل (UTC+4:30)
-                </span>
               </div>
               <p className="mt-1 text-[10px] text-slate-400">
                 تاریخ و ساعت به‌صورت خودکار روی همین لحظه تنظیم می‌شود — نیازی به وارد کردن دستی نیست
