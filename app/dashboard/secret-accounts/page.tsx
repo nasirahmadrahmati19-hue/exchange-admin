@@ -118,12 +118,6 @@ function toGregory(jy: number, jm: number, jd: number): { gy: number; gm: number
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
-/** مقدار پیش‌فرض input[type=datetime-local] با ساعت فعلی */
-const nowDatetimeLocalValue = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-};
-
 /** رشته datetime-local (میلادی) -> نمایش شمسی مثل «۱۴۰۵/۰۷/۲۸ ۰۹:۳۸» */
 function formatShamsiFromLocal(localStr: string): string {
   if (!localStr) return "";
@@ -142,15 +136,6 @@ const formatAmount = (value: string) => {
   const numericValue = value.replace(/[^\d]/g, "");
   if (!numericValue) return "";
   return toFaDigits(Number(numericValue).toLocaleString("en-US"));
-};
-
-const getCurrentShamsiDateTime = () => {
-  const now = new Date();
-  const formatter = new Intl.DateTimeFormat("fa-IR", {
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", hour12: false,
-  });
-  return toFaDigits(formatter.format(now).replace(/,/g, ""));
 };
 
 function fmtDateTime(ts: number) {
@@ -244,6 +229,8 @@ export default function SecretAccountsPage() {
 
   const [accounts, setAccounts] = useState<SecretAccount[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  // ✅ تراکنش‌های «محاسبات رمزی» — تعریف زودهنگام برای استفاده در balanceOf
+  const [ccTransactions, setCcTransactions] = useState<CryptocalcTransaction[]>([]);
   const [loaded, setLoaded] = useState(false);
 
   const [form, setForm] = useState(EMPTY_FORM);
@@ -252,15 +239,6 @@ export default function SecretAccountsPage() {
   const [toast, setToast] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const [txForm, setTxForm] = useState({
-    accountId: "",
-    type: "deposit" as "deposit" | "withdraw",
-    amount: "",
-    shamsiDateTime: getCurrentShamsiDateTime(),
-    cardReference: "",
-    note: "",
-  });
-  const [txSaving, setTxSaving] = useState(false);
   const [openStatementId, setOpenStatementId] = useState<string | null>(null);
 
   // ✅ فرم «محاسبات رمزی»: واریز/برداشت روی secret_accounts/{id}/transactions
@@ -272,14 +250,14 @@ export default function SecretAccountsPage() {
     { code: "PKR", name: "کلدار" },
   ];
   const CC_STORAGE_KEY = "cryptocalc_transactions_local_v1";
+  // ✅ بدون مقادیر پیش‌فرض — همه فیلدها خالی شروع می‌شوند و کاربر خودش پر می‌کند
   const [ccForm, setCcForm] = useState({
     accountId: "",
     amount: "",
-    currency: "AFN" as CurrencyCode,
-    dateTimeLocal: nowDatetimeLocalValue(),
+    currency: "" as "" | CurrencyCode,
+    dateTimeLocal: "",
     cardReference: "",
   });
-  const [ccTransactions, setCcTransactions] = useState<CryptocalcTransaction[]>([]);
   const [ccSaving, setCcSaving] = useState(false);
   const [ccLoaded, setCcLoaded] = useState(false);
 
@@ -338,9 +316,14 @@ export default function SecretAccountsPage() {
     return [a.name, a.wald, a.phone, a.address].some(f => String(f ?? "").includes(q));
   });
 
-  const balanceOf = (accountId: string): number =>
-    transactions.filter((t) => t.accountId === String(accountId))
+  // ✅ بیلانس یکپارچه: تراکنش‌های قدیمی (secret_transactions) + تراکنش‌های «محاسبات رمزی» (subcollection)
+  const balanceOf = (accountId: string): number => {
+    const oldSum = transactions.filter((t) => t.accountId === String(accountId))
       .reduce((sum, t) => sum + (t.type === "deposit" ? t.amount : -t.amount), 0);
+    const ccSum = ccTransactions.filter((t) => t.accountId === String(accountId))
+      .reduce((sum, t) => sum + (t.type === "deposit" ? t.amount : -t.amount), 0);
+    return oldSum + ccSum;
+  };
 
   // --- مدیریت حساب‌ها ---
   const submit = async () => {
@@ -412,110 +395,6 @@ export default function SecretAccountsPage() {
       showToast("❌ خطا در حذف");
     } finally {
       setConfirmDialog(null);
-    }
-  };
-
-  // --- مدیریت تراکنش‌ها ---
-  const submitTx = async () => {
-    if (txSaving || !authReady || !auth?.currentUser || !db) {
-      showToast("⚠️ لطفاً ابتدا وارد حساب کاربری خود شوید");
-      return;
-    }
-    
-    const acc = validAccounts.find((a) => String(a.id) === txForm.accountId);
-    if (!acc) { showToast("⚠️ لطفاً یک حساب را انتخاب کنید"); return; }
-    
-    const numericAmount = Number(txForm.amount.replace(/[^\d]/g, ""));
-    if (!isFinite(numericAmount) || numericAmount <= 0) {
-      showToast("⚠️ مبلغ باید یک عدد بزرگ‌تر از صفر باشد");
-      return;
-    }
-    if (txForm.type === "withdraw" && balanceOf(String(acc.id)) < numericAmount) {
-      showToast("⚠️ بیلانس این حساب کافی نیست");
-      return;
-    }
-    if (txForm.cardReference.length !== 6) {
-      showToast("⚠️ ۶ رقم آخر کارت / کد پیگیری باید دقیقاً ۶ عدد باشد");
-      return;
-    }
-
-    const formDataLog = {
-      amount: txForm.amount,
-      currency: acc.currency,
-      type: txForm.type,
-      shamsiDateTime: txForm.shamsiDateTime,
-      cardReference: txForm.cardReference,
-      note: txForm.note,
-    };
-    console.log("1. فرم سابمیت شد:", formDataLog);
-
-    setTxSaving(true);
-    const now = Date.now();
-    const txId = `${now}_${Math.random().toString(36).slice(2, 8)}`;
-    const parts = fmtDateTime(now);
-
-    const newTx: Transaction = {
-      id: txId,
-      accountId: String(acc.id),
-      type: txForm.type,
-      amount: numericAmount,
-      note: txForm.note.trim(),
-      date: parts.date,
-      day: parts.day,
-      time: parts.time,
-      transferNo: genTransferNo(),
-      currency: acc.currency,
-      cardReference: txForm.cardReference.trim(),
-      cardNumber: txForm.cardReference.trim(),
-      shamsiDisplay: txForm.shamsiDateTime,
-      ts: now,
-    };
-
-    try {
-      console.log("2. در حال ذخیره در Firestore...");
-      
-      const txData = {
-        accountId: newTx.accountId,
-        type: newTx.type,
-        amount: newTx.amount,
-        currency: newTx.currency,
-        cardReference: newTx.cardReference,
-        cardNumber: newTx.cardNumber,
-        shamsiDisplay: newTx.shamsiDisplay,
-        note: newTx.note,
-        transferNo: newTx.transferNo,
-        timestamp: serverTimestamp(),
-        userId: auth.currentUser!.uid,
-        ts: newTx.ts,
-      };
-
-      await setDoc(doc(db!, "users", auth.currentUser!.uid, "secret_transactions", txId), txData);
-      
-      const newBalance = balanceOf(String(acc.id)) + (txForm.type === "deposit" ? numericAmount : -numericAmount);
-      await setDoc(doc(db!, "users", auth.currentUser!.uid, "secret_accounts", String(acc.id)), {
-        balance: newBalance,
-        updatedAt: now,
-      }, { merge: true });
-
-      console.log("3. با موفقیت ذخیره شد. ID:", txId);
-      
-      setTxForm(prev => ({ 
-        ...prev, 
-        amount: "", 
-        cardReference: "", 
-        note: "", 
-        shamsiDateTime: getCurrentShamsiDateTime() 
-      }));
-      
-      showToast(txForm.type === "deposit" 
-        ? `✅ ${toFaDigits(numericAmount.toLocaleString())} واریز شد — حواله ${newTx.transferNo}`
-        : `✅ ${toFaDigits(numericAmount.toLocaleString())} برداشت شد — حواله ${newTx.transferNo}`
-      );
-    } catch (error) {
-      console.error("4. خطا:", error);
-      showToast("❌ خطا در ذخیره‌سازی تراکنش — اینترنت را بررسی کنید");
-    } finally {
-      setTxSaving(false);
     }
   };
 
@@ -609,6 +488,10 @@ export default function SecretAccountsPage() {
       showToast("⚠️ مبلغ باید یک عدد بزرگ‌تر از صفر باشد");
       return;
     }
+    if (!ccForm.currency) {
+      showToast("⚠️ لطفاً واحد ارز را انتخاب کنید");
+      return;
+    }
     if (!/^\d{6}$/.test(ccForm.cardReference)) {
       showToast("⚠️ ۶ رقم آخر کارت / کد پیگیری باید دقیقاً ۶ عدد باشد");
       return;
@@ -618,6 +501,8 @@ export default function SecretAccountsPage() {
       return;
     }
 
+    const currencyCode = ccForm.currency as CurrencyCode;
+
     setCcSaving(true);
     const uidNow = auth.currentUser.uid;
     try {
@@ -626,7 +511,7 @@ export default function SecretAccountsPage() {
         collection(db!, "users", uidNow, "secret_accounts", ccForm.accountId, "transactions"),
         {
           amount: numericAmount,
-          currency: ccForm.currency,
+          currency: currencyCode,
           type,
           timestamp: serverTimestamp(),
           cardReference: ccForm.cardReference,
@@ -642,7 +527,7 @@ export default function SecretAccountsPage() {
         id: docRef.id,
         accountId: ccForm.accountId,
         amount: numericAmount,
-        currency: ccForm.currency,
+        currency: currencyCode,
         type,
         cardReference: ccForm.cardReference,
         userId: uidNow,
@@ -665,15 +550,11 @@ export default function SecretAccountsPage() {
       }
 
       showToast(type === "deposit"
-        ? `✅ ${toFaDigits(numericAmount.toLocaleString())} ${CURRENCY_NAMES[ccForm.currency]} واریز شد`
-        : `✅ ${toFaDigits(numericAmount.toLocaleString())} ${CURRENCY_NAMES[ccForm.currency]} برداشت شد`);
+        ? `✅ ${toFaDigits(numericAmount.toLocaleString())} ${CURRENCY_NAMES[currencyCode]} واریز شد`
+        : `✅ ${toFaDigits(numericAmount.toLocaleString())} ${CURRENCY_NAMES[currencyCode]} برداشت شد`);
 
-      setCcForm((prev) => ({
-        ...prev,
-        amount: "",
-        cardReference: "",
-        dateTimeLocal: nowDatetimeLocalValue(),
-      }));
+      // ✅ ریست فرم — همه چیز خالی می‌ماند (بدون پیش‌فرض)، فقط حساب انتخاب‌شده باقی می‌ماند
+      setCcForm((prev) => ({ ...prev, amount: "", currency: "", dateTimeLocal: "", cardReference: "" }));
     } catch (error) {
       console.error("4. خطا:", error);
       showToast("❌ خطا در ذخیره‌سازی تراکنش — اینترنت را بررسی کنید");
@@ -777,102 +658,6 @@ export default function SecretAccountsPage() {
           </div>
         </div>
 
-        <div className="sa-up relative overflow-hidden rounded-xl md:rounded-2xl border-2 border-violet-300 bg-gradient-to-br from-violet-50 via-white to-indigo-50 p-3 md:p-4 shadow-[0_10px_30px_-10px_rgba(139,92,246,0.25)] transition-all duration-300 hover:shadow-xl" style={{ animationDelay: "210ms" }}>
-          <div className="mb-3 flex items-center gap-2">
-            <span className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-violet-500 to-indigo-500 text-white text-sm shadow-md">💸</span>
-            <b className="text-sm md:text-base font-black text-violet-700">واریز و برداشت</b>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {fld("حساب مشتری *", (
-              <select className={inputCls} value={txForm.accountId} onChange={(e) => setTxForm({ ...txForm, accountId: e.target.value })}>
-                <option value="">— انتخاب حساب —</option>
-                {validAccounts.map((a) => (
-                  <option key={String(a.id)} value={String(a.id)}>
-                    {a.name}{a.wald ? ` (${a.wald})` : ""} — بیلانس: {toFaDigits((balanceOf(String(a.id)) || a.balance || 0).toLocaleString())} {CURRENCY_NAMES[a.currency] ?? a.currency}
-                  </option>
-                ))}
-              </select>
-            ), "md:col-span-2")}
-            
-            <div>
-              <label className={uiLabel}>مبلغ</label>
-              <div className="flex gap-2">
-                <input
-                  className={`${inputCls} flex-1 font-black text-lg tracking-wider`}
-                  type="text"
-                  inputMode="numeric"
-                  dir="ltr"
-                  autoComplete="off"
-                  value={txForm.amount}
-                  onChange={(e) => setTxForm({ ...txForm, amount: formatAmount(e.target.value) })}
-                  placeholder="مثلاً ۵۰,۰۰۰"
-                />
-                <select
-                  className="rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 outline-none focus:border-violet-500"
-                  value={txForm.accountId ? (validAccounts.find(a => String(a.id) === txForm.accountId)?.currency || "AFN") : "AFN"}
-                  disabled
-                >
-                  {CRYPTOS.map((c) => (<option key={c.symbol} value={c.symbol}>{c.name}</option>))}
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className={uiLabel}>تاریخ و ساعت</label>
-              <input
-                className={inputCls}
-                type="text"
-                value={txForm.shamsiDateTime}
-                onChange={(e) => {
-                  const clean = e.target.value.replace(/[^\d\/\s:]/g, "");
-                  setTxForm({ ...txForm, shamsiDateTime: toFaDigits(clean) });
-                }}
-                placeholder="۱۴۰۳/۰۸/۰۴ ۱۵:۳۰"
-                dir="ltr"
-              />
-              <p className="mt-1 text-[10px] text-slate-400">فرمت: سال/ماه/روز ساعت:دقیقه</p>
-            </div>
-
-            <div className="md:col-span-2">
-              <label className={uiLabel}>۶ رقم آخر کارت / کد پیگیری واریز *</label>
-              <input
-                className={`${inputCls} ${txForm.cardReference.length === 6 ? 'border-emerald-400 bg-emerald-50/50' : ''}`}
-                type="text"
-                inputMode="numeric"
-                dir="ltr"
-                autoComplete="off"
-                value={txForm.cardReference}
-                onChange={(e) => {
-                  const raw = e.target.value.replace(/[^\d]/g, "").slice(0, 6);
-                  setTxForm({ ...txForm, cardReference: raw });
-                }}
-                placeholder="مثلاً 123456"
-                maxLength={6}
-              />
-              <p className="mt-1 text-[10px] text-slate-400">برای واریزهای شبا/پایا، ۶ رقم آخر کارت یا کد پیگیری را وارد کنید (دقیقاً ۶ عدد)</p>
-            </div>
-
-            {fld("توضیحات (اختیاری)", <input className={inputCls} value={txForm.note} onChange={(e) => setTxForm({ ...txForm, note: e.target.value })} />, "md:col-span-2")}
-          </div>
-
-          <div className="mt-4 flex flex-col sm:flex-row gap-3">
-            <button
-              onClick={() => { setTxForm({ ...txForm, type: "deposit" }); submitTx(); }}
-              disabled={txSaving || !txForm.accountId}
-              className="flex-1 cursor-pointer rounded-xl bg-gradient-to-l from-emerald-600 to-teal-600 hover:brightness-110 active:scale-95 transition-all px-6 py-3 text-sm font-black text-white shadow-lg shadow-emerald-500/25 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              <span>⬇️</span> {txSaving ? "در حال ثبت…" : "ثبت واریز"}
-            </button>
-            <button
-              onClick={() => { setTxForm({ ...txForm, type: "withdraw" }); submitTx(); }}
-              disabled={txSaving || !txForm.accountId}
-              className="flex-1 cursor-pointer rounded-xl bg-gradient-to-l from-red-600 to-rose-600 hover:brightness-110 active:scale-95 transition-all px-6 py-3 text-sm font-black text-white shadow-lg shadow-red-500/25 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              <span>⬆️</span> {txSaving ? "در حال ثبت…" : "ثبت برداشت"}
-            </button>
-          </div>
-        </div>
-
         <div className="sa-up flex items-center gap-2" style={{ animationDelay: "280ms" }}>
           <span className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-amber-500 to-orange-500 text-white text-sm shadow-md">📒</span>
           <b className="text-sm md:text-base font-black text-slate-800">فهرست حسابات</b>
@@ -914,10 +699,11 @@ export default function SecretAccountsPage() {
                   placeholder="مثلاً 50,000"
                 />
                 <select
-                  className="h-12 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 outline-none focus:border-fuchsia-500"
+                  className={`h-12 rounded-xl border bg-slate-50 px-3 text-sm font-bold outline-none focus:border-fuchsia-500 ${ccForm.currency ? "border-slate-200 text-slate-700" : "border-slate-200 text-slate-400"}`}
                   value={ccForm.currency}
                   onChange={(e) => setCcForm({ ...ccForm, currency: e.target.value as CurrencyCode })}
                 >
+                  <option value="">انتخاب ارز</option>
                   {CURRENCY_OPTIONS.map((c) => (
                     <option key={c.code} value={c.code}>{c.name}</option>
                   ))}
@@ -925,18 +711,20 @@ export default function SecretAccountsPage() {
               </div>
             </div>
 
-            {/* فیلد ۲: تاریخ و ساعت */}
+            {/* فیلد ۲: تاریخ و ساعت — بدون مقدار پیش‌فرض (کاربر خودش انتخاب می‌کند) */}
             <div>
               <label className={uiLabel}>تاریخ و ساعت</label>
               <input
-                className={inputCls}
+                className={`${inputCls} ${!ccForm.dateTimeLocal ? "text-slate-400" : ""}`}
                 type="datetime-local"
                 dir="ltr"
                 value={ccForm.dateTimeLocal}
                 onChange={(e) => setCcForm({ ...ccForm, dateTimeLocal: e.target.value })}
               />
               <p className="mt-1 text-[10px] text-slate-400">
-                نمایش شمسی: <b className="text-fuchsia-600">{formatShamsiFromLocal(ccForm.dateTimeLocal)}</b>
+                {ccForm.dateTimeLocal
+                  ? <>نمایش شمسی: <b className="text-fuchsia-600">{formatShamsiFromLocal(ccForm.dateTimeLocal)}</b></>
+                  : "تاریخ و ساعت تراکنش را انتخاب کنید"}
               </p>
             </div>
 
@@ -964,14 +752,14 @@ export default function SecretAccountsPage() {
           <div className="mt-4 flex flex-col sm:flex-row gap-3">
             <button
               onClick={() => submitCcTx("deposit")}
-              disabled={ccSaving || !ccForm.accountId}
+              disabled={ccSaving || !ccForm.accountId || !ccForm.amount || !ccForm.currency || !ccForm.dateTimeLocal || ccForm.cardReference.length !== 6}
               className="flex-1 cursor-pointer rounded-xl bg-gradient-to-l from-green-600 to-emerald-600 hover:brightness-110 active:scale-95 transition-all px-6 py-3 text-sm font-black text-white shadow-lg shadow-green-500/25 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               <span>⬇️</span> {ccSaving ? "در حال ثبت…" : "واریز"}
             </button>
             <button
               onClick={() => submitCcTx("withdrawal")}
-              disabled={ccSaving || !ccForm.accountId}
+              disabled={ccSaving || !ccForm.accountId || !ccForm.amount || !ccForm.currency || !ccForm.dateTimeLocal || ccForm.cardReference.length !== 6}
               className="flex-1 cursor-pointer rounded-xl bg-gradient-to-l from-red-600 to-rose-600 hover:brightness-110 active:scale-95 transition-all px-6 py-3 text-sm font-black text-white shadow-lg shadow-red-500/25 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               <span>⬆️</span> {ccSaving ? "در حال ثبت…" : "برداشت"}
@@ -1075,7 +863,7 @@ export default function SecretAccountsPage() {
 
                   <div className="flex gap-2 pt-1 flex-wrap">
                     <button onClick={() => { setForm({ name: acc.name, wald: acc.wald, phone: acc.phone, address: acc.address, currency: acc.currency }); setEditingId(acc.id); }} className="cursor-pointer text-xs rounded-lg bg-gradient-to-l from-sky-600 to-cyan-600 hover:brightness-110 active:scale-95 px-3.5 py-2 font-black text-white shadow-md shadow-sky-500/20 transition-all">✏️ ویرایش</button>
-                    <button onClick={() => { setTxForm({ ...txForm, accountId: key }); setOpenStatementId(isOpen ? null : key); }} className="cursor-pointer text-xs rounded-lg bg-gradient-to-l from-violet-600 to-indigo-600 hover:brightness-110 active:scale-95 px-3.5 py-2 font-black text-white shadow-md shadow-violet-500/20 transition-all">🧾 صورت‌حساب ({accTx.length})</button>
+                    <button onClick={() => setOpenStatementId(isOpen ? null : key)} className="cursor-pointer text-xs rounded-lg bg-gradient-to-l from-violet-600 to-indigo-600 hover:brightness-110 active:scale-95 px-3.5 py-2 font-black text-white shadow-md shadow-violet-500/20 transition-all">🧾 صورت‌حساب ({accTx.length})</button>
                     <button onClick={() => handleDeleteRequest("account", key)} className="cursor-pointer text-xs rounded-lg bg-gradient-to-l from-red-600 to-rose-600 hover:brightness-110 active:scale-95 px-3.5 py-2 font-black text-white shadow-md shadow-red-500/20 transition-all">🗑 حذف</button>
                   </div>
 
