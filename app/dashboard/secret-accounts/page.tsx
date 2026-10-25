@@ -1181,8 +1181,8 @@ export default function SecretAccountsPage() {
                   </div>
 
                   {isOpen && (
-                    /* ✅ صورت‌حساب با ستون‌های استاندارد:
-                       شماره | کد پیگیری | تاریخ | حواله‌دهنده | حواله‌گیرنده | مبلغ نهایی | کارمزد | پرداخت‌کننده | مقصد | وضعیت | عملیات */
+                    /* ✅ صورت‌حساب با ستون‌های استاندارد (نسخه فشرده):
+                       شماره | تاریخ | حواله‌گیرنده | مبلغ نهایی | کارمزد | وضعیت | عملیات */
                     <div className="mt-1 rounded-lg border border-violet-100 bg-violet-50/40 p-2 space-y-1">
                       {(() => {
                         const totalIn = allStatementTx.filter((t) => t.type === "deposit").reduce((s, t) => s + t.amount, 0);
@@ -1201,18 +1201,23 @@ export default function SecretAccountsPage() {
                         <p className="text-[11px] font-bold text-slate-400 text-center py-1">تراکنشی ثبت نشده است.</p>
                       ) : (
                         <div className="max-h-80 overflow-auto rounded-md bg-white border border-violet-100">
-                          <table className="w-full min-w-[900px] text-right border-collapse">
+                          <table className="w-full table-fixed text-right border-collapse">
+                            <colgroup>
+                              <col style={{ width: "8%" }} />
+                              <col style={{ width: "17%" }} />
+                              <col style={{ width: "17%" }} />
+                              <col style={{ width: "16%" }} />
+                              <col style={{ width: "14%" }} />
+                              <col style={{ width: "15%" }} />
+                              <col style={{ width: "13%" }} />
+                            </colgroup>
                             <thead className="sticky top-0 z-10 bg-violet-50">
                               <tr className="text-[10px] font-black text-slate-500">
                                 <th className="px-2 py-2 text-center whitespace-nowrap border-b border-violet-100">شماره</th>
-                                <th className="px-2 py-2 text-center whitespace-nowrap border-b border-violet-100">کد پیگیری</th>
                                 <th className="px-2 py-2 text-center whitespace-nowrap border-b border-violet-100">تاریخ</th>
-                                <th className="px-2 py-2 text-center whitespace-nowrap border-b border-violet-100">حواله‌دهنده</th>
                                 <th className="px-2 py-2 text-center whitespace-nowrap border-b border-violet-100">حواله‌گیرنده</th>
                                 <th className="px-2 py-2 text-center whitespace-nowrap border-b border-violet-100">مبلغ نهایی</th>
                                 <th className="px-2 py-2 text-center whitespace-nowrap border-b border-violet-100">کارمزد</th>
-                                <th className="px-2 py-2 text-center whitespace-nowrap border-b border-violet-100">پرداخت‌کننده</th>
-                                <th className="px-2 py-2 text-center whitespace-nowrap border-b border-violet-100">مقصد</th>
                                 <th className="px-2 py-2 text-center whitespace-nowrap border-b border-violet-100">وضعیت</th>
                                 <th className="px-2 py-2 text-center whitespace-nowrap border-b border-violet-100">عملیات</th>
                               </tr>
@@ -1227,13 +1232,10 @@ export default function SecretAccountsPage() {
                                 const txCurName = isCc ? (CURRENCY_NAMES[cc.currency] ?? cc.currency) : curName;
                                 // ✅ اتصال به تب حواله: اگر کد پیگیری با یک حواله مطابق شد، ستون‌های حواله از آن خوانده می‌شود
                                 const linkedH = findLinkedHawala(displayCard);
-                                const senderCell = linkedH?.senderName || acc.name || "—";
                                 const receiverCell = linkedH?.receiverName || (isCc && t.type === "withdrawal" ? (cc.recipientName || "—") : (isCc ? "—" : (legacy.note || "—")));
                                 const finalAmtCell = addCommas(String(linkedH?.finalAmount ?? t.amount));
                                 const feeVal = linkedH ? Number(linkedH.fee || 0) : 0;
                                 const feeCell = feeVal > 0 ? `${addCommas(String(feeVal))} ${txCurName}` : `0 ${txCurName}`;
-                                const payerCell = linkedH ? (linkedH.feePayer === "receiver" ? "از گیرنده" : "از فرستنده") : "—";
-                                const destCell = linkedH ? (linkedH.destinationText || linkedH.province || "—") : "—";
                                 const statusCell = linkedH ? (hawalaStatusLabelsFa[linkedH.status || ""] || linkedH.status || "—") : (t.type === "deposit" ? "واریز" : "برداشت");
                                 const statusCls = linkedH
                                   ? (linkedH.status === "paid" ? "bg-emerald-50 text-emerald-700" : linkedH.status === "sent" ? "bg-sky-50 text-sky-700" : linkedH.status === "cancelled" ? "bg-red-50 text-red-600 line-through" : "bg-amber-50 text-amber-700")
@@ -1241,21 +1243,13 @@ export default function SecretAccountsPage() {
                                 return (
                                   <tr key={t.id} className="hover:bg-violet-50/50 transition-colors">
                                     <td className="px-2 py-1.5 text-center text-[11px] font-black text-slate-500">{idx + 1}</td>
-                                    <td className="px-2 py-1.5 text-center">
-                                      <span className="inline-block px-1.5 py-0.5 rounded-md bg-cyan-50 text-cyan-700 border border-cyan-200 text-[10px] font-bold font-mono whitespace-nowrap" dir="ltr">
-                                        {displayCard || "—"}
-                                      </span>
-                                    </td>
-                                    <td className="px-2 py-1.5 text-center text-[11px] font-bold text-slate-600 whitespace-nowrap" dir="ltr">{displayDate || "—"}</td>
-                                    <td className="px-2 py-1.5 text-center text-[11px] font-bold text-amber-700 max-w-[110px] truncate" title={senderCell}>{senderCell}</td>
-                                    <td className="px-2 py-1.5 text-center text-[11px] font-bold text-sky-700 max-w-[110px] truncate" title={receiverCell}>{receiverCell}</td>
+                                    <td className="px-2 py-1.5 text-center text-[11px] font-bold text-slate-600 whitespace-nowrap overflow-hidden text-ellipsis" dir="ltr">{displayDate || "—"}</td>
+                                    <td className="px-2 py-1.5 text-center text-[11px] font-bold text-sky-700 overflow-hidden text-ellipsis whitespace-nowrap" title={receiverCell}>{receiverCell}</td>
                                     <td className={`px-2 py-1.5 text-center whitespace-nowrap ${t.type === "deposit" ? "text-emerald-600" : "text-red-500"}`}>
                                       <span className="block text-[11px] font-black tabular-nums" dir="ltr">{finalAmtCell}</span>
                                       <span className="block text-[9px] font-bold text-slate-400">{txCurName}</span>
                                     </td>
-                                    <td className="px-2 py-1.5 text-center text-[10px] font-bold text-purple-700 whitespace-nowrap">{feeCell}</td>
-                                    <td className="px-2 py-1.5 text-center text-[11px] font-bold text-slate-600 whitespace-nowrap">{payerCell}</td>
-                                    <td className="px-2 py-1.5 text-center text-[11px] font-bold text-slate-600 max-w-[120px] truncate" title={destCell}>{destCell}</td>
+                                    <td className="px-2 py-1.5 text-center text-[10px] font-bold text-purple-700 whitespace-nowrap overflow-hidden text-ellipsis">{feeCell}</td>
                                     <td className="px-2 py-1.5 text-center">
                                       <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap ${statusCls}`}>{statusCell}</span>
                                     </td>
