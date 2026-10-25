@@ -13,7 +13,7 @@ import {
   serverTimestamp 
 } from "firebase/firestore";
 
-// ✅ مسیر نسبی دقیق و تضمینی برای Vercel
+// ✅ مسیر نسبی دقیق و تضمینی (سه مرحله به عقب تا ریشه پروژه)
 import { auth, db } from "../../../lib/firebase";
 
 // ============================================================
