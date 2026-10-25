@@ -12,7 +12,9 @@ import {
   onSnapshot, 
   serverTimestamp 
 } from "firebase/firestore";
-import { auth, db } from "../../lib/firebase"; // مسیر را بر اساس ساختار پوشه‌بندی خود تنظیم کنید (ممکن است ../lib/firebase باشد)
+
+// ✅ اصلاح مسیر ایمپورت با استفاده از Alias استاندارد Next.js (اشاره مستقیم به ریشه پروژه)
+import { auth, db } from "@/lib/firebase";
 
 // ============================================================
 // انواع داده (Types)
@@ -201,7 +203,6 @@ export default function SecretAccountsPage() {
   useEffect(() => {
     if (!db || !uid) return;
     
-    // استفاده از db! برای رفع خطای TypeScript در Vercel
     const qAccounts = query(collection(db!, "users", uid, "secret_accounts"), orderBy("createdAt", "desc"));
     const qTransactions = query(collection(db!, "users", uid, "secret_transactions"), orderBy("ts", "desc"));
 
@@ -256,7 +257,6 @@ export default function SecretAccountsPage() {
       
       setAccounts(sortDesc(nextList));
       
-      // رفع خطای TypeScript با استفاده از ! و بررسی null
       if (!db || !auth.currentUser) {
         showToast("❌ اتصال به دیتابیس برقرار نیست");
         setSaving(false);
