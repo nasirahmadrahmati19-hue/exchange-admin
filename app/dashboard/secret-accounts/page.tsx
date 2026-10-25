@@ -1111,7 +1111,14 @@ export default function SecretAccountsPage() {
             {filtered.map((acc) => {
               const key = String(acc.id);
               const accTx = transactions.filter((t) => t.accountId === key).sort((a, b) => b.ts - a.ts);
-              const liveBalance = accTx.length > 0 ? balanceOf(key) : (acc.balance || 0);
+              // ✅ صورت‌حساب: تراکنش‌های «محاسبات رمزی» (واریز و برداشت) هم نمایش داده می‌شوند
+              const ccAccTx = ccTransactions.filter((t) => String(t.accountId) === key)
+                .sort((a, b) => b.timestampMs - a.timestampMs);
+              const txTime = (t: Transaction | CryptocalcTransaction) =>
+                "ts" in t ? (t as Transaction).ts : (t as CryptocalcTransaction).timestampMs;
+              const allStatementTx = [...accTx, ...ccAccTx].sort((a, b) => txTime(b) - txTime(a));
+              const statementCount = accTx.length + ccAccTx.length;
+              const liveBalance = balanceOf(key);
               const curName = CURRENCY_NAMES[acc.currency] ?? acc.currency;
               const isOpen = openStatementId === key;
               
@@ -1144,20 +1151,43 @@ export default function SecretAccountsPage() {
 
                   <div className="flex gap-2 pt-1 flex-wrap">
                     <button onClick={() => { setForm({ name: acc.name, wald: acc.wald, phone: acc.phone, address: acc.address, currency: acc.currency }); setEditingId(acc.id); }} className="cursor-pointer text-xs rounded-lg bg-gradient-to-l from-sky-600 to-cyan-600 hover:brightness-110 active:scale-95 px-3.5 py-2 font-black text-white shadow-md shadow-sky-500/20 transition-all">✏️ ویرایش</button>
-                    <button onClick={() => setOpenStatementId(isOpen ? null : key)} className="cursor-pointer text-xs rounded-lg bg-gradient-to-l from-violet-600 to-indigo-600 hover:brightness-110 active:scale-95 px-3.5 py-2 font-black text-white shadow-md shadow-violet-500/20 transition-all">🧾 صورت‌حساب ({accTx.length})</button>
+                    <button onClick={() => setOpenStatementId(isOpen ? null : key)} className="cursor-pointer text-xs rounded-lg bg-gradient-to-l from-violet-600 to-indigo-600 hover:brightness-110 active:scale-95 px-3.5 py-2 font-black text-white shadow-md shadow-violet-500/20 transition-all">🧾 صورت‌حساب ({statementCount})</button>
                     <button onClick={() => handleDeleteRequest("account", key)} className="cursor-pointer text-xs rounded-lg bg-gradient-to-l from-red-600 to-rose-600 hover:brightness-110 active:scale-95 px-3.5 py-2 font-black text-white shadow-md shadow-red-500/20 transition-all">🗑 حذف</button>
                   </div>
 
                   {isOpen && (
                     <div className="mt-2 rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50/60 to-white p-3 space-y-2">
-                      <h4 className="text-xs font-black text-violet-700">🧾 صورت‌حساب «{acc.name}» — {accTx.length} تراکنش</h4>
-                      {accTx.length === 0 ? (
+                      {/* ✅ معلومات کامل حساب به‌صورت خودکار نمایش داده می‌شود */}
+                      <h4 className="text-xs font-black text-violet-700">🧾 صورت‌حساب «{acc.name}»{acc.wald ? ` — ولد: ${acc.wald}` : ""} ({statementCount} تراکنش)</h4>
+                      <div className="grid grid-cols-2 gap-1.5 text-[11px] font-bold text-slate-600">
+                        <span className="rounded-lg bg-white border border-slate-200 px-2 py-1.5">💱 ارز: {curName}</span>
+                        <span className="rounded-lg bg-white border border-slate-200 px-2 py-1.5 tabular-nums" dir="ltr">💰 موجودی: {toFaDigits(liveBalance.toLocaleString())}</span>
+                        {acc.phone && <span className="rounded-lg bg-white border border-slate-200 px-2 py-1.5" dir="ltr">📞 {acc.phone}</span>}
+                        {acc.address && <span className="rounded-lg bg-white border border-slate-200 px-2 py-1.5 truncate">📍 {acc.address}</span>}
+                        <span className="rounded-lg bg-white border border-slate-200 px-2 py-1.5 col-span-2">🗓️ تاریخ ایجاد: {acc.createdAt}</span>
+                      </div>
+                      {(() => {
+                        const totalIn = allStatementTx.filter((t) => t.type === "deposit").reduce((s, t) => s + t.amount, 0);
+                        const totalOut = allStatementTx.filter((t) => t.type !== "deposit").reduce((s, t) => s + t.amount, 0);
+                        return (
+                          <div className="grid grid-cols-2 gap-1.5 text-[11px] font-black">
+                            <span className="rounded-lg bg-emerald-50 border border-emerald-100 px-2 py-1.5 text-emerald-700 tabular-nums" dir="ltr">⬇️ مجموع واریز: {toFaDigits(totalIn.toLocaleString())}</span>
+                            <span className="rounded-lg bg-red-50 border border-red-100 px-2 py-1.5 text-red-600 tabular-nums" dir="ltr">⬆️ مجموع برداشت: {toFaDigits(totalOut.toLocaleString())}</span>
+                          </div>
+                        );
+                      })()}
+
+                      {allStatementTx.length === 0 ? (
                         <p className="text-xs font-bold text-slate-500">هنوز تراکنشی ثبت نشده است.</p>
                       ) : (
                         <div className="space-y-1.5">
-                          {accTx.map((t) => {
-                            const displayCard = t.cardReference || t.cardNumber;
-                            const displayDate = t.shamsiDisplay || `${t.date} ${t.time}`;
+                          {allStatementTx.map((t) => {
+                            const isCc = !("ts" in t);
+                            const cc = t as CryptocalcTransaction;
+                            const displayCard = isCc ? cc.cardReference : ((t as Transaction).cardReference || (t as Transaction).cardNumber);
+                            const displayDate = isCc ? (cc.shamsiDateTime || "") : `${(t as Transaction).date} ${(t as Transaction).time}`;
+                            const txCurName = isCc ? (CURRENCY_NAMES[cc.currency] ?? cc.currency) : curName;
+                            const wdAcc = isCc && cc.withdrawAccountId ? accounts.find((a) => String(a.id) === String(cc.withdrawAccountId)) : null;
                             return (
                               <div key={t.id} className="rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs shadow-sm space-y-1">
                                 <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -1165,21 +1195,34 @@ export default function SecretAccountsPage() {
                                     <span className={`rounded-md px-2 py-0.5 font-black ${t.type === "deposit" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
                                       {t.type === "deposit" ? "🟢 واریز" : "🔴 برداشت"}
                                     </span>
-                                    <span className="text-slate-800 font-black tabular-nums" dir="ltr">{toFaDigits(t.amount.toLocaleString())} {curName}</span>
+                                    <span className="text-slate-800 font-black tabular-nums" dir="ltr">{toFaDigits(t.amount.toLocaleString())} {txCurName}</span>
+                                    {isCc && <span className="rounded-md bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold text-violet-600">🧮 محاسبات رمزی</span>}
                                   </div>
                                   <button onClick={() => handleDeleteRequest("transaction", t.id, key)} className="cursor-pointer text-[11px] rounded-md bg-red-50 hover:bg-red-100 text-red-600 font-bold px-2 py-1 transition-colors">🗑 حذف</button>
                                 </div>
-                                
+
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="rounded-md bg-indigo-50 px-2 py-0.5 font-black text-indigo-700" dir="ltr">🆔 {t.transferNo}</span>
+                                  {!isCc && (t as Transaction).transferNo && (
+                                    <span className="rounded-md bg-indigo-50 px-2 py-0.5 font-black text-indigo-700" dir="ltr">🆔 {(t as Transaction).transferNo}</span>
+                                  )}
                                   {displayCard && (
                                     <span className="rounded-md bg-sky-50 px-2 py-0.5 font-black text-sky-700" dir="ltr">💳 {displayCard}</span>
                                   )}
                                 </div>
-                                
+
+                                {/* ✅ معلومات برداشت از محاسبات رمزی: گیرنده، نام پدر، تلفن، تذکره، حساب مبدأ */}
+                                {isCc && t.type === "withdrawal" && (cc.recipientName || cc.fatherName || cc.phone || cc.idCard || wdAcc) && (
+                                  <div className="flex items-center gap-2 flex-wrap text-[11px] font-bold text-slate-600">
+                                    {cc.recipientName && <span className="rounded-md bg-amber-50 px-2 py-0.5 text-amber-800">🧑‍💼 {cc.recipientName}{cc.fatherName ? ` بنده ${cc.fatherName}` : ""}</span>}
+                                    {cc.phone && <span className="rounded-md bg-slate-50 px-2 py-0.5" dir="ltr">📞 {cc.phone}</span>}
+                                    {cc.idCard && <span className="rounded-md bg-slate-50 px-2 py-0.5" dir="ltr">🪪 {cc.idCard}</span>}
+                                    {wdAcc && <span className="rounded-md bg-orange-50 px-2 py-0.5 text-orange-700">🏦 از حساب: {wdAcc.name}</span>}
+                                  </div>
+                                )}
+
                                 <div className="flex items-center gap-3 flex-wrap text-slate-500 font-bold">
                                   <span>📅 {displayDate}</span>
-                                  {t.note && <span className="text-slate-400 truncate max-w-[160px]">({t.note})</span>}
+                                  {!isCc && (t as Transaction).note && <span className="text-slate-400 truncate max-w-[160px]">({(t as Transaction).note})</span>}
                                 </div>
                               </div>
                             );
