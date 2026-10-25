@@ -1156,31 +1156,25 @@ export default function SecretAccountsPage() {
                   </div>
 
                   {isOpen && (
-                    <div className="mt-2 rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50/60 to-white p-3 space-y-2">
-                      {/* ✅ معلومات کامل حساب به‌صورت خودکار نمایش داده می‌شود */}
-                      <h4 className="text-xs font-black text-violet-700">🧾 صورت‌حساب «{acc.name}»{acc.wald ? ` — ولد: ${acc.wald}` : ""} ({statementCount} تراکنش)</h4>
-                      <div className="grid grid-cols-2 gap-1.5 text-[11px] font-bold text-slate-600">
-                        <span className="rounded-lg bg-white border border-slate-200 px-2 py-1.5">💱 ارز: {curName}</span>
-                        <span className="rounded-lg bg-white border border-slate-200 px-2 py-1.5 tabular-nums" dir="ltr">💰 موجودی: {toFaDigits(liveBalance.toLocaleString())}</span>
-                        {acc.phone && <span className="rounded-lg bg-white border border-slate-200 px-2 py-1.5" dir="ltr">📞 {acc.phone}</span>}
-                        {acc.address && <span className="rounded-lg bg-white border border-slate-200 px-2 py-1.5 truncate">📍 {acc.address}</span>}
-                        <span className="rounded-lg bg-white border border-slate-200 px-2 py-1.5 col-span-2">🗓️ تاریخ ایجاد: {acc.createdAt}</span>
-                      </div>
+                    /* ✅ صورت‌حساب فشرده: یک خط خلاصه + ردیف تک‌خطی برای هر تراکنش (اطلاعات کامل در tooltip با title) */
+                    <div className="mt-1 rounded-lg border border-violet-100 bg-violet-50/40 p-2 space-y-1">
                       {(() => {
                         const totalIn = allStatementTx.filter((t) => t.type === "deposit").reduce((s, t) => s + t.amount, 0);
                         const totalOut = allStatementTx.filter((t) => t.type !== "deposit").reduce((s, t) => s + t.amount, 0);
                         return (
-                          <div className="grid grid-cols-2 gap-1.5 text-[11px] font-black">
-                            <span className="rounded-lg bg-emerald-50 border border-emerald-100 px-2 py-1.5 text-emerald-700 tabular-nums" dir="ltr">⬇️ مجموع واریز: {toFaDigits(totalIn.toLocaleString())}</span>
-                            <span className="rounded-lg bg-red-50 border border-red-100 px-2 py-1.5 text-red-600 tabular-nums" dir="ltr">⬆️ مجموع برداشت: {toFaDigits(totalOut.toLocaleString())}</span>
+                          <div className="flex items-center justify-between gap-2 text-[10px] font-black text-slate-500 flex-wrap">
+                            <span>🧾 {statementCount} تراکنش</span>
+                            <span className="text-emerald-600 tabular-nums" dir="ltr">⬇️ {toFaDigits(totalIn.toLocaleString())}</span>
+                            <span className="text-red-500 tabular-nums" dir="ltr">⬆️ {toFaDigits(totalOut.toLocaleString())}</span>
+                            <span className={liveBalance >= 0 ? "text-emerald-700" : "text-red-600"} dir="ltr">💰 {toFaDigits(liveBalance.toLocaleString())} {curName}</span>
                           </div>
                         );
                       })()}
 
                       {allStatementTx.length === 0 ? (
-                        <p className="text-xs font-bold text-slate-500">هنوز تراکنشی ثبت نشده است.</p>
+                        <p className="text-[11px] font-bold text-slate-400 text-center py-1">تراکنشی ثبت نشده است.</p>
                       ) : (
-                        <div className="space-y-1.5">
+                        <div className="max-h-64 overflow-y-auto divide-y divide-violet-100 rounded-md bg-white border border-violet-100">
                           {allStatementTx.map((t) => {
                             const isCc = !("ts" in t);
                             const cc = t as CryptocalcTransaction;
@@ -1188,42 +1182,27 @@ export default function SecretAccountsPage() {
                             const displayDate = isCc ? (cc.shamsiDateTime || "") : `${(t as Transaction).date} ${(t as Transaction).time}`;
                             const txCurName = isCc ? (CURRENCY_NAMES[cc.currency] ?? cc.currency) : curName;
                             const wdAcc = isCc && cc.withdrawAccountId ? accounts.find((a) => String(a.id) === String(cc.withdrawAccountId)) : null;
+                            // اطلاعات کامل برای tooltip
+                            const tipParts: string[] = [`${t.type === "deposit" ? "واریز" : "برداشت"} — ${toFaDigits(t.amount.toLocaleString())} ${txCurName}`, displayDate];
+                            if (!isCc && (t as Transaction).transferNo) tipParts.push(`کد حواله: ${(t as Transaction).transferNo}`);
+                            if (displayCard) tipParts.push(`کد/کارت: ${displayCard}`);
+                            if (isCc && t.type === "withdrawal") {
+                              if (cc.recipientName) tipParts.push(`گیرنده: ${cc.recipientName}${cc.fatherName ? ` بنده ${cc.fatherName}` : ""}`);
+                              if (cc.phone) tipParts.push(`تلفن: ${cc.phone}`);
+                              if (cc.idCard) tipParts.push(`تذکره: ${cc.idCard}`);
+                              if (wdAcc) tipParts.push(`از حساب: ${wdAcc.name}`);
+                            }
+                            if (!isCc && (t as Transaction).note) tipParts.push(`یادداشت: ${(t as Transaction).note}`);
                             return (
-                              <div key={t.id} className="rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs shadow-sm space-y-1">
-                                <div className="flex items-center justify-between gap-2 flex-wrap">
-                                  <div className="flex items-center gap-2 flex-wrap min-w-0">
-                                    <span className={`rounded-md px-2 py-0.5 font-black ${t.type === "deposit" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
-                                      {t.type === "deposit" ? "🟢 واریز" : "🔴 برداشت"}
-                                    </span>
-                                    <span className="text-slate-800 font-black tabular-nums" dir="ltr">{toFaDigits(t.amount.toLocaleString())} {txCurName}</span>
-                                    {isCc && <span className="rounded-md bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold text-violet-600">🧮 محاسبات رمزی</span>}
-                                  </div>
-                                  <button onClick={() => handleDeleteRequest("transaction", t.id, key)} className="cursor-pointer text-[11px] rounded-md bg-red-50 hover:bg-red-100 text-red-600 font-bold px-2 py-1 transition-colors">🗑 حذف</button>
+                              <div key={t.id} title={tipParts.join(" | ")} className="flex items-center justify-between gap-2 px-2 py-1 text-[11px] hover:bg-violet-50/50 transition-colors">
+                                <div className="flex items-center gap-1.5 min-w-0 truncate">
+                                  <span className={t.type === "deposit" ? "text-emerald-600 font-black" : "text-red-500 font-black"}>{t.type === "deposit" ? "▲" : "▼"}</span>
+                                  <span className="text-slate-700 font-bold tabular-nums whitespace-nowrap" dir="ltr">{toFaDigits(t.amount.toLocaleString())} {txCurName}</span>
+                                  <span className="text-slate-400 font-bold whitespace-nowrap hidden sm:inline">📅 {displayDate}</span>
+                                  {displayCard && <span className="text-sky-600 font-bold whitespace-nowrap hidden md:inline" dir="ltr">#{displayCard}</span>}
+                                  {isCc && <span className="text-violet-400 font-bold whitespace-nowrap hidden md:inline">🧮</span>}
                                 </div>
-
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  {!isCc && (t as Transaction).transferNo && (
-                                    <span className="rounded-md bg-indigo-50 px-2 py-0.5 font-black text-indigo-700" dir="ltr">🆔 {(t as Transaction).transferNo}</span>
-                                  )}
-                                  {displayCard && (
-                                    <span className="rounded-md bg-sky-50 px-2 py-0.5 font-black text-sky-700" dir="ltr">💳 {displayCard}</span>
-                                  )}
-                                </div>
-
-                                {/* ✅ معلومات برداشت از محاسبات رمزی: گیرنده، نام پدر، تلفن، تذکره، حساب مبدأ */}
-                                {isCc && t.type === "withdrawal" && (cc.recipientName || cc.fatherName || cc.phone || cc.idCard || wdAcc) && (
-                                  <div className="flex items-center gap-2 flex-wrap text-[11px] font-bold text-slate-600">
-                                    {cc.recipientName && <span className="rounded-md bg-amber-50 px-2 py-0.5 text-amber-800">🧑‍💼 {cc.recipientName}{cc.fatherName ? ` بنده ${cc.fatherName}` : ""}</span>}
-                                    {cc.phone && <span className="rounded-md bg-slate-50 px-2 py-0.5" dir="ltr">📞 {cc.phone}</span>}
-                                    {cc.idCard && <span className="rounded-md bg-slate-50 px-2 py-0.5" dir="ltr">🪪 {cc.idCard}</span>}
-                                    {wdAcc && <span className="rounded-md bg-orange-50 px-2 py-0.5 text-orange-700">🏦 از حساب: {wdAcc.name}</span>}
-                                  </div>
-                                )}
-
-                                <div className="flex items-center gap-3 flex-wrap text-slate-500 font-bold">
-                                  <span>📅 {displayDate}</span>
-                                  {!isCc && (t as Transaction).note && <span className="text-slate-400 truncate max-w-[160px]">({(t as Transaction).note})</span>}
-                                </div>
+                                <button onClick={() => handleDeleteRequest("transaction", t.id, key)} className="cursor-pointer shrink-0 text-[10px] rounded bg-transparent hover:bg-red-50 text-red-400 hover:text-red-600 font-bold px-1.5 py-0.5 transition-colors">✕</button>
                               </div>
                             );
                           })}
