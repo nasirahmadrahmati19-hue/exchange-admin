@@ -26,7 +26,7 @@ interface Customer { id: string; name: string; fullName?: string; customerName?:
 interface Transaction { id: string; trackingCode: string; type: string; dealType?: "buy" | "sell"; date: string; customerId?: string; customerName?: string; senderId?: string; senderName?: string; receiverId?: string; receiverName?: string; fromCurrency: Currency; fromAmount: number; toCurrency: Currency; toAmount: number; rate: number; rateLabel: string; rateBase?: Currency; commission?: number; commissionCurrency?: Currency; commissionPayer?: "sender" | "receiver"; description?: string; status: "active" | "voided"; profit?: number; profitCurrency?: Currency; voidedReason?: string; balanceAfter?: number; fee?: number; }
 interface Hawala { id: string; number: string; date: string; time: string; type: string; destinationCountry: string; province: string; district: string; destinationText: string; currencyFrom: Currency; currencyTo: Currency; amountFrom: number; rate: number; rateLabel: string; rateBase?: Currency; fee: number; feeCurrency: Currency; feePayer: "sender" | "receiver"; finalAmount: number; balance: string; note: string; profit: number; profitCurrency: Currency; senderId?: string; senderName: string; senderPhone: string; senderTelegram: string; receiverId?: string; receiverName: string; receiverTazkira: string; receiverPhone: string; receiverAddress: string; status: "pending" | "sent" | "paid" | "cancelled"; paidAt?: string; paidBy?: string; paidAmount?: number; cancelReason?: string; trackingCode?: string; }
 interface CashEntry { id: string; trackingCode: string; date: string; type: string; currency: Currency; amount: number; direction: "in" | "out"; status: "active" | "voided"; customerId?: string; customerName?: string; linkedHawalaId?: string; linkedExchangeId?: string; linkedTransferId?: string; linkedConvertId?: string; linkedHawalaSettleId?: string; reason?: string; balanceAfter?: number; fee?: number; voidedReason?: string; }
-interface UnifiedJournalEntry { id: string; date: string; type: TxType; description: string; partyName: string; partyId?: string; currency: Currency; amount: number; balanceAfter?: number; status: "active" | "voided"; voidedReason?: string; source: "transaction" | "hawala" | "cash"; sourceId: string; trackingCode: string; fee?: number; }
+interface UnifiedJournalEntry { id: string; date: string; type: TxType; description: string; partyName: string; partyId?: string; currency: Currency; amount: number; balanceAfter?: number; status: "active" | "voided"; voidedReason?: string; source: "transaction" | "hawala" | "cash"; sourceId: string; trackingCode: string; fee?: number; senderName?: string; receiverName?: string; finalAmount?: number; commission?: number; payerName?: string; destination?: string; txStatus?: string; }
 
 const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00";
 const toPersianDigits = (s: string): string => s.replace(/\d/g, d => "۰۱۲۳۴۵۶۷۸۹"[parseInt(d)]);
@@ -166,10 +166,10 @@ export default function JournalPage() {
     hawalas.forEach((h) => {
       if (h.status === "cancelled") return;
       const senderName = resolveCustomerName(h.senderName, h.senderId);
-      entries.push({ id: h.id, date: h.date, type: "حواله", description: `حواله به ${h.receiverName || "—"} (${h.destinationText || ""})`, partyName: senderName, partyId: h.senderId, currency: h.currencyFrom, amount: h.amountFrom, status: "active", source: "hawala", sourceId: h.id, fee: h.fee || 0 });
+      const receiverName = resolveCustomerName(h.receiverName, h.receiverId);
+      entries.push({ id: h.id, date: h.date, type: "حواله", description: `حواله به ${h.receiverName || "—"} (${h.destinationText || ""})`, partyName: senderName, partyId: h.senderId, currency: h.currencyFrom, amount: h.amountFrom, status: "active", source: "hawala", sourceId: h.id, fee: h.fee || 0, senderName, receiverName, finalAmount: h.finalAmount, commission: h.fee || 0, payerName: h.feePayer === "receiver" ? receiverName : senderName, destination: h.destinationText || h.province || "", txStatus: h.status });
       if (h.status === "paid") {
-        const receiverName = resolveCustomerName(h.receiverName, h.receiverId);
-        entries.push({ id: `${h.id}-paid`, date: h.paidAt || h.date, type: "واریز", description: `تسویه حواله از ${senderName}`, partyName: receiverName, partyId: h.receiverId, currency: h.currencyTo, amount: h.finalAmount, status: "active", source: "hawala", sourceId: h.id, fee: 0 });
+        entries.push({ id: `${h.id}-paid`, date: h.paidAt || h.date, type: "واریز", description: `تسویه حواله از ${senderName}`, partyName: receiverName, partyId: h.receiverId, currency: h.currencyTo, amount: h.finalAmount, status: "active", source: "hawala", sourceId: h.id, fee: 0, senderName, receiverName, finalAmount: h.finalAmount, commission: 0, payerName: "—", destination: h.destinationText || "", txStatus: "paid" });
       }
     });
     cashEntries.forEach((ce) => {
@@ -320,12 +320,16 @@ export default function JournalPage() {
     } finally { setVoidingId(null); }
   };
 
+  const hawalaStatusLabels: Record<string, string> = { pending: "در انتظار", sent: "ارسال‌شده", paid: "تصفیه‌شده", cancelled: "لغوشده", active: "فعال", voided: "باطل‌شده" };
+
   const handleExport = () => {
-    const headers = ["ردیف", "کد پیگیری", "تاریخ", "ساعت", "مشتری", "شرح", "نوع", "ارز", "مبلغ", "تراز بعد"];
+    const headers = ["ردیف", "کد پیگیری", "تاریخ", "حواله‌دهنده", "حواله‌گیرنده", "مبلغ نهایی", "کارمزد", "پرداخت‌کننده", "مقصد", "وضعیت"];
     const escapeCsv = (val: any) => `"${String(val ?? "").replace(/"/g, '""')}"`;
     const rows = sortedEntries.map((e, index) => {
       const d = new Date(e.date);
-      return [toPersianDigits(String(index + 1)), escapeCsv(e.trackingCode), escapeCsv(d.toLocaleDateString("fa-IR")), escapeCsv(d.toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" })), escapeCsv(e.partyName || "—"), escapeCsv(e.description), escapeCsv(e.type), escapeCsv(currencyLabels[e.currency as Currency]), e.amount, e.balanceAfter ?? ""].join(",");
+      const finalAmount = e.source === "hawala" ? (e.finalAmount ?? e.amount) : e.amount;
+      const statusLabel = e.status === "voided" ? "باطل‌شده" : (e.source === "hawala" && e.txStatus ? (hawalaStatusLabels[e.txStatus] || e.txStatus) : hawalaStatusLabels[e.type] || e.type);
+      return [toPersianDigits(String(index + 1)), escapeCsv(e.trackingCode), escapeCsv(d.toLocaleDateString("fa-IR")), escapeCsv(e.senderName || e.partyName || "—"), escapeCsv(e.receiverName || "—"), finalAmount, e.commission ?? 0, escapeCsv(e.payerName || "—"), escapeCsv(e.destination || "—"), escapeCsv(statusLabel)].join(",");
     });
     const blob = new Blob(["\uFEFF" + [headers.join(","), ...rows].join("\n")], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -449,26 +453,24 @@ export default function JournalPage() {
                     <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-24 cursor-pointer hover:text-cyan-400 transition" onClick={() => handleSort("date")}>
                       <span className="inline-flex items-center gap-1">تاریخ <SortIcon field="date" /></span>
                     </th>
-                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-16">ساعت</th>
                     <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-36 cursor-pointer hover:text-cyan-400 transition" onClick={() => handleSort("partyName")}>
-                      <span className="inline-flex items-center gap-1">مشتری <SortIcon field="partyName" /></span>
+                      <span className="inline-flex items-center gap-1">حواله‌دهنده <SortIcon field="partyName" /></span>
                     </th>
-                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-20 cursor-pointer hover:text-cyan-400 transition" onClick={() => handleSort("type")}>
-                      <span className="inline-flex items-center gap-1">نوع <SortIcon field="type" /></span>
-                    </th>
-                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-16">ارز</th>
+                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-36">حواله‌گیرنده</th>
                     <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-28 cursor-pointer hover:text-cyan-400 transition" onClick={() => handleSort("amount")}>
-                      <span className="inline-flex items-center gap-1">مبلغ <SortIcon field="amount" /></span>
+                      <span className="inline-flex items-center gap-1">مبلغ نهایی <SortIcon field="amount" /></span>
                     </th>
-                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-24">تراز بعد</th>
-                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400">شرح</th>
+                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-24">کارمزد</th>
+                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-32">پرداخت‌کننده</th>
+                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-32">مقصد</th>
+                    <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-24">وضعیت</th>
                     <th className="px-2 py-3 text-center text-[11px] font-black text-slate-400 whitespace-nowrap w-20">عملیات</th>
                   </tr>
                 </thead>
                 <tbody className={`divide-y ${dk ? "divide-slate-700/40" : "divide-slate-100"}`}>
                   {paginatedEntries.length === 0 ? (
                     <tr>
-                      <td colSpan={11} className={`px-4 py-16 text-center ${subText}`}>
+                      <td colSpan={10} className={`px-4 py-16 text-center ${subText}`}>
                         <div className="flex flex-col items-center gap-2">
                           <span className="text-4xl">📭</span>
                           <span className="font-bold">هیچ تراکنشی با این فیلترها یافت نشد.</span>
@@ -480,9 +482,15 @@ export default function JournalPage() {
                       const isVoided = entry.status === "voided";
                       const d = new Date(entry.date);
                       const datePart = d.toLocaleDateString("fa-IR");
-                      const timePart = d.toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" });
                       const globalIndex = (currentPage - 1) * itemsPerPage + index + 1;
                       const currColors = currencyColors[entry.currency as Currency];
+                      const senderCell = entry.senderName || entry.partyName || "—";
+                      const receiverCell = entry.receiverName || "—";
+                      const finalAmt = entry.source === "hawala" ? (entry.finalAmount ?? entry.amount) : entry.amount;
+                      const commissionCell = entry.commission && entry.commission > 0 ? fmt(entry.commission) : "—";
+                      const payerCell = entry.payerName || "—";
+                      const destCell = entry.destination || "—";
+                      const statusCell = isVoided ? "باطل‌شده" : (entry.source === "hawala" && entry.txStatus ? (hawalaStatusLabels[entry.txStatus] || entry.txStatus) : entry.type);
                       return (
                         <tr key={entry.id} className={`group transition-all duration-200 cursor-pointer ${isVoided ? (dk ? "opacity-50" : "opacity-60") : (dk ? "hover:bg-slate-700/30" : "hover:bg-emerald-50/50")} ${dk ? "" : "even:bg-slate-50/30"}`} onClick={() => setSelectedEntry(entry)}>
                           <td className="px-2 py-2.5 text-center">
@@ -496,33 +504,32 @@ export default function JournalPage() {
                             </span>
                           </td>
                           <td className={`px-2 py-2.5 text-center text-xs whitespace-nowrap font-bold ${dk ? "text-slate-300" : "text-slate-700"}`}>{datePart}</td>
-                          <td className={`px-2 py-2.5 text-center text-xs whitespace-nowrap ${dk ? "text-slate-400" : "text-slate-500"}`}>{timePart}</td>
                           <td className={`px-2 py-2.5 text-center text-xs font-bold ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (dk ? "text-amber-300" : "text-amber-700")}`}>
                             <div className="flex items-center gap-1 justify-center">
-                              <span className="truncate max-w-[120px]" title={entry.partyName || "—"}>{entry.partyName || "—"}</span>
+                              <span className="truncate max-w-[120px]" title={senderCell}>{senderCell}</span>
                             </div>
+                          </td>
+                          <td className={`px-2 py-2.5 text-center text-xs font-bold ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (dk ? "text-sky-300" : "text-sky-700")}`}>
+                            <div className="flex items-center gap-1 justify-center">
+                              <span className="truncate max-w-[120px]" title={receiverCell}>{receiverCell}</span>
+                            </div>
+                          </td>
+                          <td className={`px-2 py-2.5 text-center font-black tabular-nums text-xs whitespace-nowrap ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (entry.type === "واریز" ? "text-emerald-500" : "text-rose-500")}`}>
+                            <span className={`inline-block px-2 py-0.5 rounded-md ${isVoided ? "" : (entry.type === "واریز" ? (dk ? "bg-emerald-500/10" : "bg-emerald-50") : (dk ? "bg-rose-500/10" : "bg-rose-50"))}`} title={currencyLabels[entry.currency as Currency]}>
+                              {fmt(finalAmt)} <span className={`text-[9px] font-bold ${currColors.text}`}>{currencyIcons[entry.currency as Currency]}</span>
+                            </span>
+                          </td>
+                          <td className={`px-2 py-2.5 text-center tabular-nums text-xs font-bold whitespace-nowrap ${dk ? "text-purple-300" : "text-purple-700"}`}>{commissionCell}</td>
+                          <td className={`px-2 py-2.5 text-center text-xs whitespace-nowrap ${dk ? "text-slate-300" : "text-slate-600"}`}>
+                            <span className="truncate block max-w-[110px] mx-auto" title={payerCell}>{payerCell}</span>
+                          </td>
+                          <td className={`px-2 py-2.5 text-center text-xs whitespace-nowrap ${dk ? "text-slate-300" : "text-slate-600"}`}>
+                            <span className="truncate block max-w-[110px] mx-auto" title={destCell}>{destCell}</span>
                           </td>
                           <td className="px-2 py-2.5 text-center">
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap ${getBadgeColor(entry.type, isVoided)}`}>
-                              {entry.type}
+                              {statusCell}
                             </span>
-                          </td>
-                          <td className="px-2 py-2.5 text-center">
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap ${dk ? currColors.bg : "bg-slate-50"} ${currColors.text}`}>
-                              <span className="text-xs">{currencyIcons[entry.currency as Currency]}</span>
-                              <span>{currencyLabels[entry.currency as Currency]}</span>
-                            </span>
-                          </td>
-                          <td className={`px-2 py-2.5 text-center font-black tabular-nums text-xs whitespace-nowrap ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (entry.type === "واریز" ? "text-emerald-500" : "text-rose-500")}`}>
-                            <span className={`inline-block px-2 py-0.5 rounded-md ${isVoided ? "" : (entry.type === "واریز" ? (dk ? "bg-emerald-500/10" : "bg-emerald-50") : (dk ? "bg-rose-500/10" : "bg-rose-50"))}`}>
-                              {entry.type === "واریز" ? "+" : "-"} {fmt(entry.amount)}
-                            </span>
-                          </td>
-                          <td className={`px-2 py-2.5 text-center tabular-nums text-xs font-mono whitespace-nowrap ${dk ? "text-slate-300" : "text-slate-600"}`}>
-                            {entry.balanceAfter ?? "—"}
-                          </td>
-                          <td className={`px-2 py-2.5 text-center text-xs ${isVoided ? (dk ? "text-slate-500 line-through" : "text-slate-400 line-through") : (dk ? "text-slate-200" : "text-slate-800")}`}>
-                            <span className="truncate block max-w-[180px] mx-auto" title={entry.description}>{entry.description}</span>
                           </td>
                           <td className="px-2 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-center gap-1.5">
@@ -583,13 +590,15 @@ export default function JournalPage() {
               <div className="space-y-3">
                 {[
                   ["تاریخ", new Date(selectedEntry.date).toLocaleDateString("fa-IR")],
-                  ["ساعت", new Date(selectedEntry.date).toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" })],
+                  ["حواله‌دهنده", selectedEntry.senderName || selectedEntry.partyName || "—"],
+                  ["حواله‌گیرنده", selectedEntry.receiverName || "—"],
+                  ["مبلغ نهایی", `${fmt(selectedEntry.source === "hawala" ? (selectedEntry.finalAmount ?? selectedEntry.amount) : selectedEntry.amount)} ${currencyLabels[selectedEntry.currency]}`],
+                  ["کارمزد", selectedEntry.commission && selectedEntry.commission > 0 ? fmt(selectedEntry.commission) : "—"],
+                  ["پرداخت‌کننده", selectedEntry.payerName || "—"],
+                  ["مقصد", selectedEntry.destination || "—"],
                   ["نوع", selectedEntry.type],
-                  ["مشتری", selectedEntry.partyName],
                   ["شرح", selectedEntry.description],
-                  ["ارز", currencyLabels[selectedEntry.currency]],
-                  ["مبلغ", `${selectedEntry.type === "واریز" ? "+" : "-"} ${fmt(selectedEntry.amount)}`],
-                  ["وضعیت", selectedEntry.status === "voided" ? `باطل‌شده (${selectedEntry.voidedReason})` : "فعال"]
+                  ["وضعیت", selectedEntry.status === "voided" ? `باطل‌شده (${selectedEntry.voidedReason})` : (selectedEntry.source === "hawala" && selectedEntry.txStatus ? (hawalaStatusLabels[selectedEntry.txStatus] || selectedEntry.txStatus) : "فعال")]
                 ].map(([label, value], i) => (
                   <div key={i} className={`flex justify-between items-center py-2 border-b ${dk ? "border-slate-700" : "border-slate-100"}`}>
                     <span className={`text-xs font-bold ${subText}`}>{label}</span>
