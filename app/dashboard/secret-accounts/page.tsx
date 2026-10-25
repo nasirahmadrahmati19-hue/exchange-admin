@@ -560,12 +560,15 @@ export default function SecretAccountsPage() {
 
   /** ثبت واریز/برداشت در subcollection حساب */
   const submitCcTx = async (type: CryptoTxType) => {
-    // ✅ ابتدا مقادیر فیلدهای مهارتی (uncontrolled) را مستقیم از DOM بخوان —
-    // اگر کاربر بدون Leave کردن فیلد دکمه را بزند، onBlur اجرا نمی‌شود و state خالی است
+    // ✅ ابتدا مقادیر فیلدها را مستقیم از DOM بخوان —
+    // اگر کاربر بدون Leave کردن فیلد دکمه را بزند، onBlur/onInput اجرا نشده و state خالی است
     const cardRefNow = normalizeCardRef(cardInputRef.current?.value ?? ccForm.cardReference);
     if (cardInputRef.current) cardInputRef.current.value = cardRefNow;
     setCcForm((prev) => ({ ...prev, cardReference: cardRefNow }));
-    console.log("1. فرم سابمیت شد:", { ...ccForm, cardReference: cardRefNow, type });
+    // ✅ مبلغ هم مستقیم از DOM (تبدیل ارقام فارسی به لاتین + حذف جداکننده‌ها)
+    const amountRawDom = toLatinDigits(amountInputRef.current?.value ?? ccForm.amount).replace(/[^\d]/g, "");
+    setCcForm((prev) => ({ ...prev, amount: amountRawDom ? toFaDigits(Number(amountRawDom).toLocaleString()) : "" }));
+    console.log("1. فرم سابمیت شد:", { ...ccForm, amount: amountRawDom, cardReference: cardRefNow, type });
 
     if (ccSaving) return;
     if (!authReady || !auth?.currentUser || !db) {
@@ -851,17 +854,23 @@ export default function SecretAccountsPage() {
           </div>
 
           <div className="mt-4 flex flex-col sm:flex-row gap-3">
+            {/* ✅ دکمه‌ها همیشه فعال‌اند (بدون disabled) — اگر فیلدی ناقص باشد
+                خود submitCcTx پیام راهنمای دقیق نشان می‌دهد. این کار مشکل
+                «دکمه کار نمی‌کند» را حتی در صورت خالی ماندن state فیلد مهارتی حل می‌کند،
+                چون مقدار کارت مستقیم از DOM خوانده می‌شود. */}
             <button
+              type="button"
+              onPointerDown={(e) => e.preventDefault()} // حفظ فوکوس و مقدار فیلدها هنگام لمس موبایل
               onClick={() => submitCcTx("deposit")}
-              disabled={ccSaving || !ccForm.accountId || !ccForm.amount || !ccForm.currency || ccForm.cardReference.length !== 6}
-              className="flex-1 cursor-pointer rounded-xl bg-gradient-to-l from-green-600 to-emerald-600 hover:brightness-110 active:scale-95 transition-all px-6 py-3 text-sm font-black text-white shadow-lg shadow-green-500/25 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="flex-1 cursor-pointer rounded-xl bg-gradient-to-l from-green-600 to-emerald-600 hover:brightness-110 active:scale-95 transition-all px-6 py-3 text-sm font-black text-white shadow-lg shadow-green-500/25 flex items-center justify-center gap-2"
             >
               <span>⬇️</span> {ccSaving ? "در حال ثبت…" : "واریز"}
             </button>
             <button
+              type="button"
+              onPointerDown={(e) => e.preventDefault()}
               onClick={() => submitCcTx("withdrawal")}
-              disabled={ccSaving || !ccForm.accountId || !ccForm.amount || !ccForm.currency || ccForm.cardReference.length !== 6}
-              className="flex-1 cursor-pointer rounded-xl bg-gradient-to-l from-red-600 to-rose-600 hover:brightness-110 active:scale-95 transition-all px-6 py-3 text-sm font-black text-white shadow-lg shadow-red-500/25 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="flex-1 cursor-pointer rounded-xl bg-gradient-to-l from-red-600 to-rose-600 hover:brightness-110 active:scale-95 transition-all px-6 py-3 text-sm font-black text-white shadow-lg shadow-red-500/25 flex items-center justify-center gap-2"
             >
               <span>⬆️</span> {ccSaving ? "در حال ثبت…" : "برداشت"}
             </button>
