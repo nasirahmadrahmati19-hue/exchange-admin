@@ -133,6 +133,24 @@ function formatShamsiFromLocal(localStr: string): string {
   return toFaDigits(`${j.jy}/${pad2(j.jm)}/${pad2(j.jd)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`);
 }
 
+// ✅ زمان فعلی به وقت کابل (UTC+4:30) — ساعت سیستم کاربر مهم نیست
+const KABUL_UTC_OFFSET_MS = 4.5 * 60 * 60 * 1000;
+function kabulNow(): Date {
+  // با افزودن آفست کابل به UTC، اجزای getUTC* دقیقاً ساعت و دقیقه کابل را می‌دهند
+  return new Date(Date.now() + KABUL_UTC_OFFSET_MS);
+}
+/** نمایش همیشه-زنده تاریخ/ساعت هجری شمسی به وقت افغانستان (کابل، UTC+4:30) */
+function formatKabulShamsi(): string {
+  const d = kabulNow();
+  const j = toJalali(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
+  return toFaDigits(`${j.jy}/${pad2(j.jm)}/${pad2(j.jd)} ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`);
+}
+/** رشته datetime-local معادلِ ساعت کابل (برای ذخیره سازگار با منطق قبلی) */
+function kabulDateTimeLocalStr(): string {
+  const d = kabulNow();
+  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}T${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
+}
+
 // ============================================================
 // توابع کمکی (Helpers)
 // ============================================================
@@ -305,37 +323,14 @@ export default function SecretAccountsPage() {
     setCcForm((prev) => (prev.cardReference === clean ? prev : { ...prev, cardReference: clean }));
   };
 
-  // ✅ فیلد تاریخ شمسی: کاربر تاریخ را به شمسی تایپ می‌کند (مثلاً ۱۴۰۵/۰۷/۲۸ ۰۹:۳۸)
-  // و خودکار — بدون ورود دستی میلادی — به Date میلادی تبدیل و در state ذخیره می‌شود
-  const [jalaliTyped, setJalaliTyped] = useState("");
-  const handleJalaliTyping = (raw: string) => {
-    const digits = toLatinDigits(String(raw ?? "")).replace(/[^\d]/g, "").slice(0, 12);
-    // فرمت خودکار با جداکننده: YYYY/MM/DD HH:mm
-    let formatted = digits;
-    if (digits.length > 4) formatted = digits.slice(0, 4) + "/" + digits.slice(4);
-    if (digits.length > 6) formatted = digits.slice(0, 4) + "/" + digits.slice(4, 6) + "/" + digits.slice(6);
-    if (digits.length > 8) formatted = digits.slice(0, 4) + "/" + digits.slice(4, 6) + "/" + digits.slice(6, 8) + " " + digits.slice(8);
-    if (digits.length > 10) formatted = digits.slice(0, 4) + "/" + digits.slice(4, 6) + "/" + digits.slice(6, 8) + " " + digits.slice(8, 10) + ":" + digits.slice(10);
-    setJalaliTyped(toFaDigits(formatted));
-
-    if (digits.length >= 8 && digits.length <= 12) {
-      const jy = Number(digits.slice(0, 4));
-      const jm = Number(digits.slice(4, 6));
-      const jd = Number(digits.slice(6, 8));
-      const hh = digits.length >= 10 ? Number(digits.slice(8, 10)) : 0;
-      const mm = digits.length >= 12 ? Number(digits.slice(10, 12)) : 0;
-      if (jm >= 1 && jm <= 12 && jd >= 1 && jd <= 31 && hh <= 23 && mm <= 59) {
-        const g = toGregory(jy, jm, jd);
-        const d = new Date(g.gy, g.gm - 1, g.gd, hh, mm, 0, 0);
-        if (!isNaN(d.getTime())) {
-          const localStr = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(hh)}:${pad2(mm)}`;
-          setCcForm((prev) => (prev.dateTimeLocal === localStr ? prev : { ...prev, dateTimeLocal: localStr }));
-          return;
-        }
-      }
-    }
-    setCcForm((prev) => (prev.dateTimeLocal === "" ? prev : { ...prev, dateTimeLocal: "" }));
-  };
+  // ✅ تاریخ دیگر دستی وارد نمی‌شود: هر تراکنش «خودکار» تاریخ و ساعت همان لحظه ثبت،
+  // به وقت افغانستان (کابل، UTC+4:30) و به صورت هجری شمسی دریافت می‌کند.
+  // این state فقط برای رندر مجددِ ساعت زنده در بالای فرم استفاده می‌شود.
+  const [, setKabulClockTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setKabulClockTick((t) => t + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     if (pendingCaret.current != null && amountInputRef.current) {
@@ -585,14 +580,10 @@ export default function SecretAccountsPage() {
       showToast("⚠️ ۶ رقم آخر کارت / کد پیگیری باید دقیقاً ۶ عدد باشد");
       return;
     }
-    if (!ccForm.dateTimeLocal) {
-      showToast("⚠️ تاریخ و ساعت را انتخاب کنید");
-      return;
-    }
-
     const currencyCode = ccForm.currency as CurrencyCode;
-    const txDateMs = new Date(ccForm.dateTimeLocal).getTime() || Date.now();
-    const shamsiStr = formatShamsiFromLocal(ccForm.dateTimeLocal);
+    const shamsiStr = formatKabulShamsi();
+    // timestamp واقعی (UTC epoch) — نمایش همیشه از رشته شمسی کابل انجام می‌شود
+    const txDateMs = Date.now();
 
     setCcSaving(true);
     const uidNow = auth.currentUser.uid;
@@ -645,8 +636,7 @@ export default function SecretAccountsPage() {
         : `✅ ${toFaDigits(numericAmount.toLocaleString())} ${CURRENCY_NAMES[currencyCode]} برداشت شد`);
 
       // ✅ ریست فرم — همه چیز خالی می‌ماند (بدون پیش‌فرض)، فقط حساب انتخاب‌شده باقی می‌ماند
-      setCcForm((prev) => ({ ...prev, amount: "", currency: "", dateTimeLocal: "", cardReference: "" }));
-      setJalaliTyped(""); // ✅ فیلد تاریخ هم کاملاً خالی می‌شود (بدون پیش‌فرض)
+      setCcForm((prev) => ({ ...prev, amount: "", currency: "", cardReference: "" }));
       if (cardInputRef.current) cardInputRef.current.value = "";
       setCcResetKey((k) => k + 1); // remount فیلد مهارتی تا واقعاً خالی شود
     } catch (error) {
@@ -810,23 +800,19 @@ export default function SecretAccountsPage() {
               </div>
             </div>
 
-            {/* فیلد ۲: تاریخ و ساعت — کاربر شمسی وارد می‌کند (مثلاً ۱۴۰۵/۰۷/۲۸ ۰۹:۳۸)
-                و خودکار به میلادی تبدیل و ذخیره می‌شود — بدون نیاز به انتخاب دستی میلادی */}
+            {/* فیلد ۲: تاریخ و ساعت — ✅ خودکار، بدون ورود دستی.
+                هر تراکنش هنگام ثبت، تاریخ همان روز و ساعت لحظه ثبت را به وقت افغانستان
+                (کابل، UTC+4:30) و به صورت هجری شمسی دریافت می‌کند. */}
             <div>
-              <label className={uiLabel}>تاریخ و ساعت (هجری شمسی)</label>
-              <input
-                className={`${inputCls} font-black tracking-wider ${ccForm.dateTimeLocal ? "border-emerald-400 bg-emerald-50/50" : ""}`}
-                type="text"
-                inputMode="numeric"
-                autoComplete="off"
-                value={jalaliTyped}
-                onChange={(e) => handleJalaliTyping(e.target.value)}
-                placeholder="تاریخ شمسی را وارد کنید"
-              />
+              <label className={uiLabel}>تاریخ و ساعت (هجری شمسی — خودکار)</label>
+              <div className={`${inputCls} flex items-center justify-between bg-slate-50 text-slate-600`}>
+                <span className="font-black tracking-wider">🗓️ {formatKabulShamsi()}</span>
+                <span dir="ltr" className="rounded-lg bg-fuchsia-100 px-2 py-1 text-[10px] font-black text-fuchsia-700">
+                  🇦🇫 کابل (UTC+4:30)
+                </span>
+              </div>
               <p className="mt-1 text-[10px] text-slate-400">
-                {ccForm.dateTimeLocal
-                  ? <>میلادی معادل: <b className="text-fuchsia-600" dir="ltr">{ccForm.dateTimeLocal.replace("T", " ")}</b></>
-                  : "تاریخ شمسی را تایپ کنید — جداکننده‌ها خودکار اضافه می‌شوند"}
+                تاریخ و ساعت به‌صورت خودکار روی همین لحظه تنظیم می‌شود — نیازی به وارد کردن دستی نیست
               </p>
             </div>
 
@@ -861,14 +847,14 @@ export default function SecretAccountsPage() {
           <div className="mt-4 flex flex-col sm:flex-row gap-3">
             <button
               onClick={() => submitCcTx("deposit")}
-              disabled={ccSaving || !ccForm.accountId || !ccForm.amount || !ccForm.currency || !ccForm.dateTimeLocal || ccForm.cardReference.length !== 6}
+              disabled={ccSaving || !ccForm.accountId || !ccForm.amount || !ccForm.currency || ccForm.cardReference.length !== 6}
               className="flex-1 cursor-pointer rounded-xl bg-gradient-to-l from-green-600 to-emerald-600 hover:brightness-110 active:scale-95 transition-all px-6 py-3 text-sm font-black text-white shadow-lg shadow-green-500/25 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               <span>⬇️</span> {ccSaving ? "در حال ثبت…" : "واریز"}
             </button>
             <button
               onClick={() => submitCcTx("withdrawal")}
-              disabled={ccSaving || !ccForm.accountId || !ccForm.amount || !ccForm.currency || !ccForm.dateTimeLocal || ccForm.cardReference.length !== 6}
+              disabled={ccSaving || !ccForm.accountId || !ccForm.amount || !ccForm.currency || ccForm.cardReference.length !== 6}
               className="flex-1 cursor-pointer rounded-xl bg-gradient-to-l from-red-600 to-rose-600 hover:brightness-110 active:scale-95 transition-all px-6 py-3 text-sm font-black text-white shadow-lg shadow-red-500/25 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               <span>⬆️</span> {ccSaving ? "در حال ثبت…" : "برداشت"}
