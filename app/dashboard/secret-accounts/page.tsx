@@ -13,8 +13,8 @@ import {
   serverTimestamp 
 } from "firebase/firestore";
 
-// ✅ اصلاح مسیر ایمپورت با استفاده از Alias استاندارد Next.js (اشاره مستقیم به ریشه پروژه)
-import { auth, db } from "@/lib/firebase";
+// ✅ مسیر نسبی دقیق و تضمینی برای Vercel
+import { auth, db } from "../../../lib/firebase";
 
 // ============================================================
 // انواع داده (Types)
