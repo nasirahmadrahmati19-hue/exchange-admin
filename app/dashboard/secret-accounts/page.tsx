@@ -69,6 +69,9 @@ type CryptocalcTransaction = {
   fatherName?: string;
   phone?: string;
   idCard?: string;
+  // ✅ حساب مبدأ برداشت (فیلد «انتخاب حساب برای برداشت») + ارز آن حساب
+  withdrawAccountId?: string;
+  withdrawCurrency?: CurrencyCode;
 };
 
 // ============================================================
@@ -321,8 +324,9 @@ export default function SecretAccountsPage() {
   const [ccSaving, setCcSaving] = useState(false);
   const [ccLoaded, setCcLoaded] = useState(false);
 
-  // ✅ فرم برداشت (حالت دوم): نام، نام پدر، شماره تلفن، نمبر تذکره — همه بدون پیش‌فرض
+  // ✅ فرم برداشت (حالت دوم): انتخاب حساب مبدأ + نام، نام پدر، شماره تلفن، نمبر تذکره — همه بدون پیش‌فرض
   const [wdForm, setWdForm] = useState({
+    withdrawAccountId: "",
     recipientName: "",
     fatherName: "",
     phone: "",
@@ -538,6 +542,9 @@ export default function SecretAccountsPage() {
       fatherName: String(raw.fatherName ?? ""),
       phone: String(raw.phone ?? ""),
       idCard: String(raw.idCard ?? ""),
+      // ✅ حساب مبدأ برداشت + ارز آن (از Firestore یا localStorage بازیابی شود)
+      withdrawAccountId: raw.withdrawAccountId ? String(raw.withdrawAccountId) : undefined,
+      withdrawCurrency: (["AFN", "USD", "EUR", "IRR", "PKR"].includes(String(raw.withdrawCurrency)) ? String(raw.withdrawCurrency) : undefined) as CurrencyCode | undefined,
     };
   };
 
@@ -579,8 +586,9 @@ export default function SecretAccountsPage() {
   }, [uid]);
 
   /** ثبت واریز/برداشت در subcollection حساب
-   *  - واریز (deposit): مبلغ + ارز + ۶ رقم کارت/کد پیگیری
-   *  - برداشت (withdrawal): مبلغ + ارز + نام برداشت‌کننده + نام پدر + شماره تلفن + نمبر تذکره */
+   *  - واریز (deposit): حساب مقصد + مبلغ + ارز + ۶ رقم کارت/کد پیگیری
+   *  - برداشت (withdrawal): ✅ حساب مبدأ (از فیلد «انتخاب حساب برای برداشت») + مبلغ + ارز
+   *    + نام برداشت‌کننده + نام پدر + شماره تلفن + نمبر تذکره */
   const submitCcTx = async (type: CryptoTxType) => {
     // ✅ ابتدا مقادیر فیلدها را مستقیم از DOM بخوان —
     // اگر کاربر بدون Leave کردن فیلد دکمه را بزند، onBlur/onInput اجرا نشده و state خالی است
@@ -597,8 +605,12 @@ export default function SecretAccountsPage() {
       showToast("⚠️ لطفاً ابتدا وارد حساب کاربری خود شوید");
       return;
     }
-    if (!ccForm.accountId) {
-      showToast("⚠️ لطفاً یک حساب را انتخاب کنید");
+    // ✅ حساب هدف: برای برداشت = حساب مبدأ (فیلد جدید داخل کادر برداشت)، برای واریز = سلکت بالای فرم
+    const targetAccountId = type === "withdrawal" ? wdForm.withdrawAccountId : ccForm.accountId;
+    if (!targetAccountId) {
+      showToast(type === "withdrawal"
+        ? "❌ لطفاً حسابی که از آن برداشت می‌شود را انتخاب کنید"
+        : "⚠️ لطفاً یک حساب را انتخاب کنید");
       return;
     }
     const numericAmount = Number(amountRawDom);
@@ -626,12 +638,12 @@ export default function SecretAccountsPage() {
       if (!wdFather) { showToast("⚠️ لطفاً نام پدر برداشت‌کننده را وارد کنید"); return; }
       if (wdPhone.length < 7) { showToast("⚠️ شماره تلفن معتبر نیست (حداقل ۷ رقم)"); return; }
       if (!wdIdCard) { showToast("⚠️ لطفاً نمبر تذکره برداشت‌کننده را وارد کنید"); return; }
-      // بررسی موجودی کافی برای برداشت
-      const accNow = validAccounts.find((a) => String(a.id) === ccForm.accountId);
-      if (accNow && type === "withdrawal") {
+      // بررسی موجودی کافی برای برداشت (از همان حساب مبدأ انتخاب‌شده)
+      const accNow = validAccounts.find((a) => String(a.id) === targetAccountId);
+      if (accNow) {
         const currentBal = balanceOf(String(accNow.id));
         if (numericAmount > currentBal) {
-          showToast(`⚠️ موجودی حساب کافی نیست — موجودی فعلی: ${toFaDigits(currentBal.toLocaleString())}`);
+          showToast(`⚠️ موجودی حساب «${accNow.name}» کافی نیست — موجودی فعلی: ${toFaDigits(currentBal.toLocaleString())}`);
           return;
         }
       }
@@ -666,14 +678,14 @@ export default function SecretAccountsPage() {
         payload.idCard = wdIdCard;
       }
       const docRef = await addDoc(
-        collection(db!, "users", uidNow, "secret_accounts", ccForm.accountId, "transactions"),
+        collection(db!, "users", uidNow, "secret_accounts", targetAccountId, "transactions"),
         payload
       );
       console.log("3. با موفقیت ذخیره شد. ID:", docRef.id);
 
       const newTx: CryptocalcTransaction = {
         id: docRef.id,
-        accountId: ccForm.accountId,
+        accountId: targetAccountId,
         amount: numericAmount,
         currency: currencyCode,
         type,
@@ -685,13 +697,15 @@ export default function SecretAccountsPage() {
         fatherName: type === "withdrawal" ? wdFather : "",
         phone: type === "withdrawal" ? wdPhone : "",
         idCard: type === "withdrawal" ? wdIdCard : "",
+        withdrawAccountId: type === "withdrawal" ? targetAccountId : undefined,
+        withdrawCurrency: type === "withdrawal" ? currencyCode : undefined,
       };
       const nextList = [newTx, ...ccTransactions].sort((a, b) => b.timestampMs - a.timestampMs);
       setCcTransactions(nextList);
       try { localStorage.setItem(CC_STORAGE_KEY, JSON.stringify(nextList)); } catch {}
 
-      // به‌روزرسانی بیلانس همان حساب (سازگار با منطق موجود)
-      const acc = validAccounts.find((a) => String(a.id) === ccForm.accountId);
+      // به‌روزرسانی بیلانس همان حساب هدف (واریز→حساب مقصد / برداشت→حساب مبدأ)
+      const acc = validAccounts.find((a) => String(a.id) === targetAccountId);
       if (acc) {
         const delta = type === "deposit" ? numericAmount : -numericAmount;
         const newBalance = balanceOf(String(acc.id)) + delta;
@@ -707,7 +721,7 @@ export default function SecretAccountsPage() {
 
       // ✅ ریست فرم — همه چیز خالی می‌ماند (بدون پیش‌فرض)، فقط حساب انتخاب‌شده باقی می‌ماند
       setCcForm((prev) => ({ ...prev, amount: "", currency: "", cardReference: "" }));
-      setWdForm({ recipientName: "", fatherName: "", phone: "", idCard: "" });
+      setWdForm({ withdrawAccountId: "", recipientName: "", fatherName: "", phone: "", idCard: "" });
       if (cardInputRef.current) cardInputRef.current.value = "";
       setCcResetKey((k) => k + 1); // remount فیلد مهارتی تا واقعاً خالی شود
     } catch (error) {
@@ -828,7 +842,7 @@ export default function SecretAccountsPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {fld("حساب *", (
+            {fld(ccMode === "withdrawal" ? "حساب مقصد (اختیاری هنگام برداشت)" : "حساب *", (
               <select className={inputCls} value={ccForm.accountId} onChange={(e) => setCcForm({ ...ccForm, accountId: e.target.value })}>
                 <option value="">— انتخاب حساب —</option>
                 {validAccounts.map((a) => (
@@ -914,9 +928,25 @@ export default function SecretAccountsPage() {
                 </>
               ) : (
                 <>
-                  {/* ✅ حالت برداشت: نام برداشت‌کننده + نام پدر + شماره تلفن + نمبر تذکره (بدون پیش‌فرض) */}
-                  <label className={uiLabel}>مشخصات کسی که پول را برداشت می‌کند</label>
+                  {/* ✅ حالت برداشت: انتخاب حساب مبدأ + نام برداشت‌کننده + نام پدر + شماره تلفن + نمبر تذکره (بدون پیش‌فرض) */}
+                  <label className={uiLabel}>انتخاب حساب برای برداشت + مشخصات کسی که پول را برداشت می‌کند</label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 rounded-xl border-2 border-red-200 bg-red-50/40 p-2.5">
+                    {/* ✅ فیلد جدید: از کدام حساب پول برداشت شود — با نمایش موجودی هر حساب */}
+                    <select
+                      className={`${inputCls} w-full sm:col-span-2 ${wdForm.withdrawAccountId ? "border-red-400 bg-white text-slate-700" : "border-slate-200 bg-white text-slate-400"}`}
+                      value={wdForm.withdrawAccountId}
+                      onChange={(e) => setWdForm((p) => ({ ...p, withdrawAccountId: e.target.value }))}
+                    >
+                      <option value="">🏦 انتخاب حساب برای برداشت</option>
+                      {validAccounts.map((a) => {
+                        const bal = balanceOf(String(a.id));
+                        return (
+                          <option key={`wd-${a.id}`} value={String(a.id)} disabled={bal <= 0}>
+                            {String(a.name).trim()} — موجودی: {toFaDigits(bal.toLocaleString())}{bal <= 0 ? " (موجودی ناکافی)" : ""}
+                          </option>
+                        );
+                      })}
+                    </select>
                     <input
                       className={`${inputCls} w-full`}
                       type="text"
@@ -1037,6 +1067,12 @@ export default function SecretAccountsPage() {
                       <span>📅 {t.shamsiDateTime}</span>
                       {t.cardReference && (
                         <span className="rounded-md bg-sky-50 px-2 py-0.5 font-black text-sky-700" dir="ltr">💳 {toFaDigits(t.cardReference)}</span>
+                      )}
+                      {/* ✅ حساب مبدأ برداشت در لیست تراکنش‌ها */}
+                      {t.type === "withdrawal" && t.withdrawAccountId && (
+                        <span className="rounded-md bg-rose-50 px-2 py-0.5 font-bold text-rose-700 truncate max-w-[140px]">
+                          🏦 از حساب: {ccAccountName(t.withdrawAccountId)}
+                        </span>
                       )}
                       {/* ✅ مشخصات برداشت‌کننده در تراکنش‌های برداشت */}
                       {t.type === "withdrawal" && t.recipientName && (
