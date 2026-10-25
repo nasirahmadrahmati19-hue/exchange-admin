@@ -118,6 +118,12 @@ function toGregory(jy: number, jm: number, jd: number): { gy: number; gm: number
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
+// تبدیل ارقام فارسی/عربی به لاتین — تا کاربر بتواند با هر کیبوردی عدد تایپ کند
+const toLatinDigits = (s: string) =>
+  s
+    .replace(/[۰-۹]/g, (x) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(x)))
+    .replace(/[٠-٩]/g, (x) => String("٠١٢٣٤٥٦٧٨٩".indexOf(x)));
+
 /** رشته datetime-local (میلادی) -> نمایش شمسی مثل «۱۴۰۵/۰۷/۲۸ ۰۹:۳۸» */
 function formatShamsiFromLocal(localStr: string): string {
   if (!localStr) return "";
@@ -131,12 +137,6 @@ function formatShamsiFromLocal(localStr: string): string {
 // توابع کمکی (Helpers)
 // ============================================================
 const toFaDigits = (s: string | number) => String(s).replace(/\d/g, (x) => "۰۱۲۳۴۵۶۷۸۹"[Number(x)]);
-
-// تبدیل ارقام فارسی/عربی/فارسی‌نما به لاتین — تا کاربر بتواند با هر کیبوردی عدد تایپ کند
-const toLatinDigits = (s: string) =>
-  s
-    .replace(/[۰-۹]/g, (x) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(x)))
-    .replace(/[٠-٩]/g, (x) => String("٠١٢٣٤٥٦٧٨٩".indexOf(x)));
 
 // ✅ نرمال‌سازی کد کارت: ارقام فارسی/عربی → لاتین، حذف غیرعدد، حداکثر ۶ رقم
 const normalizeCardRef = (raw: string): string =>
@@ -303,6 +303,38 @@ export default function SecretAccountsPage() {
       cardInputRef.current.value = clean;
     }
     setCcForm((prev) => (prev.cardReference === clean ? prev : { ...prev, cardReference: clean }));
+  };
+
+  // ✅ فیلد تاریخ شمسی: کاربر تاریخ را به شمسی تایپ می‌کند (مثلاً ۱۴۰۵/۰۷/۲۸ ۰۹:۳۸)
+  // و خودکار — بدون ورود دستی میلادی — به Date میلادی تبدیل و در state ذخیره می‌شود
+  const [jalaliTyped, setJalaliTyped] = useState("");
+  const handleJalaliTyping = (raw: string) => {
+    const digits = toLatinDigits(String(raw ?? "")).replace(/[^\d]/g, "").slice(0, 12);
+    // فرمت خودکار با جداکننده: YYYY/MM/DD HH:mm
+    let formatted = digits;
+    if (digits.length > 4) formatted = digits.slice(0, 4) + "/" + digits.slice(4);
+    if (digits.length > 6) formatted = digits.slice(0, 4) + "/" + digits.slice(4, 6) + "/" + digits.slice(6);
+    if (digits.length > 8) formatted = digits.slice(0, 4) + "/" + digits.slice(4, 6) + "/" + digits.slice(6, 8) + " " + digits.slice(8);
+    if (digits.length > 10) formatted = digits.slice(0, 4) + "/" + digits.slice(4, 6) + "/" + digits.slice(6, 8) + " " + digits.slice(8, 10) + ":" + digits.slice(10);
+    setJalaliTyped(toFaDigits(formatted));
+
+    if (digits.length >= 8 && digits.length <= 12) {
+      const jy = Number(digits.slice(0, 4));
+      const jm = Number(digits.slice(4, 6));
+      const jd = Number(digits.slice(6, 8));
+      const hh = digits.length >= 10 ? Number(digits.slice(8, 10)) : 0;
+      const mm = digits.length >= 12 ? Number(digits.slice(10, 12)) : 0;
+      if (jm >= 1 && jm <= 12 && jd >= 1 && jd <= 31 && hh <= 23 && mm <= 59) {
+        const g = toGregory(jy, jm, jd);
+        const d = new Date(g.gy, g.gm - 1, g.gd, hh, mm, 0, 0);
+        if (!isNaN(d.getTime())) {
+          const localStr = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(hh)}:${pad2(mm)}`;
+          setCcForm((prev) => (prev.dateTimeLocal === localStr ? prev : { ...prev, dateTimeLocal: localStr }));
+          return;
+        }
+      }
+    }
+    setCcForm((prev) => (prev.dateTimeLocal === "" ? prev : { ...prev, dateTimeLocal: "" }));
   };
 
   useEffect(() => {
@@ -524,10 +556,12 @@ export default function SecretAccountsPage() {
 
   /** ثبت واریز/برداشت در subcollection حساب */
   const submitCcTx = async (type: CryptoTxType) => {
-    // ✅ ابتدا مقدار فیلد مهارتی ۶ رقم را از DOM بخوان و commit کن
-    // (اگر کاربر بدون Leave کردن فیلد دکمه را بزند، onBlur اجرا نمی‌شود)
-    commitCardReference(cardInputRef.current?.value ?? "");
-    console.log("1. فرم سابمیت شد:", { ...ccForm, type });
+    // ✅ ابتدا مقادیر فیلدهای مهارتی (uncontrolled) را مستقیم از DOM بخوان —
+    // اگر کاربر بدون Leave کردن فیلد دکمه را بزند، onBlur اجرا نمی‌شود و state خالی است
+    const cardRefNow = normalizeCardRef(cardInputRef.current?.value ?? ccForm.cardReference);
+    if (cardInputRef.current) cardInputRef.current.value = cardRefNow;
+    setCcForm((prev) => ({ ...prev, cardReference: cardRefNow }));
+    console.log("1. فرم سابمیت شد:", { ...ccForm, cardReference: cardRefNow, type });
 
     if (ccSaving) return;
     if (!authReady || !auth?.currentUser || !db) {
@@ -547,8 +581,7 @@ export default function SecretAccountsPage() {
       showToast("⚠️ لطفاً واحد ارز را انتخاب کنید");
       return;
     }
-    const cardRef = normalizeCardRef(ccForm.cardReference);
-    if (!/^\d{6}$/.test(cardRef)) {
+    if (!/^\d{6}$/.test(cardRefNow)) {
       showToast("⚠️ ۶ رقم آخر کارت / کد پیگیری باید دقیقاً ۶ عدد باشد");
       return;
     }
@@ -558,6 +591,8 @@ export default function SecretAccountsPage() {
     }
 
     const currencyCode = ccForm.currency as CurrencyCode;
+    const txDateMs = new Date(ccForm.dateTimeLocal).getTime() || Date.now();
+    const shamsiStr = formatShamsiFromLocal(ccForm.dateTimeLocal);
 
     setCcSaving(true);
     const uidNow = auth.currentUser.uid;
@@ -570,11 +605,11 @@ export default function SecretAccountsPage() {
           currency: currencyCode,
           type,
           timestamp: serverTimestamp(),
-          cardReference: cardRef,
+          cardReference: cardRefNow,
           userId: uidNow,
           // فیلدهای کمکی برای نمایش (serverTimestamp تا سینک شدن pending است)
-          timestampMs: new Date(ccForm.dateTimeLocal).getTime() || Date.now(),
-          shamsiDateTime: formatShamsiFromLocal(ccForm.dateTimeLocal),
+          timestampMs: txDateMs,
+          shamsiDateTime: shamsiStr,
         }
       );
       console.log("3. با موفقیت ذخیره شد. ID:", docRef.id);
@@ -585,10 +620,10 @@ export default function SecretAccountsPage() {
         amount: numericAmount,
         currency: currencyCode,
         type,
-        cardReference: cardRef,
+        cardReference: cardRefNow,
         userId: uidNow,
-        timestampMs: new Date(ccForm.dateTimeLocal).getTime() || Date.now(),
-        shamsiDateTime: formatShamsiFromLocal(ccForm.dateTimeLocal),
+        timestampMs: txDateMs,
+        shamsiDateTime: shamsiStr,
       };
       const nextList = [newTx, ...ccTransactions].sort((a, b) => b.timestampMs - a.timestampMs);
       setCcTransactions(nextList);
@@ -611,6 +646,7 @@ export default function SecretAccountsPage() {
 
       // ✅ ریست فرم — همه چیز خالی می‌ماند (بدون پیش‌فرض)، فقط حساب انتخاب‌شده باقی می‌ماند
       setCcForm((prev) => ({ ...prev, amount: "", currency: "", dateTimeLocal: "", cardReference: "" }));
+      setJalaliTyped(""); // ✅ فیلد تاریخ هم کاملاً خالی می‌شود (بدون پیش‌فرض)
       if (cardInputRef.current) cardInputRef.current.value = "";
       setCcResetKey((k) => k + 1); // remount فیلد مهارتی تا واقعاً خالی شود
     } catch (error) {
@@ -759,7 +795,7 @@ export default function SecretAccountsPage() {
                     setCcForm((prev) => ({ ...prev, amount: text }));
                     pendingCaret.current = caret;
                   }}
-                  placeholder="مثلاً 50,000"
+                  placeholder="مبلغ را وارد کنید"
                 />
                 <select
                   className={`h-12 rounded-xl border bg-slate-50 px-3 text-sm font-bold outline-none focus:border-fuchsia-500 ${ccForm.currency ? "border-slate-200 text-slate-700" : "border-slate-200 text-slate-400"}`}
@@ -774,25 +810,29 @@ export default function SecretAccountsPage() {
               </div>
             </div>
 
-            {/* فیلد ۲: تاریخ و ساعت — بدون مقدار پیش‌فرض (کاربر خودش انتخاب می‌کند) */}
+            {/* فیلد ۲: تاریخ و ساعت — کاربر شمسی وارد می‌کند (مثلاً ۱۴۰۵/۰۷/۲۸ ۰۹:۳۸)
+                و خودکار به میلادی تبدیل و ذخیره می‌شود — بدون نیاز به انتخاب دستی میلادی */}
             <div>
-              <label className={uiLabel}>تاریخ و ساعت</label>
+              <label className={uiLabel}>تاریخ و ساعت (هجری شمسی)</label>
               <input
-                className={`${inputCls} ${!ccForm.dateTimeLocal ? "text-slate-400" : ""}`}
-                type="datetime-local"
-                dir="ltr"
-                value={ccForm.dateTimeLocal}
-                onChange={(e) => setCcForm({ ...ccForm, dateTimeLocal: e.target.value })}
+                className={`${inputCls} font-black tracking-wider ${ccForm.dateTimeLocal ? "border-emerald-400 bg-emerald-50/50" : ""}`}
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                value={jalaliTyped}
+                onChange={(e) => handleJalaliTyping(e.target.value)}
+                placeholder="تاریخ شمسی را وارد کنید"
               />
               <p className="mt-1 text-[10px] text-slate-400">
                 {ccForm.dateTimeLocal
-                  ? <>نمایش شمسی: <b className="text-fuchsia-600">{formatShamsiFromLocal(ccForm.dateTimeLocal)}</b></>
-                  : "تاریخ و ساعت تراکنش را انتخاب کنید"}
+                  ? <>میلادی معادل: <b className="text-fuchsia-600" dir="ltr">{ccForm.dateTimeLocal.replace("T", " ")}</b></>
+                  : "تاریخ شمسی را تایپ کنید — جداکننده‌ها خودکار اضافه می‌شوند"}
               </p>
             </div>
 
-            {/* فیلد ۳: ۶ رقم آخر کارت — کنترل کاملاً مهارتی (uncontrolled) برای رفع مشکل «عدد وارد نمی‌شود»
-                (مقدار فقط در onBlur به state می‌نویسد؛ در حالت RTL با controlled input کیبورد فارسی گاهی کار نمی‌کند) */}
+            {/* فیلد ۳: ۶ رقم آخر کارت — کنترل مهارتی (uncontrolled) برای رفع مشکل «عدد وارد نمی‌شود»
+                مقدار در هر لحظه تایپ (onInput) نرمال‌سازی و به state منتقل می‌شود؛
+                ارقام فارسی/عربی خودکار به لاتین تبدیل می‌شوند تا دکمه‌ها درست فعال شوند */}
             <div className="md:col-span-2">
               <label className={uiLabel}>۶ رقم آخر کارت / کد پیگیری واریز</label>
               <input
@@ -801,7 +841,6 @@ export default function SecretAccountsPage() {
                 className={`${inputCls} select-text font-black tracking-[0.3em] text-center ${/^\d{6}$/.test(ccForm.cardReference) ? "border-emerald-400 bg-emerald-50/50" : ""}`}
                 type="text"
                 inputMode="numeric"
-                dir="ltr"
                 autoComplete="off"
                 name="card-reference"
                 defaultValue=""
@@ -811,7 +850,7 @@ export default function SecretAccountsPage() {
                   // پس از Paste هم مقدار را نرمال‌سازی و به state منتقل کن
                   setTimeout(() => commitCardReference(cardInputRef.current?.value ?? ""), 0);
                 }}
-                placeholder="مثلاً 123456"
+                placeholder="کد ۶ رقمی را وارد کنید"
               />
               <p className="mt-1 text-[10px] text-slate-400">
                 برای واریزهای شبا/پایا، ۶ رقم آخر کارت یا کد پیگیری را وارد کنید
