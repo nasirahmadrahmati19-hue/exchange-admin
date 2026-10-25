@@ -1,7 +1,17 @@
-// ===== سیستم رسید تلگرامی =====
+// ============================================================
+// lib/receipt.ts
+// 🔴 تغییرات امنیتی/معماری:
+// 1) خواندن تنظیمات از localStorage («fx-settings») حذف شد؛ تنظیمات
+//    فقط از Firestore (کش در-حافظه‌ای telegramSettings) خوانده می‌شود.
+// 2) ارسال مستقیم با توکن در کلاینت حذف شد؛ همه ارسال‌ها از طریق
+//    API Route سمت سرور (/api/telegram) انجام می‌شود و توکن ربات
+//    هرگز در مرورگر استفاده یا منتقل نمی‌گردد.
+// 3) chatId مشتری از آرگومان صریح می‌شود؛ خواندن «fx-customers»
+//    از localStorage حذف شد.
+// ============================================================
 
-const SETTINGS_KEY = "fx-settings";
-const CUSTOMERS_KEY = "fx-customers";
+import { getTelegramSettings } from "./telegramSettings";
+import { sendTelegram } from "./telegramSend";
 
 // ===== تبدیل عدد به حروف فارسی =====
 export function numberToPersianWords(num: number): string {
@@ -84,37 +94,6 @@ export function formatShamsiDateTime(date: Date): string {
   }
 }
 
-// ===== خواندن تنظیمات تلگرام =====
-function getTelegramSettings(): { enabled: boolean; botToken: string; chatId: string } {
-  if (typeof window === "undefined") return { enabled: false, botToken: "", chatId: "" };
-  try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
-    if (!raw) return { enabled: false, botToken: "", chatId: "" };
-    const settings = JSON.parse(raw);
-    return {
-      enabled: settings.telegram?.enabled || false,
-      botToken: settings.telegram?.botToken || "",
-      chatId: settings.telegram?.chatId || "",
-    };
-  } catch {
-    return { enabled: false, botToken: "", chatId: "" };
-  }
-}
-
-// ===== خواندن chat_id مشتری =====
-function getCustomerChatId(customerName: string): string {
-  if (typeof window === "undefined") return "";
-  try {
-    const raw = localStorage.getItem(CUSTOMERS_KEY);
-    if (!raw) return "";
-    const customers = JSON.parse(raw);
-    const customer = customers.find((c: any) => c.name === customerName);
-    return customer?.telegramChatId || "";
-  } catch {
-    return "";
-  }
-}
-
 // ===== ساخت متن رسید =====
 export type ReceiptData = {
   type: "deposit" | "withdraw" | "exchange" | "hawala" | "transfer" | "convert";
@@ -173,61 +152,60 @@ export function buildReceiptText(data: ReceiptData): string {
   return text;
 }
 
-// ===== ارسال پیام به تلگرام =====
-export async function sendTelegramMessage(botToken: string, chatId: string, text: string): Promise<boolean> {
-  if (!botToken || !chatId) return false;
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: text,
-      }),
-    });
-    const data = await res.json();
-    return data.ok === true;
-  } catch {
-    return false;
-  }
+// ===== ارسال پیام به تلگرام (فقط از طریق API Route سمت سرور) =====
+/**
+ * 🔴 سازگار با امضای قدیمی، اما پارامتر botToken عمداً نادیده گرفته می‌شود:
+ * توکن فقط در متغیر محیطی سرور (TELEGRAM_BOT_TOKEN) نگهداری می‌شود و
+ * هرگز در کلاینت استفاده یا منتقل نمی‌گردد.
+ */
+export async function sendTelegramMessage(_botToken: string, chatId: string, text: string): Promise<boolean> {
+  if (!chatId) return false;
+  // فرار HTML برای جلوگیری از تزریق در parse_mode=HTML
+  const safeText = String(text ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  const r = await sendTelegram("", chatId, safeText);
+  return r.ok;
 }
 
 // ===== تابع اصلی: ارسال رسید بعد از معامله =====
-export async function sendReceiptAfterTransaction(data: ReceiptData): Promise<{ sent: boolean; message: string }> {
+/**
+ * @param customerChatId شناسه چت مشتری که توسط فراخواننده (از داده Firestore) می‌شود.
+ *   ✅ خواندن «fx-customers» از localStorage دیگر انجام نمی‌شود.
+ */
+export async function sendReceiptAfterTransaction(
+  data: ReceiptData,
+  customerChatId?: string,
+): Promise<{ sent: boolean; message: string }> {
+  // 🔴 تنظیمات فقط از Firestore (کش مموری) — بدون localStorage و بدون نیاز به توکن در کلاینت
   const settings = getTelegramSettings();
-  
+
   if (!settings.enabled) {
     return { sent: false, message: "تلگرام غیرفعال است" };
   }
-  
-  if (!settings.botToken) {
-    return { sent: false, message: "توکن ربات تنظیم نشده" };
-  }
-  
+
   const receiptText = buildReceiptText(data);
-  
+
   let sentToCustomer = false;
   let sentToExchange = false;
-  
-  // ارسال به مشتری (اگر chat_id داشته باشد)
-  if (data.customerName) {
-    const customerChatId = getCustomerChatId(data.customerName);
-    if (customerChatId) {
-      sentToCustomer = await sendTelegramMessage(settings.botToken, customerChatId, receiptText);
-    }
+
+  // ارسال به مشتری (اگر chat_id شده باشد)
+  if (customerChatId) {
+    sentToCustomer = await sendTelegramMessage("", customerChatId, receiptText);
   }
-  
-  // ارسال به صرافی (همیشه)
+
+  // ارسال به صرافی (chatId از تنظیمات Firestore)
   if (settings.chatId) {
-    sentToExchange = await sendTelegramMessage(settings.botToken, settings.chatId, receiptText);
+    sentToExchange = await sendTelegramMessage("", settings.chatId, receiptText);
   }
-  
+
   if (sentToCustomer || sentToExchange) {
     const targets = [];
     if (sentToCustomer) targets.push("مشتری");
     if (sentToExchange) targets.push("صرافی");
     return { sent: true, message: `رسید به ${targets.join(" و ")} ارسال شد` };
   }
-  
+
   return { sent: false, message: "خطا در ارسال رسید" };
 }

@@ -4,6 +4,8 @@ import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem } from "..
 import { useSafeSyncedState } from "../lib/useSafeSyncedState";
 // 🔴 تنظیمات تلگرام از Firestore (کش مموری) — جایگزین خواندن fx-settings از localStorage
 import { getTelegramSettings } from "../lib/telegramSettings";
+// 🔴 امنیتی: ارسال پیام فقط از طریق API Route سمت سرور — توکن هرگز در کلاینت استفاده نمی‌شود
+import { sendTelegram } from "../lib/telegramSend";
 // دیالوگ تأیید مشترک به‌جای window.confirm
 import ConfirmationDialog, { useConfirmation } from "../../components/ConfirmationDialog";
 // 🔴 قالب استاندارد اشتراک‌گذاری اسناد مالی (مشترک در تمام تب‌ها)
@@ -294,16 +296,6 @@ function numberToPersianWords(num: number): string {
   return parts.join(" و ");
 }
 
-async function sendTelegramMessage(botToken: string, chatId: string, text: string): Promise<boolean> {
-  if (!botToken || !chatId) return false;
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text: text }),
-    });
-    const data = await res.json(); return data.ok === true;
-  } catch { return false; }
-}
 
 // ✅ حذف شد: getTelegramSettings قدیمی که از localStorage («fx-settings») می‌خواند.
 // نسخه جدید در ../lib/telegramSettings.ts از کش Firestore استفاده می‌کند.
@@ -351,7 +343,8 @@ function buildCashVoidNoticeText(params: { entry: CashEntry; customerName: strin
 
 async function sendCashReceipts(params: { entry: CashEntry; action: "register" | "void"; customers: Customer[]; }) {
   const settings = getTelegramSettings();
-  if (!settings.enabled || !settings.botToken || !settings.notifyCash) return;
+  // 🔴 توکن دیگر در کلاینت بررسی/استفاده نمی‌شود؛ سرور از TELEGRAM_BOT_TOKEN استفاده می‌کند
+  if (!settings.enabled || !settings.notifyCash) return;
   const { entry, action, customers } = params;
   if (!entry.customerId || entry.customerId === CASH_BOX_ID || entry.customerId === EXCHANGE_ACCOUNT_ID) return;
   if (entry.type !== "customer_deposit" && entry.type !== "customer_withdraw") return;
@@ -365,7 +358,10 @@ async function sendCashReceipts(params: { entry: CashEntry; action: "register" |
   const text = action === "register" 
     ? buildCashReceiptText({ entry, customerName: entry.customerName || "", balances: getBalances(), date: now })
     : buildCashVoidNoticeText({ entry, customerName: entry.customerName || "", balances: getBalances(), date: now });
-  await sendTelegramMessage(settings.botToken, chatId, text);
+  // 🔴 ارسال از طریق API Route سمت سرور — نتیجه بررسی و در صورت شکست ثبت می‌شود
+  const safeText = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const res = await sendTelegram("", chatId, safeText);
+  if (!res.ok) console.warn(`⚠️ رسید صندوق به chatId=${chatId} ارسال نشد (${res.error}).`);
 }
 
 const Ic = ({ n, className = "h-5 w-5" }: { n: string; className?: string }) => {

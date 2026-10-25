@@ -78,3 +78,52 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "internal_error" }, { status: 500 });
   }
 }
+
+// =====================================================
+// 👥 دریافت لیست کاربرانی که با ربات گفتگو کرده‌اند (getUpdates)
+// ----------------------------------------------------
+// 🔴 امنیتی: توکن ربات هرگز به مرورگر داده نمی‌شود؛ این endpoint
+// سمت سرور با ENV کار می‌کند و فقط لیست عمومی کاربران را برمی‌گرداند.
+// =====================================================
+export async function GET(req: Request) {
+  try {
+    const authorized = await verifyCaller(req);
+    if (!authorized) {
+      return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+    }
+
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    if (!token) {
+      return NextResponse.json(
+        { ok: false, error: "Telegram bot token is not configured on the server" },
+        { status: 500 }
+      );
+    }
+
+    const res = await fetch(`${TELEGRAM_API}/bot${token}/getUpdates?limit=100`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data?.ok !== true) {
+      console.error("❌ [telegram-api] getUpdates failed:", data);
+      return NextResponse.json({ ok: false, error: "telegram_getupdates_failed", users: [] }, { status: 502 });
+    }
+
+    const usersMap = new Map<number, { id: number; name: string; username: string; chat_id: number }>();
+    for (const update of data.result || []) {
+      const from = update.message?.from || update.callback_query?.message?.from;
+      const chat = update.message?.chat || update.callback_query?.message?.chat;
+      if (from && chat) {
+        usersMap.set(from.id, {
+          id: from.id,
+          name: `${from.first_name || ""} ${from.last_name || ""}`.trim() || "بدون نام",
+          username: from.username ? `@${from.username}` : "—",
+          chat_id: chat.id,
+        });
+      }
+    }
+
+    return NextResponse.json({ ok: true, users: Array.from(usersMap.values()) });
+  } catch (err: any) {
+    console.error("❌ [telegram-api] getUpdates unexpected error:", err);
+    return NextResponse.json({ ok: false, error: "internal_error", users: [] }, { status: 500 });
+  }
+}

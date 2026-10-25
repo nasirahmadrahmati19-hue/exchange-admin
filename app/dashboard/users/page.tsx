@@ -5,6 +5,8 @@ import { useSafeSyncedState } from "../lib/useSafeSyncedState";
 import { initTrackingSystem } from "../lib/trackingCode";
 // 🔴 تنظیمات تلگرام از Firestore (کش مموری) — جایگزین خواندن fx-settings از localStorage
 import { getTelegramSettings } from "../lib/telegramSettings";
+// 🔴 امنیتی: دریافت کاربران تلگرام فقط از طریق API Route سمت سرور (/api/telegram)
+import { fetchTelegramUsers as serverFetchTelegramUsers } from "../lib/telegramSend";
 // دیالوگ تأیید مشترک به‌جای window.confirm/prompt
 import ConfirmationDialog, { useConfirmation } from "../../components/ConfirmationDialog";
 
@@ -23,22 +25,12 @@ type TelegramUser = { id: number; name: string; username: string; chat_id: numbe
 // localStorage («fx-settings») می‌خواند. منبع تنظیمات اکنون Firestore است
 // (users/{uid}/settings/user_settings) — see ../lib/telegramSettings.ts
 
-async function fetchTelegramUsers(botToken: string): Promise<TelegramUser[]> {
-  if (!botToken.trim()) return [];
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${botToken.trim()}/getUpdates`);
-    const data = await res.json();
-    if (!data.ok || !data.result) return [];
-    const usersMap = new Map<number, TelegramUser>();
-    data.result.forEach((update: any) => {
-      const from = update.message?.from || update.callback_query?.message?.from;
-      const chat = update.message?.chat || update.callback_query?.message?.chat;
-      if (from && chat) {
-        usersMap.set(from.id, { id: from.id, name: `${from.first_name || ""} ${from.last_name || ""}`.trim() || "بدون نام", username: from.username ? `@${from.username}` : "—", chat_id: chat.id });
-      }
-    });
-    return Array.from(usersMap.values());
-  } catch (err) { console.error("خطا در دریافت کاربران تلگرام:", err); return []; }
+async function fetchTelegramUsers(_botToken: string): Promise<TelegramUser[]> {
+  // 🔴 امنیتی: درخواست مستقیم با توکن به api.telegram.org حذف شد؛
+  // لیست کاربران از endpoint سمت سرور (/api/telegram) دریافت می‌شود.
+  if (!_botToken || !_botToken.trim()) return [];
+  const list = await serverFetchTelegramUsers(_botToken);
+  return list.map((u) => ({ id: u.id, name: u.name, username: u.username, chat_id: u.chat_id }));
 }
 
 function TelegramChatIdSelector({ value, onChange, uiInput, dk }: { value: string; onChange: (v: string) => void; uiInput: string; dk: boolean; }) {

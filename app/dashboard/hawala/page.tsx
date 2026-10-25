@@ -4,6 +4,8 @@ import { useSafeSyncedState } from "../lib/useSafeSyncedState";
 import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem, getTrackingNumberValue } from "../lib/trackingCode";
 // 🔴 تنظیمات تلگرام از Firestore (کش مموری) — جایگزین خواندن fx-settings از localStorage
 import { getTelegramSettings } from "../lib/telegramSettings";
+// 🔴 امنیتی: ارسال پیام فقط از طریق API Route سمت سرور — توکن هرگز در کلاینت استفاده نمی‌شود
+import { sendTelegram, escapeHtml } from "../lib/telegramSend";
 // دیالوگ تأیید مشترک به‌جای window.confirm
 import ConfirmationDialog, { useConfirmation } from "../../components/ConfirmationDialog";
 import { generateShareText, handleShare } from "../lib/shareTemplate";
@@ -401,16 +403,9 @@ function numberToPersianWords(num: number): string {
   }
   return parts.join(" و ");
 }
-async function sendTelegramMessage(botToken: string, chatId: string, text: string): Promise<boolean> {
-  if (!botToken || !chatId) return false;
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text: text })
-    });
-    const data = await res.json(); return data.ok === true;
-  } catch { return false; }
-}
+// 🔴 امنیتی: ارسال مستقیم با توکن در کلاینت حذف شد.
+// همه پیام‌ها از طریق API Route سمت سرور (/api/telegram) ارسال می‌شوند.
+// توکن ربات فقط در متغیر محیطی سرور (TELEGRAM_BOT_TOKEN) نگهداری می‌شود.
 // ✅ حذف شد: getTelegramSettings قدیمی که از localStorage («fx-settings») می‌خواند.
 // نسخه جدید در ../lib/telegramSettings.ts از کش Firestore استفاده می‌کند.
 function getCustomerChatId(customerId: string | number | undefined, customers: Customer[]): string {
@@ -462,9 +457,10 @@ function buildCancelNoticeText(params: { hawala: Hawala; customerName: string; r
   text += `\n🏦 صرافی برادران نورزاد — هرات`;
   return text;
 }
-async function sendHawalaReceipts(params: { hawala: Hawala; action: "register" | "settle" | "cancel"; customers: Customer[]; }) {
+async function sendHawalaReceipts(params: { hawala: Hawala; action: "register" | "settle" | "cancel"; customers: Customer[]; balancesAfter?: Record<string, number>; }) {
   const settings = getTelegramSettings();
-  if (!settings.enabled || !settings.botToken) return;
+  // 🔴 توکن دیگر در کلاینت بررسی/استفاده نمی‌شود؛ سرور از TELEGRAM_BOT_TOKEN استفاده می‌کند
+  if (!settings.enabled) return;
   const { action, hawala, customers } = params;
   if (action === "register" && !settings.notifyNewHawala) return;
   if (action === "settle" && !settings.notifySettlement) return;
@@ -473,6 +469,9 @@ async function sendHawalaReceipts(params: { hawala: Hawala; action: "register" |
   const now = new Date();
   const getBalances = (customerId: string | number | undefined): Record<string, number> => {
     if (!customerId || String(customerId) === String(CASH_BOX_ID) || String(customerId) === String(EXCHANGE_ACCOUNT_ID)) return { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
+    // ✅ اگر بیلانس پس از ثبت تراکنش (محاسبه‌شده در همان لحظه)، از آن استفاده می‌شود؛
+    // در غیر این صورت از customers (که ممکن است هنوز به‌روز نشده باشد) خوانده می‌شود.
+    if (params.balancesAfter && Object.keys(params.balancesAfter).length > 0) return params.balancesAfter;
     const c = customers.find(x => String(x.id) === String(customerId));
     return c ? c.balances : { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
   };
@@ -498,9 +497,16 @@ async function sendHawalaReceipts(params: { hawala: Hawala; action: "register" |
   const sentToChatIds = new Set<string>();
   for (const r of receipts) {
     if (sentToChatIds.has(r.chatId)) continue;
-    await sendTelegramMessage(settings.botToken, r.chatId, r.text);
+    // 🔴 ارسال از طریق API Route سمت سرور — نتیجه بررسی و در صورت شکست ثبت می‌شود
+    const res = await sendTelegram("", r.chatId, escapeHtmlSafe(r.text));
+    if (!res.ok) console.warn(`⚠️ رسید حواله به chatId=${r.chatId} ارسال نشد (${res.error}).`);
     sentToChatIds.add(r.chatId);
   }
+}
+
+/** فرار HTML فقط برای بخش‌های پویا؛ ساختار پیام خودمان safe است */
+function escapeHtmlSafe(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 // ============================================================

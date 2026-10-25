@@ -6,6 +6,9 @@ import Link from "next/link";
 import { signOut } from "firebase/auth";
 import { useAuth } from "../AuthProvider";
 import { auth } from "./lib/firebase";
+// 🔴 امنیتی: دریافت کاربران تلگرام فقط از طریق API Route سمت سرور (/api/telegram)
+// توکن ربات هرگز در مرورگر استفاده نمی‌شود — see ./lib/telegramSend.ts
+import { fetchTelegramUsers } from "./lib/telegramSend";
 
 // ✅ تغییر: tickets → reports
 const menuItems = [
@@ -66,28 +69,8 @@ const saveSettings = (s: Settings) => {
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch {}
 };
 
-async function fetchTelegramUsers(botToken: string): Promise<TelegramUser[]> {
-  if (!botToken.trim()) return [];
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${botToken.trim()}/getUpdates`);
-    const data = await res.json();
-    if (!data.ok || !data.result) return [];
-    const usersMap = new Map<number, TelegramUser>();
-    data.result.forEach((update: any) => {
-      const from = update.message?.from || update.callback_query?.message?.from;
-      const chat = update.message?.chat || update.callback_query?.message?.chat;
-      if (from && chat) {
-        usersMap.set(from.id, {
-          id: from.id,
-          name: `${from.first_name || ""} ${from.last_name || ""}`.trim() || "بدون نام",
-          username: from.username ? `@${from.username}` : "—",
-          chat_id: chat.id,
-        });
-      }
-    });
-    return Array.from(usersMap.values());
-  } catch { return []; }
-}
+// ✅ حذف شد: fetchTelegramUsers محلی که مستقیماً با توکن به api.telegram.org درخواست می‌زد.
+// اکنون از ./lib/telegramSend (endpoint امن سمت سرور /api/telegram) استفاده می‌شود.
 
 const Ic = ({ n, className = "h-5 w-5" }: { n: string; className?: string }) => {
   const paths: Record<string, string> = {

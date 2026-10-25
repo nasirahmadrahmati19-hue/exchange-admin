@@ -5,6 +5,8 @@ import { generateShareText, handleShare } from "../lib/shareTemplate";
 import { getNextTrackingCode, consumeTrackingCode, initTrackingSystem } from "../lib/trackingCode";
 // 🔴 تنظیمات تلگرام از Firestore (کش مموری) — جایگزین خواندن fx-settings از localStorage
 import { getTelegramSettings } from "../lib/telegramSettings";
+// 🔴 ارسال پیام فقط از طریق API Route سمت سرور (توکن هرگز در مرورگر استفاده نمی‌شود)
+import { sendTelegramBatch as sendTelegramBatchViaServer, escapeHtml } from "../lib/telegramSend";
 // دیالوگ تأیید مشترک به‌جای window.confirm
 import ConfirmationDialog, { useConfirmation } from "../../components/ConfirmationDialog";
 
@@ -175,16 +177,8 @@ const directRateLabel = (base: Currency, counter: Currency, rate: number) => `${
 
 // ✅ حذف شد: getTelegramSettings قدیمی که از localStorage («fx-settings») می‌خواند.
 // نسخه جدید در ../lib/telegramSettings.ts از کش Firestore استفاده می‌کند.
-async function sendTelegramMessage(botToken: string, chatId: string, text: string): Promise<boolean> {
-  if (!botToken || !chatId) return false;
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: chatId, text: text }),
-    });
-    const data = await res.json();
-    return data.ok === true;
-  } catch { return false; }
-}
+// ✅ حذف شد: sendTelegramMessage قدیمی که توکن ربات را مستقیماً در مرورگر استفاده می‌کرد.
+// اکنون از sendTelegramViaServer (../lib/telegramSend.ts) از طریق /api/telegram سمت سرور استفاده می‌شود.
 
 function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): Customer[] {
   return customers.map(c => {
@@ -200,41 +194,82 @@ function applyBalanceChanges(customers: Customer[], changes: BalanceChange[]): C
   });
 }
 
+// ✅ منطق واحد و مشترک کمیسیون (رفع تناقض محاسبه مانده و کسر نادرست کارمزد):
+// - exchange buy: مشتری معادل کامل پرداخت می‌کند و کمیسیون جداگانه از او کسر می‌شود.
+// - exchange sell / convert: کمیسیون از ارز «دریافتی مشتری از صرافی» کسر می‌شود
+//   (مشتری خالصِ مبلغ منهای کارمزد تحویل می‌گیرد) — فقط در صورت هم‌واحد بودن.
+// - transfer: کمیسیون فقط یک‌بار از نفر مشخص‌شده (فرستنده یا گیرنده) کسر می‌شود.
+// این تابع تنها منبع حقیقت محاسبات است؛ تمام مسیرها (ثبت، ویرایش، ابطال، حذف،
+// اشتراک و رسید تلگرام) از آن استفاده می‌کنند تا هیچ مغایرتی ایجاد نشود.
+function isRealCustomerId(id?: string | number): boolean {
+  return Boolean(id) && String(id) !== String(CASH_BOX_ID) && String(id) !== String(EXCHANGE_ACCOUNT_ID);
+}
+
+function getCommissionDeduction(tx: Transaction): { currency: Currency; amount: number } | null {
+  const ccy = tx.commissionCurrency;
+  const amt = tx.commission && tx.commission > 0 ? tx.commission : 0;
+  if (!ccy || !amt) return null;
+  if (tx.type === "exchange") {
+    if (tx.dealType === "buy") return { currency: ccy, amount: amt }; // کسر مستقل
+    // sell / بدون نوع: کمیسیون از مبلغ دریافتی مشتری کم می‌شود (اگر هم‌واحد باشد)
+    if (tx.toCurrency === ccy) return { currency: ccy, amount: -tx.toAmount };
+    return { currency: ccy, amount: amt };
+  }
+  if (tx.type === "convert") {
+    // کمیسیون از ارز تبدیل‌شده‌ای که به مشتری پرداخت می‌شود کسر می‌گردد
+    if (tx.toCurrency === ccy) return { currency: ccy, amount: -tx.toAmount };
+    return { currency: ccy, amount: amt };
+  }
+  return { currency: ccy, amount: amt };
+}
+
 function getBalanceChangesForTransaction(tx: Transaction, action: "register" | "reverse"): BalanceChange[] {
   const changes: BalanceChange[] = [];
   const sign = action === "register" ? 1 : -1;
-  if (tx.type === "exchange" && tx.customerId && String(tx.customerId) !== String(CASH_BOX_ID) && String(tx.customerId) !== String(EXCHANGE_ACCOUNT_ID)) {
+  const fee = getCommissionDeduction(tx);
+  if (tx.type === "exchange" && isRealCustomerId(tx.customerId)) {
     if (tx.dealType === "sell") {
       changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.fromCurrency, amount: -tx.fromAmount * sign });
+      if (fee && fee.amount > 0) changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: fee.currency, amount: -fee.amount * sign });
     } else if (tx.dealType === "buy") {
       changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.toCurrency, amount: tx.toAmount * sign });
+      if (fee && fee.amount > 0) changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: fee.currency, amount: -fee.amount * sign });
     } else {
       changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.fromCurrency, amount: -tx.fromAmount * sign });
-      changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.toCurrency, amount: tx.toAmount * sign });
-    }
-    if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
-      changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.commissionCurrency, amount: -tx.commission * sign });
+      if (fee && fee.amount < 0) {
+        changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: fee.currency, amount: fee.amount * sign });
+      } else {
+        changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.toCurrency, amount: tx.toAmount * sign });
+        if (fee && fee.amount > 0) changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: fee.currency, amount: -fee.amount * sign });
+      }
     }
   }
   if (tx.type === "transfer") {
-    if (tx.senderId && String(tx.senderId) !== String(CASH_BOX_ID) && String(tx.senderId) !== String(EXCHANGE_ACCOUNT_ID)) {
+    if (isRealCustomerId(tx.senderId)) {
       changes.push({ customerId: tx.senderId, customerName: tx.senderName || "", currency: tx.fromCurrency, amount: -tx.fromAmount * sign });
-      if (tx.commissionPayer === "sender" && tx.commission && tx.commission > 0 && tx.commissionCurrency) {
-        changes.push({ customerId: tx.senderId, customerName: tx.senderName || "", currency: tx.commissionCurrency, amount: -tx.commission * sign });
+      if (tx.commissionPayer === "sender" && fee && fee.amount > 0) {
+        changes.push({ customerId: tx.senderId, customerName: tx.senderName || "", currency: fee.currency, amount: -fee.amount * sign });
       }
     }
-    if (tx.receiverId && String(tx.receiverId) !== String(CASH_BOX_ID) && String(tx.receiverId) !== String(EXCHANGE_ACCOUNT_ID)) {
-      changes.push({ customerId: tx.receiverId, customerName: tx.receiverName || "", currency: tx.toCurrency, amount: tx.toAmount * sign });
-      if (tx.commissionPayer === "receiver" && tx.commission && tx.commission > 0 && tx.commissionCurrency) {
-        changes.push({ customerId: tx.receiverId, customerName: tx.receiverName || "", currency: tx.commissionCurrency, amount: -tx.commission * sign });
+    if (isRealCustomerId(tx.receiverId)) {
+      if (tx.commissionPayer === "receiver" && fee && fee.amount > 0 && tx.toCurrency === fee.currency) {
+        // کمیسیون از مبلغ دریافتی گیرنده کسر می‌شود (نه دو بار: نه از موجودی، نه از مبلغ)
+        changes.push({ customerId: tx.receiverId, customerName: tx.receiverName || "", currency: tx.toCurrency, amount: (tx.toAmount - fee.amount) * sign });
+      } else {
+        changes.push({ customerId: tx.receiverId, customerName: tx.receiverName || "", currency: tx.toCurrency, amount: tx.toAmount * sign });
+        if (tx.commissionPayer === "receiver" && fee && fee.amount > 0) {
+          changes.push({ customerId: tx.receiverId, customerName: tx.receiverName || "", currency: fee.currency, amount: -fee.amount * sign });
+        }
       }
     }
   }
-  if (tx.type === "convert" && tx.customerId && String(tx.customerId) !== String(CASH_BOX_ID) && String(tx.customerId) !== String(EXCHANGE_ACCOUNT_ID)) {
+  if (tx.type === "convert" && isRealCustomerId(tx.customerId)) {
     changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.fromCurrency, amount: -tx.fromAmount * sign });
-    changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.toCurrency, amount: tx.toAmount * sign });
-    if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
-      changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.commissionCurrency, amount: -tx.commission * sign });
+    if (fee && fee.amount < 0) {
+      changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: fee.currency, amount: fee.amount * sign });
+    } else {
+      changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: tx.toCurrency, amount: tx.toAmount * sign });
+      if (fee && fee.amount > 0) changes.push({ customerId: tx.customerId, customerName: tx.customerName || "", currency: fee.currency, amount: -fee.amount * sign });
     }
   }
   return changes;
@@ -271,6 +306,8 @@ function syncCashEntriesForExchange(action: "add" | "remove" | "replace", tx: Tr
     newEntries.push({ id: newId(), trackingCode: `${tx.trackingCode}-EX-IN`, date: dateStr, type: "exchange_account_in", currency: tx.fromCurrency, amount: tx.fromAmount, direction: "in", reason: "تبادل ارز - دریافت ارز توسط حساب صرافی", balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedExchangeId: tx.id, status: "active" });
     newEntries.push({ id: newId(), trackingCode: `${tx.trackingCode}-EX-OUT`, date: dateStr, type: "exchange_account_out", currency: tx.toCurrency, amount: tx.toAmount, direction: "out", reason: "تبادل ارز - پرداخت ارز توسط حساب صرافی", balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedExchangeId: tx.id, status: "active" });
     if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
+      // ✅ کمیسیون همواره به نام صرافی ثبت می‌شود؛ اگر از مبلغ پرداختی مشتری کسر شود،
+      // مبلغ خالصِ خروج از حساب صرافی نیز به همان اندازه کاهش می‌یابد (رفع نشت صندوق)
       newEntries.push({ id: newId(), trackingCode: `${tx.trackingCode}-FEE`, date: dateStr, type: "exchange_account_in", currency: tx.commissionCurrency, amount: tx.commission, direction: "in", reason: "تبادل ارز - کارمزد دریافتی صرافی", balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedExchangeId: tx.id, status: "active" });
     }
     entries = [...entries, ...newEntries];
@@ -304,7 +341,7 @@ function syncCashEntriesForConvert(action: "add" | "remove" | "replace", tx: Tra
   if (targetId) entries = entries.filter((e: any) => e.linkedConvertId !== targetId);
   if ((action === "add" || action === "replace") && tx) {
     const dateStr = tx.date || new Date().toISOString();
-    const newEntries: any[] = [];
+    let newEntries: any[] = [];
     if (String(tx.customerId) === String(EXCHANGE_ACCOUNT_ID)) {
       newEntries.push({ id: newId(), trackingCode: `${tx.trackingCode}-OUT`, date: dateStr, type: "owner_withdraw", currency: tx.fromCurrency, amount: tx.fromAmount, direction: "out", reason: `تبدیل ارز - برداشت از حساب صرافی`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedConvertId: tx.id, status: "active" });
       newEntries.push({ id: newId(), trackingCode: `${tx.trackingCode}-IN`, date: dateStr, type: "owner_deposit", currency: tx.toCurrency, amount: tx.toAmount, direction: "in", reason: `تبدیل ارز - واریز به حساب صرافی`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedConvertId: tx.id, status: "active" });
@@ -313,6 +350,13 @@ function syncCashEntriesForConvert(action: "add" | "remove" | "replace", tx: Tra
       newEntries.push({ id: newId(), trackingCode: `${tx.trackingCode}-EX-OUT`, date: dateStr, type: "exchange_account_out", currency: tx.toCurrency, amount: tx.toAmount, direction: "out", reason: `تبدیل ارز - پرداخت ${labels[tx.toCurrency]} از حساب صرافی به مشتری`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedConvertId: tx.id, status: "active" });
     }
     if (tx.commission && tx.commission > 0 && tx.commissionCurrency) {
+      // ✅ اگر کارمزد از مبلغ پرداختی مشتری کسر می‌شود، خروج خالص صندوق نیز کم می‌شود
+      const fee = getCommissionDeduction(tx);
+      if (fee && fee.amount < 0) {
+        newEntries = newEntries.map(e => e.linkedConvertId === tx.id && e.type === "exchange_account_out"
+          ? { ...e, amount: Math.max(0, Number(e.amount || 0) + fee.amount), reason: `${e.reason} (پس از کسر کارمزد)` }
+          : e);
+      }
       newEntries.push({ id: newId(), trackingCode: `${tx.trackingCode}-FEE`, date: dateStr, type: "exchange_account_in", currency: tx.commissionCurrency, amount: tx.commission, direction: "in", reason: `تبدیل ارز - کارمزد صرافی`, balanceAfter: 0, customerId: EXCHANGE_ACCOUNT_ID, customerName: EXCHANGE_ACCOUNT_NAME, linkedConvertId: tx.id, status: "active" });
     }
     entries = [...entries, ...newEntries];
@@ -366,7 +410,12 @@ const DetailRow = memo(function DetailRow({ label, value, valueClass = "", dark 
 
 const getTransactionTypeLabel = (tx: Transaction) => tx.type === "exchange" ? dealTypeLabel(tx.dealType) : tx.type === "convert" ? "تبدیل ارز" : "انتقال";
 const getTransactionCommissionLabel = (tx: Transaction) => tx.commission === undefined ? "-" : `${fmt(tx.commission)} ${tx.commissionCurrency ? labels[tx.commissionCurrency] : ""}`;
-const getCommissionPayerLabel = (tx: Transaction) => !tx.commissionPayer ? "-" : tx.type === "convert" ? "خود مشتری" : tx.commissionPayer === "sender" ? "فرستنده" : "گیرنده";
+const getCommissionPayerLabel = (tx: Transaction) => {
+  if (!tx.commission || tx.commission <= 0) return "-";
+  if (tx.type === "transfer") return tx.commissionPayer === "receiver" ? "از گیرنده" : "از فرستنده";
+  if (tx.type === "convert") return "خود مشتری";
+  return "از مشتری";
+};
 const getTypeChipClass = (tx: Transaction, isDark: boolean) => {
   if (tx.type === "transfer") return isDark ? "bg-orange-400/15 text-orange-300" : "bg-orange-100 text-orange-700";
   if (tx.type === "convert") return isDark ? "bg-violet-400/15 text-violet-300" : "bg-violet-100 text-violet-700";
@@ -952,54 +1001,62 @@ export default function CurrencyExchangePage() {
       }
       try {
         const settings = getTelegramSettings();
-        if (settings.enabled && settings.botToken) {
+        if (settings.enabled) {
           const recipientIds = new Set<string | number>();
           if (tx.type === "exchange" || tx.type === "convert") {
-            if (tx.customerId && String(tx.customerId) !== String(CASH_BOX_ID) && String(tx.customerId) !== String(EXCHANGE_ACCOUNT_ID)) recipientIds.add(tx.customerId);
+            if (isRealCustomerId(tx.customerId)) recipientIds.add(tx.customerId!);
           } else if (tx.type === "transfer") {
-            if (tx.senderId && String(tx.senderId) !== String(CASH_BOX_ID) && String(tx.senderId) !== String(EXCHANGE_ACCOUNT_ID)) recipientIds.add(tx.senderId);
-            if (tx.receiverId && String(tx.receiverId) !== String(CASH_BOX_ID) && String(tx.receiverId) !== String(EXCHANGE_ACCOUNT_ID)) recipientIds.add(tx.receiverId);
+            if (isRealCustomerId(tx.senderId)) recipientIds.add(tx.senderId!);
+            if (isRealCustomerId(tx.receiverId)) recipientIds.add(tx.receiverId!);
           }
           const updatedCustomers = applyBalanceChanges(customers, getBalanceChangesForTransaction(tx, "register"));
+          // ✅ تغییر مانده واقعی (با احتساب کارمزد) از همان تابع واحد محاسبات استخراج می‌شود
+          const netChangeFor = (custId: string | number) => {
+            let amount = 0;
+            let currency: Currency = "AFN";
+            for (const ch of getBalanceChangesForTransaction(tx, "register")) {
+              if (String(ch.customerId) !== String(custId)) continue;
+              if (ch.currency === currency) amount += ch.amount;
+              else if (amount === 0 || currency === "AFN") { currency = ch.currency; amount = ch.amount; }
+              else { amount += ch.amount; }
+            }
+            return { amount, currency };
+          };
+          const messages: { chatId: string; text: string }[] = [];
           for (const custId of recipientIds) {
             const cust = updatedCustomers.find(c => String(c.id) === String(custId));
             if (!cust) continue;
             const chatId = cust?.telegramChatId || cust?.telegram || (tx.type === "exchange" ? tx.customerTelegram : "") || "";
             if (!chatId) continue;
             const bals = cust?.balances || { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 };
-            let changeAmount = 0;
-            let changeCurrency: Currency = "AFN";
-            if (tx.type === "exchange" && String(tx.customerId) === String(custId)) {
-              if (tx.dealType === "sell") { changeAmount = -tx.fromAmount; changeCurrency = tx.fromCurrency; }
-              else if (tx.dealType === "buy") { changeAmount = tx.toAmount; changeCurrency = tx.toCurrency; }
-            } else if (tx.type === "transfer") {
-              if (String(tx.senderId) === String(custId)) { changeAmount = -tx.fromAmount; changeCurrency = tx.fromCurrency; }
-              else if (String(tx.receiverId) === String(custId)) { changeAmount = tx.toAmount; changeCurrency = tx.toCurrency; }
-            } else if (tx.type === "convert" && String(tx.customerId) === String(custId)) {
-              changeAmount = tx.toAmount; changeCurrency = tx.toCurrency;
-            }
+            const net = netChangeFor(custId);
+            const changeAmount = net.amount;
+            const changeCurrency = net.currency;
             const isReceipt = changeAmount >= 0;
             const docType = isReceipt ? "🟢 سند رسید" : "🔴 سند برداشت";
             const amountDisplay = Math.abs(changeAmount);
             let text = `${docType}\n`;
             text += `🗓 تاریخ: ${formatDateTime(new Date(tx.date))}\n`;
-            text += `🛅 پیگیری: ${tx.trackingCode}\n`;
+            text += `🛅 پیگیری: ${escapeHtml(tx.trackingCode)}\n`;
             if (tx.type === "exchange") {
-              text += `👤 مشتری: ${tx.customerName}\n`;
-              text += `📑 شرح: ${tx.description || `تبادل ارز (${tx.dealType === "buy" ? "خرید" : "فروش"})`}\n`;
+              text += `👤 مشتری: ${escapeHtml(tx.customerName || "")}\n`;
+              text += `📑 شرح: ${escapeHtml(tx.description || `تبادل ارز (${tx.dealType === "buy" ? "خرید" : "فروش"})`)}\n`;
               text += `💰 مبلغ: ${fmt(amountDisplay)} ${labels[changeCurrency]}\n`;
               text += `📝 به حروف: ${numberToPersianWords(amountDisplay)}\n`;
+              if (tx.commission && tx.commission > 0) text += `🧾 کارمزد: ${fmt(tx.commission)} ${tx.commissionCurrency ? labels[tx.commissionCurrency] : ""}\n`;
             } else if (tx.type === "transfer") {
               const isSender = String(tx.senderId) === String(custId);
-              text += `👤 ${isSender ? "فرستنده" : "گیرنده"}: ${isSender ? tx.senderName : tx.receiverName}\n`;
-              text += `📑 شرح: ${tx.description || `انتقال ${isSender ? "از حساب شما به" : "به حساب شما از"} ${isSender ? tx.receiverName : tx.senderName}`}\n`;
+              text += `👤 ${isSender ? "فرستنده" : "گیرنده"}: ${escapeHtml(isSender ? tx.senderName || "" : tx.receiverName || "")}\n`;
+              text += `📑 شرح: ${escapeHtml(tx.description || `انتقال ${isSender ? "از حساب شما به" : "به حساب شما از"} ${isSender ? tx.receiverName : tx.senderName}`)}\n`;
               text += `💰 مبلغ: ${fmt(amountDisplay)} ${labels[changeCurrency]}\n`;
               text += `📝 به حروف: ${numberToPersianWords(amountDisplay)}\n`;
+              if (tx.commission && tx.commission > 0) text += `🧾 کارمزد (${getCommissionPayerLabel(tx)}): ${fmt(tx.commission)} ${tx.commissionCurrency ? labels[tx.commissionCurrency] : ""}\n`;
             } else if (tx.type === "convert") {
-              text += `👤 مشتری: ${tx.customerName}\n`;
-              text += `📑 شرح: ${tx.description || "تبدیل ارز"}\n`;
+              text += `👤 مشتری: ${escapeHtml(tx.customerName || "")}\n`;
+              text += `📑 شرح: ${escapeHtml(tx.description || "تبدیل ارز")}\n`;
               text += `💰 مبلغ: ${fmt(amountDisplay)} ${labels[changeCurrency]}\n`;
               text += `📝 به حروف: ${numberToPersianWords(amountDisplay)}\n`;
+              if (tx.commission && tx.commission > 0) text += `🧾 کارمزد: ${fmt(tx.commission)} ${tx.commissionCurrency ? labels[tx.commissionCurrency] : ""}\n`;
             }
             text += `\n-------------بیلانس فعلی شما--------------\n`;
             for (const cur of currencies) {
@@ -1010,7 +1067,12 @@ export default function CurrencyExchangePage() {
               else text += `${label}: 0\n`;
             }
             text += `\n🏦 صرافی برادران نورزاد — هرات`;
-            await sendTelegramMessage(settings.botToken, chatId, text);
+            messages.push({ chatId, text });
+          }
+          // 🔴 ارسال فقط از طریق API Route سمت سرور — توکن هرگز در مرورگر استفاده نمی‌شود
+          // ✅ نتیجه ارسال ثبت می‌شود تا تراکنش‌های ناموفق بی‌سروصدا نمانند
+          if (messages.length > 0) {
+            await sendTelegramBatchViaServer(messages);
           }
         }
       } catch (err) {
@@ -1117,9 +1179,46 @@ export default function CurrencyExchangePage() {
         else if (tx.type === "transfer") setCashEntries(prev => syncCashEntriesForTransfer("remove", null, tx.id, prev));
         else if (tx.type === "convert") setCashEntries(prev => syncCashEntriesForConvert("remove", null, tx.id, prev));
         setEditingExchangeId(null); setEditingTransferId(null); setEditingConvertId(null);
+        // ✅ اطلاع‌رسانی ابطال به مشتریان (در صورت فعال بودن تلگرام) — ارسال سمت سرور
+        voidNotice(tx).catch(() => {});
       },
     });
   }, [ask, setCustomers, setTransactions, setCashEntries]);
+
+  // 🔴 اطلاعیه لغو: مانده پس از ابطال با تابع واحد محاسبات ساخته می‌شود
+  const voidNotice = useCallback(async (tx: Transaction) => {
+    try {
+      const settings = getTelegramSettings();
+      if (!settings.enabled) return;
+      const custIds = new Set<string | number>();
+      if (tx.type === "transfer") {
+        if (isRealCustomerId(tx.senderId)) custIds.add(tx.senderId!);
+        if (isRealCustomerId(tx.receiverId)) custIds.add(tx.receiverId!);
+      } else if (isRealCustomerId(tx.customerId)) custIds.add(tx.customerId!);
+      const reversed = applyBalanceChanges(customers, getBalanceChangesForTransaction(tx, "reverse"));
+      const messages: { chatId: string; text: string }[] = [];
+      for (const cid of custIds) {
+        const cust = reversed.find(c => String(c.id) === String(cid));
+        if (!cust) continue;
+        const chatId = cust.telegramChatId || cust.telegram || "";
+        if (!chatId) continue;
+        let text = `📬 اطلاعیه لغو معامله\n\n🗓 تاریخ: ${formatDateTime(new Date())}\n🛅 پیگیری: ${escapeHtml(tx.trackingCode)}\n`;
+        text += `⚠️ معامله «${escapeHtml(tx.type === "exchange" ? `تبادل ارز (${tx.dealType === "buy" ? "خرید" : "فروش"})` : tx.type === "transfer" ? "انتقال" : "تبدیل ارز")}» لغو شد و حساب‌ها بازمحاسبه گردیدند.\n`;
+        text += `\n-------------بیلانس فعلی شما--------------\n`;
+        for (const cur of currencies) {
+          const b = cust.balances?.[cur] ?? 0;
+          if (b > 0) text += `${labels[cur]}: ${fmt(b)} طلب\n`;
+          else if (b < 0) text += `${labels[cur]}: ${fmt(Math.abs(b))} قرض\n`;
+          else text += `${labels[cur]}: 0\n`;
+        }
+        text += `\n🏦 صرافی برادران نورزاد — هرات`;
+        messages.push({ chatId, text });
+      }
+      if (messages.length > 0) await sendTelegramBatchViaServer(messages);
+    } catch (e) {
+      console.error("void notice error:", e);
+    }
+  }, [customers]);
 
   const deleteTransaction = useCallback((tx: Transaction) => {
     ask({
@@ -1151,33 +1250,13 @@ export default function CurrencyExchangePage() {
       if (!currencies.includes(currency) || !Number.isFinite(amount)) return;
       balances[currency] += amount;
     };
+    // ✅ یکپارچگی: مانده از همان تابع واحد محاسبات (SSOT) استخراج می‌شود
+    // تا هیچ مغایرتی بین «ثبت تراکنش»، «اشتراک» و «رسید تلگرام» وجود نداشته باشد.
     for (const tx of transactions) {
       if (!tx || tx.status === "voided") continue;
-      if (tx.type === "exchange" && String(tx.customerId) === String(customerId)) {
-        if (tx.dealType === "sell") {
-          add(tx.fromCurrency, -Number(tx.fromAmount || 0));
-        } else if (tx.dealType === "buy") {
-          add(tx.toCurrency, Number(tx.toAmount || 0));
-        } else {
-          add(tx.fromCurrency, -Number(tx.fromAmount || 0));
-          add(tx.toCurrency, Number(tx.toAmount || 0));
-        }
-        if (tx.commission && tx.commissionCurrency) add(tx.commissionCurrency, -Number(tx.commission || 0));
-      }
-      if (tx.type === "transfer") {
-        if (String(tx.senderId) === String(customerId)) {
-          add(tx.fromCurrency, -Number(tx.fromAmount || 0));
-          if (tx.commissionPayer === "sender" && tx.commission && tx.commissionCurrency) add(tx.commissionCurrency, -Number(tx.commission || 0));
-        }
-        if (String(tx.receiverId) === String(customerId)) {
-          add(tx.toCurrency, Number(tx.toAmount || 0));
-          if (tx.commissionPayer === "receiver" && tx.commission && tx.commissionCurrency) add(tx.commissionCurrency, -Number(tx.commission || 0));
-        }
-      }
-      if (tx.type === "convert" && String(tx.customerId) === String(customerId)) {
-        add(tx.fromCurrency, -Number(tx.fromAmount || 0));
-        add(tx.toCurrency, Number(tx.toAmount || 0));
-        if (tx.commission && tx.commissionCurrency) add(tx.commissionCurrency, -Number(tx.commission || 0));
+      for (const ch of getBalanceChangesForTransaction(tx, "register")) {
+        if (String(ch.customerId) !== String(customerId)) continue;
+        add(ch.currency, Number(ch.amount || 0));
       }
     }
     for (const h of hawalas) {

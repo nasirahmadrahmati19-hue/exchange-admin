@@ -14,7 +14,7 @@ import {
 } from "firebase/firestore";
 
 // ✅ مسیر نسبی دقیق و تضمینی (سه مرحله به عقب تا ریشه پروژه)
-import { auth, db } from "../../../lib/firebase";
+import { auth, db } from "../lib/firebase";
 
 // ============================================================
 // انواع داده (Types)

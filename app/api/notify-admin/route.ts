@@ -11,7 +11,9 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-const ADMIN_EMAIL = "nasirahmadrahmati19@gmail.com";
+// 🔴 ایمیل مدیر هاردکد نیست؛ فقط از متغیر محیطی سرور خوانده می‌شود.
+// در Vercel تنظیم کنید: ADMIN_EMAIL=admin@example.com
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 
 // ⏱️ ضد هرزگردی: حداکثر یک نوتیفیکیشن برای هر email تا ۲ دقیقه
 const lastNotifiedAt = new Map<string, number>();
@@ -35,6 +37,15 @@ export async function POST(req: Request) {
       console.error("❌ [notify-admin] GMAIL_USER یا GMAIL_APP_PASSWORD در محیط تنظیم نشده است");
       return NextResponse.json(
         { ok: false, error: "mail_not_configured" },
+        { status: 500 }
+      );
+    }
+
+    // 🔴 ایمیل مدیر باید از ENV تنظیم شده باشد (هاردکد نیست)
+    if (!ADMIN_EMAIL) {
+      console.error("❌ [notify-admin] ADMIN_EMAIL در محیط تنظیم نشده است");
+      return NextResponse.json(
+        { ok: false, error: "admin_email_not_configured" },
         { status: 500 }
       );
     }
