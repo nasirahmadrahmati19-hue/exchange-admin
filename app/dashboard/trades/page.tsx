@@ -9,6 +9,8 @@ import { getTelegramSettings } from "../lib/telegramSettings";
 import { sendTelegramBatch as sendTelegramBatchViaServer, escapeHtml } from "../lib/telegramSend";
 // دیالوگ تأیید مشترک به‌جای window.confirm
 import ConfirmationDialog, { useConfirmation } from "../../components/ConfirmationDialog";
+// فرمت خودکار کامای هزارگان برای تمام ورودی‌های عددی
+import { addCommas, removeCommas } from "@/lib/numberFormat";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type RateMode = "same" | "afn" | "direct";
@@ -38,14 +40,9 @@ const EXCHANGE_ACCOUNT_CUSTOMER: Customer = { id: EXCHANGE_ACCOUNT_ID, name: EXC
 const CASH_BOX_CUSTOMER: Customer = { id: CASH_BOX_ID, name: CASH_BOX_NAME, phone: "", telegram: "", telegramChatId: "", balances: { AFN: 0, USD: 0, EUR: 0, IRR: 0, PKR: 0 } };
 
 const normalizeDigits = (s: string) => s.replace(/[۰-۹]/g, d => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))).replace(/[٠-٩]/g, d => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
-function toNumericText(v: string) {
-  let s = normalizeDigits(String(v || "")).replace(/[^0-9.]/g, "");
-  const fd = s.indexOf(".");
-  if (fd !== -1) s = s.slice(0, fd + 1) + s.slice(fd + 1).replace(/\./g, "");
-  return s;
-}
+const toNumericText = (v: string) => addCommas(normalizeDigits(String(v || "")));
 const parseAmount = (v: string) => {
-  const n = Number(normalizeDigits(String(v || "")).replace(/,/g, ""));
+  const n = removeCommas(normalizeDigits(String(v || "")));
   return Number.isFinite(n) && n >= 0 ? n : 0;
 };
 const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 0 }) : "0";

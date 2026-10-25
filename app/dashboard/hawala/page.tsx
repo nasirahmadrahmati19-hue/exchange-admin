@@ -9,6 +9,8 @@ import { sendTelegram, escapeHtml } from "../lib/telegramSend";
 // دیالوگ تأیید مشترک به‌جای window.confirm
 import ConfirmationDialog, { useConfirmation } from "../../components/ConfirmationDialog";
 import { generateShareText, handleShare } from "../lib/shareTemplate";
+// فرمت خودکار کامای هزارگان برای تمام ورودی‌های عددی
+import { addCommas, removeCommas } from "@/lib/numberFormat";
 // ============================================================
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 type RateMode = "same" | "afn" | "direct";
@@ -117,14 +119,9 @@ const normalizeDigits = (value: string) => {
   const pd = "۰۱۲۳۴۵۶۷۸۹", ad = "٠١٢٣٤٥٦٧٨٩";
   return String(value || "").replace(/[۰-۹]/g, d => String(pd.indexOf(d))).replace(/[٠-٩]/g, d => String(ad.indexOf(d)));
 };
-const toNumericText = (v: string) => {
-  let s = normalizeDigits(String(v || "")).replace(/[^0-9.]/g, "");
-  const fd = s.indexOf(".");
-  if (fd !== -1) s = s.slice(0, fd + 1) + s.slice(fd + 1).replace(/\./g, "");
-  return s;
-};
+const toNumericText = (v: string) => addCommas(normalizeDigits(String(v || "")));
 const parseAmount = (v: string) => {
-  const n = Number(normalizeDigits(String(v || "")).replace(/,/g, ""));
+  const n = removeCommas(normalizeDigits(String(v || "")));
   return Number.isFinite(n) && n >= 0 ? n : 0;
 };
 const fmt = (n: number) => (Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 2 }) : "0");

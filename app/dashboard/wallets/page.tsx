@@ -4,7 +4,9 @@ import { useState } from "react";
 // 🔴 Firestore تنها منبع حقیقت: هوک کاربر-محور (users/{uid}/wallets) — بدون appData و بدون localStorage
 import { useSafeSyncedState } from "../lib/useSafeSyncedState";
 // دیالوگ تأیید مشترک به‌جای window.confirm
-import ConfirmationDialog, { useConfirmation } from "../../components/ConfirmationDialog"; 
+import ConfirmationDialog, { useConfirmation } from "../../components/ConfirmationDialog";
+// فرمت خودکار کامای هزارگان برای تمام ورودی‌های عددی
+import { addCommas, removeCommas } from "@/lib/numberFormat"; 
 
 interface Wallet { id: string | number; currency: string; balance: string; address: string; }
 
@@ -34,6 +36,10 @@ export default function WalletsPage() {
     setCopied(id);
     setTimeout(() => setCopied(null), 1500);
   };
+
+  // فرمت خودکار کامای هزارگان برای ورودی عددی موجودی
+  const toNumericText = (v: string) => addCommas(v);
+  const parseAmount = (v: string) => removeCommas(v);
 
   const handleDelete = (id: string | number) => {
     ask({
@@ -78,7 +84,7 @@ export default function WalletsPage() {
             <h2 className="font-extrabold mb-5">{editId ? "ویرایش کیف پول" : "کیف پول جدید"}</h2>
             <div className="space-y-3">
               <input className="input" placeholder="نماد ارز (مثلاً USD, EUR, USDT)" value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value })} />
-              <input className="input" placeholder="موجودی" type="number" value={form.balance} onChange={e => setForm({ ...form, balance: e.target.value })} />
+              <input className="input" placeholder="موجودی" type="text" inputMode="decimal" dir="ltr" value={form.balance} onChange={e => setForm({ ...form, balance: toNumericText(e.target.value) })} />
               <input className="input" placeholder="آدرس کیف پول (اختیاری)" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} />
             </div>
             <div className="flex gap-2 mt-5">

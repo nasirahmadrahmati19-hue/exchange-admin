@@ -5,6 +5,8 @@ import { useState } from "react";
 import { useSafeSyncedState } from "../lib/useSafeSyncedState";
 // 🔴 قالب استاندارد اشتراک‌گذاری اسناد مالی (مشترک در تمام تب‌ها)
 import { generateShareText, handleShare } from "../lib/shareTemplate";
+// فرمت خودکار کامای هزارگان برای تمام ورودی‌های عددی
+import { addCommas, removeCommas } from "@/lib/numberFormat";
 
 interface W { id: string | number; user: string; amount: string; currency: string; date: string; status: string; trackingCode?: string; note?: string; }
 
@@ -16,6 +18,10 @@ const defaults: W[] = [
 export default function WithdrawalsPage() {
   const [list, setList] = useSafeSyncedState<W>("withdrawals", defaults);
   const [form, setForm] = useState({ user: "", amount: "", currency: "BTC" });
+
+  // فرمت خودکار کامای هزارگان برای ورودی عددی مقدار
+  const toNumericText = (v: string) => addCommas(v);
+  const parseAmount = (v: string) => removeCommas(v);
 
   const add = () => {
     if (!form.user || !form.amount) return;
@@ -53,7 +59,7 @@ export default function WithdrawalsPage() {
 
       <div className="card p-5 grid grid-cols-1 sm:grid-cols-4 gap-3">
         <input className="input" placeholder="نام مشتری" value={form.user} onChange={e => setForm({ ...form, user: e.target.value })} />
-        <input className="input" placeholder="مقدار" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} />
+        <input className="input" placeholder="مقدار" inputMode="decimal" dir="ltr" value={form.amount} onChange={e => setForm({ ...form, amount: toNumericText(e.target.value) })} />
         <select className="input" value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value })}>
           <option>BTC</option><option>ETH</option><option>USDT</option><option>ریال</option>
         </select>

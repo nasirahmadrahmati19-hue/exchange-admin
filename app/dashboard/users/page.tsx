@@ -9,6 +9,8 @@ import { getTelegramSettings } from "../lib/telegramSettings";
 import { fetchTelegramUsers as serverFetchTelegramUsers } from "../lib/telegramSend";
 // دیالوگ تأیید مشترک به‌جای window.confirm/prompt
 import ConfirmationDialog, { useConfirmation } from "../../components/ConfirmationDialog";
+// فرمت خودکار کامای هزارگان برای تمام ورودی‌های عددی
+import { addCommas, removeCommas } from "@/lib/numberFormat";
 
 type Currency = "AFN" | "USD" | "EUR" | "IRR" | "PKR";
 // ✅ تغییر ۲: id به صورت string | number برای یکپارچگی با سایر تب‌ها
@@ -149,6 +151,9 @@ const generateId = (): string => {
 };
 const isCurrency = (v: any): v is Currency => typeof v === "string" && (currencies as string[]).includes(v);
 const normalizeDigits = (v: string) => { const pd = "۰۱۲۳۴۵۶۷۸۹", ad = "٠١٢٣٤٥٦٧٨٩"; return String(v || "").replace(/[۰-۹]/g, d => String(pd.indexOf(d))).replace(/[٠-٩]/g, d => String(ad.indexOf(d))); };
+// فرمت خودکار کامای هزارگان برای تمام ورودی‌های عددی
+const toNumericText = (v: string) => addCommas(normalizeDigits(String(v || "")));
+const parseAmount = (v: string) => removeCommas(normalizeDigits(String(v || "")));
 const fmt = (n: number) => Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 2 }) : "0";
 
 function shamsiParts(d: Date) {
@@ -483,7 +488,7 @@ export default function CustomersPage() {
       showToast("این عملیات فقط برای مشتریان عادی امکان‌پذیر است.");
       return;
     }
-    const amt = Number(normalizeDigits(cwAmount).replace(/,/g, ""));
+    const amt = parseAmount(cwAmount);
     if (!Number.isFinite(amt) || amt <= 0) { showToast("مبلغ معتبر وارد کنید."); return; }
     if (!isCurrency(cwCurrency)) return;
 
@@ -509,7 +514,7 @@ export default function CustomersPage() {
     if (!selectedCustomer || String(selectedCustomer.id) === CASH_BOX_ID || String(selectedCustomer.id) === EXCHANGE_ACCOUNT_ID) {
       showToast("فقط برای مشتریان واقعی قابل انجام است."); return;
     }
-    const amt = Number(normalizeDigits(loanAmount).replace(/,/g, ""));
+    const amt = parseAmount(loanAmount);
     if (!Number.isFinite(amt) || amt <= 0) { showToast("مبلغ معتبر وارد کنید."); return; }
     if (!isCurrency(loanCurrency)) return;
 
@@ -995,7 +1000,7 @@ export default function CustomersPage() {
                 <div className="space-y-3">
                   <div>
                     <label className="text-xs font-bold">مبلغ</label>
-                    <input className={uiInput} value={cwAmount} onChange={e => setCwAmount(e.target.value)} placeholder="0" />
+                    <input className={uiInput} value={cwAmount} onChange={e => setCwAmount(toNumericText(e.target.value))} placeholder="0" />
                   </div>
                   <div>
                     <label className="text-xs font-bold">ارز</label>
@@ -1027,7 +1032,7 @@ export default function CustomersPage() {
                 <div className="space-y-3">
                   <div>
                     <label className="text-xs font-bold">مبلغ</label>
-                    <input className={uiInput} value={loanAmount} onChange={e => setLoanAmount(e.target.value)} placeholder="0" />
+                    <input className={uiInput} value={loanAmount} onChange={e => setLoanAmount(toNumericText(e.target.value))} placeholder="0" />
                   </div>
                   <div>
                     <label className="text-xs font-bold">ارز</label>
