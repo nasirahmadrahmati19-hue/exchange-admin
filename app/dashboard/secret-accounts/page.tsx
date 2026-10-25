@@ -60,10 +60,15 @@ type CryptocalcTransaction = {
   amount: number;
   currency: CurrencyCode;
   type: CryptoTxType;
-  cardReference: string; // ۶ رقم آخر کارت / کد پیگیری
+  cardReference: string; // ۶ رقم آخر کارت / کد پیگیری (فقط واریز)
   userId: string;
   timestampMs: number; // معادل محلی serverTimestamp برای نمایش
-  shamsiDateTime: string; // تاریخ شمسی انتخاب‌شده توسط کاربر
+  shamsiDateTime: string; // تاریخ شمسی خودکار لحظه ثبت (وقت کابل)
+  // ✅ فیلدهای جدید برداشت: نام برداشت‌کننده، نام پدر، شماره تلفن، نمبر تذکره
+  recipientName?: string;
+  fatherName?: string;
+  phone?: string;
+  idCard?: string;
 };
 
 // ============================================================
@@ -316,6 +321,16 @@ export default function SecretAccountsPage() {
   const [ccSaving, setCcSaving] = useState(false);
   const [ccLoaded, setCcLoaded] = useState(false);
 
+  // ✅ فرم برداشت (حالت دوم): نام، نام پدر، شماره تلفن، نمبر تذکره — همه بدون پیش‌فرض
+  const [wdForm, setWdForm] = useState({
+    recipientName: "",
+    fatherName: "",
+    phone: "",
+    idCard: "",
+  });
+  // ✅ حالت فعلی فرم: با کلیک روی دکمه برداشت، فیلد ۶ رقم جای خود را به مشخصات برداشت‌کننده می‌دهد
+  const [ccMode, setCcMode] = useState<CryptoTxType>("deposit");
+
   // ✅ Ref و caret برای رفع مشکل «عدد وارد نمی‌شود» — حفظ مکان‌نما بعد از فرمت‌دهی هزارگان
   const amountInputRef = useRef<HTMLInputElement | null>(null);
   const pendingCaret = useRef<number | null>(null);
@@ -518,6 +533,11 @@ export default function SecretAccountsPage() {
       userId: String(raw.userId ?? ""),
       timestampMs,
       shamsiDateTime: String(raw.shamsiDateTime ?? formatShamsiFromLocal(new Date(timestampMs).toISOString().slice(0, 16))),
+      // ✅ فیلدهای برداشت (برای تراکنش‌های قدیمی خالی می‌مانند)
+      recipientName: String(raw.recipientName ?? ""),
+      fatherName: String(raw.fatherName ?? ""),
+      phone: String(raw.phone ?? ""),
+      idCard: String(raw.idCard ?? ""),
     };
   };
 
@@ -558,7 +578,9 @@ export default function SecretAccountsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uid]);
 
-  /** ثبت واریز/برداشت در subcollection حساب */
+  /** ثبت واریز/برداشت در subcollection حساب
+   *  - واریز (deposit): مبلغ + ارز + ۶ رقم کارت/کد پیگیری
+   *  - برداشت (withdrawal): مبلغ + ارز + نام برداشت‌کننده + نام پدر + شماره تلفن + نمبر تذکره */
   const submitCcTx = async (type: CryptoTxType) => {
     // ✅ ابتدا مقادیر فیلدها را مستقیم از DOM بخوان —
     // اگر کاربر بدون Leave کردن فیلد دکمه را بزند، onBlur/onInput اجرا نشده و state خالی است
@@ -579,7 +601,7 @@ export default function SecretAccountsPage() {
       showToast("⚠️ لطفاً یک حساب را انتخاب کنید");
       return;
     }
-    const numericAmount = Number(toLatinDigits(ccForm.amount).replace(/[^\d]/g, ""));
+    const numericAmount = Number(amountRawDom);
     if (!isFinite(numericAmount) || numericAmount <= 0) {
       showToast("⚠️ مبلغ باید یک عدد بزرگ‌تر از صفر باشد");
       return;
@@ -588,10 +610,33 @@ export default function SecretAccountsPage() {
       showToast("⚠️ لطفاً واحد ارز را انتخاب کنید");
       return;
     }
-    if (!/^\d{6}$/.test(cardRefNow)) {
-      showToast("⚠️ ۶ رقم آخر کارت / کد پیگیری باید دقیقاً ۶ عدد باشد");
-      return;
+
+    // ✅ اعتبارسنجی مخصوص هر حالت
+    const wdName = wdForm.recipientName.trim();
+    const wdFather = wdForm.fatherName.trim();
+    const wdPhone = toLatinDigits(wdForm.phone).replace(/[^\d]/g, "");
+    const wdIdCard = toLatinDigits(wdForm.idCard).replace(/[^\d]/g, "");
+    if (type === "deposit") {
+      if (!/^\d{6}$/.test(cardRefNow)) {
+        showToast("⚠️ ۶ رقم آخر کارت / کد پیگیری باید دقیقاً ۶ عدد باشد");
+        return;
+      }
+    } else {
+      if (!wdName) { showToast("⚠️ لطفاً نام کسی که پول را برداشت می‌کند وارد کنید"); return; }
+      if (!wdFather) { showToast("⚠️ لطفاً نام پدر برداشت‌کننده را وارد کنید"); return; }
+      if (wdPhone.length < 7) { showToast("⚠️ شماره تلفن معتبر نیست (حداقل ۷ رقم)"); return; }
+      if (!wdIdCard) { showToast("⚠️ لطفاً نمبر تذکره برداشت‌کننده را وارد کنید"); return; }
+      // بررسی موجودی کافی برای برداشت
+      const accNow = validAccounts.find((a) => String(a.id) === ccForm.accountId);
+      if (accNow && type === "withdrawal") {
+        const currentBal = balanceOf(String(accNow.id));
+        if (numericAmount > currentBal) {
+          showToast(`⚠️ موجودی حساب کافی نیست — موجودی فعلی: ${toFaDigits(currentBal.toLocaleString())}`);
+          return;
+        }
+      }
     }
+
     const currencyCode = ccForm.currency as CurrencyCode;
     const shamsiStr = formatKabulShamsi();
     // timestamp واقعی (UTC epoch) — نمایش همیشه از رشته شمسی کابل انجام می‌شود
@@ -601,19 +646,28 @@ export default function SecretAccountsPage() {
     const uidNow = auth.currentUser.uid;
     try {
       console.log("2. در حال ذخیره در Firestore...");
+      const payload: Record<string, any> = {
+        amount: numericAmount,
+        currency: currencyCode,
+        type,
+        timestamp: serverTimestamp(),
+        userId: uidNow,
+        // فیلدهای کمکی برای نمایش (serverTimestamp تا سینک شدن pending است)
+        timestampMs: txDateMs,
+        shamsiDateTime: shamsiStr,
+      };
+      if (type === "deposit") {
+        payload.cardReference = cardRefNow;
+      } else {
+        payload.cardReference = "";
+        payload.recipientName = wdName;
+        payload.fatherName = wdFather;
+        payload.phone = wdPhone;
+        payload.idCard = wdIdCard;
+      }
       const docRef = await addDoc(
         collection(db!, "users", uidNow, "secret_accounts", ccForm.accountId, "transactions"),
-        {
-          amount: numericAmount,
-          currency: currencyCode,
-          type,
-          timestamp: serverTimestamp(),
-          cardReference: cardRefNow,
-          userId: uidNow,
-          // فیلدهای کمکی برای نمایش (serverTimestamp تا سینک شدن pending است)
-          timestampMs: txDateMs,
-          shamsiDateTime: shamsiStr,
-        }
+        payload
       );
       console.log("3. با موفقیت ذخیره شد. ID:", docRef.id);
 
@@ -623,10 +677,14 @@ export default function SecretAccountsPage() {
         amount: numericAmount,
         currency: currencyCode,
         type,
-        cardReference: cardRefNow,
+        cardReference: type === "deposit" ? cardRefNow : "",
         userId: uidNow,
         timestampMs: txDateMs,
         shamsiDateTime: shamsiStr,
+        recipientName: type === "withdrawal" ? wdName : "",
+        fatherName: type === "withdrawal" ? wdFather : "",
+        phone: type === "withdrawal" ? wdPhone : "",
+        idCard: type === "withdrawal" ? wdIdCard : "",
       };
       const nextList = [newTx, ...ccTransactions].sort((a, b) => b.timestampMs - a.timestampMs);
       setCcTransactions(nextList);
@@ -645,10 +703,11 @@ export default function SecretAccountsPage() {
 
       showToast(type === "deposit"
         ? `✅ ${toFaDigits(numericAmount.toLocaleString())} ${CURRENCY_NAMES[currencyCode]} واریز شد`
-        : `✅ ${toFaDigits(numericAmount.toLocaleString())} ${CURRENCY_NAMES[currencyCode]} برداشت شد`);
+        : `✅ ${toFaDigits(numericAmount.toLocaleString())} ${CURRENCY_NAMES[currencyCode]} به «${wdName}» برداشت شد`);
 
       // ✅ ریست فرم — همه چیز خالی می‌ماند (بدون پیش‌فرض)، فقط حساب انتخاب‌شده باقی می‌ماند
       setCcForm((prev) => ({ ...prev, amount: "", currency: "", cardReference: "" }));
+      setWdForm({ recipientName: "", fatherName: "", phone: "", idCard: "" });
       if (cardInputRef.current) cardInputRef.current.value = "";
       setCcResetKey((k) => k + 1); // remount فیلد مهارتی تا واقعاً خالی شود
     } catch (error) {
@@ -825,31 +884,89 @@ export default function SecretAccountsPage() {
               </p>
             </div>
 
-            {/* فیلد ۳: ۶ رقم آخر کارت — کنترل مهارتی (uncontrolled) برای رفع مشکل «عدد وارد نمی‌شود»
+            {/* فیلد ۳ (فقط برای واریز): ۶ رقم آخر کارت — کنترل مهارتی (uncontrolled) برای رفع مشکل «عدد وارد نمی‌شود»
                 مقدار در هر لحظه تایپ (onInput) نرمال‌سازی و به state منتقل می‌شود؛
                 ارقام فارسی/عربی خودکار به لاتین تبدیل می‌شوند تا دکمه‌ها درست فعال شوند */}
             <div className="md:col-span-2">
-              <label className={uiLabel}>۶ رقم آخر کارت / کد پیگیری واریز</label>
-              <input
-                ref={cardInputRef}
-                key={`card-${ccResetKey}`}
-                className={`${inputCls} select-text font-black tracking-[0.3em] text-center ${/^\d{6}$/.test(ccForm.cardReference) ? "border-emerald-400 bg-emerald-50/50" : ""}`}
-                type="text"
-                inputMode="numeric"
-                autoComplete="off"
-                name="card-reference"
-                defaultValue=""
-                onInput={() => commitCardReference(cardInputRef.current?.value ?? "")}
-                onBlur={() => commitCardReference(cardInputRef.current?.value ?? "")}
-                onPaste={() => {
-                  // پس از Paste هم مقدار را نرمال‌سازی و به state منتقل کن
-                  setTimeout(() => commitCardReference(cardInputRef.current?.value ?? ""), 0);
-                }}
-                placeholder="کد ۶ رقمی را وارد کنید"
-              />
-              <p className="mt-1 text-[10px] text-slate-400">
-                برای واریزهای شبا/پایا، ۶ رقم آخر کارت یا کد پیگیری را وارد کنید
-              </p>
+              {ccMode === "deposit" ? (
+                <>
+                  <label className={uiLabel}>۶ رقم آخر کارت / کد پیگیری واریز</label>
+                  <input
+                    ref={cardInputRef}
+                    key={`card-${ccResetKey}`}
+                    className={`${inputCls} select-text font-black tracking-[0.3em] text-center ${/^\d{6}$/.test(ccForm.cardReference) ? "border-emerald-400 bg-emerald-50/50" : ""}`}
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    name="card-reference"
+                    defaultValue=""
+                    onInput={() => commitCardReference(cardInputRef.current?.value ?? "")}
+                    onBlur={() => commitCardReference(cardInputRef.current?.value ?? "")}
+                    onPaste={() => {
+                      // پس از Paste هم مقدار را نرمال‌سازی و به state منتقل کن
+                      setTimeout(() => commitCardReference(cardInputRef.current?.value ?? ""), 0);
+                    }}
+                    placeholder="کد ۶ رقمی را وارد کنید"
+                  />
+                  <p className="mt-1 text-[10px] text-slate-400">
+                    برای واریزهای شبا/پایا، ۶ رقم آخر کارت یا کد پیگیری را وارد کنید
+                  </p>
+                </>
+              ) : (
+                <>
+                  {/* ✅ حالت برداشت: نام برداشت‌کننده + نام پدر + شماره تلفن + نمبر تذکره (بدون پیش‌فرض) */}
+                  <label className={uiLabel}>مشخصات کسی که پول را برداشت می‌کند</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 rounded-xl border-2 border-red-200 bg-red-50/40 p-2.5">
+                    <input
+                      className={`${inputCls} w-full`}
+                      type="text"
+                      autoComplete="off"
+                      value={wdForm.recipientName}
+                      onChange={(e) => setWdForm((p) => ({ ...p, recipientName: e.target.value }))}
+                      placeholder="نام برداشت‌کننده"
+                    />
+                    <input
+                      className={`${inputCls} w-full`}
+                      type="text"
+                      autoComplete="off"
+                      value={wdForm.fatherName}
+                      onChange={(e) => setWdForm((p) => ({ ...p, fatherName: e.target.value }))}
+                      placeholder="نام پدر"
+                    />
+                    <input
+                      className={`${inputCls} w-full select-text`}
+                      type="text"
+                      inputMode="tel"
+                      dir="ltr"
+                      autoComplete="off"
+                      maxLength={15}
+                      value={wdForm.phone}
+                      onChange={(e) => {
+                        const clean = toLatinDigits(e.target.value).replace(/[^\d]/g, "").slice(0, 15);
+                        setWdForm((p) => ({ ...p, phone: clean }));
+                      }}
+                      placeholder="📞 شماره تلفن"
+                    />
+                    <input
+                      className={`${inputCls} w-full select-text`}
+                      type="text"
+                      inputMode="numeric"
+                      dir="ltr"
+                      autoComplete="off"
+                      maxLength={16}
+                      value={wdForm.idCard}
+                      onChange={(e) => {
+                        const clean = toLatinDigits(e.target.value).replace(/[^\d]/g, "").slice(0, 16);
+                        setWdForm((p) => ({ ...p, idCard: clean }));
+                      }}
+                      placeholder="🪪 نمبر تذکره"
+                    />
+                  </div>
+                  <p className="mt-1 text-[10px] text-slate-400">
+                    هنگام برداشت، مشخصات کامل فرد برداشت‌کننده ثبت می‌شود — کد ۶ رقمی فقط برای واریز لازم است
+                  </p>
+                </>
+              )}
             </div>
           </div>
 
@@ -861,18 +978,26 @@ export default function SecretAccountsPage() {
             <button
               type="button"
               onPointerDown={(e) => e.preventDefault()} // حفظ فوکوس و مقدار فیلدها هنگام لمس موبایل
-              onClick={() => submitCcTx("deposit")}
-              className="flex-1 cursor-pointer rounded-xl bg-gradient-to-l from-green-600 to-emerald-600 hover:brightness-110 active:scale-95 transition-all px-6 py-3 text-sm font-black text-white shadow-lg shadow-green-500/25 flex items-center justify-center gap-2"
+              onClick={() => { setCcMode("deposit"); submitCcTx("deposit"); }}
+              className={`flex-1 cursor-pointer rounded-xl px-6 py-3 text-sm font-black text-white transition-all active:scale-95 flex items-center justify-center gap-2 ${
+                ccMode === "deposit"
+                  ? "bg-gradient-to-l from-green-600 to-emerald-600 hover:brightness-110 shadow-lg shadow-green-500/25 ring-2 ring-emerald-400"
+                  : "bg-gradient-to-l from-green-700/70 to-emerald-700/70 hover:brightness-110 shadow-md"
+              }`}
             >
-              <span>⬇️</span> {ccSaving ? "در حال ثبت…" : "واریز"}
+              <span>⬇️</span> {ccSaving && ccMode === "deposit" ? "در حال ثبت…" : "واریز"}
             </button>
             <button
               type="button"
               onPointerDown={(e) => e.preventDefault()}
-              onClick={() => submitCcTx("withdrawal")}
-              className="flex-1 cursor-pointer rounded-xl bg-gradient-to-l from-red-600 to-rose-600 hover:brightness-110 active:scale-95 transition-all px-6 py-3 text-sm font-black text-white shadow-lg shadow-red-500/25 flex items-center justify-center gap-2"
+              onClick={() => { setCcMode("withdrawal"); submitCcTx("withdrawal"); }}
+              className={`flex-1 cursor-pointer rounded-xl px-6 py-3 text-sm font-black text-white transition-all active:scale-95 flex items-center justify-center gap-2 ${
+                ccMode === "withdrawal"
+                  ? "bg-gradient-to-l from-red-600 to-rose-600 hover:brightness-110 shadow-lg shadow-red-500/25 ring-2 ring-red-400"
+                  : "bg-gradient-to-l from-red-700/70 to-rose-700/70 hover:brightness-110 shadow-md"
+              }`}
             >
-              <span>⬆️</span> {ccSaving ? "در حال ثبت…" : "برداشت"}
+              <span>⬆️</span> {ccSaving && ccMode === "withdrawal" ? "در حال ثبت…" : "برداشت"}
             </button>
           </div>
 
@@ -912,6 +1037,16 @@ export default function SecretAccountsPage() {
                       <span>📅 {t.shamsiDateTime}</span>
                       {t.cardReference && (
                         <span className="rounded-md bg-sky-50 px-2 py-0.5 font-black text-sky-700" dir="ltr">💳 {toFaDigits(t.cardReference)}</span>
+                      )}
+                      {/* ✅ مشخصات برداشت‌کننده در تراکنش‌های برداشت */}
+                      {t.type === "withdrawal" && t.recipientName && (
+                        <span className="rounded-md bg-red-50 px-2 py-0.5 font-black text-red-700">🧑‍💼 {t.recipientName}{t.fatherName ? ` بنده ${t.fatherName}` : ""}</span>
+                      )}
+                      {t.type === "withdrawal" && t.phone && (
+                        <span className="rounded-md bg-amber-50 px-2 py-0.5 font-bold text-amber-700" dir="ltr">📞 {toFaDigits(t.phone)}</span>
+                      )}
+                      {t.type === "withdrawal" && t.idCard && (
+                        <span className="rounded-md bg-indigo-50 px-2 py-0.5 font-bold text-indigo-700" dir="ltr">🪪 {toFaDigits(t.idCard)}</span>
                       )}
                     </div>
                   </div>
