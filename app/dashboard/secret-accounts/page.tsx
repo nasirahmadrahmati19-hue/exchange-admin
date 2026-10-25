@@ -17,6 +17,16 @@ import {
 
 // ✅ مسیر نسبی دقیق و تضمینی (سه مرحله به عقب تا ریشه پروژه)
 import { auth, db } from "../lib/firebase";
+import { useSafeSyncedState } from "../lib/useSafeSyncedState";
+import { addCommas } from "@/lib/numberFormat";
+
+// ✅ تطبیق هویتی کد پیگیری بین تب‌ها:
+// «محاسبات رمزی» کدهای TR-... تولید می‌کند و حواله‌ها کدهای OF/HW-... —
+// برای اتصال یکسان، پیشوند با هم تطبیق داده می‌شود (TR ↔ OF ↔ HW).
+const matchableCode = (c: string): string => {
+  const s = String(c || "").trim().toUpperCase();
+  return s.replace(/^(TR|OF|HW|CS)-/, "X-");
+};
 
 // ============================================================
 // انواع داده (Types)
@@ -303,6 +313,21 @@ export default function SecretAccountsPage() {
   const [saving, setSaving] = useState(false);
 
   const [openStatementId, setOpenStatementId] = useState<string | null>(null);
+
+  // ✅ اتصال به داده‌های حواله (localStorage/Firestore مشترک با تب حواله)
+  // تا صورت‌حساب هر حساب، ستون‌های حواله (مبلغ نهایی، کارمزد، مقصد، وضعیت...) را نشان دهد
+  interface LinkedHawala {
+    id: string; number: string; trackingCode?: string; date: string; time?: string;
+    senderName?: string; receiverName?: string; destinationText?: string; province?: string;
+    finalAmount?: number; fee?: number; feePayer?: string; status?: string;
+  }
+  const [linkedHawalas] = useSafeSyncedState<LinkedHawala>("hawalas", []);
+  const hawalaStatusLabelsFa: Record<string, string> = { pending: "در انتظار", sent: "ارسال‌شده", paid: "تصفیه‌شده", cancelled: "لغوشده" };
+  const findLinkedHawala = (code: string): LinkedHawala | undefined => {
+    const m = matchableCode(code);
+    if (!m || m === "X-") return undefined;
+    return linkedHawalas.find((h) => matchableCode(h?.trackingCode || h?.number || "") === m);
+  };
 
   // ✅ فرم «محاسبات رمزی»: واریز/برداشت روی secret_accounts/{id}/transactions
   const CURRENCY_OPTIONS: { code: CurrencyCode; name: string }[] = [
@@ -1156,7 +1181,8 @@ export default function SecretAccountsPage() {
                   </div>
 
                   {isOpen && (
-                    /* ✅ صورت‌حساب فشرده: یک خط خلاصه + ردیف تک‌خطی برای هر تراکنش (اطلاعات کامل در tooltip با title) */
+                    /* ✅ صورت‌حساب با ستون‌های استاندارد:
+                       شماره | کد پیگیری | تاریخ | حواله‌دهنده | حواله‌گیرنده | مبلغ نهایی | کارمزد | پرداخت‌کننده | مقصد | وضعیت | عملیات */
                     <div className="mt-1 rounded-lg border border-violet-100 bg-violet-50/40 p-2 space-y-1">
                       {(() => {
                         const totalIn = allStatementTx.filter((t) => t.type === "deposit").reduce((s, t) => s + t.amount, 0);
@@ -1174,38 +1200,73 @@ export default function SecretAccountsPage() {
                       {allStatementTx.length === 0 ? (
                         <p className="text-[11px] font-bold text-slate-400 text-center py-1">تراکنشی ثبت نشده است.</p>
                       ) : (
-                        <div className="max-h-64 overflow-y-auto divide-y divide-violet-100 rounded-md bg-white border border-violet-100">
-                          {allStatementTx.map((t) => {
-                            const isCc = !("ts" in t);
-                            const cc = t as CryptocalcTransaction;
-                            const displayCard = isCc ? cc.cardReference : ((t as Transaction).cardReference || (t as Transaction).cardNumber);
-                            const displayDate = isCc ? (cc.shamsiDateTime || "") : `${(t as Transaction).date} ${(t as Transaction).time}`;
-                            const txCurName = isCc ? (CURRENCY_NAMES[cc.currency] ?? cc.currency) : curName;
-                            const wdAcc = isCc && cc.withdrawAccountId ? accounts.find((a) => String(a.id) === String(cc.withdrawAccountId)) : null;
-                            // اطلاعات کامل برای tooltip
-                            const tipParts: string[] = [`${t.type === "deposit" ? "واریز" : "برداشت"} — ${toFaDigits(t.amount.toLocaleString())} ${txCurName}`, displayDate];
-                            if (!isCc && (t as Transaction).transferNo) tipParts.push(`کد حواله: ${(t as Transaction).transferNo}`);
-                            if (displayCard) tipParts.push(`کد/کارت: ${displayCard}`);
-                            if (isCc && t.type === "withdrawal") {
-                              if (cc.recipientName) tipParts.push(`گیرنده: ${cc.recipientName}${cc.fatherName ? ` بنده ${cc.fatherName}` : ""}`);
-                              if (cc.phone) tipParts.push(`تلفن: ${cc.phone}`);
-                              if (cc.idCard) tipParts.push(`تذکره: ${cc.idCard}`);
-                              if (wdAcc) tipParts.push(`از حساب: ${wdAcc.name}`);
-                            }
-                            if (!isCc && (t as Transaction).note) tipParts.push(`یادداشت: ${(t as Transaction).note}`);
-                            return (
-                              <div key={t.id} title={tipParts.join(" | ")} className="flex items-center justify-between gap-2 px-2 py-1 text-[11px] hover:bg-violet-50/50 transition-colors">
-                                <div className="flex items-center gap-1.5 min-w-0 truncate">
-                                  <span className={t.type === "deposit" ? "text-emerald-600 font-black" : "text-red-500 font-black"}>{t.type === "deposit" ? "▲" : "▼"}</span>
-                                  <span className="text-slate-700 font-bold tabular-nums whitespace-nowrap" dir="ltr">{toFaDigits(t.amount.toLocaleString())} {txCurName}</span>
-                                  <span className="text-slate-400 font-bold whitespace-nowrap hidden sm:inline">📅 {displayDate}</span>
-                                  {displayCard && <span className="text-sky-600 font-bold whitespace-nowrap hidden md:inline" dir="ltr">#{displayCard}</span>}
-                                  {isCc && <span className="text-violet-400 font-bold whitespace-nowrap hidden md:inline">🧮</span>}
-                                </div>
-                                <button onClick={() => handleDeleteRequest("transaction", t.id, key)} className="cursor-pointer shrink-0 text-[10px] rounded bg-transparent hover:bg-red-50 text-red-400 hover:text-red-600 font-bold px-1.5 py-0.5 transition-colors">✕</button>
-                              </div>
-                            );
-                          })}
+                        <div className="max-h-80 overflow-auto rounded-md bg-white border border-violet-100">
+                          <table className="w-full min-w-[900px] text-right border-collapse">
+                            <thead className="sticky top-0 z-10 bg-violet-50">
+                              <tr className="text-[10px] font-black text-slate-500">
+                                <th className="px-2 py-2 text-center whitespace-nowrap border-b border-violet-100">شماره</th>
+                                <th className="px-2 py-2 text-center whitespace-nowrap border-b border-violet-100">کد پیگیری</th>
+                                <th className="px-2 py-2 text-center whitespace-nowrap border-b border-violet-100">تاریخ</th>
+                                <th className="px-2 py-2 text-center whitespace-nowrap border-b border-violet-100">حواله‌دهنده</th>
+                                <th className="px-2 py-2 text-center whitespace-nowrap border-b border-violet-100">حواله‌گیرنده</th>
+                                <th className="px-2 py-2 text-center whitespace-nowrap border-b border-violet-100">مبلغ نهایی</th>
+                                <th className="px-2 py-2 text-center whitespace-nowrap border-b border-violet-100">کارمزد</th>
+                                <th className="px-2 py-2 text-center whitespace-nowrap border-b border-violet-100">پرداخت‌کننده</th>
+                                <th className="px-2 py-2 text-center whitespace-nowrap border-b border-violet-100">مقصد</th>
+                                <th className="px-2 py-2 text-center whitespace-nowrap border-b border-violet-100">وضعیت</th>
+                                <th className="px-2 py-2 text-center whitespace-nowrap border-b border-violet-100">عملیات</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-violet-50">
+                              {allStatementTx.map((t, idx) => {
+                                const isCc = !("ts" in t);
+                                const cc = t as CryptocalcTransaction;
+                                const legacy = t as Transaction;
+                                const displayCard = isCc ? cc.cardReference : (legacy.cardReference || legacy.cardNumber || legacy.transferNo || "");
+                                const displayDate = isCc ? (cc.shamsiDateTime || "") : `${legacy.date}${legacy.time ? ` ${legacy.time}` : ""}`;
+                                const txCurName = isCc ? (CURRENCY_NAMES[cc.currency] ?? cc.currency) : curName;
+                                // ✅ اتصال به تب حواله: اگر کد پیگیری با یک حواله مطابق شد، ستون‌های حواله از آن خوانده می‌شود
+                                const linkedH = findLinkedHawala(displayCard);
+                                const senderCell = linkedH?.senderName || acc.name || "—";
+                                const receiverCell = linkedH?.receiverName || (isCc && t.type === "withdrawal" ? (cc.recipientName || "—") : (isCc ? "—" : (legacy.note || "—")));
+                                const finalAmtCell = addCommas(String(linkedH?.finalAmount ?? t.amount));
+                                const feeVal = linkedH ? Number(linkedH.fee || 0) : 0;
+                                const feeCell = feeVal > 0 ? `${addCommas(String(feeVal))} ${txCurName}` : `0 ${txCurName}`;
+                                const payerCell = linkedH ? (linkedH.feePayer === "receiver" ? "از گیرنده" : "از فرستنده") : "—";
+                                const destCell = linkedH ? (linkedH.destinationText || linkedH.province || "—") : "—";
+                                const statusCell = linkedH ? (hawalaStatusLabelsFa[linkedH.status || ""] || linkedH.status || "—") : (t.type === "deposit" ? "واریز" : "برداشت");
+                                const statusCls = linkedH
+                                  ? (linkedH.status === "paid" ? "bg-emerald-50 text-emerald-700" : linkedH.status === "sent" ? "bg-sky-50 text-sky-700" : linkedH.status === "cancelled" ? "bg-red-50 text-red-600 line-through" : "bg-amber-50 text-amber-700")
+                                  : (t.type === "deposit" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-600");
+                                return (
+                                  <tr key={t.id} className="hover:bg-violet-50/50 transition-colors">
+                                    <td className="px-2 py-1.5 text-center text-[11px] font-black text-slate-500">{idx + 1}</td>
+                                    <td className="px-2 py-1.5 text-center">
+                                      <span className="inline-block px-1.5 py-0.5 rounded-md bg-cyan-50 text-cyan-700 border border-cyan-200 text-[10px] font-bold font-mono whitespace-nowrap" dir="ltr">
+                                        {displayCard || "—"}
+                                      </span>
+                                    </td>
+                                    <td className="px-2 py-1.5 text-center text-[11px] font-bold text-slate-600 whitespace-nowrap" dir="ltr">{displayDate || "—"}</td>
+                                    <td className="px-2 py-1.5 text-center text-[11px] font-bold text-amber-700 max-w-[110px] truncate" title={senderCell}>{senderCell}</td>
+                                    <td className="px-2 py-1.5 text-center text-[11px] font-bold text-sky-700 max-w-[110px] truncate" title={receiverCell}>{receiverCell}</td>
+                                    <td className={`px-2 py-1.5 text-center whitespace-nowrap ${t.type === "deposit" ? "text-emerald-600" : "text-red-500"}`}>
+                                      <span className="block text-[11px] font-black tabular-nums" dir="ltr">{finalAmtCell}</span>
+                                      <span className="block text-[9px] font-bold text-slate-400">{txCurName}</span>
+                                    </td>
+                                    <td className="px-2 py-1.5 text-center text-[10px] font-bold text-purple-700 whitespace-nowrap">{feeCell}</td>
+                                    <td className="px-2 py-1.5 text-center text-[11px] font-bold text-slate-600 whitespace-nowrap">{payerCell}</td>
+                                    <td className="px-2 py-1.5 text-center text-[11px] font-bold text-slate-600 max-w-[120px] truncate" title={destCell}>{destCell}</td>
+                                    <td className="px-2 py-1.5 text-center">
+                                      <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap ${statusCls}`}>{statusCell}</span>
+                                    </td>
+                                    <td className="px-2 py-1.5 text-center whitespace-nowrap">
+                                      <button onClick={() => handleDeleteRequest("transaction", t.id, key)} className="cursor-pointer text-[10px] rounded bg-transparent hover:bg-red-50 text-red-400 hover:text-red-600 font-bold px-1.5 py-0.5 transition-colors" title="حذف">✕</button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
                         </div>
                       )}
                     </div>
