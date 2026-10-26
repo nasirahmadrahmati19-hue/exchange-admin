@@ -1184,18 +1184,7 @@ export default function SecretAccountsPage() {
                     /* ✅ صورت‌حساب با ستون‌های استاندارد (نسخه فشرده):
                        شماره | تاریخ | حواله‌گیرنده | مبلغ نهایی | کارمزد | وضعیت | عملیات */
                     <div className="mt-1 rounded-lg border border-violet-100 bg-violet-50/40 p-2 space-y-1">
-                      {(() => {
-                        const totalIn = allStatementTx.filter((t) => t.type === "deposit").reduce((s, t) => s + t.amount, 0);
-                        const totalOut = allStatementTx.filter((t) => t.type !== "deposit").reduce((s, t) => s + t.amount, 0);
-                        return (
-                          <div className="flex items-center justify-between gap-2 text-[10px] font-black text-slate-500 flex-wrap">
-                            <span>🧾 {statementCount} تراکنش</span>
-                            <span className="text-emerald-600 tabular-nums" dir="ltr">⬇️ {toFaDigits(totalIn.toLocaleString())}</span>
-                            <span className="text-red-500 tabular-nums" dir="ltr">⬆️ {toFaDigits(totalOut.toLocaleString())}</span>
-                            <span className={liveBalance >= 0 ? "text-emerald-700" : "text-red-600"} dir="ltr">💰 {toFaDigits(liveBalance.toLocaleString())} {curName}</span>
-                          </div>
-                        );
-                      })()}
+                      {/* ✅ هدر اضافی صورت‌حساب حذف شد: تعداد تراکنش، مجموع ورودی و خروجی نمایش داده نمی‌شود */}
 
                       {allStatementTx.length === 0 ? (
                         <p className="text-[11px] font-bold text-slate-400 text-center py-1">تراکنشی ثبت نشده است.</p>
