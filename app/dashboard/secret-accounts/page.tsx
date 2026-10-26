@@ -1,6 +1,10 @@
 "use client";
 
 import { useState, useEffect, useRef, type ReactNode } from "react";
+// ✅ رندر مودال در انتهای <body>: جدول صورت‌حساب داخل کانتینر scroll (overflow-auto) است و
+// طبق CSS، position:fixed داخل آن نسبت به همان کانتینر قرار می‌گیرد — مودال به بالای صفحه
+// پرتاب می‌شد و امکان وارد کردن تغییرات نبود. Portal این مشکل را کامل حل می‌کند.
+import { createPortal } from "react-dom";
 import { onAuthStateChanged } from "firebase/auth";
 import { 
   doc, 
@@ -656,7 +660,17 @@ export default function SecretAccountsPage() {
       return;
     }
     // ✅ حساب هدف: برای برداشت = حساب مبدأ (فیلد جدید داخل کادر برداشت)، برای واریز = سلکت بالای فرم
-    const targetAccountId = type === "withdrawal" ? wdForm.withdrawAccountId : ccForm.accountId;
+    let targetAccountId = type === "withdrawal" ? wdForm.withdrawAccountId : ccForm.accountId;
+    // 🔧 رفع باگ «برداشت کار نمی‌کند»: اگر کاربر در کارت یک حساب روی «🧾 صورت‌حساب» کلیک کرده باشد،
+    // همان حساب به‌عنوان پیش‌فرض انتخاب می‌شود تا فقط با زدن دکمه برداشت هم تراکنش ثبت شود
+    if (!targetAccountId && openStatementId) {
+      const acc = validAccounts.find((a) => String(a.id) === String(openStatementId));
+      if (acc) {
+        targetAccountId = String(acc.id);
+        if (type === "withdrawal") setWdForm((p) => ({ ...p, withdrawAccountId: targetAccountId! }));
+        else setCcForm((p) => ({ ...p, accountId: targetAccountId! }));
+      }
+    }
     if (!targetAccountId) {
       showToast(type === "withdrawal"
         ? "❌ لطفاً حسابی که از آن برداشت می‌شود را انتخاب کنید"
@@ -1088,11 +1102,13 @@ export default function SecretAccountsPage() {
                   {/* ✅ حالت برداشت: انتخاب حساب مبدأ + نام برداشت‌کننده + نام پدر + شماره تلفن + نمبر تذکره (بدون پیش‌فرض) */}
                   <label className={uiLabel}>انتخاب حساب برای برداشت + مشخصات کسی که پول را برداشت می‌کند</label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 rounded-xl border-2 border-red-200 bg-red-50/40 p-2.5">
-                    {/* ✅ فیلد جدید: از کدام حساب پول برداشت شود — با نمایش موجودی هر حساب */}
+                    {/* ✅ فیلد جدید: از کدام حساب پول برداشت شود — با نمایش موجودی هر حساب
+                        🔧 هم onChange و هم sync با «حساب مقصد» بالای فرم — اگر سلکت خالی بماند،
+                        مقدار انتخاب‌شده به ccForm.accountId هم منتقل می‌شود تا برداشت همیشه حساب داشته باشد */}
                     <select
                       className={`${inputCls} w-full sm:col-span-2 ${wdForm.withdrawAccountId ? "border-red-400 bg-white text-slate-700" : "border-slate-200 bg-white text-slate-400"}`}
-                      value={wdForm.withdrawAccountId}
-                      onChange={(e) => setWdForm((p) => ({ ...p, withdrawAccountId: e.target.value }))}
+                      value={wdForm.withdrawAccountId || ccForm.accountId}
+                      onChange={(e) => { setWdForm((p) => ({ ...p, withdrawAccountId: e.target.value })); if (e.target.value) setCcForm((p) => ({ ...p, accountId: e.target.value })); }}
                     >
                       <option value="">🏦 انتخاب حساب برای برداشت</option>
                       {validAccounts.map((a) => {
@@ -1426,9 +1442,11 @@ export default function SecretAccountsPage() {
         )}
 
         {/* ✅ مودال ویرایش تراکنش محاسبات رمزی — مبلغ، نوع، تاریخ/ساعت، شرح
-            پس از ذخیره، موجودی حساب و مانده پس از هر تراکنش خودکار بازمحاسبه می‌شود */}
-        {editTx && (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => !editTxSaving && setEditTx(null)}>
+            پس از ذخیره، موجودی حساب و مانده پس از هر تراکنش خودکار بازمحاسبه می‌شود
+            🔧 Portal به <body>: قبلاً داخل جدول scroll-shونده رندر می‌شد و fixed نسبت به
+            همان کانتینر اعمال شده و مودال به بالای صفحه می‌رفت (غیرقابل استفاده) */}
+        {editTx && createPortal(
+          <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => !editTxSaving && setEditTx(null)}>
             <div dir="rtl" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl animate-in zoom-in-95 space-y-4" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between">
                 <h3 className="text-base font-black text-slate-900">✏️ ویرایش تراکنش</h3>
@@ -1483,7 +1501,8 @@ export default function SecretAccountsPage() {
                 <button onClick={saveEditTx} disabled={editTxSaving} className="flex-1 cursor-pointer rounded-xl bg-gradient-to-l from-violet-600 to-indigo-600 py-3 text-sm font-black text-white shadow-lg shadow-violet-500/20 hover:brightness-110 disabled:opacity-50">{editTxSaving ? "در حال ذخیره…" : "💾 ذخیره تغییرات"}</button>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         )}
 
         {toast && (
